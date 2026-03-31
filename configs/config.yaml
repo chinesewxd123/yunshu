@@ -1,0 +1,43 @@
+﻿app:
+  name: permission-system
+  env: dev
+  port: 8080
+
+http:
+  read_header_timeout_seconds: 5
+  read_timeout_seconds: 10
+  write_timeout_seconds: 10
+  idle_timeout_seconds: 60
+
+log:
+  level: debug
+  format: text
+
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: "123456"
+  db_name: permission_system
+  charset: utf8mb4
+  loc: Asia%2FShanghai
+  max_idle_conns: 10
+  max_open_conns: 50
+  conn_max_lifetime_seconds: 3600
+
+redis:
+  addr: 127.0.0.1:6379
+  password: "1234"
+  db: 0
+  pool_size: 20
+
+auth:
+  jwt_secret: change-me-in-production
+  access_token_ttl_minutes: 120
+
+casbin:
+  model_path: configs/casbin_model.conf
+
+swagger:
+  enabled: true
+  path: /swagger

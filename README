@@ -1,0 +1,76 @@
+# 权限管理系统骨架
+
+基于 `golang1.23.6 + gin + mysql5.7 + redis + casbin + cobra + slog` 实现的权限管理系统项目骨架，包含：
+
+- 用户登录、退出、获取当前用户
+- 用户增删改查、用户分配角色
+- 角色增删改查
+- 权限增删改查
+- Casbin 策略授予、回收、查询
+- Cobra 命令：`server`、`migrate`、`seed`
+- 链式启动器：`bootstrap.NewBuilder().WithConfig().WithLogger()...`
+
+## 快速开始
+
+1. 修改 `configs/config.yaml` 中的 MySQL、Redis、JWT 配置。
+2. 运行迁移：
+
+```bash
+go run . migrate
+```
+
+3. 初始化默认管理员：
+
+```bash
+go run . seed
+```
+
+默认账号：
+
+- 用户名：`admin`
+- 密码：`Admin@123`
+
+4. 启动服务：
+
+```bash
+go run . server
+```
+
+## 主要接口
+
+### 认证
+
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+
+### 用户
+
+- `GET /api/v1/users`
+- `POST /api/v1/users`
+- `GET /api/v1/users/:id`
+- `PUT /api/v1/users/:id`
+- `DELETE /api/v1/users/:id`
+- `PUT /api/v1/users/:id/roles`
+
+### 角色
+
+- `GET /api/v1/roles`
+- `POST /api/v1/roles`
+- `GET /api/v1/roles/:id`
+- `PUT /api/v1/roles/:id`
+- `DELETE /api/v1/roles/:id`
+
+### 权限
+
+- `GET /api/v1/permissions`
+- `POST /api/v1/permissions`
+- `GET /api/v1/permissions/:id`
+- `PUT /api/v1/permissions/:id`
+- `DELETE /api/v1/permissions/:id`
+
+### 策略
+
+- `GET /api/v1/policies`
+- `POST /api/v1/policies`
+- `DELETE /api/v1/policies`

@@ -1,0 +1,1188 @@
+﻿openapi: 3.0.3
+info:
+  title: Permission System API
+  version: 1.0.0
+  description: |
+    OpenAPI document for the current Gin + MySQL + Redis + Casbin permission system.
+    Import this file into APIpost for debugging.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Local development server
+tags:
+  - name: System
+  - name: Auth
+  - name: User
+  - name: Role
+  - name: Permission
+  - name: Policy
+paths:
+  /api/v1/health:
+    get:
+      tags: [System]
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                code: 200
+                message: success
+                data:
+                  name: permission-system
+                  env: dev
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      description: Get bearer token by username and password.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              username: admin
+              password: Admin@123
+      responses:
+        '200':
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logout success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageApiResponse'
+              example:
+                code: 200
+                message: success
+                data:
+                  message: logout success
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user
+      operationId: currentUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetailApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/users:
+    get:
+      tags: [User]
+      summary: List users
+      operationId: listUsers
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: keyword
+          schema:
+            type: string
+          description: Search by username or nickname
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPageApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [User]
+      summary: Create user
+      operationId: createUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+            example:
+              username: test01
+              password: Test@123
+              nickname: Test User
+              status: 1
+              role_ids: [1]
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetailCreatedApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/users/{id}:
+    get:
+      tags: [User]
+      summary: Get user detail
+      operationId: getUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: User detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetailApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [User]
+      summary: Update user
+      operationId: updateUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+            example:
+              nickname: Updated User
+              password: NewPass@123
+              status: 1
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetailApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [User]
+      summary: Delete user
+      operationId: deleteUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageApiResponse'
+              example:
+                code: 200
+                message: success
+                data:
+                  message: deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/users/{id}/roles:
+    put:
+      tags: [User]
+      summary: Assign roles to user
+      operationId: assignUserRoles
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAssignRolesRequest'
+            example:
+              role_ids: [1, 2]
+      responses:
+        '200':
+          description: Roles assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetailApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/roles:
+    get:
+      tags: [Role]
+      summary: List roles
+      operationId: listRoles
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: keyword
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Role list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolePageApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Role]
+      summary: Create role
+      operationId: createRole
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+            example:
+              name: Operator
+              code: operator
+              description: Normal operator role
+              status: 1
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleCreatedApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/roles/{id}:
+    get:
+      tags: [Role]
+      summary: Get role detail
+      operationId: getRole
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Role detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Role]
+      summary: Update role
+      operationId: updateRole
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleUpdateRequest'
+            example:
+              name: Senior Operator
+              code: senior-operator
+              description: Updated role
+              status: 1
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Role]
+      summary: Delete role
+      operationId: deleteRole
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Role deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageApiResponse'
+              example:
+                code: 200
+                message: success
+                data:
+                  message: deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/permissions:
+    get:
+      tags: [Permission]
+      summary: List permissions
+      operationId: listPermissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: keyword
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Permission list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionPageApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Permission]
+      summary: Create permission
+      operationId: createPermission
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PermissionCreateRequest'
+            example:
+              name: List users
+              resource: /api/v1/users
+              action: GET
+              description: Allow reading user list
+      responses:
+        '201':
+          description: Permission created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionCreatedApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/permissions/{id}:
+    get:
+      tags: [Permission]
+      summary: Get permission detail
+      operationId: getPermission
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Permission detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Permission]
+      summary: Update permission
+      operationId: updatePermission
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PermissionUpdateRequest'
+            example:
+              name: List users v2
+              resource: /api/v1/users
+              action: GET
+              description: Updated permission text
+      responses:
+        '200':
+          description: Permission updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Permission]
+      summary: Delete permission
+      operationId: deletePermission
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Permission deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageApiResponse'
+              example:
+                code: 200
+                message: success
+                data:
+                  message: deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/policies:
+    get:
+      tags: [Policy]
+      summary: List policy bindings
+      operationId: listPolicies
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Policy list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyListApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Policy]
+      summary: Grant policy to role
+      operationId: grantPolicy
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyGrantRequest'
+            example:
+              role_id: 1
+              permission_id: 1
+      responses:
+        '200':
+          description: Policy granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageApiResponse'
+              example:
+                code: 200
+                message: success
+                data:
+                  message: granted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Policy]
+      summary: Revoke policy from role
+      operationId: revokePolicy
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyGrantRequest'
+            example:
+              role_id: 1
+              permission_id: 1
+      responses:
+        '200':
+          description: Policy revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageApiResponse'
+              example:
+                code: 200
+                message: success
+                data:
+                  message: revoked
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdPath:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      description: Resource ID
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 400
+            message: bad request
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 401
+            message: unauthorized
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 403
+            message: forbidden
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 404
+            message: resource not found
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: bad request
+      required: [code, message]
+    MessageData:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+    HealthData:
+      type: object
+      properties:
+        name:
+          type: string
+          example: permission-system
+        env:
+          type: string
+          example: dev
+      required: [name, env]
+    HealthResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/HealthData'
+      required: [code, message, data]
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          example: Admin@123
+      required: [username, password]
+    LoginResult:
+      type: object
+      properties:
+        token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxx.yyy
+        expires_at:
+          type: string
+          format: date-time
+          example: '2026-03-31T22:00:00+08:00'
+        user:
+          $ref: '#/components/schemas/UserDetail'
+      required: [token, expires_at, user]
+    LoginApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/LoginResult'
+      required: [code, message, data]
+    MessageApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/MessageData'
+      required: [code, message, data]
+    RoleItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Super Admin
+        code:
+          type: string
+          example: super-admin
+        description:
+          type: string
+          example: Built-in super admin role
+        status:
+          type: integer
+          example: 1
+      required: [id, name, code, description, status]
+    PermissionItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: User list
+        resource:
+          type: string
+          example: /api/v1/users
+        action:
+          type: string
+          example: GET
+        description:
+          type: string
+          example: Allow reading user list
+      required: [id, name, resource, action, description]
+    UserDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: admin
+        nickname:
+          type: string
+          example: System Admin
+        status:
+          type: integer
+          example: 1
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleItem'
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-03-31T18:00:00+08:00'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-03-31T18:00:00+08:00'
+      required: [id, username, nickname, status, roles, created_at, updated_at]
+    UserCreateRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+        password:
+          type: string
+          minLength: 6
+          maxLength: 64
+        nickname:
+          type: string
+          maxLength: 128
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+        role_ids:
+          type: array
+          items:
+            type: integer
+      required: [username, password, nickname]
+    UserUpdateRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+          maxLength: 128
+        password:
+          type: string
+          minLength: 6
+          maxLength: 64
+        status:
+          type: integer
+          enum: [0, 1]
+    UserAssignRolesRequest:
+      type: object
+      properties:
+        role_ids:
+          type: array
+          items:
+            type: integer
+      required: [role_ids]
+    UserPage:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDetail'
+        total:
+          type: integer
+          example: 1
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 10
+      required: [list, total, page, page_size]
+    UserDetailApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/UserDetail'
+      required: [code, message, data]
+    UserDetailCreatedApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 201
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/UserDetail'
+      required: [code, message, data]
+    UserPageApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/UserPage'
+      required: [code, message, data]
+    RoleCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 64
+        code:
+          type: string
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 255
+        status:
+          type: integer
+          enum: [0, 1]
+          default: 1
+      required: [name, code]
+    RoleUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 64
+        code:
+          type: string
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 255
+        status:
+          type: integer
+          enum: [0, 1]
+    RolePage:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleItem'
+        total:
+          type: integer
+          example: 1
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 10
+      required: [list, total, page, page_size]
+    RoleApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/RoleItem'
+      required: [code, message, data]
+    RoleCreatedApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 201
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/RoleItem'
+      required: [code, message, data]
+    RolePageApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/RolePage'
+      required: [code, message, data]
+    PermissionCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 64
+        resource:
+          type: string
+          maxLength: 191
+        action:
+          type: string
+          maxLength: 32
+        description:
+          type: string
+          maxLength: 255
+      required: [name, resource, action]
+    PermissionUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 64
+        resource:
+          type: string
+          maxLength: 191
+        action:
+          type: string
+          maxLength: 32
+        description:
+          type: string
+          maxLength: 255
+    PermissionPage:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionItem'
+        total:
+          type: integer
+          example: 1
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 10
+      required: [list, total, page, page_size]
+    PermissionApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/PermissionItem'
+      required: [code, message, data]
+    PermissionCreatedApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 201
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/PermissionItem'
+      required: [code, message, data]
+    PermissionPageApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/PermissionPage'
+      required: [code, message, data]
+    PolicyGrantRequest:
+      type: object
+      properties:
+        role_id:
+          type: integer
+          example: 1
+        permission_id:
+          type: integer
+          example: 1
+      required: [role_id, permission_id]
+    PolicyItem:
+      type: object
+      properties:
+        role_id:
+          type: integer
+          example: 1
+        role_name:
+          type: string
+          example: Super Admin
+        role_code:
+          type: string
+          example: super-admin
+        permission_id:
+          type: integer
+          example: 1
+        permission_name:
+          type: string
+          example: User list
+        resource:
+          type: string
+          example: /api/v1/users
+        action:
+          type: string
+          example: GET
+      required: [role_id, role_name, role_code, permission_id, permission_name, resource, action]
+    PolicyListApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyItem'
+      required: [code, message, data]

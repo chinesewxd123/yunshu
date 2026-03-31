@@ -1,0 +1,1307 @@
+basePath: /
+definitions:
+  handler.HealthData:
+    properties:
+      env:
+        example: dev
+        type: string
+      name:
+        example: permission-system
+        type: string
+    type: object
+  handler.MessageData:
+    properties:
+      message:
+        example: success
+        type: string
+    type: object
+  handler.PermissionPageData:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/service.PermissionItem'
+        type: array
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 10
+        type: integer
+      total:
+        example: 1
+        type: integer
+    type: object
+  handler.RolePageData:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/service.RoleItem'
+        type: array
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 10
+        type: integer
+      total:
+        example: 1
+        type: integer
+    type: object
+  handler.UserPageData:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/service.UserDetailResponse'
+        type: array
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 10
+        type: integer
+      total:
+        example: 1
+        type: integer
+    type: object
+  response.Body:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+  service.LoginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  service.LoginResponse:
+    properties:
+      expires_at:
+        type: string
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/service.UserDetailResponse'
+    type: object
+  service.PermissionCreateRequest:
+    properties:
+      action:
+        maxLength: 32
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      name:
+        maxLength: 64
+        type: string
+      resource:
+        maxLength: 191
+        type: string
+    required:
+    - action
+    - name
+    - resource
+    type: object
+  service.PermissionItem:
+    properties:
+      action:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      resource:
+        type: string
+    type: object
+  service.PermissionUpdateRequest:
+    properties:
+      action:
+        maxLength: 32
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      name:
+        maxLength: 64
+        type: string
+      resource:
+        maxLength: 191
+        type: string
+    type: object
+  service.PolicyGrantRequest:
+    properties:
+      permission_id:
+        type: integer
+      role_id:
+        type: integer
+    required:
+    - permission_id
+    - role_id
+    type: object
+  service.PolicyItemResponse:
+    properties:
+      action:
+        type: string
+      permission_id:
+        type: integer
+      permission_name:
+        type: string
+      resource:
+        type: string
+      role_code:
+        type: string
+      role_id:
+        type: integer
+      role_name:
+        type: string
+    type: object
+  service.RoleCreateRequest:
+    properties:
+      code:
+        maxLength: 64
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      name:
+        maxLength: 64
+        type: string
+      status:
+        type: integer
+    required:
+    - code
+    - name
+    type: object
+  service.RoleItem:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      status:
+        type: integer
+    type: object
+  service.RoleUpdateRequest:
+    properties:
+      code:
+        maxLength: 64
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      name:
+        maxLength: 64
+        type: string
+      status:
+        type: integer
+    type: object
+  service.UserAssignRolesRequest:
+    properties:
+      role_ids:
+        items:
+          type: integer
+        type: array
+    type: object
+  service.UserCreateRequest:
+    properties:
+      nickname:
+        maxLength: 128
+        type: string
+      password:
+        maxLength: 64
+        minLength: 6
+        type: string
+      role_ids:
+        items:
+          type: integer
+        type: array
+      status:
+        type: integer
+      username:
+        maxLength: 64
+        minLength: 3
+        type: string
+    required:
+    - nickname
+    - password
+    - username
+    type: object
+  service.UserDetailResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      nickname:
+        type: string
+      roles:
+        items:
+          $ref: '#/definitions/service.RoleItem'
+        type: array
+      status:
+        type: integer
+      updated_at:
+        type: string
+      username:
+        type: string
+    type: object
+  service.UserUpdateRequest:
+    properties:
+      nickname:
+        maxLength: 128
+        type: string
+      password:
+        maxLength: 64
+        minLength: 6
+        type: string
+      status:
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: |-
+    Permission management system built with Gin, MySQL, Redis, Casbin, Cobra and slog.
+    Use the login endpoint first, then put `Bearer <token>` into the Authorization header.
+  title: Permission System API
+  version: "1.0"
+paths:
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Login with username and password and return a JWT access token.
+      parameters:
+      - description: Login request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.LoginResponse'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      summary: Login
+      tags:
+      - Auth
+  /api/v1/auth/logout:
+    post:
+      description: Logout the current user by invalidating the current token.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.MessageData'
+              type: object
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Logout
+      tags:
+      - Auth
+  /api/v1/auth/me:
+    get:
+      description: Get the profile of the current authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.UserDetailResponse'
+              type: object
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: user not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - Auth
+  /api/v1/health:
+    get:
+      description: Return service name and current environment.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.HealthData'
+              type: object
+      summary: Health check
+      tags:
+      - System
+  /api/v1/permissions:
+    get:
+      description: List permissions with optional keyword and pagination filters.
+      parameters:
+      - description: Search keyword
+        in: query
+        name: keyword
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.PermissionPageData'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: List permissions
+      tags:
+      - Permission
+    post:
+      consumes:
+      - application/json
+      description: Create a new permission resource and action pair.
+      parameters:
+      - description: Create permission request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.PermissionCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PermissionItem'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Create permission
+      tags:
+      - Permission
+  /api/v1/permissions/{id}:
+    delete:
+      description: Delete a permission by ID.
+      parameters:
+      - description: Permission ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.MessageData'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: permission not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Delete permission
+      tags:
+      - Permission
+    get:
+      description: Get permission detail by ID.
+      parameters:
+      - description: Permission ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PermissionItem'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: permission not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Get permission detail
+      tags:
+      - Permission
+    put:
+      consumes:
+      - application/json
+      description: Update permission name, resource, action or description.
+      parameters:
+      - description: Permission ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update permission request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.PermissionUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PermissionItem'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: permission not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Update permission
+      tags:
+      - Permission
+  /api/v1/policies:
+    delete:
+      consumes:
+      - application/json
+      description: Remove one permission from one role.
+      parameters:
+      - description: Revoke policy request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.PolicyGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.MessageData'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: resource not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Revoke policy
+      tags:
+      - Policy
+    get:
+      description: List current role-permission policy bindings.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.PolicyItemResponse'
+                  type: array
+              type: object
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: List policies
+      tags:
+      - Policy
+    post:
+      consumes:
+      - application/json
+      description: Bind one permission to one role.
+      parameters:
+      - description: Grant policy request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.PolicyGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.MessageData'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: resource not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Grant policy
+      tags:
+      - Policy
+  /api/v1/roles:
+    get:
+      description: List roles with optional keyword and pagination filters.
+      parameters:
+      - description: Search keyword
+        in: query
+        name: keyword
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.RolePageData'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: List roles
+      tags:
+      - Role
+    post:
+      consumes:
+      - application/json
+      description: Create a new role.
+      parameters:
+      - description: Create role request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.RoleCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.RoleItem'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Create role
+      tags:
+      - Role
+  /api/v1/roles/{id}:
+    delete:
+      description: Delete a role by ID.
+      parameters:
+      - description: Role ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.MessageData'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: role not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Delete role
+      tags:
+      - Role
+    get:
+      description: Get role detail by ID.
+      parameters:
+      - description: Role ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.RoleItem'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: role not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Get role detail
+      tags:
+      - Role
+    put:
+      consumes:
+      - application/json
+      description: Update role name, code, description or status.
+      parameters:
+      - description: Role ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update role request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.RoleUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.RoleItem'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: role not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Update role
+      tags:
+      - Role
+  /api/v1/users:
+    get:
+      description: List users with optional keyword and pagination filters.
+      parameters:
+      - description: Search keyword
+        in: query
+        name: keyword
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.UserPageData'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: List users
+      tags:
+      - User
+    post:
+      consumes:
+      - application/json
+      description: Create a new user and optionally bind roles.
+      parameters:
+      - description: Create user request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UserCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.UserDetailResponse'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Create user
+      tags:
+      - User
+  /api/v1/users/{id}:
+    delete:
+      description: Delete a user by ID.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.MessageData'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: user not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Delete user
+      tags:
+      - User
+    get:
+      description: Get user detail by ID.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.UserDetailResponse'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: user not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Get user detail
+      tags:
+      - User
+    put:
+      consumes:
+      - application/json
+      description: Update user nickname, password or status.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update user request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UserUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.UserDetailResponse'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: user not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Update user
+      tags:
+      - User
+  /api/v1/users/{id}/roles:
+    put:
+      consumes:
+      - application/json
+      description: Replace all user roles with the provided role ID list.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Assign roles request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UserAssignRolesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.UserDetailResponse'
+              type: object
+        "400":
+          description: bad request
+          schema:
+            $ref: '#/definitions/response.Body'
+        "401":
+          description: unauthorized
+          schema:
+            $ref: '#/definitions/response.Body'
+        "403":
+          description: forbidden
+          schema:
+            $ref: '#/definitions/response.Body'
+        "404":
+          description: user not found
+          schema:
+            $ref: '#/definitions/response.Body'
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      security:
+      - BearerAuth: []
+      summary: Assign roles to user
+      tags:
+      - User
+schemes:
+- http
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 'Enter the JWT token with the `Bearer ` prefix, for example: Bearer
+      eyJhbGciOi...'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
