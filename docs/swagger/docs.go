@@ -16,9 +16,47 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/auth/captcha": {
+            "post": {
+                "description": "Generate a 6-digit login captcha, store it in Redis and return it for the current login flow.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Generate login captcha",
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Body"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/service.LoginCaptchaResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.Body"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/login": {
             "post": {
-                "description": "Login with username and password and return a JWT access token.",
+                "description": "Login with username, password and a Redis-backed 6-digit captcha, then return a JWT access token.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1707,7 +1745,7 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string",
-                    "example": "permission-system"
+                    "example": "yunshu-cmdb"
                 }
             }
         },
@@ -1801,13 +1839,35 @@ const docTemplate = `{
                 }
             }
         },
+        "service.LoginCaptchaResponse": {
+            "type": "object",
+            "properties": {
+                "captcha_code": {
+                    "type": "string"
+                },
+                "captcha_id": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                }
+            }
+        },
         "service.LoginRequest": {
             "type": "object",
             "required": [
+                "captcha_code",
+                "captcha_id",
                 "password",
                 "username"
             ],
             "properties": {
+                "captcha_code": {
+                    "type": "string"
+                },
+                "captcha_id": {
+                    "type": "string"
+                },
                 "password": {
                     "type": "string"
                 },
@@ -2109,8 +2169,8 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "",
 	BasePath:         "/",
 	Schemes:          []string{"http", "https"},
-	Title:            "Permission System API",
-	Description:      "Permission management system built with Gin, MySQL, Redis, Casbin, Cobra and slog.\nUse the login endpoint first, then put `Bearer <token>` into the Authorization header.",
+	Title:            "YunShu CMDB API",
+	Description:      "YunShu CMDB is an operations CMDB console built with Gin, MySQL, Redis, Casbin, Cobra and slog.\nCall the captcha endpoint first, then login with username, password and the 6-digit captcha. Put `Bearer <token>` into the Authorization header afterwards.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 }

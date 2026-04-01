@@ -29,6 +29,7 @@ var serverCmd = &cobra.Command{
 			WithLogger().
 			WithMySQL().
 			WithRedis().
+			WithMailer().
 			WithCasbin().
 			WithGin().
 			Build()

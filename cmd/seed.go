@@ -61,9 +61,9 @@ var seedCmd = &cobra.Command{
 		}
 
 		adminRole := model.Role{
-			Name:        "超级管理员",
+			Name:        "Super Admin",
 			Code:        "super-admin",
-			Description: "系统内置超级管理员角色",
+			Description: "Built-in administrator role with full access.",
 			Status:      model.StatusEnabled,
 		}
 		if err := upsertRole(ctx, app.DB, &adminRole); err != nil {
@@ -75,10 +75,12 @@ var seedCmd = &cobra.Command{
 			return err
 		}
 
+		adminEmail := "rootwxd@163.com"
 		adminUser := model.User{
 			Username: "admin",
+			Email:    &adminEmail,
 			Password: hashedPassword,
-			Nickname: "系统管理员",
+			Nickname: "System Admin",
 			Status:   model.StatusEnabled,
 		}
 		if err := upsertUser(ctx, app.DB, &adminUser); err != nil {
@@ -92,8 +94,8 @@ var seedCmd = &cobra.Command{
 			return err
 		}
 
-		app.Logger.Info("seed completed", "username", adminUser.Username, "password", "Admin@123")
-		fmt.Println("seed completed: admin / Admin@123")
+		app.Logger.Info("seed completed", "username", adminUser.Username, "email", adminUser.Email, "password", "Admin@123")
+		fmt.Println("seed completed: admin / Admin@123 / admin@example.com")
 		return nil
 	},
 }
@@ -128,6 +130,7 @@ func upsertUser(ctx context.Context, db *gorm.DB, user *model.User) error {
 		return err
 	}
 
+	existing.Email = user.Email
 	existing.Password = user.Password
 	existing.Nickname = user.Nickname
 	existing.Status = user.Status
@@ -140,24 +143,24 @@ func upsertUser(ctx context.Context, db *gorm.DB, user *model.User) error {
 
 func defaultPermissions() []model.Permission {
 	return []model.Permission{
-		{Name: "用户列表", Resource: "/api/v1/users", Action: "GET", Description: "查看用户列表"},
-		{Name: "创建用户", Resource: "/api/v1/users", Action: "POST", Description: "创建新用户"},
-		{Name: "用户详情", Resource: "/api/v1/users/:id", Action: "GET", Description: "查看单个用户"},
-		{Name: "更新用户", Resource: "/api/v1/users/:id", Action: "PUT", Description: "更新用户信息"},
-		{Name: "删除用户", Resource: "/api/v1/users/:id", Action: "DELETE", Description: "删除用户"},
-		{Name: "分配用户角色", Resource: "/api/v1/users/:id/roles", Action: "PUT", Description: "为用户分配角色"},
-		{Name: "角色列表", Resource: "/api/v1/roles", Action: "GET", Description: "查看角色列表"},
-		{Name: "创建角色", Resource: "/api/v1/roles", Action: "POST", Description: "创建角色"},
-		{Name: "角色详情", Resource: "/api/v1/roles/:id", Action: "GET", Description: "查看单个角色"},
-		{Name: "更新角色", Resource: "/api/v1/roles/:id", Action: "PUT", Description: "更新角色"},
-		{Name: "删除角色", Resource: "/api/v1/roles/:id", Action: "DELETE", Description: "删除角色"},
-		{Name: "权限列表", Resource: "/api/v1/permissions", Action: "GET", Description: "查看权限列表"},
-		{Name: "创建权限", Resource: "/api/v1/permissions", Action: "POST", Description: "创建权限"},
-		{Name: "权限详情", Resource: "/api/v1/permissions/:id", Action: "GET", Description: "查看单个权限"},
-		{Name: "更新权限", Resource: "/api/v1/permissions/:id", Action: "PUT", Description: "更新权限"},
-		{Name: "删除权限", Resource: "/api/v1/permissions/:id", Action: "DELETE", Description: "删除权限"},
-		{Name: "策略列表", Resource: "/api/v1/policies", Action: "GET", Description: "查看策略列表"},
-		{Name: "新增策略", Resource: "/api/v1/policies", Action: "POST", Description: "角色授予权限"},
-		{Name: "删除策略", Resource: "/api/v1/policies", Action: "DELETE", Description: "角色移除权限"},
+		{Name: "List Users", Resource: "/api/v1/users", Action: "GET", Description: "View user list"},
+		{Name: "Create User", Resource: "/api/v1/users", Action: "POST", Description: "Create user"},
+		{Name: "User Detail", Resource: "/api/v1/users/:id", Action: "GET", Description: "View user detail"},
+		{Name: "Update User", Resource: "/api/v1/users/:id", Action: "PUT", Description: "Update user"},
+		{Name: "Delete User", Resource: "/api/v1/users/:id", Action: "DELETE", Description: "Delete user"},
+		{Name: "Assign User Roles", Resource: "/api/v1/users/:id/roles", Action: "PUT", Description: "Assign roles to user"},
+		{Name: "List Roles", Resource: "/api/v1/roles", Action: "GET", Description: "View role list"},
+		{Name: "Create Role", Resource: "/api/v1/roles", Action: "POST", Description: "Create role"},
+		{Name: "Role Detail", Resource: "/api/v1/roles/:id", Action: "GET", Description: "View role detail"},
+		{Name: "Update Role", Resource: "/api/v1/roles/:id", Action: "PUT", Description: "Update role"},
+		{Name: "Delete Role", Resource: "/api/v1/roles/:id", Action: "DELETE", Description: "Delete role"},
+		{Name: "List Permissions", Resource: "/api/v1/permissions", Action: "GET", Description: "View permission list"},
+		{Name: "Create Permission", Resource: "/api/v1/permissions", Action: "POST", Description: "Create permission"},
+		{Name: "Permission Detail", Resource: "/api/v1/permissions/:id", Action: "GET", Description: "View permission detail"},
+		{Name: "Update Permission", Resource: "/api/v1/permissions/:id", Action: "PUT", Description: "Update permission"},
+		{Name: "Delete Permission", Resource: "/api/v1/permissions/:id", Action: "DELETE", Description: "Delete permission"},
+		{Name: "List Policies", Resource: "/api/v1/policies", Action: "GET", Description: "View policy list"},
+		{Name: "Create Policy", Resource: "/api/v1/policies", Action: "POST", Description: "Grant permission to role"},
+		{Name: "Delete Policy", Resource: "/api/v1/policies", Action: "DELETE", Description: "Revoke permission from role"},
 	}
 }

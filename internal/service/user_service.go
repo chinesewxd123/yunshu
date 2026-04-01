@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"go-permission-system/internal/model"
 	"go-permission-system/internal/pkg/apperror"
@@ -29,6 +30,10 @@ func NewUserService(userRepo *repository.UserRepository, roleRepo *repository.Ro
 }
 
 func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserDetailResponse, error) {
+	if err := s.ensureUserUnique(ctx, 0, req.Username, req.Email); err != nil {
+		return nil, err
+	}
+
 	roles, err := s.roleRepo.GetByIDs(ctx, req.RoleIDs)
 	if err != nil {
 		return nil, err
@@ -47,10 +52,12 @@ func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserD
 		status = model.StatusEnabled
 	}
 
+	email := normalizeEmail(req.Email)
 	user := model.User{
-		Username: req.Username,
+		Username: strings.TrimSpace(req.Username),
+		Email:    &email,
 		Password: hashedPassword,
-		Nickname: req.Nickname,
+		Nickname: strings.TrimSpace(req.Nickname),
 		Status:   status,
 		Roles:    roles,
 	}
@@ -75,7 +82,14 @@ func (s *UserService) Update(ctx context.Context, id uint, req UserUpdateRequest
 	}
 
 	if req.Nickname != nil {
-		user.Nickname = *req.Nickname
+		user.Nickname = strings.TrimSpace(*req.Nickname)
+	}
+	if req.Email != nil && strings.TrimSpace(*req.Email) != "" {
+		email := normalizeEmail(*req.Email)
+		if err = s.ensureUserUnique(ctx, user.ID, user.Username, email); err != nil {
+			return nil, err
+		}
+		user.Email = &email
 	}
 	if req.Status != nil {
 		user.Status = *req.Status
@@ -173,4 +187,28 @@ func (s *UserService) AssignRoles(ctx context.Context, id uint, req UserAssignRo
 	}
 	response := NewUserDetailResponse(*user)
 	return &response, nil
+}
+
+func (s *UserService) ensureUserUnique(ctx context.Context, currentID uint, username, email string) error {
+	if strings.TrimSpace(username) != "" {
+		existing, err := s.userRepo.GetByUsername(ctx, strings.TrimSpace(username))
+		if err == nil && existing.ID != currentID {
+			return apperror.Conflict("username already exists")
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+
+	if strings.TrimSpace(email) != "" {
+		existing, err := s.userRepo.GetByEmail(ctx, normalizeEmail(email))
+		if err == nil && existing.ID != currentID {
+			return apperror.Conflict("email already exists")
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+
+	return nil
 }

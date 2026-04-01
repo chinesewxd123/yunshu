@@ -52,11 +52,20 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*m
 	return &user, nil
 }
 
+func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
+	var user model.User
+	err := r.db.WithContext(ctx).Preload("Roles").Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 func (r *UserRepository) List(ctx context.Context, params UserListParams) ([]model.User, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.User{})
 	if params.Keyword != "" {
 		keyword := "%" + params.Keyword + "%"
-		query = query.Where("username LIKE ? OR nickname LIKE ?", keyword, keyword)
+		query = query.Where("username LIKE ? OR nickname LIKE ? OR email LIKE ?", keyword, keyword, keyword)
 	}
 
 	var total int64

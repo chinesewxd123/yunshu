@@ -1,9 +1,12 @@
-﻿import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, message } from "antd";
+import { PlusOutlined, ReloadOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { PageHero } from "../components/page-hero";
+import { StatusTag } from "../components/status-tag";
 import { createPermission, deletePermission, getPermissions, updatePermission } from "../services/permissions";
-import type { PermissionItem, PermissionPayload } from "../types/api";
+import { getRoleOptions } from "../services/roles";
+import { grantPolicy } from "../services/policies";
+import type { PermissionItem, PermissionPayload, RoleItem } from "../types/api";
 
 const defaultQuery = { keyword: "", page: 1, page_size: 10 };
 const actionOptions = ["GET", "POST", "PUT", "DELETE", "PATCH"];
@@ -17,10 +20,18 @@ export function PermissionsPage() {
   const [current, setCurrent] = useState<PermissionItem | null>(null);
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm<PermissionPayload>();
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<PermissionItem | null>(null);
+  const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [checkedRoleIds, setCheckedRoleIds] = useState<number[]>([]);
 
   useEffect(() => {
     void loadPermissions(query);
   }, [query]);
+
+  useEffect(() => {
+    void loadRoles();
+  }, []);
 
   async function loadPermissions(nextQuery = query) {
     setLoading(true);
@@ -31,6 +42,11 @@ export function PermissionsPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadRoles() {
+    const result = await getRoleOptions();
+    setRoles(result.list);
   }
 
   function openCreate() {
@@ -52,10 +68,10 @@ export function PermissionsPage() {
     try {
       if (current) {
         await updatePermission(current.id, values);
-        message.success("权限已更新");
+        message.success("接口能力已更新");
       } else {
         await createPermission(values);
-        message.success("权限创建成功");
+        message.success("接口能力创建成功");
       }
       setOpen(false);
       form.resetFields();
@@ -67,19 +83,40 @@ export function PermissionsPage() {
 
   async function handleDelete(record: PermissionItem) {
     await deletePermission(record.id);
-    message.success(`已删除权限 ${record.name}`);
+    message.success(`已删除能力项 ${record.name}`);
     void loadPermissions();
+  }
+
+  function openAssignRoles(record: PermissionItem) {
+    setAssignTarget(record);
+    setCheckedRoleIds([]);
+    setAssignOpen(true);
+  }
+
+  async function submitAssignRoles() {
+    if (!assignTarget) return;
+    setSubmitting(true);
+    try {
+      const promises = checkedRoleIds.map((roleId) =>
+        grantPolicy({ role_id: roleId, permission_id: assignTarget.id })
+      );
+      await Promise.all(promises);
+      message.success("角色权限已更新");
+      setAssignOpen(false);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
     <div>
       <PageHero
-        title="权限管理"
-        subtitle="每条权限记录对应一个资源与动作组合，可直接用于 Casbin 策略绑定。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "权限管理" }]}
+        title="接口能力"
+        subtitle="把 CMDB 后端可调用能力整理成资源路径与动作矩阵，为授权编排提供统一能力目录。"
+        breadcrumbItems={[{ title: "控制台" }, { title: "接口能力" }]}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建权限
+            新建能力项
           </Button>
         }
       />
@@ -88,7 +125,7 @@ export function PermissionsPage() {
         <div className="toolbar">
           <Input.Search
             allowClear
-            placeholder="搜索权限名称或资源"
+            placeholder="搜索能力名称或资源路径"
             style={{ width: 280 }}
             onSearch={(keyword) => setQuery((prev) => ({ ...prev, keyword, page: 1 }))}
           />
@@ -98,6 +135,7 @@ export function PermissionsPage() {
             </Button>
           </div>
         </div>
+
         <Table
           rowKey="id"
           loading={loading}
@@ -111,10 +149,10 @@ export function PermissionsPage() {
           }}
           columns={[
             { title: "ID", dataIndex: "id", width: 70 },
-            { title: "权限名称", dataIndex: "name" },
-            { title: "资源", dataIndex: "resource", render: (value: string) => <Tag>{value}</Tag> },
+            { title: "能力名称", dataIndex: "name" },
+            { title: "资源路径", dataIndex: "resource", render: (value: string) => <Tag>{value}</Tag> },
             { title: "动作", dataIndex: "action", render: (value: string) => <Tag color="processing">{value}</Tag> },
-            { title: "描述", dataIndex: "description", render: (value?: string) => value || "-" },
+            { title: "说明", dataIndex: "description", render: (value?: string) => value || "-" },
             {
               title: "操作",
               key: "action",
@@ -123,7 +161,10 @@ export function PermissionsPage() {
                   <Button type="link" onClick={() => openEdit(record)}>
                     编辑
                   </Button>
-                  <Popconfirm title="确认删除该权限吗？" onConfirm={() => handleDelete(record)}>
+                  <Button type="link" icon={<SafetyCertificateOutlined />} onClick={() => openAssignRoles(record)}>
+                    分配角色
+                  </Button>
+                  <Popconfirm title="确认删除该能力项吗？" onConfirm={() => void handleDelete(record)}>
                     <Button type="link" danger>
                       删除
                     </Button>
@@ -136,7 +177,7 @@ export function PermissionsPage() {
       </Card>
 
       <Modal
-        title={current ? `编辑权限 #${current.id}` : "新建权限"}
+        title={current ? `编辑能力项 #${current.id}` : "新建接口能力"}
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void handleSubmit()}
@@ -144,8 +185,8 @@ export function PermissionsPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical" initialValues={{ action: "GET" }}>
-          <Form.Item label="权限名称" name="name" rules={[{ required: true, message: "请输入权限名称" }]}>
-            <Input placeholder="例如：查询用户列表" />
+          <Form.Item label="能力名称" name="name" rules={[{ required: true, message: "请输入能力名称" }]}>
+            <Input placeholder="例如：查询主机列表" />
           </Form.Item>
           <Form.Item label="资源路径" name="resource" rules={[{ required: true, message: "请输入资源路径" }]}>
             <Input placeholder="例如：/api/v1/users" />
@@ -153,10 +194,44 @@ export function PermissionsPage() {
           <Form.Item label="HTTP 动作" name="action" rules={[{ required: true, message: "请选择动作" }]}>
             <Select options={actionOptions.map((item) => ({ label: item, value: item }))} />
           </Form.Item>
-          <Form.Item label="描述" name="description">
-            <Input.TextArea rows={3} placeholder="请输入权限描述" />
+          <Form.Item label="说明" name="description">
+            <Input.TextArea rows={3} placeholder="请输入能力说明" />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={assignTarget ? `为权限 ${assignTarget.name} 分配角色` : "分配角色"}
+        open={assignOpen}
+        onCancel={() => {
+          setAssignOpen(false);
+          setCheckedRoleIds([]);
+        }}
+        onOk={() => void submitAssignRoles()}
+        confirmLoading={submitting}
+        destroyOnClose
+        width={600}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Typography.Text className="inline-muted">
+            勾选需要分配该权限的角色，已选 {checkedRoleIds.length} 个角色。
+          </Typography.Text>
+          <Table
+            rowKey="id"
+            dataSource={roles}
+            pagination={{ pageSize: 10 }}
+            rowSelection={{
+              selectedRowKeys: checkedRoleIds,
+              onChange: (keys) => setCheckedRoleIds(keys as number[]),
+            }}
+            columns={[
+              { title: "角色名称", dataIndex: "name" },
+              { title: "角色编码", dataIndex: "code", render: (code) => <Tag color="blue">{code}</Tag> },
+              { title: "状态", dataIndex: "status", render: (status) => <StatusTag status={status} /> },
+            ]}
+            size="small"
+          />
+        </Space>
       </Modal>
     </div>
   );

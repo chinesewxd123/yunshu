@@ -10,6 +10,7 @@ import (
 	"go-permission-system/internal/middleware"
 	"go-permission-system/internal/model"
 	logx "go-permission-system/internal/pkg/logger"
+	"go-permission-system/internal/pkg/mailer"
 
 	"github.com/casbin/casbin/v2"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
@@ -26,6 +27,7 @@ type App struct {
 	DB       *gorm.DB
 	Redis    *redis.Client
 	Enforcer *casbin.SyncedEnforcer
+	Mailer   mailer.Sender
 	Engine   *gin.Engine
 }
 
@@ -162,6 +164,19 @@ func (b *Builder) WithCasbin() *Builder {
 	}
 
 	b.app.Enforcer = enforcer
+	return b
+}
+
+func (b *Builder) WithMailer() *Builder {
+	if b.err != nil {
+		return b
+	}
+	if b.app.Config == nil {
+		b.err = errors.New("config is required before mailer")
+		return b
+	}
+
+	b.app.Mailer = mailer.NewSMTPSender(b.app.Config.Mail)
 	return b
 }
 

@@ -8,6 +8,7 @@ type Config struct {
 	Log     LogConfig     `mapstructure:"log"`
 	MySQL   MySQLConfig   `mapstructure:"mysql"`
 	Redis   RedisConfig   `mapstructure:"redis"`
+	Mail    MailConfig    `mapstructure:"mail"`
 	Auth    AuthConfig    `mapstructure:"auth"`
 	Casbin  CasbinConfig  `mapstructure:"casbin"`
 	Swagger SwaggerConfig `mapstructure:"swagger"`
@@ -51,9 +52,21 @@ type RedisConfig struct {
 	PoolSize int    `mapstructure:"pool_size"`
 }
 
+type MailConfig struct {
+	Host      string `mapstructure:"host"`
+	Port      int    `mapstructure:"port"`
+	Username  string `mapstructure:"username"`
+	Password  string `mapstructure:"password"`
+	FromEmail string `mapstructure:"from_email"`
+	FromName  string `mapstructure:"from_name"`
+	UseTLS    bool   `mapstructure:"use_tls"`
+}
+
 type AuthConfig struct {
-	JWTSecret             string `mapstructure:"jwt_secret"`
-	AccessTokenTTLMinutes int    `mapstructure:"access_token_ttl_minutes"`
+	JWTSecret                string `mapstructure:"jwt_secret"`
+	AccessTokenTTLMinutes    int    `mapstructure:"access_token_ttl_minutes"`
+	EmailCodeTTLSeconds      int    `mapstructure:"email_code_ttl_seconds"`
+	EmailCodeCooldownSeconds int    `mapstructure:"email_code_cooldown_seconds"`
 }
 
 type CasbinConfig struct {

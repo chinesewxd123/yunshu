@@ -17,8 +17,8 @@ func registerSwagger(app *bootstrap.App) {
 	}
 
 	basePath := normalizeSwaggerPath(cfg.Path)
-	swaggerDocs.SwaggerInfo.Title = "Permission System API"
-	swaggerDocs.SwaggerInfo.Description = "Permission management system built with Gin, MySQL, Redis, Casbin, Cobra and slog."
+	swaggerDocs.SwaggerInfo.Title = "YunShu CMDB API"
+	swaggerDocs.SwaggerInfo.Description = "YunShu CMDB is an operations CMDB console built with Gin, MySQL, Redis, SMTP mail delivery, Casbin, Cobra and slog."
 	swaggerDocs.SwaggerInfo.Version = "1.0"
 	swaggerDocs.SwaggerInfo.BasePath = "/"
 

@@ -6,7 +6,7 @@ definitions:
         example: dev
         type: string
       name:
-        example: permission-system
+        example: yunshu-cmdb
         type: string
     type: object
   handler.MessageData:
@@ -71,13 +71,28 @@ definitions:
       message:
         type: string
     type: object
+  service.LoginCaptchaResponse:
+    properties:
+      captcha_code:
+        type: string
+      captcha_id:
+        type: string
+      expires_in:
+        type: integer
+    type: object
   service.LoginRequest:
     properties:
+      captcha_code:
+        type: string
+      captcha_id:
+        type: string
       password:
         type: string
       username:
         type: string
     required:
+    - captcha_code
+    - captcha_id
     - password
     - username
     type: object
@@ -273,16 +288,40 @@ definitions:
 info:
   contact: {}
   description: |-
-    Permission management system built with Gin, MySQL, Redis, Casbin, Cobra and slog.
-    Use the login endpoint first, then put `Bearer <token>` into the Authorization header.
-  title: Permission System API
+    YunShu CMDB is an operations CMDB console built with Gin, MySQL, Redis, Casbin, Cobra and slog.
+    Call the captcha endpoint first, then login with username, password and the 6-digit captcha. Put `Bearer <token>` into the Authorization header afterwards.
+  title: YunShu CMDB API
   version: "1.0"
 paths:
+  /api/v1/auth/captcha:
+    post:
+      description: Generate a 6-digit login captcha, store it in Redis and return
+        it for the current login flow.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Body'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.LoginCaptchaResponse'
+              type: object
+        "500":
+          description: internal server error
+          schema:
+            $ref: '#/definitions/response.Body'
+      summary: Generate login captcha
+      tags:
+      - Auth
   /api/v1/auth/login:
     post:
       consumes:
       - application/json
-      description: Login with username and password and return a JWT access token.
+      description: Login with username, password and a Redis-backed 6-digit captcha,
+        then return a JWT access token.
       parameters:
       - description: Login request
         in: body

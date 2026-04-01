@@ -1,7 +1,8 @@
-﻿import { AuditOutlined, LockOutlined, SafetyOutlined, TeamOutlined } from "@ant-design/icons";
-import { Card, List, Space, Statistic, Table, Tag, Typography } from "antd";
+import { ApiOutlined, ApartmentOutlined, AuditOutlined, TeamOutlined } from "@ant-design/icons";
+import { Card, List, Space, Table, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { PageHero } from "../components/page-hero";
+import { BRAND_NAME } from "../constants/brand";
 import { getPermissions } from "../services/permissions";
 import { getPolicies } from "../services/policies";
 import { getRoles } from "../services/roles";
@@ -16,10 +17,34 @@ interface DashboardMetrics {
 }
 
 const statItems = [
-  { key: "users", title: "用户总数", icon: <TeamOutlined />, color: "#0f766e" },
-  { key: "roles", title: "角色数量", icon: <SafetyOutlined />, color: "#2563eb" },
-  { key: "permissions", title: "权限数量", icon: <LockOutlined />, color: "#ea580c" },
-  { key: "policies", title: "策略绑定", icon: <AuditOutlined />, color: "#7c3aed" },
+  {
+    key: "users",
+    title: "账号主体",
+    hint: "当前纳管的运维成员与系统账号",
+    icon: <TeamOutlined />,
+    color: "#0f766e",
+  },
+  {
+    key: "roles",
+    title: "角色模板",
+    hint: "岗位职责与责任域模板数量",
+    icon: <ApartmentOutlined />,
+    color: "#0f6cbd",
+  },
+  {
+    key: "permissions",
+    title: "接口能力",
+    hint: "已沉淀的资源动作能力项",
+    icon: <ApiOutlined />,
+    color: "#c96a11",
+  },
+  {
+    key: "policies",
+    title: "授权编排",
+    hint: "角色与能力之间的最终绑定关系",
+    icon: <AuditOutlined />,
+    color: "#c23a2b",
+  },
 ] as const;
 
 export function DashboardPage() {
@@ -39,9 +64,11 @@ export function DashboardPage() {
           getPermissions({ page: 1, page_size: 1 }),
           getPolicies(),
         ]);
+
         if (!active) {
           return;
         }
+
         setMetrics({
           users: users.total,
           roles: roles.total,
@@ -65,58 +92,71 @@ export function DashboardPage() {
   return (
     <div>
       <PageHero
-        title="系统概览"
-        subtitle="从这里快速查看权限系统的运行基线，包括用户规模、角色编排、权限数量与策略绑定状态。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "概览" }]}
+        title="资产总览"
+        subtitle={`${BRAND_NAME} 以账号、角色模板、接口能力和授权编排为核心，帮助运维团队先把权限治理做成统一底座，再继续向 CMDB 资产模块扩展。`}
+        breadcrumbItems={[{ title: "控制台" }, { title: "资产总览" }]}
+        extra={
+          <Space wrap>
+            <Tag color="processing">Redis 验证码登录</Tag>
+            <Tag color="gold">Casbin 策略同步</Tag>
+            <Tag color="green">运维控制台</Tag>
+          </Space>
+        }
       />
 
       <div className="stats-grid">
         {statItems.map((item) => (
           <Card key={item.key} className="stats-card" loading={loading}>
-            <Statistic
-              title={item.title}
-              value={metrics[item.key]}
-              prefix={<span style={{ color: item.color }}>{item.icon}</span>}
-            />
+            <div className="stats-card__icon" style={{ color: item.color }}>
+              {item.icon}
+            </div>
+            <Typography.Text className="stats-card__label">{item.title}</Typography.Text>
+            <Typography.Title level={2} className="stats-card__value">
+              {metrics[item.key]}
+            </Typography.Title>
+            <Typography.Paragraph className="stats-card__hint">{item.hint}</Typography.Paragraph>
           </Card>
         ))}
       </div>
 
       <div className="metric-strip">
-        <Card className="table-card" title="最近策略绑定" loading={loading}>
+        <Card className="table-card" title="最新授权编排" loading={loading}>
           <Table
             rowKey={(record) => `${record.role_id}-${record.permission_id}`}
             pagination={false}
             dataSource={policies}
             columns={[
-              { title: "角色", dataIndex: "role_name" },
-              { title: "角色编码", dataIndex: "role_code", render: (value: string) => <Tag>{value}</Tag> },
-              { title: "权限", dataIndex: "permission_name" },
-              { title: "资源", dataIndex: "resource" },
+              { title: "角色模板", dataIndex: "role_name" },
+              { title: "模板编码", dataIndex: "role_code", render: (value: string) => <Tag>{value}</Tag> },
+              { title: "能力项", dataIndex: "permission_name" },
+              { title: "资源路径", dataIndex: "resource" },
               { title: "动作", dataIndex: "action", render: (value: string) => <Tag color="processing">{value}</Tag> },
             ]}
           />
         </Card>
+
         <Space direction="vertical" size={20} style={{ width: "100%" }}>
           <Card className="glass-card">
-            <Typography.Title level={4}>默认调试入口</Typography.Title>
+            <Typography.Title level={4}>标准接入口</Typography.Title>
             <List
               dataSource={[
                 "Swagger UI: /swagger/index.html",
                 "OpenAPI JSON: /swagger/doc.json",
                 "API Base URL: /api/v1",
+                "登录验证码: /api/v1/auth/captcha",
               ]}
               renderItem={(item) => <List.Item>{item}</List.Item>}
             />
           </Card>
+
           <Card className="glass-card">
-            <Typography.Title level={4}>建议联调顺序</Typography.Title>
+            <Typography.Title level={4}>治理建议</Typography.Title>
             <List
               dataSource={[
-                "登录并确认当前用户信息",
-                "创建角色和权限基础数据",
-                "建立策略绑定后再分配用户角色",
-                "使用 Swagger 或 APIpost 做接口回归",
+                "先沉淀角色模板，再批量分配账号责任域。",
+                "把常用接口拆成能力项，便于后续接入更多 CMDB 模块。",
+                "策略编排完成后再做联调，可减少重复授权操作。",
+                "保留 Swagger 作为回归入口，方便前后端一起验收。",
               ]}
               renderItem={(item, index) => (
                 <List.Item>

@@ -3,7 +3,7 @@ package handler
 import "go-permission-system/internal/service"
 
 type HealthData struct {
-	Name string `json:"name" example:"permission-system"`
+	Name string `json:"name" example:"yunshu-cmdb"`
 	Env  string `json:"env" example:"dev"`
 }
 

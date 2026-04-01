@@ -1,7 +1,7 @@
-﻿import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import type { PropsWithChildren } from "react";
-import type { LoginPayload, UserItem } from "../types/api";
-import { getCurrentUser, login as loginRequest, logout as logoutRequest } from "../services/auth";
+import type { EmailLoginPayload, LoginResult, PasswordLoginPayload, UserItem } from "../types/api";
+import { emailLogin, getCurrentUser, logout as logoutRequest, passwordLogin } from "../services/auth";
 import { clearAuthStorage, getToken, getUser, setToken, setUser } from "../services/storage";
 
 interface AuthContextValue {
@@ -9,7 +9,8 @@ interface AuthContextValue {
   token: string;
   loading: boolean;
   isAuthenticated: boolean;
-  loginAction: (payload: LoginPayload) => Promise<void>;
+  passwordLoginAction: (payload: PasswordLoginPayload) => Promise<void>;
+  emailLoginAction: (payload: EmailLoginPayload) => Promise<void>;
   logoutAction: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -57,12 +58,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, [token]);
 
-  async function loginAction(payload: LoginPayload) {
-    const result = await loginRequest(payload);
+  function applyLoginResult(result: LoginResult) {
     setToken(result.token);
     setUser(result.user);
     setTokenState(result.token);
     setUserState(result.user);
+  }
+
+  async function passwordLoginAction(payload: PasswordLoginPayload) {
+    const result = await passwordLogin(payload);
+    applyLoginResult(result);
+  }
+
+  async function emailLoginAction(payload: EmailLoginPayload) {
+    const result = await emailLogin(payload);
+    applyLoginResult(result);
   }
 
   async function logoutAction() {
@@ -95,7 +105,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         token,
         loading,
         isAuthenticated: Boolean(token),
-        loginAction,
+        passwordLoginAction,
+        emailLoginAction,
         logoutAction,
         refreshUser,
       }}

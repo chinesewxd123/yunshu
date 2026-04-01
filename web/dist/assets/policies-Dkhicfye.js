@@ -1,0 +1,1 @@
+import{g as e,h as i}from"./index-0vIANNT3.js";function r(){return e(i.get("/policies"))}function a(t){return e(i.post("/policies",t))}function n(t){return e(i.delete("/policies",{data:t}))}export{a,r as g,n as r};

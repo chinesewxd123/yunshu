@@ -27,6 +27,8 @@ http.interceptors.response.use(
       if (window.location.pathname !== "/login") {
         message.error("登录已失效，请重新登录");
         window.location.href = "/login";
+      } else {
+        message.error(errorMessage);
       }
     } else {
       message.error(errorMessage);

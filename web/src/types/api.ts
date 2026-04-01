@@ -30,6 +30,7 @@ export interface PermissionItem {
 export interface UserItem {
   id: number;
   username: string;
+  email: string;
   nickname: string;
   status: number;
   roles: RoleItem[];
@@ -37,9 +38,56 @@ export interface UserItem {
   updated_at: string;
 }
 
-export interface LoginPayload {
+export interface PasswordLoginPayload {
   username: string;
   password: string;
+  captcha_key: string;
+  code: string;
+}
+
+export type LoginPayload = PasswordLoginPayload;
+
+export type EmailCodeScene = "login" | "register";
+
+export interface SendEmailCodePayload {
+  email: string;
+  scene: EmailCodeScene;
+}
+
+export interface SendEmailCodeResult {
+  email: string;
+  scene: EmailCodeScene;
+  expires_in: number;
+  cooldown_in: number;
+}
+
+export interface SendPasswordLoginCodePayload {
+  username: string;
+}
+
+export interface SendPasswordLoginCodeResult {
+  captcha_key: string;
+  image: string;
+  expires_in: number;
+  cooldown_in: number;
+}
+
+export interface EmailLoginPayload {
+  email: string;
+  code: string;
+}
+
+export interface RegisterPayload {
+  username: string;
+  email: string;
+  nickname: string;
+  password: string;
+  code: string;
+}
+
+export interface RegisterResult {
+  message: string;
+  user: UserItem;
 }
 
 export interface LoginResult {
@@ -50,6 +98,7 @@ export interface LoginResult {
 
 export interface UserCreatePayload {
   username: string;
+  email: string;
   password: string;
   nickname: string;
   status: number;
@@ -57,6 +106,7 @@ export interface UserCreatePayload {
 }
 
 export interface UserUpdatePayload {
+  email?: string;
   nickname?: string;
   password?: string;
   status?: number;

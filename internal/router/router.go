@@ -16,7 +16,7 @@ func Register(app *bootstrap.App) {
 	roleRepo := repository.NewRoleRepository(app.DB)
 	permissionRepo := repository.NewPermissionRepository(app.DB)
 
-	authService := service.NewAuthService(userRepo, app.Redis, app.Config.Auth)
+	authService := service.NewAuthService(userRepo, app.Redis, app.Config.Auth, app.Mailer, app.Config.App.Name)
 	userService := service.NewUserService(userRepo, roleRepo, app.Enforcer)
 	roleService := service.NewRoleService(roleRepo, app.Enforcer)
 	permissionService := service.NewPermissionService(permissionRepo, app.Enforcer)
@@ -35,7 +35,12 @@ func Register(app *bootstrap.App) {
 	api.GET("/health", systemHandler.Health)
 
 	authGroup := api.Group("/auth")
+	authGroup.POST("/verification-code", authHandler.SendEmailCode)
+	authGroup.POST("/login-code", authHandler.SendLoginCodeByUsername)
+	authGroup.POST("/password-login-code", authHandler.SendPasswordLoginCode)
 	authGroup.POST("/login", authHandler.Login)
+	authGroup.POST("/email-login", authHandler.EmailLogin)
+	authGroup.POST("/register", authHandler.Register)
 	authGroup.Use(authMiddleware)
 	authGroup.POST("/logout", authHandler.Logout)
 	authGroup.GET("/me", authHandler.Me)

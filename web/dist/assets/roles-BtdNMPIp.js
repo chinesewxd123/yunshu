@@ -1,0 +1,1 @@
+import{g as t,h as o}from"./index-0vIANNT3.js";function a(e){return t(o.get("/roles",{params:e}))}function n(e){return t(o.post("/roles",e))}function u(e,r){return t(o.put(`/roles/${e}`,r))}function l(e){return t(o.delete(`/roles/${e}`))}function p(){return t(o.get("/roles",{params:{page:1,page_size:100}}))}export{p as a,n as c,l as d,a as g,u};

@@ -1,9 +1,9 @@
 package main
 
-// @title Permission System API
+// @title YunShu CMDB API
 // @version 1.0
-// @description Permission management system built with Gin, MySQL, Redis, Casbin, Cobra and slog.
-// @description Use the login endpoint first, then put `Bearer <token>` into the Authorization header.
+// @description YunShu CMDB is an operations CMDB console built with Gin, MySQL, Redis, SMTP mail delivery, Casbin, Cobra and slog.
+// @description Request an email verification code first, then login with email code or register a new account by email. Username/password login remains available as an admin fallback.
 // @BasePath /
 // @schemes http https
 // @securityDefinitions.apikey BearerAuth

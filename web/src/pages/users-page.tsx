@@ -1,4 +1,4 @@
-﻿import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import {
   Button,
   Card,
@@ -78,6 +78,7 @@ export function UsersPage() {
     setCurrent(record);
     form.setFieldsValue({
       nickname: record.nickname,
+      email: record.email || "",
       status: record.status,
       password: "",
     });
@@ -92,7 +93,7 @@ export function UsersPage() {
 
   async function handleDelete(record: UserItem) {
     await deleteUser(record.id);
-    message.success(`已删除用户 ${record.username}`);
+    message.success(`已删除账号 ${record.username}`);
     void loadUsers();
   }
 
@@ -105,20 +106,24 @@ export function UsersPage() {
           nickname: values.nickname,
           status: values.status,
         };
+        if (values.email) {
+          payload.email = values.email;
+        }
         if (values.password) {
           payload.password = values.password;
         }
         await updateUser(current.id, payload);
-        message.success("用户信息已更新");
+        message.success("账号信息已更新");
       } else {
         await createUser({
           username: values.username,
+          email: values.email,
           password: values.password,
           nickname: values.nickname,
           status: values.status ?? 1,
           role_ids: values.role_ids ?? [],
         });
-        message.success("用户创建成功");
+        message.success("账号创建成功");
       }
       setEditorOpen(false);
       form.resetFields();
@@ -136,7 +141,7 @@ export function UsersPage() {
     setSubmitting(true);
     try {
       await assignUserRoles(roleTarget.id, { role_ids: checkedRoleIds.filter((id) => roleIdSet.has(id)) });
-      message.success("角色树已同步");
+      message.success("责任域角色已同步");
       setAssignOpen(false);
       setCheckedRoleIds([]);
       void loadUsers();
@@ -148,12 +153,12 @@ export function UsersPage() {
   return (
     <div>
       <PageHero
-        title="用户管理"
-        subtitle="维护系统账号、启停状态和用户角色归属，适合完成基础账号治理。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "用户管理" }]}
+        title="账号治理"
+        subtitle="集中管理运维成员、机器人账号与责任域归属，保证后续授权链路清晰可追溯。"
+        breadcrumbItems={[{ title: "控制台" }, { title: "账号治理" }]}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建用户
+            新建账号
           </Button>
         }
       />
@@ -163,7 +168,7 @@ export function UsersPage() {
           <Space wrap>
             <Input.Search
               allowClear
-              placeholder="搜索用户名或昵称"
+              placeholder="搜索账号、昵称或责任人"
               style={{ width: 280 }}
               onSearch={(keyword) => setQuery((prev) => ({ ...prev, keyword, page: 1 }))}
             />
@@ -174,6 +179,7 @@ export function UsersPage() {
             </Button>
           </div>
         </div>
+
         <Table
           rowKey="id"
           loading={loading}
@@ -188,7 +194,7 @@ export function UsersPage() {
           columns={[
             { title: "ID", dataIndex: "id", width: 70 },
             {
-              title: "用户",
+              title: "账号标识",
               dataIndex: "username",
               render: (_: string, record: UserItem) => (
                 <Space direction="vertical" size={0}>
@@ -198,7 +204,7 @@ export function UsersPage() {
               ),
             },
             {
-              title: "角色",
+              title: "责任域角色",
               dataIndex: "roles",
               render: (value: RoleItem[]) =>
                 value.length > 0 ? value.map((role) => <Tag key={role.id}>{role.name}</Tag>) : <span className="inline-muted">未分配</span>,
@@ -217,7 +223,7 @@ export function UsersPage() {
                   <Button type="link" onClick={() => openAssign(record)}>
                     分配角色
                   </Button>
-                  <Popconfirm title="确认删除该用户吗？" onConfirm={() => handleDelete(record)}>
+                  <Popconfirm title="确认删除该账号吗？" onConfirm={() => handleDelete(record)}>
                     <Button type="link" danger>
                       删除
                     </Button>
@@ -230,7 +236,7 @@ export function UsersPage() {
       </Card>
 
       <Modal
-        title={current ? `编辑用户 #${current.id}` : "新建用户"}
+        title={current ? `编辑账号 #${current.id}` : "新建账号"}
         open={editorOpen}
         onCancel={() => setEditorOpen(false)}
         onOk={() => void submitEditor()}
@@ -240,24 +246,31 @@ export function UsersPage() {
         <Form form={form} layout="vertical" initialValues={{ status: 1, role_ids: [] }}>
           {!current ? (
             <>
-              <Form.Item label="用户名" name="username" rules={[{ required: true, message: "请输入用户名" }]}>
+              <Form.Item label="账号名" name="username" rules={[{ required: true, message: "请输入账号名" }]}>
                 <Input placeholder="例如：admin01" />
               </Form.Item>
-              <Form.Item label="角色树" name="role_ids">
+              <Form.Item label="邮箱" name="email" rules={[{ required: true, type: "email", message: "请输入正确的邮箱地址" }]}>
+                <Input placeholder="例如：admin@example.com" />
+              </Form.Item>
+              <Form.Item label="初始责任域" name="role_ids">
                 <TreeSelect
                   treeCheckable
                   treeDefaultExpandAll
                   showCheckedStrategy={TreeSelect.SHOW_CHILD}
-                  placeholder="可选，创建时直接绑定角色"
+                  placeholder="可选，创建时直接绑定角色模板"
                   treeData={roleTreeData}
                   maxTagCount="responsive"
                   style={{ width: "100%" }}
                 />
               </Form.Item>
             </>
-          ) : null}
-          <Form.Item label="昵称" name="nickname" rules={[{ required: true, message: "请输入昵称" }]}>
-            <Input placeholder="请输入昵称" />
+          ) : (
+            <Form.Item label="邮箱" name="email" rules={[{ type: "email", message: "请输入正确的邮箱地址" }]}>
+              <Input placeholder="留空则不修改邮箱" />
+            </Form.Item>
+          )}
+          <Form.Item label="显示名称" name="nickname" rules={[{ required: true, message: "请输入显示名称" }]}>
+            <Input placeholder="请输入显示名称" />
           </Form.Item>
           <Form.Item
             label={current ? "新密码" : "密码"}
@@ -273,7 +286,7 @@ export function UsersPage() {
       </Modal>
 
       <Modal
-        title={roleTarget ? `为 ${roleTarget.nickname} 分配角色` : "分配角色"}
+        title={roleTarget ? `为 ${roleTarget.nickname} 分配责任域角色` : "分配角色"}
         open={assignOpen}
         onCancel={() => {
           setAssignOpen(false);
@@ -285,7 +298,7 @@ export function UsersPage() {
       >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Typography.Text className="inline-muted">
-            使用树形勾选为当前用户分配角色，已选 {checkedRoleIds.length} 个角色。
+            使用树形勾选为当前账号分配角色模板，已选 {checkedRoleIds.length} 个角色。
           </Typography.Text>
           <div className="tree-shell">
             <Tree

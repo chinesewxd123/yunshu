@@ -7,8 +7,53 @@ import (
 )
 
 type LoginRequest struct {
+	Username   string `json:"username" binding:"required"`
+	Password   string `json:"password" binding:"required"`
+	CaptchaKey string `json:"captcha_key" binding:"required"`
+	Code       string `json:"code" binding:"required,len=4,numeric"`
+}
+
+type SendEmailCodeRequest struct {
+	Email string `json:"email" binding:"required,email,max=128"`
+	Scene string `json:"scene" binding:"required,oneof=login register"`
+}
+
+type SendLoginCodeByUsernameRequest struct {
 	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+}
+type SendPasswordLoginCodeRequest struct {
+	Username string `json:"username" binding:"required"`
+}
+
+type SendPasswordLoginCodeResponse struct {
+	CaptchaKey string `json:"captcha_key"`
+	Image      string `json:"image"`
+	ExpiresIn  int    `json:"expires_in"`
+	CooldownIn int    `json:"cooldown_in"`
+}
+type SendEmailCodeResponse struct {
+	Email      string `json:"email"`
+	Scene      string `json:"scene"`
+	ExpiresIn  int    `json:"expires_in"`
+	CooldownIn int    `json:"cooldown_in"`
+}
+
+type EmailLoginRequest struct {
+	Email string `json:"email" binding:"required,email,max=128"`
+	Code  string `json:"code" binding:"required,len=6,numeric"`
+}
+
+type RegisterRequest struct {
+	Username string `json:"username" binding:"required,min=3,max=64"`
+	Email    string `json:"email" binding:"required,email,max=128"`
+	Nickname string `json:"nickname" binding:"required,max=128"`
+	Password string `json:"password" binding:"required,min=6,max=64"`
+	Code     string `json:"code" binding:"required,len=6,numeric"`
+}
+
+type RegisterResponse struct {
+	Message string             `json:"message"`
+	User    UserDetailResponse `json:"user"`
 }
 
 type LoginResponse struct {
@@ -19,6 +64,7 @@ type LoginResponse struct {
 
 type UserCreateRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=64"`
+	Email    string `json:"email" binding:"required,email,max=128"`
 	Password string `json:"password" binding:"required,min=6,max=64"`
 	Nickname string `json:"nickname" binding:"required,max=128"`
 	Status   int    `json:"status"`
@@ -26,6 +72,7 @@ type UserCreateRequest struct {
 }
 
 type UserUpdateRequest struct {
+	Email    *string `json:"email" binding:"omitempty,email,max=128"`
 	Nickname *string `json:"nickname" binding:"omitempty,max=128"`
 	Password *string `json:"password" binding:"omitempty,min=6,max=64"`
 	Status   *int    `json:"status"`
@@ -105,6 +152,7 @@ type PermissionItem struct {
 type UserDetailResponse struct {
 	ID        uint       `json:"id"`
 	Username  string     `json:"username"`
+	Email     string     `json:"email"`
 	Nickname  string     `json:"nickname"`
 	Status    int        `json:"status"`
 	Roles     []RoleItem `json:"roles"`
@@ -148,9 +196,15 @@ func NewUserDetailResponse(user model.User) UserDetailResponse {
 		roles = append(roles, NewRoleItem(role))
 	}
 
+	email := ""
+	if user.Email != nil {
+		email = *user.Email
+	}
+
 	return UserDetailResponse{
 		ID:        user.ID,
 		Username:  user.Username,
+		Email:     email,
 		Nickname:  user.Nickname,
 		Status:    user.Status,
 		Roles:     roles,

@@ -9,6 +9,7 @@ import (
 type User struct {
 	ID        uint           `json:"id" gorm:"primaryKey"`
 	Username  string         `json:"username" gorm:"size:64;not null;uniqueIndex"`
+	Email     *string        `json:"email" gorm:"size:128;index"`
 	Password  string         `json:"-" gorm:"size:255;not null"`
 	Nickname  string         `json:"nickname" gorm:"size:128;not null"`
 	Status    int            `json:"status" gorm:"not null;default:1"`
