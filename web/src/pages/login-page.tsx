@@ -16,8 +16,8 @@ import {
   BRAND_SUBTITLE,
 } from "../constants/brand";
 import { useAuth } from "../contexts/auth-context";
-import { sendEmailCode, sendPasswordLoginCode, passwordLogin as passwordLoginRequest, emailLogin as emailLoginRequest } from "../services/auth";
-import type { PasswordLoginPayload, EmailLoginPayload, SendEmailCodePayload } from "../types/api";
+import { sendEmailCode, sendPasswordLoginCode, passwordLogin as passwordLoginRequest, emailLogin as emailLoginRequest, registerByEmail } from "../services/auth";
+import type { PasswordLoginPayload, EmailLoginPayload, SendEmailCodePayload, RegisterPayload } from "../types/api";
 
 interface LocationState {
   from?: string;
@@ -52,7 +52,9 @@ export function LoginPage() {
   const [captchaKey, setCaptchaKey] = useState<string>("");
   const [captchaImage, setCaptchaImage] = useState<string>("");
   const [passwordForm] = Form.useForm<PasswordLoginPayload>();
-  const [emailForm] = Form.useForm<EmailLoginPayload & { email: string }>();
+  const [emailForm] = Form.useForm<EmailLoginPayload>();
+  const [registerForm] = Form.useForm<RegisterPayload>();
+  const [registerCodeCountdown, setRegisterCodeCountdown] = useState(0);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -73,6 +75,16 @@ export function LoginPage() {
       if (timer) clearTimeout(timer);
     };
   }, [passwordCodeCountdown]);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    if (registerCodeCountdown > 0) {
+      timer = setTimeout(() => setRegisterCodeCountdown(registerCodeCountdown - 1), 1000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [registerCodeCountdown]);
 
   async function handlePasswordLogin(values: PasswordLoginPayload) {
     setSubmitting(true);
@@ -126,7 +138,11 @@ export function LoginPage() {
     }
   }
 
-  async function handleEmailLogin(values: EmailLoginPayload & { email: string }) {
+  async function handleSendEmailOrUsernameCode() {
+    await handleSendEmailCode();
+  }
+
+  async function handleEmailLogin(values: EmailLoginPayload) {
     setSubmitting(true);
     try {
       const { email, code } = values;
@@ -134,6 +150,35 @@ export function LoginPage() {
       message.success("登录成功");
       const state = location.state as LocationState | null;
       navigate(state?.from || "/", { replace: true });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSendRegisterCode() {
+    try {
+      const email = registerForm.getFieldValue("email");
+      if (!email) {
+        message.warning("请先输入邮箱地址");
+        return;
+      }
+
+      setSendingCode(true);
+      const payload: SendEmailCodePayload = { email, scene: "register" };
+      await sendEmailCode(payload);
+      message.success("验证码已发送到您的邮箱，请查收");
+      setRegisterCodeCountdown(60);
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
+  async function handleRegister(values: RegisterPayload) {
+    setSubmitting(true);
+    try {
+      const result = await registerByEmail(values);
+      message.success(result.message || "注册申请已提交，请等待管理员审核");
+      registerForm.resetFields();
     } finally {
       setSubmitting(false);
     }
@@ -242,7 +287,7 @@ export function LoginPage() {
                 key: "email",
                 label: "邮箱验证码登录",
                 children: (
-                  <Form<EmailLoginPayload & { email: string }>
+                  <Form<EmailLoginPayload>
                     form={emailForm}
                     layout="vertical"
                     onFinish={handleEmailLogin}
@@ -258,7 +303,7 @@ export function LoginPage() {
                           <Input prefix={<SafetyCertificateOutlined />} placeholder="请输入验证码" />
                         </Form.Item>
                         <Button
-                          onClick={() => void handleSendEmailCode()}
+                          onClick={() => void handleSendEmailOrUsernameCode()}
                           loading={sendingCode}
                           disabled={codeCountdown > 0}
                         >
@@ -268,6 +313,49 @@ export function LoginPage() {
                     </div>
                     <Button type="primary" htmlType="submit" block loading={submitting}>
                       登录 {BRAND_NAME}
+                    </Button>
+                  </Form>
+                ),
+              },
+              {
+                key: "register",
+                label: "注册账号",
+                children: (
+                  <Form<RegisterPayload>
+                    form={registerForm}
+                    layout="vertical"
+                    onFinish={handleRegister}
+                    size="large"
+                  >
+                    <Form.Item label="用户名" name="username" rules={[{ required: true, min: 3, max: 64, message: "用户名长度为3-64个字符" }]}>
+                      <Input prefix={<UserOutlined />} placeholder="请输入用户名" />
+                    </Form.Item>
+                    <Form.Item label="邮箱" name="email" rules={[{ required: true, type: "email", message: "请输入正确的邮箱地址" }]}>
+                      <Input prefix={<MailOutlined />} placeholder="请输入邮箱地址" />
+                    </Form.Item>
+                    <Form.Item label="昵称" name="nickname" rules={[{ required: true, max: 128, message: "请输入昵称" }]}>
+                      <Input prefix={<UserOutlined />} placeholder="请输入昵称" />
+                    </Form.Item>
+                    <Form.Item label="密码" name="password" rules={[{ required: true, min: 6, max: 64, message: "密码长度为6-64个字符" }]}>
+                      <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" />
+                    </Form.Item>
+                    <div style={{ marginBottom: 24 }}>
+                      <Typography.Text style={{ display: "block", marginBottom: 8 }}>验证码</Typography.Text>
+                      <Space.Compact style={{ width: "100%" }}>
+                        <Form.Item name="code" rules={[{ required: true, len: 6, message: "验证码为6位数字" }]} style={{ margin: 0, flex: 1 }}>
+                          <Input prefix={<SafetyCertificateOutlined />} placeholder="请输入验证码" maxLength={6} />
+                        </Form.Item>
+                        <Button
+                          onClick={() => void handleSendRegisterCode()}
+                          loading={sendingCode}
+                          disabled={registerCodeCountdown > 0}
+                        >
+                          {registerCodeCountdown > 0 ? `${registerCodeCountdown}s` : "发送验证码"}
+                        </Button>
+                      </Space.Compact>
+                    </div>
+                    <Button type="primary" htmlType="submit" block loading={submitting}>
+                      注册账号
                     </Button>
                   </Form>
                 ),

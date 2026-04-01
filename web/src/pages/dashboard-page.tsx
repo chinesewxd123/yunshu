@@ -1,5 +1,5 @@
-import { ApiOutlined, ApartmentOutlined, AuditOutlined, TeamOutlined } from "@ant-design/icons";
-import { Card, List, Space, Table, Tag, Typography } from "antd";
+import { ApiOutlined, ApartmentOutlined, AuditOutlined, TeamOutlined, CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { Card, List, Space, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { PageHero } from "../components/page-hero";
 import { BRAND_NAME } from "../constants/brand";
@@ -7,6 +7,7 @@ import { getPermissions } from "../services/permissions";
 import { getPolicies } from "../services/policies";
 import { getRoles } from "../services/roles";
 import { getUsers } from "../services/users";
+import { getHealth, type HealthData } from "../services/auth";
 import type { PolicyItem } from "../types/api";
 
 interface DashboardMetrics {
@@ -14,6 +15,13 @@ interface DashboardMetrics {
   roles: number;
   permissions: number;
   policies: number;
+}
+
+interface SystemHealth {
+  status: string;
+  version: string;
+  uptime: number;
+  loading: boolean;
 }
 
 const statItems = [
@@ -50,6 +58,7 @@ const statItems = [
 export function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics>({ users: 0, roles: 0, permissions: 0, policies: 0 });
   const [policies, setPolicies] = useState<PolicyItem[]>([]);
+  const [health, setHealth] = useState<SystemHealth>({ status: "", version: "", uptime: 0, loading: true });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,12 +66,14 @@ export function DashboardPage() {
 
     async function load() {
       setLoading(true);
+      setHealth((prev) => ({ ...prev, loading: true }));
       try {
-        const [users, roles, permissions, policyList] = await Promise.all([
+        const [users, roles, permissions, policyList, healthData] = await Promise.all([
           getUsers({ page: 1, page_size: 1 }),
           getRoles({ page: 1, page_size: 1 }),
           getPermissions({ page: 1, page_size: 1 }),
           getPolicies(),
+          getHealth().catch(() => null),
         ]);
 
         if (!active) {
@@ -76,6 +87,17 @@ export function DashboardPage() {
           policies: policyList.length,
         });
         setPolicies(policyList.slice(0, 8));
+
+        if (healthData) {
+          setHealth({
+            status: healthData.status || "unknown",
+            version: healthData.version || "-",
+            uptime: healthData.uptime || 0,
+            loading: false,
+          });
+        } else {
+          setHealth((prev) => ({ ...prev, status: "error", loading: false }));
+        }
       } finally {
         if (active) {
           setLoading(false);
@@ -118,6 +140,43 @@ export function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      <Card className="table-card" title="系统状态" style={{ marginTop: 24 }} loading={health.loading}>
+        <Space size="large">
+          <div>
+            <Typography.Text type="secondary">服务状态</Typography.Text>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+              {health.status === "ok" || health.status === "healthy" ? (
+                <>
+                  <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 20 }} />
+                  <Tag color="success">运行正常</Tag>
+                </>
+              ) : health.status === "error" ? (
+                <>
+                  <CloseCircleOutlined style={{ color: "#ff4d4f", fontSize: 20 }} />
+                  <Tag color="error">连接异常</Tag>
+                </>
+              ) : (
+                <>
+                  <Tag color="warning">{health.status}</Tag>
+                </>
+              )}
+            </div>
+          </div>
+          <div>
+            <Typography.Text type="secondary">版本</Typography.Text>
+            <div style={{ marginTop: 4 }}>
+              <Tag>{health.version}</Tag>
+            </div>
+          </div>
+          <div>
+            <Typography.Text type="secondary">运行时间</Typography.Text>
+            <div style={{ marginTop: 4 }}>
+              <Typography.Text strong>{Math.floor(health.uptime / 3600)} 小时 {Math.floor((health.uptime % 3600) / 60)} 分钟</Typography.Text>
+            </div>
+          </div>
+        </Space>
+      </Card>
 
       <div className="metric-strip">
         <Card className="table-card" title="最新授权编排" loading={loading}>

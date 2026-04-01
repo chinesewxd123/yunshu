@@ -22,27 +22,44 @@ func Register(app *bootstrap.App) {
 	permissionService := service.NewPermissionService(permissionRepo, app.Enforcer)
 	policyService := service.NewPolicyService(roleRepo, permissionRepo, app.Enforcer)
 
+	regReqRepo := repository.NewRegistrationRequestRepository(app.DB)
+	menuRepo := repository.NewMenuRepository(app.DB)
+	registrationService := service.NewRegistrationService(regReqRepo, userRepo, app.Redis, app.Config.Auth, app.Mailer, app.Config.App.Name)
+	menuService := service.NewMenuService(menuRepo)
+
 	authHandler := handler.NewAuthHandler(authService)
 	userHandler := handler.NewUserHandler(userService)
 	roleHandler := handler.NewRoleHandler(roleService)
 	permissionHandler := handler.NewPermissionHandler(permissionService)
 	policyHandler := handler.NewPolicyHandler(policyService)
+	regHandler := handler.NewRegistrationHandler(registrationService)
+	menuHandler := handler.NewMenuHandler(menuService)
 
 	authMiddleware := middleware.Auth(app.Config.Auth.JWTSecret, app.Redis, userRepo, app.Logger)
 	authorize := middleware.Authorize(app.Enforcer, app.Logger)
 
 	api := app.Engine.Group("/api/v1")
+	// 系统健康检查接口
 	api.GET("/health", systemHandler.Health)
-
+	// 认证组
 	authGroup := api.Group("/auth")
+	// 发送邮箱验证码接口
 	authGroup.POST("/verification-code", authHandler.SendEmailCode)
+	// 发送登录验证码接口
 	authGroup.POST("/login-code", authHandler.SendLoginCodeByUsername)
+	// 发送密码登录验证码接口
 	authGroup.POST("/password-login-code", authHandler.SendPasswordLoginCode)
+	// 登录接口
 	authGroup.POST("/login", authHandler.Login)
+	// 邮箱登录接口
 	authGroup.POST("/email-login", authHandler.EmailLogin)
-	authGroup.POST("/register", authHandler.Register)
+	// 注册接口（改为申请模式）
+	authGroup.POST("/register", regHandler.Apply)
+
 	authGroup.Use(authMiddleware)
+	// 退出登录接口
 	authGroup.POST("/logout", authHandler.Logout)
+	// 获取当前用户信息接口
 	authGroup.GET("/me", authHandler.Me)
 
 	users := api.Group("/users")
@@ -75,4 +92,18 @@ func Register(app *bootstrap.App) {
 	policies.GET("", policyHandler.List)
 	policies.POST("", policyHandler.Grant)
 	policies.DELETE("", policyHandler.Revoke)
+
+	// 注册审核接口
+	registrations := api.Group("/registrations")
+	registrations.Use(authMiddleware, authorize)
+	registrations.GET("", regHandler.List)
+	registrations.POST("/:id/review", regHandler.Review)
+
+	// 菜单管理接口
+	menus := api.Group("/menus")
+	menus.Use(authMiddleware, authorize)
+	menus.GET("/tree", menuHandler.Tree)
+	menus.POST("", menuHandler.Create)
+	menus.PUT("/:id", menuHandler.Update)
+	menus.DELETE("/:id", menuHandler.Delete)
 }

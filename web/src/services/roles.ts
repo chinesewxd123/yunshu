@@ -5,6 +5,10 @@ export function getRoles(params: RoleQuery) {
   return getData<PageData<RoleItem>>(http.get("/roles", { params }));
 }
 
+export function getRole(id: number) {
+  return getData<RoleItem>(http.get(`/roles/${id}`));
+}
+
 export function createRole(payload: RolePayload) {
   return getData<RoleItem>(http.post("/roles", payload));
 }

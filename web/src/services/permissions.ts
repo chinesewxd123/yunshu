@@ -11,6 +11,10 @@ export function getPermissions(params: PermissionQuery) {
   return getData<PageData<PermissionItem>>(http.get("/permissions", { params }));
 }
 
+export function getPermission(id: number) {
+  return getData<PermissionItem>(http.get(`/permissions/${id}`));
+}
+
 export function createPermission(payload: PermissionPayload) {
   return getData<PermissionItem>(http.post("/permissions", payload));
 }

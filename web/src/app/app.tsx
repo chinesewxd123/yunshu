@@ -12,6 +12,8 @@ const PermissionsPage = lazy(() =>
 const PoliciesPage = lazy(() => import("../pages/policies-page").then((module) => ({ default: module.PoliciesPage })));
 const RolesPage = lazy(() => import("../pages/roles-page").then((module) => ({ default: module.RolesPage })));
 const UsersPage = lazy(() => import("../pages/users-page").then((module) => ({ default: module.UsersPage })));
+const RegistrationsPage = lazy(() => import("../pages/registrations-page").then((module) => ({ default: module.RegistrationsPage })));
+const MenusPage = lazy(() => import("../pages/menus-page").then((module) => ({ default: module.MenusPage })));
 
 function RouteFallback() {
   return (
@@ -98,6 +100,8 @@ export function App() {
                   <Route path="roles" element={<RolesPage />} />
                   <Route path="permissions" element={<PermissionsPage />} />
                   <Route path="policies" element={<PoliciesPage />} />
+                  <Route path="registrations" element={<RegistrationsPage />} />
+                  <Route path="menus" element={<MenusPage />} />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

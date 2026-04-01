@@ -1,12 +1,13 @@
-import { PlusOutlined, ReloadOutlined, UserOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
+import { PlusOutlined, ReloadOutlined, UserOutlined, EyeOutlined } from "@ant-design/icons";
+import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { PageHero } from "../components/page-hero";
 import { StatusTag } from "../components/status-tag";
-import { createRole, deleteRole, getRoles, updateRole } from "../services/roles";
+import { createRole, deleteRole, getRoles, getRole, updateRole } from "../services/roles";
 import { getUsers } from "../services/users";
 import { assignUserRoles } from "../services/users";
 import type { RoleItem, RolePayload, UserItem } from "../types/api";
+import { formatDateTime } from "../utils/format";
 
 const defaultQuery = { keyword: "", page: 1, page_size: 10 };
 
@@ -23,6 +24,8 @@ export function RolesPage() {
   const [assignTarget, setAssignTarget] = useState<RoleItem | null>(null);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [checkedUserIds, setCheckedUserIds] = useState<number[]>([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<RoleItem | null>(null);
 
   useEffect(() => {
     void loadRoles(query);
@@ -118,6 +121,12 @@ export function RolesPage() {
     }
   }
 
+  async function openDetail(record: RoleItem) {
+    const detail = await getRole(record.id);
+    setDetailRecord(detail);
+    setDetailOpen(true);
+  }
+
   return (
     <div>
       <PageHero
@@ -168,6 +177,9 @@ export function RolesPage() {
               key: "action",
               render: (_: unknown, record: RoleItem) => (
                 <Space>
+                  <Button type="link" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
+                    详情
+                  </Button>
                   <Button type="link" onClick={() => openEdit(record)}>
                     编辑
                   </Button>
@@ -242,6 +254,31 @@ export function RolesPage() {
             size="small"
           />
         </Space>
+      </Modal>
+
+      <Modal
+        title="角色详情"
+        open={detailOpen}
+        onCancel={() => setDetailOpen(false)}
+        footer={null}
+        width={600}
+      >
+        {detailRecord && (
+          <Descriptions bordered column={2} size="middle">
+            <Descriptions.Item label="ID">{detailRecord.id}</Descriptions.Item>
+            <Descriptions.Item label="模板名称">{detailRecord.name}</Descriptions.Item>
+            <Descriptions.Item label="模板编码">
+              <Tag color="blue">{detailRecord.code}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="状态" span={2}>
+              <StatusTag status={detailRecord.status} />
+            </Descriptions.Item>
+            <Descriptions.Item label="说明" span={2}>{detailRecord.description || "-"}</Descriptions.Item>
+            <Descriptions.Item label="创建时间">{formatDateTime(detailRecord.created_at)}</Descriptions.Item>
+
+            <Descriptions.Item label="更新时间">{formatDateTime(detailRecord.updated_at)}</Descriptions.Item>
+          </Descriptions>
+        )}
       </Modal>
     </div>
   );

@@ -98,7 +98,7 @@ func (b *Builder) WithMySQL() *Builder {
 		b.err = err
 		return b
 	}
-
+	// 自定义关联表	user_roles,可以在自定义表中添加额外的字段、自定义索引等
 	if err = db.SetupJoinTable(&model.User{}, "Roles", &model.UserRole{}); err != nil {
 		b.err = err
 		return b

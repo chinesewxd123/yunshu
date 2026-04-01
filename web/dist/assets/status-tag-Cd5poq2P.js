@@ -1,1 +1,0 @@
-import{j as r}from"./react-vendor-VtWRR79g.js";import{d as o}from"./shared-vendor-BOCVjjwm.js";import{b as s}from"./antd-vendor-Bj4L6THM.js";function m(t){return t?o(t).format("YYYY-MM-DD HH:mm:ss"):"-"}function n(t){return t===1?"启用":"停用"}function a(t){return t===1?"success":"default"}function i({status:t}){return r.jsx(s,{color:a(t),children:n(t)})}export{i as S,m as f};

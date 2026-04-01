@@ -17,6 +17,8 @@ export interface RoleItem {
   code: string;
   description: string;
   status: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface PermissionItem {
@@ -25,6 +27,8 @@ export interface PermissionItem {
   resource: string;
   action: string;
   description: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface UserItem {

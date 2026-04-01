@@ -22,7 +22,7 @@ func init() {
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Start HTTP server",
+	Short: "Start permission system server",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		app, err := bootstrap.NewBuilder().
 			WithConfig(configPath).
@@ -51,7 +51,7 @@ var serverCmd = &cobra.Command{
 
 		errCh := make(chan error, 1)
 		go func() {
-			app.Logger.Info.Info("http server started", "addr", server.Addr)
+			app.Logger.Info.Info("permission system server started", "addr", server.Addr)
 			if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- err
 			}

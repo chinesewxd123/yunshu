@@ -1,1 +1,0 @@
-import{g as e,h as i}from"./index-0vIANNT3.js";function r(s){return e(i.get("/permissions",{params:s}))}function o(s){return e(i.post("/permissions",s))}function a(s,t){return e(i.put(`/permissions/${s}`,t))}function p(s){return e(i.delete(`/permissions/${s}`))}function m(){return e(i.get("/permissions",{params:{page:1,page_size:100}}))}export{m as a,o as c,p as d,r as g,a as u};

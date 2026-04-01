@@ -1,12 +1,13 @@
-import { PlusOutlined, ReloadOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
+import { PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, EyeOutlined } from "@ant-design/icons";
+import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { PageHero } from "../components/page-hero";
 import { StatusTag } from "../components/status-tag";
-import { createPermission, deletePermission, getPermissions, updatePermission } from "../services/permissions";
+import { createPermission, deletePermission, getPermissions, getPermission, updatePermission } from "../services/permissions";
 import { getRoleOptions } from "../services/roles";
 import { grantPolicy } from "../services/policies";
 import type { PermissionItem, PermissionPayload, RoleItem } from "../types/api";
+import { formatDateTime } from "../utils/format";
 
 const defaultQuery = { keyword: "", page: 1, page_size: 10 };
 const actionOptions = ["GET", "POST", "PUT", "DELETE", "PATCH"];
@@ -24,6 +25,8 @@ export function PermissionsPage() {
   const [assignTarget, setAssignTarget] = useState<PermissionItem | null>(null);
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [checkedRoleIds, setCheckedRoleIds] = useState<number[]>([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<PermissionItem | null>(null);
 
   useEffect(() => {
     void loadPermissions(query);
@@ -85,6 +88,12 @@ export function PermissionsPage() {
     await deletePermission(record.id);
     message.success(`已删除能力项 ${record.name}`);
     void loadPermissions();
+  }
+
+  async function openDetail(record: PermissionItem) {
+    const detail = await getPermission(record.id);
+    setDetailRecord(detail);
+    setDetailOpen(true);
   }
 
   function openAssignRoles(record: PermissionItem) {
@@ -158,6 +167,9 @@ export function PermissionsPage() {
               key: "action",
               render: (_: unknown, record: PermissionItem) => (
                 <Space>
+                  <Button type="link" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
+                    详情
+                  </Button>
                   <Button type="link" onClick={() => openEdit(record)}>
                     编辑
                   </Button>
@@ -232,6 +244,30 @@ export function PermissionsPage() {
             size="small"
           />
         </Space>
+      </Modal>
+
+      <Modal
+        title="权限详情"
+        open={detailOpen}
+        onCancel={() => setDetailOpen(false)}
+        footer={null}
+        width={650}
+      >
+        {detailRecord && (
+          <Descriptions bordered column={2} size="middle">
+            <Descriptions.Item label="ID">{detailRecord.id}</Descriptions.Item>
+            <Descriptions.Item label="能力名称">{detailRecord.name}</Descriptions.Item>
+            <Descriptions.Item label="资源路径" span={2}>
+              <Tag>{detailRecord.resource}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="HTTP 动作">
+              <Tag color="processing">{detailRecord.action}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="说明" span={2}>{detailRecord.description || "-"}</Descriptions.Item>
+            <Descriptions.Item label="创建时间">{formatDateTime(detailRecord.created_at)}</Descriptions.Item>
+            <Descriptions.Item label="更新时间">{formatDateTime(detailRecord.updated_at)}</Descriptions.Item>
+          </Descriptions>
+        )}
       </Modal>
     </div>
   );

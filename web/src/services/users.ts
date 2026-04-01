@@ -13,6 +13,10 @@ export function getUsers(params: UserQuery) {
   return getData<PageData<UserItem>>(http.get("/users", { params }));
 }
 
+export function getUser(id: number) {
+  return getData<UserItem>(http.get(`/users/${id}`));
+}
+
 export function createUser(payload: UserCreatePayload) {
   return getData<UserItem>(http.post("/users", payload));
 }

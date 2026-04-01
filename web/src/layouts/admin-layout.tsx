@@ -2,9 +2,11 @@ import {
   ApiOutlined,
   ApartmentOutlined,
   AuditOutlined,
+  CheckCircleOutlined,
   DatabaseOutlined,
-  LogoutOutlined,
+  MenuOutlined,
   TeamOutlined,
+  LogoutOutlined,
 } from "@ant-design/icons";
 import { Avatar, Button, Dropdown, Layout, Menu, Space, Spin, Tag, Typography } from "antd";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -28,34 +30,46 @@ const menuItems = [
   {
     key: "/users",
     icon: <TeamOutlined />,
-    label: <Link to="/users">账号治理</Link>,
+    label: <Link to="/users">账号管理</Link>,
   },
   {
     key: "/roles",
     icon: <ApartmentOutlined />,
-    label: <Link to="/roles">角色模板</Link>,
+    label: <Link to="/roles">角色管理</Link>,
   },
   {
     key: "/permissions",
     icon: <ApiOutlined />,
-    label: <Link to="/permissions">接口能力</Link>,
+    label: <Link to="/permissions">API管理</Link>,
   },
   {
     key: "/policies",
     icon: <AuditOutlined />,
-    label: <Link to="/policies">授权编排</Link>,
+    label: <Link to="/policies">授权管理</Link>,
+  },
+  {
+    key: "/registrations",
+    icon: <CheckCircleOutlined />,
+    label: <Link to="/registrations">注册审核</Link>,
+  },
+  {
+    key: "/menus",
+    icon: <MenuOutlined />,
+    label: <Link to="/menus">菜单管理</Link>,
   },
 ];
 
 const titleMap: Record<string, string> = {
   "/": "资产总览",
-  "/users": "账号治理",
-  "/roles": "角色模板",
-  "/permissions": "接口能力",
-  "/policies": "授权编排",
+  "/users": "账号管理",
+  "/roles": "角色管理",
+  "/permissions": "API管理",
+  "/policies": "授权管理",
+  "/registrations": "注册审核",
+  "/menus": "菜单管理",
 };
 
-const capabilityTags = ["Redis 验证码登录", "Casbin 授权编排", "运维资产治理"];
+const capabilityTags = ["Redis 验证码登录", "Casbin 授权管理", "运维资产治理"];
 
 export function AdminLayout() {
   const { pathname } = useLocation();
@@ -99,7 +113,7 @@ export function AdminLayout() {
         <div className="brand-block__hint">
           <Typography.Text>{BRAND_EN_NAME}</Typography.Text>
           <Typography.Paragraph className="brand-block__hint-copy">
-            统一承接账号主体、角色模板、接口能力和授权策略，适合做运维 CMDB 的权限治理底座。
+            统一承接账号主体、角色管理、API管理、授权管理，适合做运维 CMDB 的权限治理底座。
           </Typography.Paragraph>
         </div>
 

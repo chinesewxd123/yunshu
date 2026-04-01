@@ -1,31 +1,28 @@
 package handler
 
 import (
+	"time"
+
 	"go-permission-system/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
 
 type SystemHandler struct {
-	name string
-	env  string
+	name      string
+	env       string
+	startTime time.Time
 }
 
 func NewSystemHandler(name, env string) *SystemHandler {
-	return &SystemHandler{name: name, env: env}
+	return &SystemHandler{name: name, env: env, startTime: time.Now()}
 }
 
-// Health godoc
-// @Summary Health check
-// @Description Return service name and current environment.
-// @Tags System
-// @Produce json
-// @Success 200 {object} response.Body{data=HealthData} "success"
-// @Router /api/v1/health [get]
 func (h *SystemHandler) Health(c *gin.Context) {
+	uptime := int(time.Since(h.startTime).Seconds())
 	response.Success(c, gin.H{
-		"name": h.name,
-		"env":  h.env,
-		// "timestamp": time.Now().Unix(),
+		"status":  "ok",
+		"version": h.name + "@" + h.env,
+		"uptime":  uptime,
 	})
 }

@@ -34,7 +34,7 @@ export function emailLogin(payload: EmailLoginPayload) {
 }
 
 export function registerByEmail(payload: RegisterPayload) {
-  return getData<RegisterResult>(http.post("/auth/register", payload));
+  return getData<MessageData>(http.post("/auth/register", payload));
 }
 
 export function logout() {
@@ -43,4 +43,14 @@ export function logout() {
 
 export function getCurrentUser() {
   return getData<UserItem>(http.get("/auth/me"));
+}
+
+export interface HealthData {
+  status: string;
+  version: string;
+  uptime: number;
+}
+
+export function getHealth() {
+  return getData<HealthData>(http.get("/health"));
 }

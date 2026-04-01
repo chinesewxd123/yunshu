@@ -1,7 +1,8 @@
-import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, EyeOutlined } from "@ant-design/icons";
 import {
   Button,
   Card,
+  Descriptions,
   Form,
   Input,
   Modal,
@@ -19,7 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PageHero } from "../components/page-hero";
 import { StatusTag } from "../components/status-tag";
 import { getRoleOptions } from "../services/roles";
-import { assignUserRoles, createUser, deleteUser, getUsers, updateUser } from "../services/users";
+import { assignUserRoles, createUser, deleteUser, getUsers, getUser, updateUser } from "../services/users";
 import type { RoleItem, UserCreatePayload, UserItem, UserUpdatePayload } from "../types/api";
 import { formatDateTime } from "../utils/format";
 import { buildRoleTreeData, normalizeCheckedKeys } from "../utils/tree";
@@ -34,6 +35,8 @@ export function UsersPage() {
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<UserItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [current, setCurrent] = useState<UserItem | null>(null);
   const [roleTarget, setRoleTarget] = useState<UserItem | null>(null);
@@ -89,6 +92,12 @@ export function UsersPage() {
     setRoleTarget(record);
     setCheckedRoleIds(record.roles.map((role) => role.id));
     setAssignOpen(true);
+  }
+
+  async function openDetail(record: UserItem) {
+    const detail = await getUser(record.id);
+    setDetailRecord(detail);
+    setDetailOpen(true);
   }
 
   async function handleDelete(record: UserItem) {
@@ -214,17 +223,20 @@ export function UsersPage() {
             {
               title: "操作",
               key: "action",
-              width: 220,
+              width: 260,
               render: (_: unknown, record: UserItem) => (
-                <Space wrap>
-                  <Button type="link" onClick={() => openEdit(record)}>
+                <Space size={4}>
+                  <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
+                    详情
+                  </Button>
+                  <Button type="link" size="small" onClick={() => openEdit(record)}>
                     编辑
                   </Button>
-                  <Button type="link" onClick={() => openAssign(record)}>
+                  <Button type="link" size="small" onClick={() => openAssign(record)}>
                     分配角色
                   </Button>
                   <Popconfirm title="确认删除该账号吗？" onConfirm={() => handleDelete(record)}>
-                    <Button type="link" danger>
+                    <Button type="link" size="small" danger>
                       删除
                     </Button>
                   </Popconfirm>
@@ -313,6 +325,39 @@ export function UsersPage() {
             />
           </div>
         </Space>
+      </Modal>
+
+      <Modal
+        title="用户详情"
+        open={detailOpen}
+        onCancel={() => setDetailOpen(false)}
+        footer={null}
+        width={650}
+      >
+        {detailRecord && (
+          <Descriptions bordered column={2} size="middle">
+            <Descriptions.Item label="ID">{detailRecord.id}</Descriptions.Item>
+            <Descriptions.Item label="用户名">{detailRecord.username}</Descriptions.Item>
+            <Descriptions.Item label="昵称">{detailRecord.nickname}</Descriptions.Item>
+            <Descriptions.Item label="邮箱">{detailRecord.email || "-"}</Descriptions.Item>
+            <Descriptions.Item label="状态" span={2}>
+              <StatusTag status={detailRecord.status} />
+            </Descriptions.Item>
+            <Descriptions.Item label="角色" span={2}>
+              {detailRecord.roles.length > 0 ? (
+                detailRecord.roles.map((role) => (
+                  <Tag color="blue" key={role.id} style={{ marginBottom: 4 }}>
+                    {role.name} ({role.code})
+                  </Tag>
+                ))
+              ) : (
+                <Typography.Text type="secondary">暂无角色</Typography.Text>
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="创建时间">{formatDateTime(detailRecord.created_at)}</Descriptions.Item>
+            <Descriptions.Item label="更新时间">{formatDateTime(detailRecord.updated_at)}</Descriptions.Item>
+          </Descriptions>
+        )}
       </Modal>
     </div>
   );

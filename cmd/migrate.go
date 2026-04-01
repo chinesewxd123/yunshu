@@ -31,6 +31,8 @@ var migrateCmd = &cobra.Command{
 			&model.Role{},
 			&model.Permission{},
 			&model.UserRole{},
+			&model.RegistrationRequest{},
+			&model.Menu{},
 		)
 	},
 }

@@ -88,3 +88,9 @@ func (r *UserRepository) List(ctx context.Context, params UserListParams) ([]mod
 func (r *UserRepository) ReplaceRoles(ctx context.Context, user *model.User, roles []model.Role) error {
 	return r.db.WithContext(ctx).Model(user).Association("Roles").Replace(roles)
 }
+
+func (r *UserRepository) ExistsByUsernameOrEmail(ctx context.Context, username, email string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.User{}).Where("username = ? OR email = ?", username, email).Count(&count)
+	return count > 0, err.Error
+}

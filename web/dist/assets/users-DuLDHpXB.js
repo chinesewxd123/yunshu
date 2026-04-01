@@ -1,1 +1,0 @@
-import{g as s,h as r}from"./index-0vIANNT3.js";function n(e){return s(r.get("/users",{params:e}))}function a(e){return s(r.post("/users",e))}function o(e,t){return s(r.put(`/users/${e}`,t))}function c(e){return s(r.delete(`/users/${e}`))}function i(e,t){return s(r.put(`/users/${e}/roles`,t))}export{i as a,a as c,c as d,n as g,o as u};
