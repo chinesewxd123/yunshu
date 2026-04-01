@@ -28,8 +28,10 @@ type HTTPConfig struct {
 }
 
 type LogConfig struct {
-	Level  string `mapstructure:"level"`
-	Format string `mapstructure:"format"`
+	Level    string `mapstructure:"level"`
+	Format   string `mapstructure:"format"`
+	Output   string `mapstructure:"output"`   // console, file, both
+	FilePath string `mapstructure:"file_path"` // log file directory path
 }
 
 type MySQLConfig struct {

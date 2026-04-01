@@ -1,20 +1,20 @@
 package middleware
 
 import (
-	"log/slog"
 	"runtime/debug"
 
+	logx "go-permission-system/internal/pkg/logger"
 	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
 
-func Recovery(logger *slog.Logger) gin.HandlerFunc {
+func Recovery(logger *logx.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				logger.Error("panic recovered",
+				logger.Error.Error("panic recovered",
 					"panic", rec,
 					"path", c.Request.URL.Path,
 					"stack", string(debug.Stack()),

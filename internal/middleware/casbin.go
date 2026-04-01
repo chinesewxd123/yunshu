@@ -1,8 +1,7 @@
 package middleware
 
 import (
-	"log/slog"
-
+	logx "go-permission-system/internal/pkg/logger"
 	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/auth"
 	"go-permission-system/internal/pkg/response"
@@ -12,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Authorize(enforcer *casbin.SyncedEnforcer, logger *slog.Logger) gin.HandlerFunc {
+func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, ok := auth.CurrentUserFromContext(c)
 		if !ok {
@@ -28,7 +27,7 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *slog.Logger) gin.Handler
 
 		allowed, err := enforcer.Enforce(service.UserSubject(user.ID), path, c.Request.Method)
 		if err != nil {
-			logger.Error("casbin authorize failed", "error", err, "path", path, "method", c.Request.Method)
+			logger.Error.Error("casbin authorize failed", "error", err, "path", path, "method", c.Request.Method)
 			response.Error(c, apperror.Internal("权限校验失败"))
 			c.Abort()
 			return

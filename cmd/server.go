@@ -51,7 +51,7 @@ var serverCmd = &cobra.Command{
 
 		errCh := make(chan error, 1)
 		go func() {
-			app.Logger.Info("http server started", "addr", server.Addr)
+			app.Logger.Info.Info("http server started", "addr", server.Addr)
 			if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- err
 			}
@@ -62,7 +62,7 @@ var serverCmd = &cobra.Command{
 
 		select {
 		case sig := <-stop:
-			app.Logger.Info("received shutdown signal", "signal", sig.String())
+			app.Logger.Info.Info("received shutdown signal", "signal", sig.String())
 		case err := <-errCh:
 			return err
 		}

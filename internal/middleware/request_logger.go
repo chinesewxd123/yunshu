@@ -1,13 +1,14 @@
 package middleware
 
 import (
-	"log/slog"
 	"time"
+
+	logx "go-permission-system/internal/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
 
-func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
+func RequestLogger(logger *logx.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
@@ -24,13 +25,13 @@ func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 		}
 
 		if c.Writer.Status() >= 500 {
-			logger.Error("http request completed", attrs...)
+			logger.Error.Error("http request completed", attrs...)
 			return
 		}
 		if c.Writer.Status() >= 400 {
-			logger.Warn("http request completed", attrs...)
+			logger.Info.Warn("http request completed", attrs...)
 			return
 		}
-		logger.Info("http request completed", attrs...)
+		logger.Info.Info("http request completed", attrs...)
 	}
 }

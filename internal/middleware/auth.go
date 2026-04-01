@@ -1,9 +1,9 @@
 package middleware
 
 import (
-	"log/slog"
 	"strings"
 
+	logx "go-permission-system/internal/pkg/logger"
 	"go-permission-system/internal/model"
 	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/auth"
@@ -15,7 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRepository, logger *slog.Logger) gin.HandlerFunc {
+func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRepository, logger *logx.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if header == "" || !strings.HasPrefix(header, "Bearer ") {
@@ -27,7 +27,7 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 		tokenString := strings.TrimPrefix(header, "Bearer ")
 		claims, err := auth.ParseToken(secret, tokenString)
 		if err != nil {
-			logger.Warn("parse token failed", "error", err)
+			logger.Info.Warn("parse token failed", "error", err)
 			response.Error(c, apperror.Unauthorized("token 无效"))
 			c.Abort()
 			return

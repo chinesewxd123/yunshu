@@ -26,5 +26,6 @@ func (h *SystemHandler) Health(c *gin.Context) {
 	response.Success(c, gin.H{
 		"name": h.name,
 		"env":  h.env,
+		// "timestamp": time.Now().Unix(),
 	})
 }

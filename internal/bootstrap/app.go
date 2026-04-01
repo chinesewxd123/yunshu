@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"go-permission-system/internal/config"
@@ -18,12 +17,11 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	gormlogger "gorm.io/gorm/logger"
 )
 
 type App struct {
 	Config   *config.Config
-	Logger   *slog.Logger
+	Logger   *logx.Logger
 	DB       *gorm.DB
 	Redis    *redis.Client
 	Enforcer *casbin.SyncedEnforcer
@@ -88,13 +86,13 @@ func (b *Builder) WithMySQL() *Builder {
 		cfg.Loc,
 	)
 
-	gormLogLevel := gormlogger.Silent
-	if b.app.Config.Log.Level == "debug" {
-		gormLogLevel = gormlogger.Info
-	}
+	// gormLogLevel := gormlogger.Silent
+	// if b.app.Config.Log.Level == "debug" {
+	// 	gormLogLevel = gormlogger.Info
+	// }
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: gormlogger.Default.LogMode(gormLogLevel),
+		Logger: logx.NewGormLogger(b.app.Logger.SQL, b.app.Config.Log.Level),
 	})
 	if err != nil {
 		b.err = err
