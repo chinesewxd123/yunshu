@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"go-permission-system/internal/bootstrap"
-	"go-permission-system/internal/model"
 
 	"github.com/spf13/cobra"
 )
@@ -26,13 +25,6 @@ var migrateCmd = &cobra.Command{
 		}
 		defer app.Close()
 
-		return app.DB.AutoMigrate(
-			&model.User{},
-			&model.Role{},
-			&model.Permission{},
-			&model.UserRole{},
-			&model.RegistrationRequest{},
-			&model.Menu{},
-		)
+		return bootstrap.AutoMigrateModels(app.DB)
 	},
 }

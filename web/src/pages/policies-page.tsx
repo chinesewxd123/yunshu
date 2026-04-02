@@ -93,7 +93,7 @@ export function PoliciesPage() {
     <div>
       <PageHero
         title="授权编排"
-        subtitle="按角色模板批量勾选接口能力，形成最终的责任域授权结果，并实时同步到 Casbin。"
+        subtitle="授予：POST /api/v1/policies；撤销：DELETE /api/v1/policies（JSON 体）。能力项中的资源路径须与接口真实路由一致。"
         breadcrumbItems={[{ title: "控制台" }, { title: "授权编排" }]}
         extra={
           <Space wrap>

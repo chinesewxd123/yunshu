@@ -1,5 +1,5 @@
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, PlusSquareOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tree, Typography, message } from "antd";
+import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { PageHero } from "../components/page-hero";
 import { getMenuTree, createMenu, updateMenu, deleteMenu } from "../services/menus";
@@ -76,26 +76,11 @@ export function MenusPage() {
     void loadTree();
   }
 
-  function buildAntdTreeData(menus: MenuItem[]): any[] {
-    return menus.map((item) => ({
-      key: item.id,
-      title: (
-        <Space>
-          <span>{item.name}</span>
-          {item.hidden ? <Tag color="default">隐藏</Tag> : <Tag color="blue">显示</Tag>}
-          <Tag>{item.path || "-"}</Tag>
-        </Space>
-      ),
-      icon: item.icon || undefined,
-      children: item.children ? buildAntdTreeData(item.children) : [],
-    }));
-  }
-
   return (
     <div>
       <PageHero
         title="菜单管理"
-        subtitle="管理系统菜单结构，支持多级嵌套。"
+        subtitle="维护 /api/v1/menus* 菜单元数据；保存后刷新即可驱动左侧导航（启用且未隐藏的项）。路由 path 需与 React Router 中已注册路径一致。"
         breadcrumbItems={[{ title: "控制台" }, { title: "菜单管理" }]}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>

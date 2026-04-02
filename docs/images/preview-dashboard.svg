@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-label="Dashboard preview">
+  <rect width="960" height="540" fill="#edf3fb"/>
+  <rect x="0" y="0" width="220" height="540" fill="#081d3a"/>
+  <text x="24" y="48" fill="#fff" font-family="sans-serif" font-size="14">D§;È</text>
+  <text x="24" y="88" fill="#8eb4d9" font-family="sans-serif" font-size="13">ûß¡ ¾</text>
+  <text x="36" y="118" fill="#b8d4f0" font-family="sans-serif" font-size="12">· &÷¡</text>
+  <text x="36" y="142" fill="#b8d4f0" font-family="sans-serif" font-size="12">· ˆC¡</text>
+  <rect x="240" y="24" width="700" height="100" fill="#fff" rx="10" stroke="#e6eef8"/>
+  <text x="260" y="58" fill="#1a1a1a" font-family="sans-serif" font-size="18" font-weight="600">D§;È</text>
+  <text x="260" y="88" fill="#666" font-family="sans-serif" font-size="12">¥ãîU · ûß¶ · ˆC’ëg</text>
+  <rect x="240" y="140" width="160" height="90" fill="#fff" rx="10" stroke="#e6eef8"/>
+  <text x="260" y="175" fill="#0f6cbd" font-family="sans-serif" font-size="12">&÷;S</text>
+  <text x="260" y="205" fill="#1a1a1a" font-family="sans-serif" font-size="22" font-weight="600">42</text>
+  <rect x="420" y="140" width="160" height="90" fill="#fff" rx="10" stroke="#e6eef8"/>
+  <text x="440" y="175" fill="#0f766e" font-family="sans-serif" font-size="12">¥ãý›</text>
+  <text x="440" y="205" fill="#1a1a1a" font-family="sans-serif" font-size="22" font-weight="600">128</text>
+  <rect x="240" y="250" width="700" height="260" fill="#fff" rx="10" stroke="#e6eef8"/>
+  <text x="260" y="285" fill="#1a1a1a" font-family="sans-serif" font-size="14" font-weight="600">ï¥ãîU§6ð 	</text>
+  <line x1="260" y1="305" x2="920" y2="305" stroke="#f0f0f0"/>
+  <text x="270" y="330" fill="#666" font-family="monospace" font-size="11">GET  /api/v1/health  ’ D§;È</text>
+  <text x="270" y="355" fill="#666" font-family="monospace" font-size="11">GET  /api/v1/menus/tree ’ ¨§</text>
+  <text x="270" y="380" fill="#666" font-family="monospace" font-size="11">POST /api/v1/policies  ’ ˆC¡</text>
+</svg>

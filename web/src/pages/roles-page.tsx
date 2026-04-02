@@ -131,7 +131,7 @@ export function RolesPage() {
     <div>
       <PageHero
         title="角色模板"
-        subtitle="把岗位职责、值班边界和责任域能力整理成可复用模板，方便账号批量纳管。"
+        subtitle="角色编码即 Casbin 中的角色主体；在「授权管理」中为角色勾选能力项后，绑定该角色的用户即可访问对应 API。"
         breadcrumbItems={[{ title: "控制台" }, { title: "角色模板" }]}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>

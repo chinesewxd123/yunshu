@@ -38,6 +38,11 @@ var serverCmd = &cobra.Command{
 		}
 		defer app.Close()
 
+		if err := bootstrap.AutoMigrateModels(app.DB); err != nil {
+			return fmt.Errorf("auto migrate: %w", err)
+		}
+		app.Logger.Info.Info("database schema migrated")
+
 		router.Register(app)
 
 		server := &http.Server{

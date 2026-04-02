@@ -94,3 +94,10 @@ func (r *UserRepository) ExistsByUsernameOrEmail(ctx context.Context, username, 
 	err := r.db.WithContext(ctx).Model(&model.User{}).Where("username = ? OR email = ?", username, email).Count(&count)
 	return count > 0, err.Error
 }
+
+// ListAll returns all users without pagination. Used for export.
+func (r *UserRepository) ListAll(ctx context.Context) ([]model.User, error) {
+	var users []model.User
+	err := r.db.WithContext(ctx).Preload("Roles").Order("id DESC").Find(&users).Error
+	return users, err
+}

@@ -32,3 +32,13 @@ export function deleteUser(id: number) {
 export function assignUserRoles(id: number, payload: AssignRolesPayload) {
   return getData<UserItem>(http.put(`/users/${id}/roles`, payload));
 }
+
+export function exportUsers(params?: Record<string, any>) {
+  return http.get(`/users/export`, { params, responseType: "blob" });
+}
+
+export function importUsers(file: File) {
+  const fd = new FormData();
+  fd.append("file", file);
+  return http.post(`/users/import`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+}

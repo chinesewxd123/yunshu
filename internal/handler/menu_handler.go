@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"strconv"
 
 	"go-permission-system/internal/pkg/apperror"
@@ -8,6 +9,7 @@ import (
 	"go-permission-system/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type MenuHandler struct {
@@ -54,6 +56,10 @@ func (h *MenuHandler) Update(c *gin.Context) {
 	}
 	data, err := h.service.Update(c.Request.Context(), uint(id), req)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, apperror.NotFound("menu not found"))
+			return
+		}
 		response.Error(c, apperror.Internal(err.Error()))
 		return
 	}
@@ -67,8 +73,12 @@ func (h *MenuHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.service.Delete(c.Request.Context(), uint(id)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, apperror.NotFound("menu not found"))
+			return
+		}
 		response.Error(c, apperror.BadRequest(err.Error()))
 		return
 	}
-	response.Success(c, nil)
+	response.Success(c, gin.H{"message": "deleted"})
 }

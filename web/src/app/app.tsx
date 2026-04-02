@@ -14,6 +14,10 @@ const RolesPage = lazy(() => import("../pages/roles-page").then((module) => ({ d
 const UsersPage = lazy(() => import("../pages/users-page").then((module) => ({ default: module.UsersPage })));
 const RegistrationsPage = lazy(() => import("../pages/registrations-page").then((module) => ({ default: module.RegistrationsPage })));
 const MenusPage = lazy(() => import("../pages/menus-page").then((module) => ({ default: module.MenusPage })));
+const LoginLogsPage = lazy(() => import("../pages/login-logs-page").then((module) => ({ default: module.LoginLogsPage })));
+const OperationLogsPage = lazy(() =>
+  import("../pages/operation-logs-page").then((module) => ({ default: module.OperationLogsPage })),
+);
 
 function RouteFallback() {
   return (
@@ -102,6 +106,8 @@ export function App() {
                   <Route path="policies" element={<PoliciesPage />} />
                   <Route path="registrations" element={<RegistrationsPage />} />
                   <Route path="menus" element={<MenusPage />} />
+                  <Route path="login-logs" element={<LoginLogsPage />} />
+                  <Route path="operation-logs" element={<OperationLogsPage />} />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

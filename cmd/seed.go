@@ -34,6 +34,15 @@ var seedCmd = &cobra.Command{
 		defer app.Close()
 
 		ctx := context.Background()
+
+		// 历史错误：撤销策略实际路由为 DELETE /api/v1/policies（JSON body），与 /api/v1/policies/:id 不匹配，会导致无法撤销授权
+		if err := service.RemovePermissionPolicies(app.Enforcer, "/api/v1/policies/:id", "DELETE"); err != nil {
+			return err
+		}
+		if err := app.DB.WithContext(ctx).Where("resource = ? AND action = ?", "/api/v1/policies/:id", "DELETE").Delete(&model.Permission{}).Error; err != nil {
+			return err
+		}
+
 		permissions := defaultPermissions()
 		for _, item := range permissions {
 			var permission model.Permission
@@ -153,6 +162,8 @@ func defaultPermissions() []model.Permission {
 		{Name: "更新用户", Resource: "/api/v1/users/:id", Action: "PUT", Description: "Update user"},
 		{Name: "删除用户", Resource: "/api/v1/users/:id", Action: "DELETE", Description: "Delete user"},
 		{Name: "分配用户角色", Resource: "/api/v1/users/:id/roles", Action: "PUT", Description: "Assign roles to user"},
+		{Name: "导出用户", Resource: "/api/v1/users/export", Action: "GET", Description: "Export users to Excel"},
+		{Name: "导入用户", Resource: "/api/v1/users/import", Action: "POST", Description: "Import users from Excel"},
 		{Name: "角色列表", Resource: "/api/v1/roles", Action: "GET", Description: "View role list"},
 		{Name: "创建角色", Resource: "/api/v1/roles", Action: "POST", Description: "Create role"},
 		{Name: "角色详情", Resource: "/api/v1/roles/:id", Action: "GET", Description: "View role detail"},
@@ -165,13 +176,21 @@ func defaultPermissions() []model.Permission {
 		{Name: "删除API", Resource: "/api/v1/permissions/:id", Action: "DELETE", Description: "Delete permission"},
 		{Name: "授权列表", Resource: "/api/v1/policies", Action: "GET", Description: "View policy list"},
 		{Name: "创建授权策略", Resource: "/api/v1/policies", Action: "POST", Description: "Grant permission to role"},
-		{Name: "删除授权策略", Resource: "/api/v1/policies/:id", Action: "DELETE", Description: "Revoke permission from role"},
+		{Name: "删除授权策略", Resource: "/api/v1/policies", Action: "DELETE", Description: "Revoke permission from role (JSON body)"},
 		{Name: "注册审核列表", Resource: "/api/v1/registrations", Action: "GET", Description: "View registration requests"},
 		{Name: "审核注册申请", Resource: "/api/v1/registrations/:id/review", Action: "POST", Description: "Review registration request"},
 		{Name: "菜单树", Resource: "/api/v1/menus/tree", Action: "GET", Description: "View menu tree"},
 		{Name: "创建菜单", Resource: "/api/v1/menus", Action: "POST", Description: "Create menu"},
 		{Name: "更新菜单", Resource: "/api/v1/menus/:id", Action: "PUT", Description: "Update menu"},
 		{Name: "删除菜单", Resource: "/api/v1/menus/:id", Action: "DELETE", Description: "Delete menu"},
+		{Name: "登录日志列表", Resource: "/api/v1/login-logs", Action: "GET", Description: "View login logs"},
+		{Name: "导出登录日志", Resource: "/api/v1/login-logs/export", Action: "GET", Description: "Export login logs to Excel"},
+		{Name: "删除登录日志", Resource: "/api/v1/login-logs/:id", Action: "DELETE", Description: "Delete login log"},
+		{Name: "批量删除登录日志", Resource: "/api/v1/login-logs/delete", Action: "POST", Description: "Batch delete login logs"},
+		{Name: "操作历史列表", Resource: "/api/v1/operation-logs", Action: "GET", Description: "View operation logs"},
+		{Name: "导出操作历史", Resource: "/api/v1/operation-logs/export", Action: "GET", Description: "Export operation logs to Excel"},
+		{Name: "删除操作历史", Resource: "/api/v1/operation-logs/:id", Action: "DELETE", Description: "Delete operation log"},
+		{Name: "批量删除操作历史", Resource: "/api/v1/operation-logs/delete", Action: "POST", Description: "Batch delete operation logs"},
 	}
 }
 
@@ -218,6 +237,13 @@ func upsertMenu(ctx context.Context, db *gorm.DB, menu *model.Menu, parentID uin
 	existing.Component = menu.Component
 	existing.Redirect = menu.Redirect
 	existing.Status = menu.Status
+	// 以前如果已有同名菜单但 parent_id 写错，重新 seed 时旧逻辑不会修正 parent_id。
+	// 这里显式把 parent_id 修正到目标结构，保证菜单树能正确挂到“系统管理”下面。
+	existing.ParentID = nil
+	if parentID > 0 {
+		p := parentID
+		existing.ParentID = &p
+	}
 	if err := db.WithContext(ctx).Save(&existing).Error; err != nil {
 		return err
 	}
@@ -248,6 +274,8 @@ func defaultMenus() []model.Menu {
 				{Name: "授权管理", Path: "/policies", Icon: "AuditOutlined", Sort: 4, Component: "", Status: 1},
 				{Name: "注册审核", Path: "/registrations", Icon: "CheckCircleOutlined", Sort: 5, Component: "", Status: 1},
 				{Name: "菜单管理", Path: "/menus", Icon: "MenuOutlined", Sort: 6, Component: "", Status: 1},
+				{Name: "登录日志", Path: "/login-logs", Icon: "LoginOutlined", Sort: 7, Component: "", Status: 1},
+				{Name: "操作历史", Path: "/operation-logs", Icon: "HistoryOutlined", Sort: 8, Component: "", Status: 1},
 			},
 		},
 	}

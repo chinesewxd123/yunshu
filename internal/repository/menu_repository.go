@@ -78,6 +78,6 @@ func hasChildren(menus []model.Menu, id uint) bool {
 
 func (r *MenuRepository) CountChildren(ctx context.Context, parentID uint) (int64, error) {
 	var count int64
-	err := r.db.WithContext(ctx).Model(&model.Menu{}).Where("parent_id = ?", parentID).Count(&count)
-	return count, err.Error
+	err := r.db.WithContext(ctx).Model(&model.Menu{}).Where("parent_id = ?", parentID).Count(&count).Error
+	return count, err
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/http"
 	"strconv"
 
 	"go-permission-system/internal/pkg/apperror"
@@ -8,6 +9,7 @@ import (
 	"go-permission-system/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xuri/excelize/v2"
 )
 
 type UserHandler struct {
@@ -202,6 +204,60 @@ func (h *UserHandler) AssignRoles(c *gin.Context) {
 		return
 	}
 	response.Success(c, data)
+}
+
+// Export godoc
+// @Summary Export users to Excel
+// @Tags User
+// @Produce application/octet-stream
+// @Security BearerAuth
+// @Router /api/v1/users/export [get]
+func (h *UserHandler) Export(c *gin.Context) {
+	users, err := h.service.ListAll(c.Request.Context())
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	f := excelize.NewFile()
+	sheet := "Sheet1"
+	// header
+	_ = f.SetSheetRow(sheet, "A1", &[]interface{}{"ID", "Username", "Nickname", "Email", "Status"})
+	for i, u := range users {
+		email := ""
+		if u.Email != nil {
+			email = *u.Email
+		}
+		row := []interface{}{u.ID, u.Username, u.Nickname, email, int(u.Status)}
+		cell, _ := excelize.CoordinatesToCellName(1, i+2)
+		_ = f.SetSheetRow(sheet, cell, &row)
+	}
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Disposition", "attachment; filename=users.xlsx")
+	c.Header("Content-Transfer-Encoding", "binary")
+	c.Status(http.StatusOK)
+	_ = f.Write(c.Writer)
+}
+
+// Import godoc
+// @Summary Import users from Excel
+// @Tags User
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "Excel file"
+// @Security BearerAuth
+// @Router /api/v1/users/import [post]
+func (h *UserHandler) Import(c *gin.Context) {
+	file, _, err := c.Request.FormFile("file")
+	if err != nil {
+		response.Error(c, apperror.BadRequest("file upload failed"))
+		return
+	}
+	defer file.Close()
+	if err := h.service.ImportUsers(c.Request.Context(), file); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "imported"})
 }
 
 func parseUintParam(c *gin.Context, key string) (uint, error) {

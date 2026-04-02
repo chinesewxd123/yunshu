@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 
 	"go-permission-system/internal/model"
@@ -12,6 +13,7 @@ import (
 	"go-permission-system/internal/repository"
 
 	"github.com/casbin/casbin/v2"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -210,5 +212,72 @@ func (s *UserService) ensureUserUnique(ctx context.Context, currentID uint, user
 		}
 	}
 
+	return nil
+}
+
+// ListAll returns all users for export.
+func (s *UserService) ListAll(ctx context.Context) ([]model.User, error) {
+	return s.userRepo.ListAll(ctx)
+}
+
+// ImportUsers reads an Excel file from reader and creates users.
+func (s *UserService) ImportUsers(ctx context.Context, r io.Reader) error {
+	f, err := excelize.OpenReader(r)
+	if err != nil {
+		return err
+	}
+
+	rows, err := f.GetRows("Sheet1")
+	if err != nil {
+		return err
+	}
+
+	// Expect header row in first line: ID,Username,Nickname,Email,Status
+	for i, row := range rows {
+		if i == 0 {
+			continue
+		}
+		if len(row) < 2 {
+			continue
+		}
+		username := strings.TrimSpace(row[1])
+		if username == "" {
+			continue
+		}
+		var nickname string
+		var emailPtr *string
+		var status int = int(model.StatusEnabled)
+		if len(row) >= 3 {
+			nickname = strings.TrimSpace(row[2])
+		}
+		if len(row) >= 4 {
+			e := strings.TrimSpace(row[3])
+			if e != "" {
+				emailPtr = &e
+			}
+		}
+		if len(row) >= 5 {
+			// try parse status
+			if strings.TrimSpace(row[4]) == "0" {
+				status = int(model.StatusDisabled)
+			}
+		}
+
+		// skip if user exists
+		exists, err := s.userRepo.ExistsByUsernameOrEmail(ctx, username, "")
+		if err == nil && exists {
+			continue
+		}
+
+		hashed, _ := password.Hash("123456")
+		user := model.User{
+			Username: username,
+			Nickname: nickname,
+			Email:    emailPtr,
+			Password: hashed,
+			Status:   status,
+		}
+		_ = s.userRepo.Create(ctx, &user)
+	}
 	return nil
 }

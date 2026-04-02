@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"go-permission-system/internal/model"
 	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/auth"
 	"go-permission-system/internal/pkg/response"
@@ -10,11 +11,39 @@ import (
 )
 
 type AuthHandler struct {
-	service *service.AuthService
+	service   *service.AuthService
+	loginLogs *service.LoginLogService
 }
 
-func NewAuthHandler(service *service.AuthService) *AuthHandler {
-	return &AuthHandler{service: service}
+func NewAuthHandler(service *service.AuthService, loginLogs *service.LoginLogService) *AuthHandler {
+	return &AuthHandler{service: service, loginLogs: loginLogs}
+}
+
+func loginErrMessage(err error) string {
+	if appErr, ok := apperror.IsAppError(err); ok {
+		return appErr.Message
+	}
+	return "登录失败"
+}
+
+func (h *AuthHandler) recordLogin(c *gin.Context, username, source string, success bool, detail string, userID *uint) {
+	if h.loginLogs == nil || username == "" {
+		return
+	}
+	status := model.LoginLogStatusFail
+	if success {
+		status = model.LoginLogStatusSuccess
+	}
+	entry := model.LoginLog{
+		Username:  username,
+		IP:        c.ClientIP(),
+		Status:    status,
+		Detail:    detail,
+		UserAgent: c.GetHeader("User-Agent"),
+		Source:    source,
+		UserID:    userID,
+	}
+	_ = h.loginLogs.Record(c.Request.Context(), entry)
 }
 
 // SendEmailCode godoc
@@ -122,9 +151,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	data, err := h.service.Login(c.Request.Context(), req)
 	if err != nil {
+		h.recordLogin(c, req.Username, model.LoginSourcePassword, false, loginErrMessage(err), nil)
 		response.Error(c, err)
 		return
 	}
+	uid := data.User.ID
+	h.recordLogin(c, data.User.Username, model.LoginSourcePassword, true, "登录成功", &uid)
 	response.Success(c, data)
 }
 
@@ -150,9 +182,12 @@ func (h *AuthHandler) EmailLogin(c *gin.Context) {
 
 	data, err := h.service.EmailLogin(c.Request.Context(), req)
 	if err != nil {
+		h.recordLogin(c, req.Email, model.LoginSourceEmail, false, loginErrMessage(err), nil)
 		response.Error(c, err)
 		return
 	}
+	uid := data.User.ID
+	h.recordLogin(c, data.User.Username, model.LoginSourceEmail, true, "登录成功", &uid)
 	response.Success(c, data)
 }
 

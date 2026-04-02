@@ -16,11 +16,11 @@ import {
   Typography,
   message,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { PageHero } from "../components/page-hero";
 import { StatusTag } from "../components/status-tag";
 import { getRoleOptions } from "../services/roles";
-import { assignUserRoles, createUser, deleteUser, getUsers, getUser, updateUser } from "../services/users";
+import { assignUserRoles, createUser, deleteUser, getUsers, getUser, updateUser, exportUsers, importUsers } from "../services/users";
 import type { RoleItem, UserCreatePayload, UserItem, UserUpdatePayload } from "../types/api";
 import { formatDateTime } from "../utils/format";
 import { buildRoleTreeData, normalizeCheckedKeys } from "../utils/tree";
@@ -42,6 +42,7 @@ export function UsersPage() {
   const [roleTarget, setRoleTarget] = useState<UserItem | null>(null);
   const [checkedRoleIds, setCheckedRoleIds] = useState<number[]>([]);
   const [form] = Form.useForm<UserCreatePayload & UserUpdatePayload>();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const roleTreeData = useMemo(() => buildRoleTreeData(roles), [roles]);
   const roleIdSet = useMemo(() => new Set(roles.map((role) => role.id)), [roles]);
@@ -159,11 +160,40 @@ export function UsersPage() {
     }
   }
 
+  async function handleExport() {
+    try {
+      const res = await exportUsers({ keyword: query.keyword });
+      const blob = new Blob([res], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "users.xlsx";
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      message.error("导出失败");
+    }
+  }
+
+  async function handleImportChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await importUsers(file);
+      message.success("导入完成");
+      void loadUsers();
+    } catch (err) {
+      message.error("导入失败");
+    }
+    // reset
+    if (fileInputRef) fileInputRef.value = "";
+  }
+
   return (
     <div>
       <PageHero
         title="账号治理"
-        subtitle="集中管理运维成员、机器人账号与责任域归属，保证后续授权链路清晰可追溯。"
+        subtitle="维护用户与角色的绑定；保存角色会同步 Casbin。无角色用户无法访问需授权的管理接口。"
         breadcrumbItems={[{ title: "控制台" }, { title: "账号治理" }]}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
@@ -183,6 +213,9 @@ export function UsersPage() {
             />
           </Space>
           <div className="toolbar__actions">
+            <input ref={(el) => (fileInputRef.current = el)} type="file" accept=".xlsx" style={{ display: "none" }} onChange={handleImportChange} />
+            <Button onClick={() => fileInputRef.current?.click()}>导入</Button>
+            <Button onClick={() => void handleExport()}>导出</Button>
             <Button icon={<ReloadOutlined />} onClick={() => void loadUsers()}>
               刷新
             </Button>

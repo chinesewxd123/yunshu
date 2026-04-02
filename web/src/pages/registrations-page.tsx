@@ -69,7 +69,7 @@ export function RegistrationsPage() {
     <div>
       <PageHero
         title="注册审核"
-        subtitle="管理用户注册申请，审核通过后自动创建账户。"
+        subtitle="对应 /api/v1/registrations*；通过后创建用户，仍需在「账号管理」中分配角色方可登录业务菜单。"
         breadcrumbItems={[{ title: "控制台" }, { title: "注册审核" }]}
       />
 

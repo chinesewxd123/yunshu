@@ -121,7 +121,7 @@ export function PermissionsPage() {
     <div>
       <PageHero
         title="接口能力"
-        subtitle="把 CMDB 后端可调用能力整理成资源路径与动作矩阵，为授权编排提供统一能力目录。"
+        subtitle="此处每条能力对应 Casbin 的一条规则维度：资源路径须与 Gin 路由模板一致（如 /api/v1/users/:id），否则授权后仍会 403。"
         breadcrumbItems={[{ title: "控制台" }, { title: "接口能力" }]}
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
@@ -201,7 +201,7 @@ export function PermissionsPage() {
             <Input placeholder="例如：查询主机列表" />
           </Form.Item>
           <Form.Item label="资源路径" name="resource" rules={[{ required: true, message: "请输入资源路径" }]}>
-            <Input placeholder="例如：/api/v1/users" />
+            <Input placeholder="须与后端一致，例如 /api/v1/users 或 /api/v1/users/:id；撤销策略为 DELETE /api/v1/policies（勿写 :id）" />
           </Form.Item>
           <Form.Item label="HTTP 动作" name="action" rules={[{ required: true, message: "请选择动作" }]}>
             <Select options={actionOptions.map((item) => ({ label: item, value: item }))} />

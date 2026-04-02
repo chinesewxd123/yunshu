@@ -37,7 +37,8 @@ type MenuUpdatePayload struct {
 	Hidden    bool   `json:"hidden"`
 	Component string `json:"component"`
 	Redirect  string `json:"redirect"`
-	Status    int    `json:"status" binding:"omitempty,oneof=0 1"`
+	// 使用指针避免 JSON 省略时误把 status 写成 0（原逻辑 `id == menu.ID` 恒为真会错误停用菜单）
+	Status *int `json:"status,omitempty" binding:"omitempty,oneof=0 1"`
 }
 
 func (s *MenuService) Tree(ctx context.Context) ([]model.Menu, error) {
@@ -70,16 +71,14 @@ func (s *MenuService) Update(ctx context.Context, id uint, payload MenuUpdatePay
 	if payload.Name != "" {
 		menu.Name = payload.Name
 	}
-	if payload.Path != "" {
-		menu.Path = payload.Path
-	}
+	menu.Path = payload.Path
 	menu.Icon = payload.Icon
 	menu.Sort = payload.Sort
 	menu.Hidden = payload.Hidden
 	menu.Component = payload.Component
 	menu.Redirect = payload.Redirect
-	if payload.Status != 0 || id == menu.ID {
-		menu.Status = payload.Status
+	if payload.Status != nil {
+		menu.Status = *payload.Status
 	}
 	if payload.ParentID != nil {
 		menu.ParentID = payload.ParentID

@@ -26,18 +26,18 @@ interface LocationState {
 const featureList = [
   {
     icon: <DatabaseOutlined />,
-    title: "统一资产权限底座",
-    description: "账号、角色模板、接口能力和授权编排放在同一套治理视图里。",
+    title: "权限与页面一致",
+    description: "控制台每个菜单对应一组后端 /api/v1 接口；资产总览提供完整「接口目录」便于核对。",
   },
   {
     icon: <DeploymentUnitOutlined />,
-    title: "适合运维 CMDB 扩展",
-    description: "当前页面结构已经为主机、服务树、环境分层等模块预留了后台风格。",
+    title: "角色驱动授权",
+    description: "用户须绑定角色，角色通过 Casbin 绑定「资源路径 + HTTP 方法」能力项后方可访问管理接口。",
   },
   {
     icon: <SafetyCertificateOutlined />,
-    title: "邮箱验证码登录",
-    description: "支持用户名密码登录和邮箱验证码登录两种方式，安全灵活。",
+    title: "双通道登录",
+    description: "管理员可用「用户名 + 密码 + 图形验证码」；日常推荐「邮箱 + 6 位验证码」。注册提交后需管理员审核。",
   },
 ];
 
@@ -218,7 +218,7 @@ export function LoginPage() {
               进入运维控制台
             </Typography.Title>
             <Typography.Paragraph className="inline-muted" style={{ marginBottom: 0 }}>
-              使用用户名密码或邮箱验证码进行登录。
+              用户名密码登录须先点「刷新」加载图形验证码；邮箱登录请先向邮箱索取 6 位验证码。
             </Typography.Paragraph>
           </Space>
 
