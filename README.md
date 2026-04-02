@@ -2,11 +2,9 @@
   <img src="docs/images/hero.svg" alt="YunShu CMDB Permission Console" width="92%" />
 </p>
 
-<h1 align="center">go-permission-system</h1>
+# go-permission-system
 
-<p align="center">
-  <strong>云枢 CMDB · 运维权限治理台</strong> — 前后端分离的 RBAC 控制台，可作为企业资产 / CMDB 的权限底座。
-</p>
+**云枢 CMDB · 运维权限治理台** — 前后端分离的权限管理控制台（RBAC），适合作为企业资产 / CMDB 的权限底座。
 
 <p align="center">
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" /></a>
@@ -20,159 +18,147 @@
 
 ---
 
-## 预览 · Screenshots
+## 项目亮点（概览）
 
-> 下列为仓库内 **SVG 示意**（矢量、可无损缩放）。若需真实像素级截图，可在本地启动后自行替换为 `PNG` 并更新路径。
-
-| 登录（双通道） | 资产总览 · 接口目录 |
-| :---: | :---: |
-| <img src="docs/images/preview-login.svg" width="420" alt="Login" /> | <img src="docs/images/preview-dashboard.svg" width="420" alt="Dashboard" /> |
-
-| 菜单管理（驱动侧栏） |
-| :---: |
-| <img src="docs/images/preview-menus.svg" width="640" alt="Menu management" /> |
+- 前后端分离：Gin + React(Vite) + Ant Design。
+- 基于 Casbin 的能力项（API × Method）权限控制，前端菜单可按权限动态展示。
+- 操作审计：记录已鉴权请求（请求体、响应体、请求头、耗时），并支持导出为 Excel。
+- 登录审计：记录登录来源、详情、User-Agent，并支持导出为 Excel（带筛选）。
+- 批量导入/导出用户（Excel），便于迁移与管理员操作。
 
 ---
 
-## 功能矩阵
+## 截图（示例）
 
-| 模块 | 能力摘要 | 后端前缀 |
-|------|----------|----------|
-| **认证** | 用户名密码 + 图形码、邮箱 6 位验证码、注册申请、JWT + Redis 会话 | `/api/v1/auth/*` |
-| **账号** | CRUD、分页、分配多角色（同步 Casbin `g`） | `/api/v1/users` |
-| **角色** | CRUD、角色编码即 Casbin 角色名 | `/api/v1/roles` |
-| **API 能力** | 资源路径 × HTTP Method，与 Gin `FullPath` 对齐 | `/api/v1/permissions` |
-| **授权** | 授予 POST、撤销 **DELETE `/api/v1/policies`（JSON 体）** | `/api/v1/policies` |
-| **注册审核** | 列表筛选、通过/拒绝 | `/api/v1/registrations` |
-| **菜单** | 树形 CRUD、`hidden`/`status`、**侧栏动态加载 `/menus/tree`** | `/api/v1/menus` |
-| **登录日志** | 成功/失败、来源 `password` / `email` | `/api/v1/login-logs` |
-| **操作历史** | 已鉴权请求审计（请求/响应截断 + 脱敏） | `/api/v1/operation-logs` |
-| **运维** | 健康检查、启动时 **AutoMigrate**、分级日志、Swagger | `/api/v1/health`、`/swagger/*` |
+> 本仓库 `images/` 可放置本地启动后拍摄的 PNG 截图；当前 README 使用 docs 下的示意 SVG。请按需替换为真实截图以在 GitHub 上更好展示。
+
+| 登录 | 账号列表 | 登录日志 | 操作历史 |
+|---:|:---:|:---:|:---:|
+| ![login](images/用户名密码登录页.png) | ![users](images/用户管理页面.png) | ![login-logs](images/登录日志页面.png) | ![operation-logs](images/操作历史页面.png) |
+
+（如果你已经将本地截图上传到 `images/`，建议把表格中的 `docs/images/...` 改为 `images/...` 来展示真实像素）
 
 ---
 
-## 菜单管理：实现说明与完善项
+## 完整功能（已实现）
 
-**后端**
-
-- `GET /menus/tree`：`ListAll` 后内存拼树；删除前校验子节点数量。
-- **已修复**：`CountChildren` 原错误使用 `Count` 返回值，导致子查询计数不可用（已改为 `.Count(&count).Error`）。
-- **已修复**：`Update` 中 `status` 使用指针字段，避免「未传 status 却被写成 0」误停用菜单。
-- `DELETE`：有子菜单时返回明确错误；记录不存在返回 404。
-
-**前端**
-
-- 表格 + 展开行管理树；支持根菜单 / 子菜单、编辑、删除。
-- **已完善**：控制台侧栏在登录后请求 **`getMenuTree()`**，按 `status === 1` 且 **非 hidden** 渲染；图标名为 Ant Design Icons 导出名（如 `SettingOutlined`）。请求失败时回退到内置静态菜单。
-- **约束**：`path` 必须与 `web/src/app/app.tsx` 中已声明的 `<Route>` 一致，否则点击会 404；新增页面需同时加路由与菜单数据。
-
-**可选后续增强**（未实现）
-
-- 菜单与 Casbin 能力绑定，实现「无权限则不展示菜单项」。
-- 编辑菜单时可视化调整父级（防环校验）。
-- `component` 字段与前端懒加载组件映射（微前端场景）。
+- 认证：用户名/密码 + 图形验证码、邮箱验证码、JWT 会话。
+- 账号管理：分页、查询、创建、编辑、分配角色、导入/导出（Excel）。
+- 角色与权限：角色模板、权限树、Casbin 策略同步（角色 → 能力项）。
+- API 能力管理：按资源路径（与 Gin 路由 path 对齐）与 HTTP 方法定义能力项。
+- 授权管理：批量分配/回收策略、以 JSON 体方式撤销策略（兼容前端操作）。
+- 登录日志导出：导出列包含 `ID, Username, IP, Source, Status, Detail, UserAgent, CreatedAt`（支持按 username/status/source 过滤）。
+- 操作历史导出：导出列包含 `ID, Method, Path, StatusCode, LatencyMs, IP, RequestHeaders, RequestBody, ResponseBody, CreatedAt, User`（对请求/响应做脱敏与截断，避免泄露敏感字段）。
 
 ---
 
-## 架构
+## 已补充 / 关键改进（本次更新说明）
 
-```mermaid
-flowchart LR
-  subgraph Client
-    A[React + Vite + Ant Design]
-  end
-  subgraph Server
-    B[Gin]
-    C[JWT Middleware]
-    D[Casbin Authorize]
-    E[Handlers]
-    F[Service]
-    G[Repository + GORM]
-  end
-  subgraph Infra
-    H[(MySQL)]
-    I[(Redis)]
-  end
-  A -->|/api/v1| B
-  B --> C --> D --> E --> F --> G --> H
-  C --> I
-  D --> J[Casbin Adapter]
-  J --> H
-```
+1. 新增用户 Excel 导入/导出接口并实现前端按钮与联调。
+2. 登录日志导出增加 `Detail` 与 `UserAgent` 字段（支撑问题排查）。
+3. 操作历史导出增加 `IP、RequestHeaders、RequestBody、ResponseBody` 并在审计层对敏感字段（如 Authorization、Cookie）进行遮蔽与截断存储。
+4. 将 Excel 依赖固定为与 Go 1.23 兼容的版本（在 go.mod 中声明）。
 
 ---
 
-## 快速开始
+## 快速开始（开发环境）
 
-### 依赖
+### 前置依赖
 
-| 组件 | 版本 |
-|------|------|
-| Go | ≥ 1.23 |
-| Node.js | ≥ 18 |
-| MySQL | ≥ 5.7 |
-| Redis | 推荐 6+ |
+| 组件 | 建议版本 |
+|------|----------|
+| Go | 1.23.x |
+| Node.js | 18+ |
+| MySQL | 5.7+ |
+| Redis | 6+ |
 
-### 命令
+### 本地运行（示例）
 
 ```bash
-git clone <your-repo-url> go-permission-system
+git clone <your-repo-url>
 cd go-permission-system
 go mod download
 
-# 配置 configs/config.yaml 中的 mysql / redis / mail / auth.jwt_secret
+# 在 configs/config.yaml 中配置数据库/redis/jwt 等
 
-go run . migrate   # 建表（亦可在首次 server 启动时自动执行 AutoMigrate）
-go run . seed      # 超级管理员、权限、菜单种子；升级后请重复执行以合并新权限
+# 建表（可选，server 启动时也会 AutoMigrate）
+go run . migrate
 
-go run . server    # 默认 :8080
+# 填充初始数据（超级管理员、权限、菜单）
+go run . seed
 
-cd web && npm install && npm run dev   # 默认 :5173，代理 /api → 后端
+# 启动服务（默认 :8080）
+go run . server
+
+# 启动前端（在另一个终端）
+cd web
+npm install
+npm run dev
+
+# 打开 http://localhost:5173
 ```
 
-### 默认账号
+### 常用 API（示例）
 
-- 用户名：`admin`  
-- 密码：`Admin@123`（请在生产环境立即修改）
+- 导出用户（返回 Excel）：
 
-### 常用链接
+  GET /api/v1/users/export
 
-| 环境 | URL |
-|------|-----|
-| 前端开发 | http://localhost:5173 |
-| API 基座 | http://localhost:8080/api/v1 |
-| Swagger | http://localhost:8080/swagger/index.html |
+- 导入用户（上传 Excel）：
+
+  POST /api/v1/users/import (multipart/form-data file)
+
+- 导出登录日志（支持筛选）:
+
+  GET /api/v1/login-logs/export?username=admin&status=1&source=password
+
+- 导出操作历史（支持筛选）:
+
+  GET /api/v1/operation-logs/export?method=GET&path=/api/v1/users
+
+（这些接口由后端流式写入 Excel 文件，前端使用 `responseType: 'blob'` 下载）
 
 ---
 
-## 项目结构（节选）
+## 数据库迁移提示
+
+- `go run . migrate` 会根据 `internal/bootstrap/AutoMigrateModels` 自动迁移模型。新增字段（如 `operation_logs.request_headers`）会在迁移时添加。生产环境迁移前请做好备份与回滚策略。
+
+---
+
+## 贡献与美化建议（在 GitHub 上更好展示）
+
+1. 上传真实截图到仓库根 `images/`，并在 README 的截图表格中引用 `images/*.png`。
+2. 添加 `demo.gif` 展示导出 Excel 的交互（动图更醒目）。
+3. 配置 GitHub Actions 自动构建前端并把静态文件发布到 `gh-pages`（或把 `web/dist` 放入 Release），README 顶部展示实时 Demo 链接。
+4. 在 README 顶部添加 `Release`、`License`、`Build`、`Go Report` 等状态徽章，提升项目可信度。
+
+示例徽章（可按需替换）：
+
+```md
+[![Release](https://img.shields.io/github/v/release/<owner>/<repo>?style=flat-square)]()
+[![License](https://img.shields.io/github/license/<owner>/<repo>?style=flat-square)]()
+```
+
+---
+
+## 项目结构（简要）
 
 ```
 go-permission-system/
 ├── cmd/                    # server | migrate | seed
 ├── configs/                # config.yaml · casbin_model.conf
-├── docs/images/            # README 配图（SVG）
+├── docs/                   # 文档与示意图
+├── images/                 # 推荐：放置真实截图用于 README
 ├── internal/
 │   ├── bootstrap/          # 依赖组装 · AutoMigrateModels
 │   ├── handler/            # HTTP 层
-│   ├── middleware/       # JWT · Casbin · 操作审计
+│   ├── middleware/         # JWT · Casbin · 操作审计
 │   ├── model/
 │   ├── repository/
 │   ├── service/
 │   └── router/
 └── web/                    # React 控制台
-```
-
----
-
-## 开发脚本
-
-```bash
-go fmt ./...
-go vet ./...
-go build -o bin/app .
-
-cd web && npm run build     # 静态资源输出 web/dist
 ```
 
 ---
