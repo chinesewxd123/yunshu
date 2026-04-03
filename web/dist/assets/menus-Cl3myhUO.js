@@ -1,1 +1,0 @@
-import{b as t,h as n}from"./index-BjEXVJ8J.js";function s(){return t(n.get("/menus/tree"))}function a(e){return t(n.post("/menus",e))}function o(e,u){return t(n.put(`/menus/${e}`,u))}function c(e){return t(n.delete(`/menus/${e}`))}export{a as c,c as d,s as g,o as u};

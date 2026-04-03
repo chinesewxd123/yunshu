@@ -1,7 +1,6 @@
 import { CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Button, Card, Form, Input, Modal, Popconfirm, Radio, Select, Space, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { PageHero } from "../components/page-hero";
 import { getRegistrations, reviewRegistration } from "../services/registrations";
 import type { RegistrationRequestItem } from "../services/registrations";
 
@@ -67,12 +66,6 @@ export function RegistrationsPage() {
 
   return (
     <div>
-      <PageHero
-        title="注册审核"
-        subtitle="对应 /api/v1/registrations*；通过后创建用户，仍需在「账号管理」中分配角色方可登录业务菜单。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "注册审核" }]}
-      />
-
       <Card className="table-card">
         <div className="toolbar">
           <Space>

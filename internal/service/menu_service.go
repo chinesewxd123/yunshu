@@ -21,6 +21,7 @@ type MenuCreatePayload struct {
 	Path      string `json:"path"`
 	Name      string `json:"name" binding:"required,max=64"`
 	Icon      string `json:"icon"`
+	AdminOnly bool   `json:"admin_only"`
 	Sort      int    `json:"sort"`
 	Hidden    bool   `json:"hidden"`
 	Component string `json:"component"`
@@ -33,6 +34,7 @@ type MenuUpdatePayload struct {
 	Path      string `json:"path"`
 	Name      string `json:"name" binding:"omitempty,max=64"`
 	Icon      string `json:"icon"`
+	AdminOnly *bool  `json:"admin_only,omitempty"`
 	Sort      int    `json:"sort"`
 	Hidden    bool   `json:"hidden"`
 	Component string `json:"component"`
@@ -51,6 +53,7 @@ func (s *MenuService) Create(ctx context.Context, payload MenuCreatePayload) (*m
 		Path:      payload.Path,
 		Name:      payload.Name,
 		Icon:      payload.Icon,
+		AdminOnly: payload.AdminOnly,
 		Sort:      payload.Sort,
 		Hidden:    payload.Hidden,
 		Component: payload.Component,
@@ -73,6 +76,9 @@ func (s *MenuService) Update(ctx context.Context, id uint, payload MenuUpdatePay
 	}
 	menu.Path = payload.Path
 	menu.Icon = payload.Icon
+	if payload.AdminOnly != nil {
+		menu.AdminOnly = *payload.AdminOnly
+	}
 	menu.Sort = payload.Sort
 	menu.Hidden = payload.Hidden
 	menu.Component = payload.Component

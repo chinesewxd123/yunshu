@@ -1,7 +1,6 @@
 import { PlusOutlined, ReloadOutlined, UserOutlined, EyeOutlined } from "@ant-design/icons";
 import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { PageHero } from "../components/page-hero";
 import { StatusTag } from "../components/status-tag";
 import { createRole, deleteRole, getRoles, getRole, updateRole } from "../services/roles";
 import { getUsers } from "../services/users";
@@ -129,17 +128,6 @@ export function RolesPage() {
 
   return (
     <div>
-      <PageHero
-        title="角色模板"
-        subtitle="角色编码即 Casbin 中的角色主体；在「授权管理」中为角色勾选能力项后，绑定该角色的用户即可访问对应 API。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "角色模板" }]}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建模板
-          </Button>
-        }
-      />
-
       <Card className="table-card">
         <div className="toolbar">
           <Input.Search
@@ -149,6 +137,9 @@ export function RolesPage() {
             onSearch={(keyword) => setQuery((prev) => ({ ...prev, keyword, page: 1 }))}
           />
           <div className="toolbar__actions">
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              新建模板
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={() => void loadRoles()}>
               刷新
             </Button>

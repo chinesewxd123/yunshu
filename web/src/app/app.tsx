@@ -18,6 +18,8 @@ const LoginLogsPage = lazy(() => import("../pages/login-logs-page").then((module
 const OperationLogsPage = lazy(() =>
   import("../pages/operation-logs-page").then((module) => ({ default: module.OperationLogsPage })),
 );
+const BannedIPsPage = lazy(() => import("../pages/banned-ips-page").then((module) => ({ default: module.BannedIPsPage })));
+const DynamicMenuPage = lazy(() => import("../pages/dynamic-menu-page").then((module) => ({ default: module.DynamicMenuPage })));
 
 function RouteFallback() {
   return (
@@ -108,8 +110,9 @@ export function App() {
                   <Route path="menus" element={<MenusPage />} />
                   <Route path="login-logs" element={<LoginLogsPage />} />
                   <Route path="operation-logs" element={<OperationLogsPage />} />
+                  <Route path="banned-ips" element={<BannedIPsPage />} />
+                  <Route path="*" element={<DynamicMenuPage />} />
                 </Route>
-                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>
           </BrowserRouter>

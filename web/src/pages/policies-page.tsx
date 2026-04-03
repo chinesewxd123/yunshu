@@ -1,7 +1,6 @@
 import { ReloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { Button, Card, Empty, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { PageHero } from "../components/page-hero";
 import { getPermissionOptions } from "../services/permissions";
 import { getPolicies, grantPolicy, revokePolicy } from "../services/policies";
 import { getRoleOptions } from "../services/roles";
@@ -91,21 +90,17 @@ export function PoliciesPage() {
 
   return (
     <div>
-      <PageHero
-        title="授权编排"
-        subtitle="授予：POST /api/v1/policies；撤销：DELETE /api/v1/policies（JSON 体）。能力项中的资源路径须与接口真实路由一致。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "授权编排" }]}
-        extra={
-          <Space wrap>
-            <Button icon={<ReloadOutlined />} onClick={() => void bootstrap(selectedRoleId)}>
-              刷新
-            </Button>
-            <Button type="primary" icon={<SaveOutlined />} loading={submitting} onClick={() => void handleSave()}>
-              保存编排
-            </Button>
-          </Space>
-        }
-      />
+      <div className="toolbar" style={{ marginBottom: 16 }}>
+        <span />
+        <div className="toolbar__actions">
+          <Button icon={<ReloadOutlined />} onClick={() => void bootstrap(selectedRoleId)}>
+            刷新
+          </Button>
+          <Button type="primary" icon={<SaveOutlined />} loading={submitting} onClick={() => void handleSave()}>
+            保存编排
+          </Button>
+        </div>
+      </div>
 
       <div className="section-grid">
         <Card className="glass-card" title="角色模板选择">

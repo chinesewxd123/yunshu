@@ -66,7 +66,12 @@ func (h *AuthHandler) SendEmailCode(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.SendEmailCode(c.Request.Context(), req)
+	// include client IP for additional per-IP send limits
+	clientIP := c.ClientIP()
+	data, err := h.service.SendEmailCodeWithIP(c.Request.Context(), service.SendEmailCodeWithIPRequest{
+		SendEmailCodeRequest: req,
+		ClientIP:             clientIP,
+	})
 	if err != nil {
 		response.Error(c, err)
 		return

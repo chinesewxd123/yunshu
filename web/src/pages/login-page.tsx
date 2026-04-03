@@ -214,12 +214,6 @@ export function LoginPage() {
         <Card className="login-card" bordered={false}>
           <Space direction="vertical" size={8} style={{ width: "100%", marginBottom: 28 }}>
             <Typography.Text className="code-pill">安全登录</Typography.Text>
-            <Typography.Title level={2} style={{ margin: 0 }}>
-              进入运维控制台
-            </Typography.Title>
-            <Typography.Paragraph className="inline-muted" style={{ marginBottom: 0 }}>
-              用户名密码登录须先点「刷新」加载图形验证码；邮箱登录请先向邮箱索取 6 位验证码。
-            </Typography.Paragraph>
           </Space>
 
           <Tabs

@@ -41,6 +41,7 @@ func Register(app *bootstrap.App) {
 	policyHandler := handler.NewPolicyHandler(policyService)
 	regHandler := handler.NewRegistrationHandler(registrationService)
 	menuHandler := handler.NewMenuHandler(menuService)
+	adminHandler := handler.NewAdminHandler(app.Redis)
 
 	authMiddleware := middleware.Auth(app.Config.Auth.JWTSecret, app.Redis, userRepo, app.Logger)
 	authorize := middleware.Authorize(app.Enforcer, app.Logger)
@@ -62,7 +63,7 @@ func Register(app *bootstrap.App) {
 	// 邮箱登录接口
 	authGroup.POST("/email-login", authHandler.EmailLogin)
 	// 注册接口（改为申请模式）
-	authGroup.POST("/register", regHandler.Apply)
+	authGroup.POST("/register", middleware.RegistrationRateLimit(app.Redis), regHandler.Apply)
 
 	authAuthed := authGroup.Group("")
 	authAuthed.Use(authMiddleware, opAudit)
@@ -107,6 +108,12 @@ func Register(app *bootstrap.App) {
 	registrations.Use(authMiddleware, authorize, opAudit)
 	registrations.GET("", regHandler.List)
 	registrations.POST("/:id/review", regHandler.Review)
+
+	// Admin management (list/unban banned IPs) - super-admin only
+	admin := api.Group("/security")
+	admin.Use(authMiddleware)
+	admin.GET("/banned-ips", adminHandler.ListBannedIPs)
+	admin.POST("/banned-ips/unban", adminHandler.UnbanIP)
 
 	// 菜单管理接口
 	menus := api.Group("/menus")

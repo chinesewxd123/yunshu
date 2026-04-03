@@ -59,6 +59,16 @@
 3. 操作历史导出增加 `IP、RequestHeaders、RequestBody、ResponseBody` 并在审计层对敏感字段（如 Authorization、Cookie）进行遮蔽与截断存储。
 4. 将 Excel 依赖固定为与 Go 1.23 兼容的版本（在 go.mod 中声明）。
 
+5. 封禁 IP 管理与注册限流
+
+- 新增临时封禁（ban）机制：当同一 IP 在短时间内触发注册或其他受保护接口的滥用行为时，服务端会在 Redis 中写入临时键 `ban:ip:<IP>`（默认带 TTL），短期内阻止该 IP 的继续请求。封禁逻辑在 `internal/middleware/rate_limit.go` 中实现。
+- 后台管理：新增「封禁 IP 管理」页面（前端路径 `/banned-ips`）与管理员 API：
+  - `GET /api/v1/security/banned-ips` — 列表当前 Redis 中的临时封禁项（需管理员权限）
+  - `POST /api/v1/security/banned-ips/unban` — 解除某个 IP 的封禁（需管理员权限）
+- 前端已在侧栏「系统管理」下暴露「封禁 IP 管理」页，页面会读取上述管理 API 并支持解除操作。
+
+注意：封禁条目存放于 Redis（非数据库表），可通过 `redis-cli TTL "ban:ip:<IP>"` 查看剩余封禁时间，或 `redis-cli DEL "ban:ip:<IP>"` 手动解除。
+
 ---
 
 ## 快速开始（开发环境）

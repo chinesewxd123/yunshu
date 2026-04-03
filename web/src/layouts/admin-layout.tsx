@@ -9,27 +9,17 @@ import {
   MenuOutlined,
   TeamOutlined,
   LogoutOutlined,
+  DownOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
-import { Avatar, Button, Dropdown, Layout, Menu, Space, Spin, Tag, Typography } from "antd";
+import { Avatar, Button, Dropdown, Layout, Menu, Spin, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import {
-  BRAND_DESCRIPTION,
-  BRAND_EN_NAME,
-  BRAND_NAME,
-  BRAND_SHORT,
-  BRAND_SUBTITLE,
-} from "../constants/brand";
+import { BRAND_DESCRIPTION, BRAND_EN_NAME, BRAND_NAME, BRAND_SHORT, BRAND_SUBTITLE } from "../constants/brand";
 import { useAuth } from "../contexts/auth-context";
 import { getMenuTree } from "../services/menus";
 import type { MenuItem } from "../services/menus";
-import {
-  buildSiderMenuItems,
-  flattenMenuTitles,
-  matchMenuSelectedKey,
-  type AntdMenuItem,
-} from "../utils/admin-menu";
+import { buildSiderMenuItems, matchMenuSelectedKey, type AntdMenuItem } from "../utils/admin-menu";
 
 const { Content, Header, Sider } = Layout;
 
@@ -41,21 +31,17 @@ const FALLBACK_MENU_ITEMS: MenuProps["items"] = [
   { key: "/policies", icon: <AuditOutlined />, label: <Link to="/policies">授权管理</Link> },
   { key: "/registrations", icon: <CheckCircleOutlined />, label: <Link to="/registrations">注册审核</Link> },
   { key: "/menus", icon: <MenuOutlined />, label: <Link to="/menus">菜单管理</Link> },
-  { key: "/login-logs", icon: <LoginOutlined />, label: <Link to="/login-logs">登录日志</Link> },
-  { key: "/operation-logs", icon: <HistoryOutlined />, label: <Link to="/operation-logs">操作历史</Link> },
+  {
+    key: "/system",
+    icon: <MenuOutlined />,
+    label: "系统管理",
+    children: [
+      { key: "/login-logs", icon: <LoginOutlined />, label: <Link to="/login-logs">登录日志</Link> },
+      { key: "/operation-logs", icon: <HistoryOutlined />, label: <Link to="/operation-logs">操作历史</Link> },
+      { key: "/banned-ips", icon: <ApiOutlined />, label: <Link to="/banned-ips">封禁 IP 管理</Link> },
+    ],
+  },
 ];
-
-const FALLBACK_TITLE_MAP: Record<string, string> = {
-  "/": "资产总览",
-  "/users": "账号管理",
-  "/roles": "角色管理",
-  "/permissions": "API管理",
-  "/policies": "授权管理",
-  "/registrations": "注册审核",
-  "/menus": "菜单管理",
-  "/login-logs": "登录日志",
-  "/operation-logs": "操作历史",
-};
 
 function defaultOpenKeysFor(items: AntdMenuItem[]): string[] {
   const keys: string[] = [];
@@ -71,14 +57,11 @@ function defaultOpenKeysFor(items: AntdMenuItem[]): string[] {
   return keys;
 }
 
-const capabilityTags = ["JWT + Casbin", "动态菜单 · /menus/tree", "登录/操作审计"];
-
 export function AdminLayout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user, loading, logoutAction } = useAuth();
   const [siderItems, setSiderItems] = useState<MenuProps["items"]>(FALLBACK_MENU_ITEMS);
-  const [titleMap, setTitleMap] = useState<Record<string, string>>(FALLBACK_TITLE_MAP);
   const [menuEpoch, setMenuEpoch] = useState(0);
 
   useEffect(() => {
@@ -90,11 +73,9 @@ export function AdminLayout() {
         const items = buildSiderMenuItems(tree);
         if (!items.length) return;
         setSiderItems(items);
-        setTitleMap({ ...FALLBACK_TITLE_MAP, ...flattenMenuTitles(tree) });
         setMenuEpoch((n) => n + 1);
       } catch {
         setSiderItems(FALLBACK_MENU_ITEMS);
-        setTitleMap(FALLBACK_TITLE_MAP);
       }
     })();
     return () => {
@@ -117,7 +98,7 @@ export function AdminLayout() {
     navigate("/login", { replace: true });
   }
 
-  const dropdownItems = [
+  const userMenuItems: MenuProps["items"] = [
     {
       key: "logout",
       icon: <LogoutOutlined />,
@@ -147,17 +128,6 @@ export function AdminLayout() {
           </Typography.Paragraph>
         </div>
 
-        <div className="brand-pills">
-          <div className="brand-pill">
-            <span className="brand-pill__label">登录</span>
-            <strong>邮箱 6 位 / 密码+图形码</strong>
-          </div>
-          <div className="brand-pill">
-            <span className="brand-pill__label">授权</span>
-            <strong>角色 → 能力项</strong>
-          </div>
-        </div>
-
         <Menu
           key={menuEpoch}
           theme="dark"
@@ -171,44 +141,46 @@ export function AdminLayout() {
 
       <Layout>
         <Header className="admin-header">
-          <div>
-            <Typography.Text className="admin-header__eyebrow">{BRAND_SUBTITLE}</Typography.Text>
-            <Typography.Title level={3} className="admin-header__title">
-              {titleMap[selectedKey] ?? titleMap[pathname] ?? BRAND_NAME}
-            </Typography.Title>
-            <Typography.Text className="admin-header__desc">
-              页面操作即调用后端接口；权限不足时请在「授权管理」中为当前角色勾选对应 API 能力项。
-            </Typography.Text>
-          </div>
-
-          <div className="admin-header__actions">
-            <Space wrap className="admin-header__meta">
-              {capabilityTags.map((item) => (
-                <Tag key={item} bordered={false} className="admin-header__status">
-                  {item}
-                </Tag>
-              ))}
-            </Space>
-
-            <Dropdown menu={{ items: dropdownItems }} trigger={["click"]}>
-              <Button size="large" className="user-chip">
-                <Space>
-                  <Avatar>{user?.nickname?.slice(0, 1) || user?.username?.slice(0, 1) || "Y"}</Avatar>
-                  <span>{user?.nickname || user?.username || "未登录"}</span>
-                  {user?.roles?.length ? (
-                    <Space size={4} wrap>
-                      {user.roles.slice(0, 3).map((r) => (
-                        <Tag key={r.id} color="blue">
-                          {r.name}
-                        </Tag>
-                      ))}
-                      {user.roles.length > 3 ? <Tag>+{user.roles.length - 3}</Tag> : null}
-                    </Space>
-                  ) : null}
-                </Space>
-              </Button>
-            </Dropdown>
-          </div>
+          <Dropdown
+            trigger={["click"]}
+            placement="bottomRight"
+            menu={{ items: userMenuItems }}
+            dropdownRender={(menu) => (
+              <div className="user-header-dropdown-panel">
+                <div className="user-header-dropdown-panel__head">
+                  <Avatar className="user-header-dropdown-panel__avatar" size={40}>
+                    {user?.nickname?.slice(0, 1) || user?.username?.slice(0, 1) || "Y"}
+                  </Avatar>
+                  <div className="user-header-dropdown-panel__text">
+                    <div className="user-header-dropdown-panel__name">{user?.nickname || user?.username || "未登录"}</div>
+                    {user?.username ? (
+                      <div className="user-header-dropdown-panel__account">{user.username}</div>
+                    ) : null}
+                  </div>
+                </div>
+                {user?.roles?.length ? (
+                  <div className="user-header-dropdown-panel__roles">
+                    {user.roles.map((r) => (
+                      <Tag key={r.id} color="blue" bordered={false}>
+                        {r.name}
+                      </Tag>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="user-header-dropdown-panel__menu">{menu}</div>
+              </div>
+            )}
+          >
+            <Button type="text" className="user-header-trigger">
+              <span className="user-header-trigger__inner">
+                <Avatar className="user-header-trigger__avatar" size="small">
+                  {user?.nickname?.slice(0, 1) || user?.username?.slice(0, 1) || "Y"}
+                </Avatar>
+                <span className="user-header-trigger__name">{user?.nickname || user?.username || "未登录"}</span>
+                <DownOutlined className="user-header-trigger__caret" />
+              </span>
+            </Button>
+          </Dropdown>
         </Header>
 
         <Content className="admin-content">

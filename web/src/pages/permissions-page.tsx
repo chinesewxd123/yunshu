@@ -1,7 +1,6 @@
 import { PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, EyeOutlined } from "@ant-design/icons";
 import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { PageHero } from "../components/page-hero";
 import { StatusTag } from "../components/status-tag";
 import { createPermission, deletePermission, getPermissions, getPermission, updatePermission } from "../services/permissions";
 import { getRoleOptions } from "../services/roles";
@@ -119,17 +118,6 @@ export function PermissionsPage() {
 
   return (
     <div>
-      <PageHero
-        title="接口能力"
-        subtitle="此处每条能力对应 Casbin 的一条规则维度：资源路径须与 Gin 路由模板一致（如 /api/v1/users/:id），否则授权后仍会 403。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "接口能力" }]}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建能力项
-          </Button>
-        }
-      />
-
       <Card className="table-card">
         <div className="toolbar">
           <Input.Search
@@ -139,6 +127,9 @@ export function PermissionsPage() {
             onSearch={(keyword) => setQuery((prev) => ({ ...prev, keyword, page: 1 }))}
           />
           <div className="toolbar__actions">
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              新建能力项
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={() => void loadPermissions()}>
               刷新
             </Button>

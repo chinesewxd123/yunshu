@@ -1,7 +1,6 @@
 import { DeleteOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { Button, Card, Input, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { PageHero } from "../components/page-hero";
 import { batchDeleteLoginLogs, deleteLoginLog, getLoginLogs, exportLoginLogs } from "../services/login-logs";
 import type { LoginLogItem, LoginLogQuery } from "../services/login-logs";
 import { formatDateTime } from "../utils/format";
@@ -67,7 +66,7 @@ export function LoginLogsPage() {
   async function handleExport() {
     try {
       const res = await exportLoginLogs({ username: filters.username, status: filters.status, source: filters.source });
-      const blob = new Blob([res], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const blob = res;
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -87,12 +86,6 @@ export function LoginLogsPage() {
 
   return (
     <div>
-      <PageHero
-        title="登录日志"
-        subtitle="记录用户登录行为，区分用户名密码登录与邮箱验证码登录。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "系统管理" }, { title: "登录日志" }]}
-      />
-
       <Card className="table-card">
         <div className="toolbar">
           <Space wrap>
@@ -160,6 +153,7 @@ export function LoginLogsPage() {
             onChange: (page, pageSize) => setQuery((p) => ({ ...p, page, page_size: pageSize })),
           }}
           scroll={{ x: 1200 }}
+          tableLayout="fixed"
           columns={[
             { title: "ID", dataIndex: "id", width: 70 },
             { title: "用户名", dataIndex: "username", width: 120, render: (v: string) => v || "-" },
@@ -177,14 +171,14 @@ export function LoginLogsPage() {
               render: (v: number) =>
                 v === 1 ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>,
             },
-            { title: "详情", dataIndex: "detail", ellipsis: true, render: (v: string) => v || "-" },
+            { title: "详情", dataIndex: "detail", width: 320, ellipsis: true, render: (v: string) => <Typography.Text ellipsis={{ tooltip: v }} style={{ maxWidth: 300 }}>{v || "-"}</Typography.Text> },
             {
               title: "浏览器/设备",
               dataIndex: "user_agent",
-              width: 200,
+              width: 260,
               ellipsis: true,
               render: (ua: string) => (
-                <Typography.Text ellipsis={{ tooltip: ua }} style={{ maxWidth: 180 }}>
+                <Typography.Text ellipsis={{ tooltip: ua }} style={{ maxWidth: 240 }}>
                   {ua || "-"}
                 </Typography.Text>
               ),

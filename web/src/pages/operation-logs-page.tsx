@@ -1,7 +1,6 @@
 import { DeleteOutlined, EyeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { Button, Card, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
-import { PageHero } from "../components/page-hero";
 import { batchDeleteOperationLogs, deleteOperationLog, getOperationLogs, exportOperationLogs } from "../services/operation-logs";
 import type { OperationLogItem, OperationLogQuery } from "../services/operation-logs";
 import { formatDateTime } from "../utils/format";
@@ -77,7 +76,7 @@ export function OperationLogsPage() {
   async function handleExport() {
     try {
       const res = await exportOperationLogs({ method: filters.method, path: filters.path, status_code: filters.status_code });
-      const blob = new Blob([res], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const blob = res;
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -102,12 +101,6 @@ export function OperationLogsPage() {
 
   return (
     <div>
-      <PageHero
-        title="操作历史"
-        subtitle="记录已通过鉴权的业务请求，包含请求方法、路径、状态码及耗时。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "系统管理" }, { title: "操作历史" }]}
-      />
-
       <Card className="table-card">
         <div className="toolbar">
           <Space wrap>

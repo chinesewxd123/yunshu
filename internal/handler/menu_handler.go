@@ -3,8 +3,11 @@ package handler
 import (
 	"errors"
 	"strconv"
+	"strings"
 
+	"go-permission-system/internal/model"
 	"go-permission-system/internal/pkg/apperror"
+	"go-permission-system/internal/pkg/auth"
 	"go-permission-system/internal/pkg/response"
 	"go-permission-system/internal/service"
 
@@ -26,7 +29,44 @@ func (h *MenuHandler) Tree(c *gin.Context) {
 		response.Error(c, apperror.Internal(err.Error()))
 		return
 	}
-	response.Success(c, list)
+	// 如果不是 super-admin，需要从菜单树中移除仅管理员可见项
+	user, ok := auth.CurrentUserFromContext(c)
+	if !ok {
+		response.Success(c, list)
+		return
+	}
+
+	isSuper := false
+	for _, rc := range user.RoleCodes {
+		if strings.TrimSpace(rc) == "super-admin" {
+			isSuper = true
+			break
+		}
+	}
+
+	if isSuper {
+		response.Success(c, list)
+		return
+	}
+
+	// 递归过滤 AdminOnly 项
+	var filter func([]model.Menu) []model.Menu
+	filter = func(items []model.Menu) []model.Menu {
+		var out []model.Menu
+		for _, it := range items {
+			if it.AdminOnly {
+				continue
+			}
+			if len(it.Children) > 0 {
+				it.Children = filter(it.Children)
+			}
+			out = append(out, it)
+		}
+		return out
+	}
+
+	filtered := filter(list)
+	response.Success(c, filtered)
 }
 
 func (h *MenuHandler) Create(c *gin.Context) {

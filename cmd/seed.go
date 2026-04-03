@@ -191,6 +191,8 @@ func defaultPermissions() []model.Permission {
 		{Name: "导出操作历史", Resource: "/api/v1/operation-logs/export", Action: "GET", Description: "Export operation logs to Excel"},
 		{Name: "删除操作历史", Resource: "/api/v1/operation-logs/:id", Action: "DELETE", Description: "Delete operation log"},
 		{Name: "批量删除操作历史", Resource: "/api/v1/operation-logs/delete", Action: "POST", Description: "Batch delete operation logs"},
+		{Name: "查看封禁 IP 列表", Resource: "/api/v1/security/banned-ips", Action: "GET", Description: "View banned IPs list"},
+		{Name: "解除封禁 IP", Resource: "/api/v1/security/banned-ips/unban", Action: "POST", Description: "Unban IP"},
 	}
 }
 
@@ -234,6 +236,7 @@ func upsertMenu(ctx context.Context, db *gorm.DB, menu *model.Menu, parentID uin
 	existing.Icon = menu.Icon
 	existing.Sort = menu.Sort
 	existing.Hidden = menu.Hidden
+	existing.AdminOnly = menu.AdminOnly
 	existing.Component = menu.Component
 	existing.Redirect = menu.Redirect
 	existing.Status = menu.Status
@@ -276,6 +279,7 @@ func defaultMenus() []model.Menu {
 				{Name: "菜单管理", Path: "/menus", Icon: "MenuOutlined", Sort: 6, Component: "", Status: 1},
 				{Name: "登录日志", Path: "/login-logs", Icon: "LoginOutlined", Sort: 7, Component: "", Status: 1},
 				{Name: "操作历史", Path: "/operation-logs", Icon: "HistoryOutlined", Sort: 8, Component: "", Status: 1},
+				{Name: "封禁 IP 管理", Path: "/banned-ips", Icon: "ApiOutlined", Sort: 9, Component: "", Status: 1, AdminOnly: false},
 			},
 		},
 	}

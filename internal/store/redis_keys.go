@@ -31,3 +31,13 @@ func PasswordLoginCodeCooldownKey(username string) string {
 func normalizeEmailKey(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
+
+// EmailSendIPKey key for tracking number of email sends from an IP
+func EmailSendIPKey(ip string) string {
+	return "auth:email_send_ip:" + strings.TrimSpace(ip)
+}
+
+// BanIPKey temporary ban key for IPs
+func BanIPKey(ip string) string {
+	return "ban:ip:" + strings.TrimSpace(ip)
+}

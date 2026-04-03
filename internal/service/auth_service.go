@@ -111,6 +111,26 @@ func (s *AuthService) SendEmailCode(ctx context.Context, req SendEmailCodeReques
 	}, nil
 }
 
+// SendEmailCodeWithIP behaves like SendEmailCode but also enforces a per-IP sending limit.
+func (s *AuthService) SendEmailCodeWithIP(ctx context.Context, req SendEmailCodeWithIPRequest) (*SendEmailCodeResponse, error) {
+	// enforce per-IP send limit (e.g., 20 sends per minute)
+	if s.redis != nil {
+		ipKey := store.EmailSendIPKey(req.ClientIP)
+		limit := int64(20)
+		if n, err := s.redis.Incr(ctx, ipKey).Result(); err == nil {
+			if n == 1 {
+				s.redis.Expire(ctx, ipKey, time.Minute)
+			}
+			if n > limit {
+				return nil, apperror.Conflict("too many verification requests from this IP, try later")
+			}
+		}
+	}
+
+	// Delegate to existing logic
+	return s.SendEmailCode(ctx, SendEmailCodeRequest{Email: req.Email, Scene: req.Scene})
+}
+
 func (s *AuthService) SendLoginCodeByUsername(ctx context.Context, req SendLoginCodeByUsernameRequest) (*SendEmailCodeResponse, error) {
 	username := strings.TrimSpace(req.Username)
 	user, err := s.userRepo.GetByUsername(ctx, username)

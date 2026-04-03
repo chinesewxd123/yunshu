@@ -33,8 +33,9 @@ export function assignUserRoles(id: number, payload: AssignRolesPayload) {
   return getData<UserItem>(http.put(`/users/${id}/roles`, payload));
 }
 
-export function exportUsers(params?: Record<string, any>) {
-  return http.get(`/users/export`, { params, responseType: "blob" });
+export async function exportUsers(params?: Record<string, any>): Promise<Blob> {
+  // axios instance returns `response.data` at runtime (see interceptors), but TS types still assume AxiosResponse.
+  return (await http.get(`/users/export`, { params, responseType: "blob" })) as unknown as Blob;
 }
 
 export function importUsers(file: File) {

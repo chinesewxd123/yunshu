@@ -36,6 +36,7 @@ export function batchDeleteOperationLogs(ids: number[]) {
   return getData<MessageData>(http.post("/operation-logs/delete", { ids }));
 }
 
-export function exportOperationLogs(params?: Record<string, any>) {
-  return http.get(`/operation-logs/export`, { params, responseType: "blob" });
+export async function exportOperationLogs(params?: Record<string, any>): Promise<Blob> {
+  // axios instance returns `response.data` at runtime (see interceptors), but TS types still assume AxiosResponse.
+  return (await http.get(`/operation-logs/export`, { params, responseType: "blob" })) as unknown as Blob;
 }

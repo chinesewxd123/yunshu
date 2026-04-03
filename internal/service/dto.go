@@ -18,6 +18,12 @@ type SendEmailCodeRequest struct {
 	Scene string `json:"scene" binding:"required,oneof=login register"`
 }
 
+// optional wrapper including client IP when calling service method that checks IP send limits
+type SendEmailCodeWithIPRequest struct {
+	SendEmailCodeRequest
+	ClientIP string `json:"-"`
+}
+
 type SendLoginCodeByUsernameRequest struct {
 	Username string `json:"username" binding:"required"`
 }

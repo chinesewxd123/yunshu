@@ -1,9 +1,10 @@
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, PlusSquareOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
-import { useEffect, useState } from "react";
-import { PageHero } from "../components/page-hero";
+import { AutoComplete, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
+import { useEffect, useMemo, useState } from "react";
 import { getMenuTree, createMenu, updateMenu, deleteMenu } from "../services/menus";
 import type { MenuItem, MenuCreatePayload, MenuUpdatePayload } from "../services/menus";
+import { getAntdIconSelectOptions } from "../utils/antd-icon-options";
+import { listMenuPageComponentIds } from "../utils/menu-page-loader";
 
 export function MenusPage() {
   const [treeData, setTreeData] = useState<MenuItem[]>([]);
@@ -13,6 +14,27 @@ export function MenusPage() {
   const [current, setCurrent] = useState<MenuItem | null>(null);
   const [parentID, setParentID] = useState<number | undefined>();
   const [form] = Form.useForm<MenuCreatePayload>();
+  const watchedComponent = Form.useWatch("component", form);
+  const watchedIcon = Form.useWatch("icon", form);
+
+  const pageComponentOptions = useMemo(() => {
+    const ids = listMenuPageComponentIds();
+    const v = watchedComponent?.trim();
+    if (v && !ids.includes(v)) {
+      ids.push(v);
+      ids.sort((a, b) => a.localeCompare(b));
+    }
+    return ids.map((id) => ({ value: id, label: id }));
+  }, [watchedComponent]);
+
+  const iconSelectOptions = useMemo(() => {
+    const base = getAntdIconSelectOptions();
+    const v = watchedIcon?.trim();
+    if (v && !base.some((o) => o.value === v)) {
+      return [...base, { value: v, label: v }];
+    }
+    return base;
+  }, [watchedIcon]);
 
   useEffect(() => {
     void loadTree();
@@ -78,21 +100,13 @@ export function MenusPage() {
 
   return (
     <div>
-      <PageHero
-        title="菜单管理"
-        subtitle="维护 /api/v1/menus* 菜单元数据；保存后刷新即可驱动左侧导航（启用且未隐藏的项）。路由 path 需与 React Router 中已注册路径一致。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "菜单管理" }]}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>
-            新增根菜单
-          </Button>
-        }
-      />
-
       <Card className="table-card">
         <div className="toolbar">
           <Typography.Text type="secondary">点击节点可操作子级</Typography.Text>
           <div className="toolbar__actions">
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>
+              新增根菜单
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={() => void loadTree()}>
               刷新
             </Button>
@@ -171,13 +185,28 @@ export function MenusPage() {
             <Form.Item label="路由路径" name="path" style={{ flex: 1, marginBottom: 0 }}>
               <Input placeholder="/system" />
             </Form.Item>
-            <Form.Item label="组件路径" name="component" style={{ flex: 1, marginBottom: 0 }}>
-              <Input placeholder="system/index" />
+            <Form.Item
+              label="组件路径"
+              name="component"
+              style={{ flex: 1, marginBottom: 0 }}
+              extra="与 src/pages 下文件名一致，如 foo-bar-page → src/pages/foo-bar-page.tsx，导出 FooBarPage"
+            >
+              <Input placeholder="例如：foo-bar-page" />
             </Form.Item>
           </Space>
           <Space style={{ width: "100%" }} size="middle">
             <Form.Item label="图标" name="icon" style={{ flex: 1, marginBottom: 0 }}>
-              <Input placeholder="SettingOutlined" />
+              <Select
+                allowClear
+                showSearch
+                placeholder="选择 Ant Design 图标"
+                optionFilterProp="value"
+                options={iconSelectOptions}
+                virtual
+                listHeight={280}
+                popupMatchSelectWidth={false}
+                dropdownStyle={{ minWidth: 320 }}
+              />
             </Form.Item>
             <Form.Item label="排序" name="sort" style={{ width: 120, marginBottom: 0 }}>
               <InputNumber min={0} style={{ width: "100%" }} />

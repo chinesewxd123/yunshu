@@ -12,6 +12,7 @@ type Menu struct {
 	Path      string         `json:"path" gorm:"size:128"`
 	Name      string         `json:"name" gorm:"size:64;not null"`
 	Icon      string         `json:"icon" gorm:"size:64"`
+	AdminOnly bool           `json:"admin_only" gorm:"default:false"`
 	Sort      int            `json:"sort" gorm:"default:0"`
 	Hidden    bool           `json:"hidden" gorm:"default:false"`
 	Component string         `json:"component" gorm:"size:128"`

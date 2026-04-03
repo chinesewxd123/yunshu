@@ -17,7 +17,6 @@ import {
   message,
 } from "antd";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { PageHero } from "../components/page-hero";
 import { StatusTag } from "../components/status-tag";
 import { getRoleOptions } from "../services/roles";
 import { assignUserRoles, createUser, deleteUser, getUsers, getUser, updateUser, exportUsers, importUsers } from "../services/users";
@@ -163,7 +162,7 @@ export function UsersPage() {
   async function handleExport() {
     try {
       const res = await exportUsers({ keyword: query.keyword });
-      const blob = new Blob([res], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const blob = res;
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -186,22 +185,11 @@ export function UsersPage() {
       message.error("导入失败");
     }
     // reset
-    if (fileInputRef) fileInputRef.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   return (
     <div>
-      <PageHero
-        title="账号治理"
-        subtitle="维护用户与角色的绑定；保存角色会同步 Casbin。无角色用户无法访问需授权的管理接口。"
-        breadcrumbItems={[{ title: "控制台" }, { title: "账号治理" }]}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建账号
-          </Button>
-        }
-      />
-
       <Card className="table-card">
         <div className="toolbar">
           <Space wrap>
@@ -214,6 +202,9 @@ export function UsersPage() {
           </Space>
           <div className="toolbar__actions">
             <input ref={(el) => (fileInputRef.current = el)} type="file" accept=".xlsx" style={{ display: "none" }} onChange={handleImportChange} />
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              新建账号
+            </Button>
             <Button onClick={() => fileInputRef.current?.click()}>导入</Button>
             <Button onClick={() => void handleExport()}>导出</Button>
             <Button icon={<ReloadOutlined />} onClick={() => void loadUsers()}>
