@@ -1,102 +1,88 @@
-import {
-  DatabaseOutlined,
-  DeploymentUnitOutlined,
-  LockOutlined,
-  SafetyCertificateOutlined,
-  UserOutlined,
-  MailOutlined,
-} from "@ant-design/icons";
-import { Button, Card, Form, Input, Space, Tabs, Typography, message } from "antd";
-import { useEffect, useState } from "react";
+import { LockOutlined, MailOutlined, SafetyCertificateOutlined, UserOutlined } from "@ant-design/icons";
+import { Button, Form, Input, Modal, message } from "antd";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import {
-  BRAND_DESCRIPTION,
-  BRAND_EN_NAME,
-  BRAND_NAME,
-  BRAND_SUBTITLE,
-} from "../constants/brand";
+import { sendEmailCode, sendPasswordLoginCode, registerByEmail } from "../services/auth";
+import type {
+  EmailLoginPayload,
+  PasswordLoginPayload,
+  RegisterPayload,
+  SendEmailCodePayload,
+  SendPasswordLoginCodeResult,
+} from "../types/api";
+import { BRAND_EN_NAME, BRAND_NAME, BRAND_SUBTITLE } from "../constants/brand";
 import { useAuth } from "../contexts/auth-context";
-import { sendEmailCode, sendPasswordLoginCode, passwordLogin as passwordLoginRequest, emailLogin as emailLoginRequest, registerByEmail } from "../services/auth";
-import type { PasswordLoginPayload, EmailLoginPayload, SendEmailCodePayload, RegisterPayload } from "../types/api";
+import loginAtomBgUrl from "../assets/login-atom-bg.svg";
+
+type AuthTabKey = "account" | "email";
+type ButtonFxState = "idle" | "loading" | "success";
 
 interface LocationState {
   from?: string;
 }
 
-const featureList = [
-  {
-    icon: <DatabaseOutlined />,
-    title: "权限与页面一致",
-    description: "控制台每个菜单对应一组后端 /api/v1 接口；资产总览提供完整「接口目录」便于核对。",
-  },
-  {
-    icon: <DeploymentUnitOutlined />,
-    title: "角色驱动授权",
-    description: "用户须绑定角色，角色通过 Casbin 绑定「资源路径 + HTTP 方法」能力项后方可访问管理接口。",
-  },
-  {
-    icon: <SafetyCertificateOutlined />,
-    title: "双通道登录",
-    description: "管理员可用「用户名 + 密码 + 图形验证码」；日常推荐「邮箱 + 6 位验证码」。注册提交后需管理员审核。",
-  },
-];
+function useCountdown(seconds: number, onTick: (next: number) => void) {
+  useEffect(() => {
+    if (seconds <= 0) return;
+    const t = window.setTimeout(() => onTick(seconds - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [seconds, onTick]);
+}
 
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { passwordLoginAction, emailLoginAction } = useAuth();
+
+  const [tab, setTab] = useState<AuthTabKey>("account");
+  const [registerOpen, setRegisterOpen] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
-  const [codeCountdown, setCodeCountdown] = useState(0);
+
   const [passwordCodeCountdown, setPasswordCodeCountdown] = useState(0);
-  const [captchaKey, setCaptchaKey] = useState<string>("");
-  const [captchaImage, setCaptchaImage] = useState<string>("");
+  const [emailCodeCountdown, setEmailCodeCountdown] = useState(0);
+  const [registerCodeCountdown, setRegisterCodeCountdown] = useState(0);
+
+  const [captchaKey, setCaptchaKey] = useState("");
+  const [captchaImage, setCaptchaImage] = useState<string | null>(null);
+
+  const [buttonFx, setButtonFx] = useState<ButtonFxState>("idle");
+
   const [passwordForm] = Form.useForm<PasswordLoginPayload>();
   const [emailForm] = Form.useForm<EmailLoginPayload>();
   const [registerForm] = Form.useForm<RegisterPayload>();
-  const [registerCodeCountdown, setRegisterCodeCountdown] = useState(0);
+
+  const bgRef = useRef<HTMLDivElement | null>(null);
+  const rafRef = useRef<number>(0);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    if (codeCountdown > 0) {
-      timer = setTimeout(() => setCodeCountdown(codeCountdown - 1), 1000);
-    }
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [codeCountdown]);
+    const bg = bgRef.current;
+    if (!bg) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    if (passwordCodeCountdown > 0) {
-      timer = setTimeout(() => setPasswordCodeCountdown(passwordCodeCountdown - 1), 1000);
-    }
-    return () => {
-      if (timer) clearTimeout(timer);
+    const onMove = (e: MouseEvent) => {
+      if (mq.matches) return;
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        const nx = (e.clientX / window.innerWidth - 0.5) * 14;
+        const ny = (e.clientY / window.innerHeight - 0.5) * 9;
+        bg.style.transform = `translate3d(${nx}px, ${ny}px, 0) scale(1.01)`;
+      });
     };
-  }, [passwordCodeCountdown]);
 
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    if (registerCodeCountdown > 0) {
-      timer = setTimeout(() => setRegisterCodeCountdown(registerCodeCountdown - 1), 1000);
-    }
+    window.addEventListener("mousemove", onMove, { passive: true });
     return () => {
-      if (timer) clearTimeout(timer);
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener("mousemove", onMove);
     };
-  }, [registerCodeCountdown]);
+  }, []);
 
-  async function handlePasswordLogin(values: PasswordLoginPayload) {
-    setSubmitting(true);
-    try {
-      await passwordLoginAction(values);
-      message.success("登录成功");
-      const state = location.state as LocationState | null;
-      navigate(state?.from || "/", { replace: true });
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  useCountdown(passwordCodeCountdown, setPasswordCodeCountdown);
+  useCountdown(emailCodeCountdown, setEmailCodeCountdown);
+  useCountdown(registerCodeCountdown, setRegisterCodeCountdown);
+
+  const fromPath = (location.state as LocationState | null)?.from ?? "/";
 
   async function handleSendPasswordCode() {
     try {
@@ -107,13 +93,13 @@ export function LoginPage() {
       }
 
       setSendingCode(true);
-      const result = await sendPasswordLoginCode({ username });
+      const result: SendPasswordLoginCodeResult = await sendPasswordLoginCode({ username });
       setCaptchaKey(result.captcha_key);
       setCaptchaImage(result.image);
       passwordForm.setFieldValue("captcha_key", result.captcha_key);
       message.success("验证码已生成");
       setPasswordCodeCountdown(60);
-    } catch (error) {
+    } catch {
       message.error("生成验证码失败");
     } finally {
       setSendingCode(false);
@@ -132,26 +118,9 @@ export function LoginPage() {
       const payload: SendEmailCodePayload = { email, scene: "login" };
       await sendEmailCode(payload);
       message.success("验证码已发送到您的邮箱，请查收");
-      setCodeCountdown(60);
+      setEmailCodeCountdown(60);
     } finally {
       setSendingCode(false);
-    }
-  }
-
-  async function handleSendEmailOrUsernameCode() {
-    await handleSendEmailCode();
-  }
-
-  async function handleEmailLogin(values: EmailLoginPayload) {
-    setSubmitting(true);
-    try {
-      const { email, code } = values;
-      await emailLoginAction({ email, code });
-      message.success("登录成功");
-      const state = location.state as LocationState | null;
-      navigate(state?.from || "/", { replace: true });
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -173,191 +142,266 @@ export function LoginPage() {
     }
   }
 
+  async function runLogin<TPayload>(
+    action: (payload: TPayload) => Promise<unknown>,
+    payload: TPayload,
+  ) {
+    setSubmitting(true);
+    setButtonFx("loading");
+
+    try {
+      await action(payload);
+      message.success("登录成功");
+      setButtonFx("success");
+      window.setTimeout(() => navigate(fromPath, { replace: true }), 520);
+    } catch (e) {
+      setButtonFx("idle");
+      message.error(e instanceof Error ? e.message : "登录失败");
+    } finally {
+      window.setTimeout(() => setButtonFx("idle"), 1200);
+      setSubmitting(false);
+    }
+  }
+
+  async function handlePasswordLogin(values: PasswordLoginPayload) {
+    const payload: PasswordLoginPayload = {
+      ...values,
+      captcha_key: values.captcha_key || captchaKey,
+    };
+    void runLogin(passwordLoginAction as (p: PasswordLoginPayload) => Promise<unknown>, payload);
+  }
+
+  async function handleEmailLogin(values: EmailLoginPayload) {
+    void runLogin(emailLoginAction as (p: EmailLoginPayload) => Promise<unknown>, values);
+  }
+
   async function handleRegister(values: RegisterPayload) {
     setSubmitting(true);
     try {
       const result = await registerByEmail(values);
       message.success(result.message || "注册申请已提交，请等待管理员审核");
+      setRegisterOpen(false);
       registerForm.resetFields();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "注册失败");
     } finally {
       setSubmitting(false);
     }
   }
 
+  const submitButtonLabel = useMemo(() => "登录", []);
+
   return (
-    <div className="login-shell">
-      <section className="login-promo">
-        <div className="login-badge">
-          <SafetyCertificateOutlined />
-          {BRAND_SUBTITLE}
-        </div>
-        <Typography.Text className="login-brand-code">{BRAND_EN_NAME}</Typography.Text>
-        <h1 className="login-promo__title">{BRAND_NAME}</h1>
-        <p className="login-promo__desc">{BRAND_DESCRIPTION}</p>
+    <div className="login-shell login-shell--auth">
+      <div className="login-bg-atom" ref={bgRef} aria-hidden="true">
+        <img className="login-bg-atom__img" src={loginAtomBgUrl} alt="" />
+      </div>
 
-        <div className="login-points">
-          {featureList.map((item) => (
-            <div className="login-point" key={item.title}>
-              <div className="login-point__icon">{item.icon}</div>
-              <div>
-                <Typography.Title level={4} className="login-point__title">
-                  {item.title}
-                </Typography.Title>
-                <Typography.Paragraph className="login-point__desc">{item.description}</Typography.Paragraph>
-              </div>
+      <div className="login-card-glass" role="region" aria-label="登录">
+        <div className="login-card-glass__top">
+          <div className="login-brand">
+            <div className="login-brand__badge">
+              <SafetyCertificateOutlined />
             </div>
-          ))}
+            <div className="login-brand__text">
+              <div className="login-brand__sub">{BRAND_SUBTITLE}</div>
+              <div className="login-brand__en">{BRAND_EN_NAME}</div>
+              <div className="login-brand__name">{BRAND_NAME}</div>
+            </div>
+          </div>
         </div>
-      </section>
 
-      <section className="login-panel">
-        <Card className="login-card" bordered={false}>
-          <Space direction="vertical" size={8} style={{ width: "100%", marginBottom: 28 }}>
-            <Typography.Text className="code-pill">安全登录</Typography.Text>
-          </Space>
-
-          <Tabs
-            defaultActiveKey="password"
-            items={[
-              {
-                key: "password",
-                label: "用户名密码登录",
-                children: (
-                  <Form<PasswordLoginPayload>
-                    form={passwordForm}
-                    layout="vertical"
-                    onFinish={handlePasswordLogin}
-                    size="large"
-                  >
-                    <Form.Item label="用户名" name="username" rules={[{ required: true, message: "请输入用户名" }]}>
-                      <Input prefix={<UserOutlined />} placeholder="请输入用户名" autoComplete="off" />
-                    </Form.Item>
-                    <Form.Item label="密码" name="password" rules={[{ required: true, message: "请输入密码" }]}>
-                      <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" autoComplete="new-password" />
-                    </Form.Item>
-                    <div style={{ marginBottom: 24 }}>
-                      <Typography.Text style={{ display: "block", marginBottom: 8 }}>验证码</Typography.Text>
-                      <Form.Item name="code" rules={[{ required: true, message: "请输入验证码" }, { len: 4, message: "验证码为4位数字" }, { pattern: /^\d+$/, message: "验证码必须为数字" }]} style={{ margin: 0, marginBottom: 8 }}>
-                        <Input 
-                          prefix={<SafetyCertificateOutlined />} 
-                          placeholder="请输入验证码" 
-                          maxLength={4}
-                          suffix={
-                            <Button 
-                              type="link" 
-                              size="small"
-                              onClick={() => void handleSendPasswordCode()}
-                              loading={sendingCode}
-                              disabled={passwordCodeCountdown > 0}
-                              style={{ padding: 0, height: "auto" }}
-                            >
-                              {passwordCodeCountdown > 0 ? `${passwordCodeCountdown}s` : "刷新"}
-                            </Button>
-                          }
-                        />
-                      </Form.Item>
-                      <Form.Item name="captcha_key" style={{ margin: 0, display: "none" }}>
-                        <Input type="hidden" />
-                      </Form.Item>
-                      {captchaImage && (
-                        <div style={{ border: "1px solid #d9d9d9", borderRadius: 4, padding: 4, backgroundColor: "#fff", textAlign: "center" }}>
-                          <img 
-                            src={`data:image/png;base64,${captchaImage}`} 
-                            alt="验证码" 
-                            style={{ width: 200, height: 80, cursor: "pointer" }}
-                            onClick={() => void handleSendPasswordCode()}
-                            title="点击刷新验证码"
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <Button type="primary" htmlType="submit" block loading={submitting}>
-                      登录 {BRAND_NAME}
-                    </Button>
-                  </Form>
-                ),
-              },
-              {
-                key: "email",
-                label: "邮箱验证码登录",
-                children: (
-                  <Form<EmailLoginPayload>
-                    form={emailForm}
-                    layout="vertical"
-                    onFinish={handleEmailLogin}
-                    size="large"
-                  >
-                    <Form.Item label="邮箱" name="email" rules={[{ required: true, type: "email", message: "请输入正确的邮箱地址" }]}>
-                      <Input prefix={<MailOutlined />} placeholder="请输入邮箱地址" />
-                    </Form.Item>
-                    <div style={{ marginBottom: 24 }}>
-                      <Typography.Text style={{ display: "block", marginBottom: 8 }}>验证码</Typography.Text>
-                      <Space.Compact style={{ width: "100%" }}>
-                        <Form.Item name="code" rules={[{ required: true, message: "请输入验证码" }]} style={{ margin: 0, flex: 1 }}>
-                          <Input prefix={<SafetyCertificateOutlined />} placeholder="请输入验证码" />
-                        </Form.Item>
-                        <Button
-                          onClick={() => void handleSendEmailOrUsernameCode()}
-                          loading={sendingCode}
-                          disabled={codeCountdown > 0}
-                        >
-                          {codeCountdown > 0 ? `${codeCountdown}s` : "发送验证码"}
-                        </Button>
-                      </Space.Compact>
-                    </div>
-                    <Button type="primary" htmlType="submit" block loading={submitting}>
-                      登录 {BRAND_NAME}
-                    </Button>
-                  </Form>
-                ),
-              },
-              {
-                key: "register",
-                label: "注册账号",
-                children: (
-                  <Form<RegisterPayload>
-                    form={registerForm}
-                    layout="vertical"
-                    onFinish={handleRegister}
-                    size="large"
-                  >
-                    <Form.Item label="用户名" name="username" rules={[{ required: true, min: 3, max: 64, message: "用户名长度为3-64个字符" }]}>
-                      <Input prefix={<UserOutlined />} placeholder="请输入用户名" />
-                    </Form.Item>
-                    <Form.Item label="邮箱" name="email" rules={[{ required: true, type: "email", message: "请输入正确的邮箱地址" }]}>
-                      <Input prefix={<MailOutlined />} placeholder="请输入邮箱地址" />
-                    </Form.Item>
-                    <Form.Item label="昵称" name="nickname" rules={[{ required: true, max: 128, message: "请输入昵称" }]}>
-                      <Input prefix={<UserOutlined />} placeholder="请输入昵称" />
-                    </Form.Item>
-                    <Form.Item label="密码" name="password" rules={[{ required: true, min: 6, max: 64, message: "密码长度为6-64个字符" }]}>
-                      <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" />
-                    </Form.Item>
-                    <div style={{ marginBottom: 24 }}>
-                      <Typography.Text style={{ display: "block", marginBottom: 8 }}>验证码</Typography.Text>
-                      <Space.Compact style={{ width: "100%" }}>
-                        <Form.Item name="code" rules={[{ required: true, len: 6, message: "验证码为6位数字" }]} style={{ margin: 0, flex: 1 }}>
-                          <Input prefix={<SafetyCertificateOutlined />} placeholder="请输入验证码" maxLength={6} />
-                        </Form.Item>
-                        <Button
-                          onClick={() => void handleSendRegisterCode()}
-                          loading={sendingCode}
-                          disabled={registerCodeCountdown > 0}
-                        >
-                          {registerCodeCountdown > 0 ? `${registerCodeCountdown}s` : "发送验证码"}
-                        </Button>
-                      </Space.Compact>
-                    </div>
-                    <Button type="primary" htmlType="submit" block loading={submitting}>
-                      注册账号
-                    </Button>
-                  </Form>
-                ),
-              },
-            ]}
+        <div className="login-auth-tabs" role="tablist" aria-label="登录方式">
+          <button
+            type="button"
+            className={`login-auth-tabs__tab ${tab === "account" ? "is-active" : ""}`}
+            onClick={() => setTab("account")}
+            role="tab"
+            aria-selected={tab === "account"}
+          >
+            账号登录
+          </button>
+          <button
+            type="button"
+            className={`login-auth-tabs__tab ${tab === "email" ? "is-active" : ""}`}
+            onClick={() => setTab("email")}
+            role="tab"
+            aria-selected={tab === "email"}
+          >
+            邮箱登录
+          </button>
+          <div
+            className="login-auth-tabs__indicator"
+            style={{ transform: `translateX(${tab === "account" ? 0 : 100}%)` }}
+            aria-hidden="true"
           />
-        </Card>
-      </section>
+        </div>
+
+        <div className="login-auth-panels">
+          <div className={`login-auth-pane ${tab === "account" ? "is-active" : ""}`} aria-hidden={tab !== "account"}>
+            <Form<PasswordLoginPayload> form={passwordForm} layout="vertical" onFinish={handlePasswordLogin} size="large">
+              <Form.Item label="用户名" name="username" rules={[{ required: true, message: "请输入用户名" }]}>
+                <Input prefix={<UserOutlined />} placeholder="请输入用户名" autoComplete="off" />
+              </Form.Item>
+
+              <Form.Item label="密码" name="password" rules={[{ required: true, message: "请输入密码" }]}>
+                <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" autoComplete="new-password" />
+              </Form.Item>
+
+              <Form.Item label="验证码">
+                <div className="login-captchaRow">
+                  <Form.Item
+                    name="code"
+                    rules={[
+                      { required: true, message: "请输入验证码" },
+                      { len: 4, message: "验证码为4位数字" },
+                      { pattern: /^\d+$/, message: "验证码必须为数字" },
+                    ]}
+                    style={{ margin: 0, flex: 1 }}
+                  >
+                    <Input
+                      prefix={<SafetyCertificateOutlined />}
+                      placeholder="请输入验证码"
+                      maxLength={4}
+                    />
+                  </Form.Item>
+
+                  {captchaImage ? (
+                    <div
+                      className="login-captchaWave"
+                      onClick={() => void handleSendPasswordCode()}
+                      role="button"
+                      tabIndex={0}
+                      aria-label="刷新验证码"
+                    >
+                      <img
+                        className="login-captchaWave__img"
+                        src={`data:image/png;base64,${captchaImage}`}
+                        alt="验证码"
+                      />
+                      <div className="login-captchaWave__noise" />
+                      <div className="login-captchaWave__wave" />
+                    </div>
+                  ) : (
+                    <div className="login-captchaEmpty login-captchaEmpty--inline">
+                      <Button type="link" onClick={() => void handleSendPasswordCode()} loading={sendingCode}>
+                        刷新
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </Form.Item>
+
+              <Form.Item
+                name="captcha_key"
+                style={{ display: "none" }}
+                rules={[{ required: true, message: "请先刷新验证码" }]}
+              >
+                <Input type="hidden" />
+              </Form.Item>
+
+              <div className="login-submitRow">
+                <Button
+                  htmlType="submit"
+                  className="login-submitBtn"
+                  disabled={submitting}
+                  data-fx={buttonFx}
+                >
+                  <span className="login-submitBtn__label">{submitButtonLabel}</span>
+                  <span className="login-submitBtn__spinner" aria-hidden="true" />
+                </Button>
+              </div>
+            </Form>
+          </div>
+
+          <div className={`login-auth-pane ${tab === "email" ? "is-active" : ""}`} aria-hidden={tab !== "email"}>
+            <Form<EmailLoginPayload> form={emailForm} layout="vertical" onFinish={handleEmailLogin} size="large">
+              <Form.Item label="邮箱" name="email" rules={[{ required: true, type: "email", message: "请输入正确的邮箱地址" }]}>
+                <Input prefix={<MailOutlined />} placeholder="请输入邮箱地址" autoComplete="off" />
+              </Form.Item>
+
+              <Form.Item label="验证码" name="code" rules={[{ required: true, message: "请输入验证码" }]}>
+                <Input prefix={<SafetyCertificateOutlined />} placeholder="请输入验证码" style={{ marginBottom: 10 }} />
+                <div className="login-emailActions">
+                  <Button
+                    type="primary"
+                    ghost
+                    className="login-sendBtn"
+                    onClick={() => void handleSendEmailCode()}
+                    loading={sendingCode}
+                    disabled={emailCodeCountdown > 0}
+                  >
+                    {emailCodeCountdown > 0 ? `${emailCodeCountdown}s` : "发送验证码"}
+                  </Button>
+                </div>
+              </Form.Item>
+
+              <div className="login-submitRow">
+                <Button htmlType="submit" className="login-submitBtn" disabled={submitting} data-fx={buttonFx}>
+                  <span className="login-submitBtn__label">{submitButtonLabel}</span>
+                  <span className="login-submitBtn__spinner" aria-hidden="true" />
+                </Button>
+              </div>
+            </Form>
+          </div>
+        </div>
+
+        <div className="login-bottom">
+          <button type="button" className="login-registerLink" onClick={() => setRegisterOpen(true)}>
+            注册新用户
+          </button>
+        </div>
+      </div>
+
+      <Modal
+        open={registerOpen}
+        title="注册账号"
+        footer={null}
+        onCancel={() => setRegisterOpen(false)}
+        destroyOnClose
+        centered
+        width={520}
+        className="login-registerModal"
+      >
+        <Form<RegisterPayload> form={registerForm} layout="vertical" onFinish={handleRegister} size="large">
+          <Form.Item label="用户名" name="username" rules={[{ required: true, min: 3, max: 64, message: "用户名长度为3-64个字符" }]}>
+            <Input prefix={<UserOutlined />} placeholder="请输入用户名" />
+          </Form.Item>
+          <Form.Item label="邮箱" name="email" rules={[{ required: true, type: "email", message: "请输入正确的邮箱地址" }]}>
+            <Input prefix={<MailOutlined />} placeholder="请输入邮箱地址" />
+          </Form.Item>
+          <Form.Item label="昵称" name="nickname" rules={[{ required: true, max: 128, message: "请输入昵称" }]}>
+            <Input prefix={<UserOutlined />} placeholder="请输入昵称" />
+          </Form.Item>
+          <Form.Item label="密码" name="password" rules={[{ required: true, min: 6, max: 64, message: "密码长度为6-64个字符" }]}>
+            <Input.Password prefix={<LockOutlined />} placeholder="请输入密码" />
+          </Form.Item>
+
+          <Form.Item label="验证码" name="code" rules={[{ required: true, len: 6, message: "验证码为6位数字" }]}>
+            <Input
+              prefix={<SafetyCertificateOutlined />}
+              placeholder="请输入验证码"
+              maxLength={6}
+              style={{ marginBottom: 10 }}
+            />
+            <Button
+              type="primary"
+              ghost
+              className="login-sendBtn"
+              onClick={() => void handleSendRegisterCode()}
+              loading={sendingCode}
+              disabled={registerCodeCountdown > 0}
+            >
+              {registerCodeCountdown > 0 ? `${registerCodeCountdown}s` : "发送验证码"}
+            </Button>
+          </Form.Item>
+
+          <Button htmlType="submit" type="primary" block disabled={submitting}>
+            提交注册
+          </Button>
+        </Form>
+      </Modal>
     </div>
   );
 }
+
