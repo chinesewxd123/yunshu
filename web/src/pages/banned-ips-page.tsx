@@ -1,4 +1,4 @@
-import { ExclamationCircleOutlined, ReloadOutlined } from "@ant-design/icons";
+import { ExclamationCircleOutlined, ReloadOutlined, UnlockOutlined } from "@ant-design/icons";
 import { Button, Card, Popconfirm, Space, Table, message } from "antd";
 import { useEffect, useState } from "react";
 import { getBannedIPs, unbanIP, BannedIPItem } from "../services/admin";
@@ -63,7 +63,9 @@ export function BannedIPsPage() {
                     icon={<ExclamationCircleOutlined />}
                     onConfirm={() => void handleUnban(record.ip)}
                   >
-                    <Button type="link">解除封禁</Button>
+                    <Button type="link" icon={<UnlockOutlined />}>
+                      解除封禁
+                    </Button>
                   </Popconfirm>
                 </Space>
               ),

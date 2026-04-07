@@ -3,6 +3,7 @@ import {
   ApartmentOutlined,
   AuditOutlined,
   CheckCircleOutlined,
+  KubernetesOutlined,
   DatabaseOutlined,
   HistoryOutlined,
   LoginOutlined,
@@ -25,6 +26,8 @@ const { Content, Header, Sider } = Layout;
 
 const FALLBACK_MENU_ITEMS: MenuProps["items"] = [
   { key: "/", icon: <DatabaseOutlined />, label: <Link to="/">资产总览</Link> },
+  { key: "/clusters", icon: <KubernetesOutlined />, label: <Link to="/clusters">集群管理</Link> },
+  { key: "/pods", icon: <KubernetesOutlined />, label: <Link to="/pods">Pod 管理</Link> },
   { key: "/users", icon: <TeamOutlined />, label: <Link to="/users">账号管理</Link> },
   { key: "/roles", icon: <ApartmentOutlined />, label: <Link to="/roles">角色管理</Link> },
   { key: "/permissions", icon: <ApiOutlined />, label: <Link to="/permissions">API管理</Link> },

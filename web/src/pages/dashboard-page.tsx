@@ -1,18 +1,15 @@
-import { ApiOutlined, ApartmentOutlined, AuditOutlined, TeamOutlined, CheckCircleOutlined, ClockCircleOutlined, InfoOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, ClockCircleOutlined, ClusterOutlined, InfoOutlined, TeamOutlined, WarningOutlined } from "@ant-design/icons";
 import { Card, Col, Row, Space, Statistic, Tag, Typography, Progress } from "antd";
 import { useEffect, useState } from "react";
-import { getPermissions } from "../services/permissions";
-import { getPolicies } from "../services/policies";
-import { getRoles } from "../services/roles";
-import { getUsers } from "../services/users";
 import { getHealth } from "../services/auth";
-import type { PolicyItem } from "../types/api";
+import { getOverview } from "../services/overview";
 
 interface DashboardMetrics {
   users: number;
-  roles: number;
-  permissions: number;
-  policies: number;
+  clusters: number;
+  podNormal: number;
+  podAbnormal: number;
+  podClusterErrors: number;
 }
 
 interface SystemHealth {
@@ -26,32 +23,32 @@ const statItems = [
   {
     key: "users",
     title: "账号主体",
-    hint: "可登录与分配角色的账号数量",
+    hint: "系统内已创建的账号数量",
     icon: <TeamOutlined />,
     color: "#0f766e",
     gradient: "linear-gradient(135deg, #0f766e 0%, #14804a 100%)",
   },
   {
-    key: "roles",
-    title: "角色模板",
-    hint: "用于批量挂载权限的角色定义",
-    icon: <ApartmentOutlined />,
+    key: "clusters",
+    title: "K8s 集群",
+    hint: "已注册到系统的集群数量",
+    icon: <ClusterOutlined />,
     color: "#0f6cbd",
     gradient: "linear-gradient(135deg, #0f6cbd 0%, #0077ea 100%)",
   },
   {
-    key: "permissions",
-    title: "接口能力",
-    hint: "已注册的 API 与资源点",
-    icon: <ApiOutlined />,
+    key: "podNormal",
+    title: "Pod 正常",
+    hint: "Running 且所有容器 Ready",
+    icon: <CheckCircleOutlined />,
     color: "#c96a11",
     gradient: "linear-gradient(135deg, #c96a11 0%, #fa8c16 100%)",
   },
   {
-    key: "policies",
-    title: "授权编排",
-    hint: "角色与权限的绑定关系",
-    icon: <AuditOutlined />,
+    key: "podAbnormal",
+    title: "Pod 异常",
+    hint: "非 Running 或容器未就绪",
+    icon: <WarningOutlined />,
     color: "#c23a2b",
     gradient: "linear-gradient(135deg, #c23a2b 0%, #f5222d 100%)",
   },
@@ -64,8 +61,13 @@ function formatUptime(seconds: number): string {
 }
 
 export function DashboardPage() {
-  const [metrics, setMetrics] = useState<DashboardMetrics>({ users: 0, roles: 0, permissions: 0, policies: 0 });
-  const [policies, setPolicies] = useState<PolicyItem[]>([]);
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
+    users: 0,
+    clusters: 0,
+    podNormal: 0,
+    podAbnormal: 0,
+    podClusterErrors: 0,
+  });
   const [health, setHealth] = useState<SystemHealth>({ status: "", version: "", uptime: 0, loading: true });
   const [loading, setLoading] = useState(true);
 
@@ -76,25 +78,19 @@ export function DashboardPage() {
       setLoading(true);
       setHealth((prev) => ({ ...prev, loading: true }));
       try {
-        const [users, roles, permissions, policyList, healthData] = await Promise.all([
-          getUsers({ page: 1, page_size: 1 }),
-          getRoles({ page: 1, page_size: 1 }),
-          getPermissions({ page: 1, page_size: 1 }),
-          getPolicies(),
-          getHealth().catch(() => null),
-        ]);
+        const [overview, healthData] = await Promise.all([getOverview(), getHealth().catch(() => null)]);
 
         if (!active) {
           return;
         }
 
         setMetrics({
-          users: users.total,
-          roles: roles.total,
-          permissions: permissions.total,
-          policies: policyList.length,
+          users: overview.users_count,
+          clusters: overview.clusters_count,
+          podNormal: overview.pod_normal_count,
+          podAbnormal: overview.pod_abnormal_count,
+          podClusterErrors: overview.pod_cluster_errors,
         });
-        setPolicies(policyList.slice(0, 8));
 
         if (healthData) {
           setHealth({
@@ -242,47 +238,25 @@ export function DashboardPage() {
             </Space>
           </Card>
 
-        <Card
-          className="table-card"
-          title={
-            <Space>
-              <ApiOutlined style={{ color: "#0f6cbd" }} />
-              最近授权
-            </Space>
-          }
-          loading={loading}
-        >
-            {policies.length > 0 ? (
-              <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                {policies.map((policy, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "10px 12px",
-                      background: "#fafafa",
-                      borderRadius: 8,
-                      marginBottom: idx < policies.length - 1 ? 8 : 0,
-                    }}
-                  >
-                    <Space>
-                      <Tag color="blue">{policy.role_name}</Tag>
-                      <Typography.Text style={{ fontSize: 13 }}>
-                        {policy.permission_name}
-                      </Typography.Text>
-                    </Space>
-                    <Tag color="green" style={{ fontSize: 12 }}>
-                      {policy.action} {policy.resource}
-                    </Tag>
-                  </div>
-                ))}
-              </Space>
-            ) : (
-              <Typography.Text type="secondary">暂无授权记录</Typography.Text>
-            )}
-          </Card>
+        <Card className="table-card" title="采集状态" loading={loading}>
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <Typography.Text className="inline-muted">
+              Pod 统计按「启用」集群跨命名空间聚合；若集群不可达会计入失败数。
+            </Typography.Text>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Statistic title="正常 Pod" value={metrics.podNormal} valueStyle={{ color: "#14804a", fontWeight: 700 }} />
+              </Col>
+              <Col span={12}>
+                <Statistic title="异常 Pod" value={metrics.podAbnormal} valueStyle={{ color: "#c23a2b", fontWeight: 700 }} />
+              </Col>
+            </Row>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <Typography.Text type="secondary">采集失败集群数</Typography.Text>
+              <Tag color={metrics.podClusterErrors > 0 ? "warning" : "success"}>{metrics.podClusterErrors}</Tag>
+            </div>
+          </Space>
+        </Card>
       </div>
     </div>
   );

@@ -41,7 +41,7 @@ function filterVisible(menus: MenuItem[]): MenuItem[] {
 export function buildSiderMenuItems(menus: MenuItem[]): AntdMenuItem[] {
   const nodes = filterVisible(menus);
   const items = nodes.map((m) => toAntdItem(m));
-  return ensureLogMenus(items);
+  return dedupeMenuByKey(compactK8sDuplicates(ensureLogMenus(items)));
 }
 
 function toAntdItem(m: MenuItem): AntdMenuItem {
@@ -61,6 +61,57 @@ function toAntdItem(m: MenuItem): AntdMenuItem {
     icon,
     label: <Link to={to}>{m.name}</Link>,
   };
+}
+
+function normalizeMenuKey(key: string): string {
+  const raw = key.trim().toLowerCase();
+  const cleaned = raw.replace(/\/+$/, "");
+  if (cleaned === "/pod" || cleaned === "/pods") return "/pods";
+  if (cleaned === "/cluster" || cleaned === "/clusters") return "/clusters";
+  return cleaned || "/";
+}
+
+function dedupeMenuByKey(items: AntdMenuItem[], globalSeen?: Set<string>): AntdMenuItem[] {
+  const seen = globalSeen ?? new Set<string>();
+  const out: AntdMenuItem[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object" || !("key" in item)) continue;
+    const key = normalizeMenuKey(String(item.key));
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if ("children" in item && Array.isArray(item.children)) {
+      out.push({ ...item, children: dedupeMenuByKey(item.children as AntdMenuItem[], seen) } as AntdMenuItem);
+      continue;
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+function compactK8sDuplicates(items: AntdMenuItem[]): AntdMenuItem[] {
+  const list = [...items];
+  const k8sGroupIndex = list.findIndex((it) => {
+    if (!it || typeof it !== "object" || !("children" in it) || !Array.isArray(it.children)) return false;
+    const label = "label" in it ? it.label : undefined;
+    const labelText = typeof label === "string" ? label : "";
+    return labelText.includes("Kubernetes") || String((it as any).key ?? "").toLowerCase().includes("kubernetes");
+  });
+  if (k8sGroupIndex === -1) return list;
+
+  const group = list[k8sGroupIndex] as any;
+  const children: AntdMenuItem[] = Array.isArray(group.children) ? group.children : [];
+  const childKeySet = new Set(children.map((c: any) => normalizeMenuKey(String(c?.key ?? ""))));
+
+  return list.filter((it, idx) => {
+    if (idx === k8sGroupIndex) return true;
+    if (!it || typeof it !== "object" || !("key" in it)) return true;
+    if ("children" in it && Array.isArray(it.children)) return true;
+    const key = normalizeMenuKey(String(it.key));
+    if (key === "/pods" || key === "/clusters") {
+      return !childKeySet.has(key);
+    }
+    return true;
+  });
 }
 
 function ensureLogMenus(items: AntdMenuItem[]): AntdMenuItem[] {

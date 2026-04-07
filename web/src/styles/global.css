@@ -1331,6 +1331,21 @@ body {
   border-radius: 18px;
 }
 
+/* 全站表格：表头统一居中 */
+.ant-table-wrapper .ant-table-thead > tr > th {
+  text-align: center !important;
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th .ant-table-column-title {
+  width: 100%;
+  text-align: center;
+}
+
+/* 全站表格：表体内容与表头保持一致居中 */
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  text-align: center !important;
+}
+
 @media (max-width: 1360px) {
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

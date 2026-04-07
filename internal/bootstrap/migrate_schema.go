@@ -20,5 +20,6 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&model.Menu{},
 		&model.LoginLog{},
 		&model.OperationLog{},
+		&model.K8sCluster{},
 	)
 }

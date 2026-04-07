@@ -1,4 +1,4 @@
-import { PlusOutlined, ReloadOutlined, EyeOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, EyeOutlined, EditOutlined, DeleteOutlined, UserSwitchOutlined } from "@ant-design/icons";
 import {
   Button,
   Card,
@@ -253,14 +253,14 @@ export function UsersPage() {
                   <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
                     详情
                   </Button>
-                  <Button type="link" size="small" onClick={() => openEdit(record)}>
+                  <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
                     编辑
                   </Button>
-                  <Button type="link" size="small" onClick={() => openAssign(record)}>
+                  <Button type="link" size="small" icon={<UserSwitchOutlined />} onClick={() => openAssign(record)}>
                     分配角色
                   </Button>
                   <Popconfirm title="确认删除该账号吗？" onConfirm={() => handleDelete(record)}>
-                    <Button type="link" size="small" danger>
+                    <Button type="link" size="small" danger icon={<DeleteOutlined />}>
                       删除
                     </Button>
                   </Popconfirm>

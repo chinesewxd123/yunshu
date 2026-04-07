@@ -1,4 +1,4 @@
-import { CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined, FormOutlined } from "@ant-design/icons";
 import { Button, Card, Form, Input, Modal, Popconfirm, Radio, Select, Space, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { getRegistrations, reviewRegistration } from "../services/registrations";
@@ -129,7 +129,7 @@ export function RegistrationsPage() {
               width: 120,
               render: (_: unknown, record: RegistrationRequestItem) =>
                 record.status === 0 ? (
-                  <Button type="link" onClick={() => openReview(record)}>
+                  <Button type="link" icon={<FormOutlined />} onClick={() => openReview(record)}>
                     审核
                   </Button>
                 ) : (

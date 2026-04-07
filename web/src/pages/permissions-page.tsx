@@ -1,4 +1,4 @@
-import { PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, EyeOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { StatusTag } from "../components/status-tag";
@@ -161,14 +161,14 @@ export function PermissionsPage() {
                   <Button type="link" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
                     详情
                   </Button>
-                  <Button type="link" onClick={() => openEdit(record)}>
+                  <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
                     编辑
                   </Button>
                   <Button type="link" icon={<SafetyCertificateOutlined />} onClick={() => openAssignRoles(record)}>
                     分配角色
                   </Button>
                   <Popconfirm title="确认删除该能力项吗？" onConfirm={() => void handleDelete(record)}>
-                    <Button type="link" danger>
+                    <Button type="link" danger icon={<DeleteOutlined />}>
                       删除
                     </Button>
                   </Popconfirm>

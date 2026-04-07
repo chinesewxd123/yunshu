@@ -1,5 +1,5 @@
 import { ReloadOutlined, SaveOutlined } from "@ant-design/icons";
-import { Button, Card, Empty, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
+import { Button, Card, Col, Empty, Row, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { getPermissionOptions } from "../services/permissions";
 import { getPolicies, grantPolicy, revokePolicy } from "../services/policies";
@@ -90,63 +90,69 @@ export function PoliciesPage() {
 
   return (
     <div>
-      <div className="toolbar" style={{ marginBottom: 16 }}>
-        <span />
-        <div className="toolbar__actions">
-          <Button icon={<ReloadOutlined />} onClick={() => void bootstrap(selectedRoleId)}>
-            刷新
-          </Button>
-          <Button type="primary" icon={<SaveOutlined />} loading={submitting} onClick={() => void handleSave()}>
-            保存编排
-          </Button>
-        </div>
-      </div>
-
-      <div className="section-grid">
-        <Card className="glass-card" title="角色模板选择">
-          <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Select
-              placeholder="请选择角色模板"
-              value={selectedRoleId}
-              onChange={handleRoleChange}
-              options={roles.map((role) => ({ label: `${role.name} (${role.code})`, value: role.id }))}
-            />
-            {selectedRole ? (
-              <>
-                <Typography.Text strong>{selectedRole.name}</Typography.Text>
-                <Typography.Text className="inline-muted">模板编码：{selectedRole.code}</Typography.Text>
-                <Typography.Text className="inline-muted">当前已绑定 {currentRolePolicies.length} 条能力策略</Typography.Text>
-              </>
-            ) : (
-              <Empty description="暂无可配置角色模板" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            )}
+      <Card
+        className="table-card"
+        loading={loading}
+        extra={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={() => void bootstrap(selectedRoleId)}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<SaveOutlined />} loading={submitting} onClick={() => void handleSave()}>
+              保存编排
+            </Button>
           </Space>
-        </Card>
+        }
+      >
+        <Row gutter={[16, 16]} align="stretch">
+          <Col xs={24} lg={8} style={{ display: "flex", minWidth: 0 }}>
+            <Card className="glass-card" title="角色模板" style={{ flex: 1 }} bodyStyle={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <Select
+                placeholder="请选择角色模板"
+                value={selectedRoleId}
+                onChange={handleRoleChange}
+                options={roles.map((role) => ({ label: `${role.name} (${role.code})`, value: role.id }))}
+              />
+              {selectedRole ? (
+                <Space direction="vertical" size={4}>
+                  <Typography.Text strong>{selectedRole.name}</Typography.Text>
+                  <Typography.Text className="inline-muted">模板编码：{selectedRole.code}</Typography.Text>
+                  <Typography.Text className="inline-muted">当前已绑定 {currentRolePolicies.length} 条能力策略</Typography.Text>
+                  <Typography.Text className="inline-muted">已勾选 {checkedPermissionIds.length} 项能力</Typography.Text>
+                </Space>
+              ) : (
+                <Empty description="暂无可配置角色模板" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
+            </Card>
+          </Col>
 
-        <Card className="table-card" title="接口能力树" loading={loading}>
-          {selectedRole ? (
-            <Space direction="vertical" size={12} style={{ width: "100%" }}>
-              <Typography.Text className="inline-muted">
-                以资源路径为层级组织能力项，当前已勾选 {checkedPermissionIds.length} 项。
-              </Typography.Text>
-              <div className="tree-shell tree-shell--tall">
-                <Tree
-                  checkable
-                  defaultExpandAll
-                  checkedKeys={checkedPermissionIds}
-                  treeData={permissionTreeData}
-                  onCheck={(checkedKeys) => {
-                    const nextIds = normalizeCheckedKeys(checkedKeys).filter((id) => permissionIdSet.has(id));
-                    setCheckedPermissionIds(nextIds);
-                  }}
-                />
-              </div>
-            </Space>
-          ) : (
-            <Empty description="请选择角色模板后配置能力树" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          )}
-        </Card>
-      </div>
+          <Col xs={24} lg={16} style={{ display: "flex", minWidth: 0 }}>
+            <Card className="glass-card" title="接口能力树" style={{ flex: 1, minWidth: 0 }}>
+              {selectedRole ? (
+                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  <Typography.Text className="inline-muted">
+                    以资源路径为层级组织能力项，勾选后点击右上角「保存编排」同步到后端。
+                  </Typography.Text>
+                  <div className="tree-shell tree-shell--tall" style={{ maxHeight: 520 }}>
+                    <Tree
+                      checkable
+                      defaultExpandAll
+                      checkedKeys={checkedPermissionIds}
+                      treeData={permissionTreeData}
+                      onCheck={(checkedKeys) => {
+                        const nextIds = normalizeCheckedKeys(checkedKeys).filter((id) => permissionIdSet.has(id));
+                        setCheckedPermissionIds(nextIds);
+                      }}
+                    />
+                  </div>
+                </Space>
+              ) : (
+                <Empty description="请选择角色模板后配置能力树" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
+            </Card>
+          </Col>
+        </Row>
+      </Card>
 
       <Card className="table-card" title={selectedRole ? `${selectedRole.name} 的当前授权结果` : "当前授权结果"}>
         <Table
@@ -154,6 +160,7 @@ export function PoliciesPage() {
           loading={loading}
           dataSource={selectedRole ? currentRolePolicies : list}
           pagination={{ pageSize: 10 }}
+          scroll={{ x: "max-content" }}
           columns={[
             { title: "角色模板", dataIndex: "role_name" },
             { title: "模板编码", dataIndex: "role_code", render: (value: string) => <Tag color="blue">{value}</Tag> },

@@ -1,4 +1,4 @@
-import { PlusOutlined, ReloadOutlined, UserOutlined, EyeOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, UserOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { StatusTag } from "../components/status-tag";
@@ -171,14 +171,14 @@ export function RolesPage() {
                   <Button type="link" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
                     详情
                   </Button>
-                  <Button type="link" onClick={() => openEdit(record)}>
+                  <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
                     编辑
                   </Button>
                   <Button type="link" icon={<UserOutlined />} onClick={() => openAssignUsers(record)}>
                     分配用户
                   </Button>
                   <Popconfirm title="确认删除该模板吗？" onConfirm={() => handleDelete(record)}>
-                    <Button type="link" danger>
+                    <Button type="link" danger icon={<DeleteOutlined />}>
                       删除
                     </Button>
                   </Popconfirm>

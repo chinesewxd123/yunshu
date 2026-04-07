@@ -140,11 +140,13 @@ type PolicyGrantRequest struct {
 }
 
 type RoleItem struct {
-	ID          uint   `json:"id"`
-	Name        string `json:"name"`
-	Code        string `json:"code"`
-	Description string `json:"description"`
-	Status      int    `json:"status"`
+	ID          uint      `json:"id"`
+	Name        string    `json:"name"`
+	Code        string    `json:"code"`
+	Description string    `json:"description"`
+	Status      int       `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type PermissionItem struct {
@@ -183,6 +185,8 @@ func NewRoleItem(role model.Role) RoleItem {
 		Code:        role.Code,
 		Description: role.Description,
 		Status:      role.Status,
+		CreatedAt:   role.CreatedAt,
+		UpdatedAt:   role.UpdatedAt,
 	}
 }
 

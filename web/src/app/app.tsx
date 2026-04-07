@@ -20,6 +20,8 @@ const OperationLogsPage = lazy(() =>
 );
 const BannedIPsPage = lazy(() => import("../pages/banned-ips-page").then((module) => ({ default: module.BannedIPsPage })));
 const DynamicMenuPage = lazy(() => import("../pages/dynamic-menu-page").then((module) => ({ default: module.DynamicMenuPage })));
+const ClusterPage = lazy(() => import("../pages/cluster-page").then((module) => ({ default: module.ClusterPage })));
+const PodPage = lazy(() => import("../pages/pod-page").then((module) => ({ default: module.PodPage })));
 
 function RouteFallback() {
   return (
@@ -111,6 +113,9 @@ export function App() {
                   <Route path="login-logs" element={<LoginLogsPage />} />
                   <Route path="operation-logs" element={<OperationLogsPage />} />
                   <Route path="banned-ips" element={<BannedIPsPage />} />
+                  <Route path="cluster" element={<Navigate to="/clusters" replace />} />
+                  <Route path="clusters" element={<ClusterPage />} />
+                  <Route path="pods" element={<PodPage />} />
                   <Route path="*" element={<DynamicMenuPage />} />
                 </Route>
               </Routes>
