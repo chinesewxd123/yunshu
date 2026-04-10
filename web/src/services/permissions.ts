@@ -28,5 +28,27 @@ export function deletePermission(id: number) {
 }
 
 export function getPermissionOptions() {
-  return getData<PageData<PermissionItem>>(http.get("/permissions", { params: { page: 1, page_size: 100 } }));
+  return (async () => {
+    const pageSize = 200;
+    let page = 1;
+    let total = 0;
+    const list: PermissionItem[] = [];
+
+    while (true) {
+      const data = await getData<PageData<PermissionItem>>(http.get("/permissions", { params: { page, page_size: pageSize } }));
+      if (page === 1) total = data.total ?? 0;
+      if (Array.isArray(data.list) && data.list.length > 0) {
+        list.push(...data.list);
+      }
+      if (!data.list?.length || list.length >= total) break;
+      page += 1;
+    }
+
+    return {
+      list,
+      total: list.length,
+      page: 1,
+      page_size: list.length || pageSize,
+    } satisfies PageData<PermissionItem>;
+  })();
 }

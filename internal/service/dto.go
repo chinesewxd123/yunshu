@@ -115,17 +115,19 @@ type RoleListQuery struct {
 }
 
 type PermissionCreateRequest struct {
-	Name        string `json:"name" binding:"required,max=64"`
-	Resource    string `json:"resource" binding:"required,max=191"`
-	Action      string `json:"action" binding:"required,max=32"`
-	Description string `json:"description" binding:"omitempty,max=255"`
+	Name            string `json:"name" binding:"required,max=64"`
+	Resource        string `json:"resource" binding:"required,max=191"`
+	Action          string `json:"action" binding:"required,max=32"`
+	Description     string `json:"description" binding:"omitempty,max=255"`
+	K8sScopeEnabled bool   `json:"k8s_scope_enabled"`
 }
 
 type PermissionUpdateRequest struct {
-	Name        *string `json:"name" binding:"omitempty,max=64"`
-	Resource    *string `json:"resource" binding:"omitempty,max=191"`
-	Action      *string `json:"action" binding:"omitempty,max=32"`
-	Description *string `json:"description" binding:"omitempty,max=255"`
+	Name            *string `json:"name" binding:"omitempty,max=64"`
+	Resource        *string `json:"resource" binding:"omitempty,max=191"`
+	Action          *string `json:"action" binding:"omitempty,max=32"`
+	Description     *string `json:"description" binding:"omitempty,max=255"`
+	K8sScopeEnabled *bool   `json:"k8s_scope_enabled,omitempty"`
 }
 
 type PermissionListQuery struct {
@@ -150,11 +152,12 @@ type RoleItem struct {
 }
 
 type PermissionItem struct {
-	ID          uint   `json:"id"`
-	Name        string `json:"name"`
-	Resource    string `json:"resource"`
-	Action      string `json:"action"`
-	Description string `json:"description"`
+	ID              uint   `json:"id"`
+	Name            string `json:"name"`
+	Resource        string `json:"resource"`
+	Action          string `json:"action"`
+	Description     string `json:"description"`
+	K8sScopeEnabled bool   `json:"k8s_scope_enabled"`
 }
 
 type UserDetailResponse struct {
@@ -192,11 +195,12 @@ func NewRoleItem(role model.Role) RoleItem {
 
 func NewPermissionItem(permission model.Permission) PermissionItem {
 	return PermissionItem{
-		ID:          permission.ID,
-		Name:        permission.Name,
-		Resource:    permission.Resource,
-		Action:      permission.Action,
-		Description: permission.Description,
+		ID:              permission.ID,
+		Name:            permission.Name,
+		Resource:        permission.Resource,
+		Action:          permission.Action,
+		Description:     permission.Description,
+		K8sScopeEnabled: permission.K8sScopeEnabled,
 	}
 }
 

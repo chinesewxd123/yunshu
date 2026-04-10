@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"go-permission-system/internal/model"
 	"go-permission-system/internal/repository"
@@ -44,7 +45,68 @@ type MenuUpdatePayload struct {
 }
 
 func (s *MenuService) Tree(ctx context.Context) ([]model.Menu, error) {
+	list, err := s.menuRepo.Tree(ctx)
+	if err != nil {
+		return nil, err
+	}
+	changed, err := s.ensureK8sMenus(ctx, list)
+	if err != nil {
+		return nil, err
+	}
+	if !changed {
+		return list, nil
+	}
 	return s.menuRepo.Tree(ctx)
+}
+
+func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bool, error) {
+	var k8sRoot *model.Menu
+	for i := range tree {
+		p := strings.TrimSpace(tree[i].Path)
+		if p == "/kubernetes" || strings.Contains(strings.ToLower(strings.TrimSpace(tree[i].Name)), "kubernetes") {
+			k8sRoot = &tree[i]
+			break
+		}
+	}
+	if k8sRoot == nil {
+		return false, nil
+	}
+
+	existing := make(map[string]bool, len(k8sRoot.Children))
+	for _, c := range k8sRoot.Children {
+		existing[strings.TrimSpace(c.Path)] = true
+	}
+
+	required := []model.Menu{
+		{Path: "/nodes", Name: "Node 管理", Icon: "HddOutlined", Sort: 3, Component: "nodes-page", Status: 1},
+		{Path: "/component-status", Name: "组件状态", Icon: "HeartOutlined", Sort: 4, Component: "component-status-page", Status: 1},
+		{Path: "/k8s-services", Name: "Service 管理", Icon: "ApartmentOutlined", Sort: 13, Component: "k8s-services-page", Status: 1},
+		{Path: "/persistentvolumes", Name: "PersistentVolume", Icon: "DatabaseOutlined", Sort: 14, Component: "persistentvolumes-page", Status: 1},
+		{Path: "/persistentvolumeclaims", Name: "PersistentVolumeClaim", Icon: "HddOutlined", Sort: 15, Component: "persistentvolumeclaims-page", Status: 1},
+		{Path: "/storageclasses", Name: "StorageClass", Icon: "FolderOpenOutlined", Sort: 16, Component: "storageclasses-page", Status: 1},
+		{Path: "/ingresses", Name: "Ingress 管理", Icon: "GatewayOutlined", Sort: 17, Component: "ingresses-page", Status: 1},
+		{Path: "/ingress-classes", Name: "IngressClass 入口类", Icon: "GatewayOutlined", Sort: 18, Component: "ingress-classes-page", Status: 1},
+		{Path: "/rbac/roles", Name: "RBAC - Role", Icon: "SafetyCertificateOutlined", Sort: 20, Component: "rbac-roles-page", Status: 1},
+		{Path: "/rbac/rolebindings", Name: "RBAC - RoleBinding", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "rbac-rolebindings-page", Status: 1},
+		{Path: "/rbac/clusterroles", Name: "RBAC - ClusterRole", Icon: "SafetyCertificateOutlined", Sort: 22, Component: "rbac-clusterroles-page", Status: 1},
+		{Path: "/rbac/clusterrolebindings", Name: "RBAC - ClusterRoleBinding", Icon: "SafetyCertificateOutlined", Sort: 23, Component: "rbac-clusterrolebindings-page", Status: 1},
+		{Path: "/k8s-scoped-policies", Name: "K8s 三元策略", Icon: "AuditOutlined", Sort: 24, Component: "k8s-scoped-policies-page", Status: 1},
+	}
+
+	changed := false
+	parentID := k8sRoot.ID
+	for _, r := range required {
+		if existing[r.Path] {
+			continue
+		}
+		m := r
+		m.ParentID = &parentID
+		if err := s.menuRepo.Create(ctx, &m); err != nil {
+			return false, err
+		}
+		changed = true
+	}
+	return changed, nil
 }
 
 func (s *MenuService) Create(ctx context.Context, payload MenuCreatePayload) (*model.Menu, error) {

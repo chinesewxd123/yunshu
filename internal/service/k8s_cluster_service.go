@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"go-permission-system/internal/model"
@@ -48,12 +50,25 @@ type K8sClusterListResponse struct {
 }
 
 type K8sClusterStatusResponse struct {
-	ServerVersion string `json:"server_version"`
+	ServerVersion       string    `json:"server_version"`
+	ConnectionState     string    `json:"connection_state"`
+	LastError           string    `json:"last_error,omitempty"`
+	LastAttemptAt       time.Time `json:"last_attempt_at,omitempty"`
+	LastSuccessAt       time.Time `json:"last_success_at,omitempty"`
+	ConsecutiveFailures int       `json:"consecutive_failures"`
 }
 
 type NamespaceItem struct {
 	Name  string `json:"name"`
 	Phase string `json:"phase"`
+}
+
+type ComponentStatusItem struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Healthy bool   `json:"healthy"`
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 type K8sClusterService struct {
@@ -162,34 +177,18 @@ func (s *K8sClusterService) SetStatus(ctx context.Context, id uint, status int) 
 }
 
 func (s *K8sClusterService) Status(ctx context.Context, id uint) (*K8sClusterStatusResponse, error) {
-	_, k, err := s.runtime.GetClusterKubectl(ctx, id)
+	ver, state, err := s.runtime.CheckClusterHeartbeat(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	info := k.Status().ServerVersion()
-	var lastErr error
-	if info == nil || info.GitVersion == "" {
-		if client := k.Client(); client != nil {
-			fresh, e := client.Discovery().ServerVersion()
-			if e != nil {
-				lastErr = e
-			}
-			if e == nil && fresh != nil {
-				info = fresh
-			}
-		}
-	}
-	ver := ""
-	if info != nil {
-		ver = info.GitVersion
-	}
-	if ver == "" {
-		if lastErr != nil {
-			return nil, apperror.Internal(fmt.Sprintf("获取 K8s 版本失败: %v", lastErr))
-		}
-		return nil, apperror.Internal("获取 K8s 版本失败: 版本信息为空")
-	}
-	return &K8sClusterStatusResponse{ServerVersion: ver}, nil
+	return &K8sClusterStatusResponse{
+		ServerVersion:       ver,
+		ConnectionState:     state.State,
+		LastError:           state.LastError,
+		LastAttemptAt:       state.LastAttemptAt,
+		LastSuccessAt:       state.LastSuccessAt,
+		ConsecutiveFailures: state.ConsecutiveFailures,
+	}, nil
 }
 
 func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint) ([]NamespaceItem, error) {
@@ -205,5 +204,49 @@ func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint) ([]Name
 	for _, ns := range nsList {
 		out = append(out, NamespaceItem{Name: ns.Name, Phase: string(ns.Status.Phase)})
 	}
+	return out, nil
+}
+
+func (s *K8sClusterService) ListComponentStatuses(ctx context.Context, id uint) ([]ComponentStatusItem, error) {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	var list []corev1.ComponentStatus
+	if err := k.Resource(&corev1.ComponentStatus{}).List(&list).Error; err != nil {
+		return nil, apperror.Internal(fmt.Sprintf("获取组件状态失败: %v", err))
+	}
+	out := make([]ComponentStatusItem, 0, len(list))
+	for _, item := range list {
+		state := "Unknown"
+		healthy := false
+		message := ""
+		reason := ""
+		for _, cond := range item.Conditions {
+			if cond.Type != corev1.ComponentHealthy {
+				continue
+			}
+			switch cond.Status {
+			case corev1.ConditionTrue:
+				state = "Healthy"
+				healthy = true
+			case corev1.ConditionFalse:
+				state = "Unhealthy"
+			default:
+				state = "Unknown"
+			}
+			message = strings.TrimSpace(cond.Message)
+			reason = strings.TrimSpace(cond.Error)
+			break
+		}
+		out = append(out, ComponentStatusItem{
+			Name:    item.Name,
+			Status:  state,
+			Healthy: healthy,
+			Message: message,
+			Error:   reason,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }

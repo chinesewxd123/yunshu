@@ -27,6 +27,7 @@ export interface PermissionItem {
   resource: string;
   action: string;
   description: string;
+  k8s_scope_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -144,6 +145,7 @@ export interface PermissionPayload {
   resource: string;
   action: string;
   description?: string;
+  k8s_scope_enabled?: boolean;
 }
 
 export interface PermissionQuery {

@@ -8,7 +8,7 @@ import {
   ReloadOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { formatDateTime } from "../utils/format";
 import { createCluster, deleteCluster, getClusterStatus, getClusters, setClusterStatus, updateCluster, type ClusterItem, type ClusterCreatePayload, type ClusterUpdatePayload } from "../services/clusters";
@@ -39,7 +39,7 @@ export function ClusterPage() {
   const [list, setList] = useState<ClusterItem[]>([]);
   const [total, setTotal] = useState(0);
 
-  const [serverVersionByID, setServerVersionByID] = useState<Record<number, string>>({});
+  const [statusByID, setStatusByID] = useState<Record<number, { server_version: string; connection_state?: string; last_error?: string }>>({});
 
   const [modalOpen, setModalOpen] = useState(false);
   const [current, setCurrent] = useState<ClusterItem | null>(null);
@@ -65,27 +65,34 @@ export function ClusterPage() {
 
   useEffect(() => {
     let cancelled = false;
-    async function loadVersions() {
+    async function loadStatuses() {
       const ids = enabledClusters.map((c) => c.id);
       if (ids.length === 0) return;
 
-      // only fetch versions we don't have yet
-      const missing = ids.filter((id) => !serverVersionByID[id]);
+      // only fetch statuses we don't have yet
+      const missing = ids.filter((id) => !statusByID[id]);
       if (missing.length === 0) return;
 
       const results = await Promise.allSettled(
         missing.map(async (id) => {
           const st = await getClusterStatus(id);
-          return { id, version: st.server_version || "-" };
+          return {
+            id,
+            status: {
+              server_version: st.server_version || "-",
+              connection_state: st.connection_state,
+              last_error: st.last_error,
+            },
+          };
         }),
       );
 
       if (cancelled) return;
-      setServerVersionByID((prev) => {
+      setStatusByID((prev) => {
         const next = { ...prev };
         for (const r of results) {
           if (r.status === "fulfilled") {
-            next[r.value.id] = r.value.version;
+            next[r.value.id] = r.value.status;
           } else {
             // keep existing value if any; otherwise fallback
             // eslint-disable-next-line @typescript-eslint/no-unused-expressions
@@ -95,7 +102,7 @@ export function ClusterPage() {
         return next;
       });
     }
-    void loadVersions();
+    void loadStatuses();
     return () => {
       cancelled = true;
     };
@@ -156,9 +163,20 @@ export function ClusterPage() {
   }
 
   async function handleDelete(record: ClusterItem) {
-    await deleteCluster(record.id);
-    message.success("集群已删除");
-    void loadClusters();
+    try {
+      await deleteCluster(record.id);
+      message.success("集群已删除");
+      setStatusByID((prev) => {
+        if (!prev[record.id]) return prev;
+        const next = { ...prev };
+        delete next[record.id];
+        return next;
+      });
+      void loadClusters();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "删除失败";
+      message.error(msg || "删除失败");
+    }
   }
 
   async function handleToggleStatus(record: ClusterItem) {
@@ -169,13 +187,16 @@ export function ClusterPage() {
       message.success(nextStatus === 1 ? "已启用集群" : "已停用集群");
       await loadClusters();
       if (nextStatus === 0) {
-        setServerVersionByID((prev) => {
+        setStatusByID((prev) => {
           if (!prev[record.id]) return prev;
           const next = { ...prev };
           delete next[record.id];
           return next;
         });
       }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "操作失败";
+      message.error(msg || "操作失败");
     } finally {
       setStatusUpdatingID(null);
     }
@@ -184,17 +205,45 @@ export function ClusterPage() {
   async function handleConnectTest(record: ClusterItem) {
     try {
       const st = await getClusterStatus(record.id);
-      const versionText = st.server_version || "-";
-      setServerVersionByID((prev) => ({ ...prev, [record.id]: versionText }));
-      if (st.server_version) {
-        message.success(`连接成功，K8s 版本：${st.server_version}`);
-      } else {
-        message.warning("连接已建立，但未获取到 K8s 版本信息");
+      setStatusByID((prev) => ({
+        ...prev,
+        [record.id]: {
+          server_version: st.server_version || "-",
+          connection_state: st.connection_state,
+          last_error: st.last_error,
+        },
+      }));
+      if (st.connection_state === "disabled") {
+        message.info("集群已停用，未进行连通性检查");
+        return;
       }
+      if (st.server_version) message.success(`连接成功，K8s 版本：${st.server_version}`);
+      else if (st.last_error) message.error(st.last_error || "连接测试失败");
+      else message.warning("已请求状态，但未获取到版本信息");
     } catch (error) {
       const msg = error instanceof Error ? error.message : "连接测试失败";
       message.error(msg || "连接测试失败");
     }
+  }
+
+  function renderConnection(record: ClusterItem) {
+    if (record.status !== 1) return <Tag>disabled</Tag>;
+    const st = statusByID[record.id];
+    const state = (st?.connection_state || "unknown").toLowerCase();
+    const color =
+      state === "ready" ? "success" :
+      state === "connecting" ? "processing" :
+      state === "degraded" ? "error" :
+      state === "disabled" ? "default" :
+      "default";
+    const label = st?.connection_state || "unknown";
+    const err = (st?.last_error || "").trim();
+    if (!err) return <Tag color={color}>{label}</Tag>;
+    return (
+      <Tooltip title={err}>
+        <Tag color={color}>{label}</Tag>
+      </Tooltip>
+    );
   }
 
   return (
@@ -239,9 +288,15 @@ export function ClusterPage() {
               width: 140,
               render: (_: unknown, record: ClusterItem) => {
                 if (record.status !== 1) return <span className="inline-muted">-</span>;
-                const v = serverVersionByID[record.id];
+                const v = statusByID[record.id]?.server_version;
                 return v ? v : <span className="inline-muted">获取中…</span>;
               },
+            },
+            {
+              title: "连接状态",
+              key: "conn_state",
+              width: 140,
+              render: (_: unknown, record: ClusterItem) => renderConnection(record),
             },
             {
               title: "状态",

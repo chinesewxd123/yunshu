@@ -132,6 +132,26 @@ export interface PodEventItem {
   last_timestamp: string;
 }
 
+export interface PodFileQuery {
+  cluster_id: number;
+  namespace: string;
+  name: string;
+  container?: string;
+  path?: string;
+}
+
+export interface PodFileItem {
+  name: string;
+  path: string;
+  type: string;
+  is_dir: boolean;
+  size: number;
+  permissions: string;
+  owner: string;
+  group: string;
+  mod_time: string;
+}
+
 export function getPods(query: PodListQuery) {
   return getData<{ list: PodItem[] }>(http.get("/pods", { params: query }));
 }
@@ -150,6 +170,38 @@ export function getPodDetail(query: { cluster_id: number; namespace: string; nam
 
 export function getPodEvents(query: { cluster_id: number; namespace: string; name: string }) {
   return getData<{ list: PodEventItem[] }>(http.get("/pods/events", { params: query }));
+}
+
+export function listPodFiles(query: PodFileQuery) {
+  return getData<{ list: PodFileItem[] }>(http.get("/pods/files", { params: query }));
+}
+
+export function readPodFile(query: PodFileQuery) {
+  return getData<{ content: string }>(http.get("/pods/file", { params: query }));
+}
+
+export async function downloadPodFile(query: PodFileQuery) {
+  const blob = (await http.get("/pods/file/download", { params: query, responseType: "blob" })) as unknown as Blob;
+  return blob;
+}
+
+export function deletePodFile(payload: PodFileQuery) {
+  return getData<{ message: string }>(http.post("/pods/file/delete", payload));
+}
+
+export function uploadPodFile(payload: PodFileQuery & { file: File }) {
+  const form = new FormData();
+  form.append("cluster_id", String(payload.cluster_id));
+  form.append("namespace", payload.namespace);
+  form.append("name", payload.name);
+  if (payload.container) form.append("container", payload.container);
+  if (payload.path) form.append("path", payload.path);
+  form.append("file", payload.file);
+  return getData<{ message: string }>(
+    http.post("/pods/file/upload", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
+  );
 }
 
 export function deletePod(payload: PodDeletePayload) {

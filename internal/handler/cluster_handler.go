@@ -113,6 +113,20 @@ func (h *ClusterHandler) Namespaces(c *gin.Context) {
 	response.Success(c, gin.H{"list": list})
 }
 
+func (h *ClusterHandler) ComponentStatuses(c *gin.Context) {
+	id, err := parseUintParam(c, "id")
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	list, err := h.svc.ListComponentStatuses(c.Request.Context(), id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"list": list})
+}
+
 func (h *ClusterHandler) SetStatus(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {

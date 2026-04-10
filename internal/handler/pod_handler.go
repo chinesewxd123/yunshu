@@ -3,6 +3,8 @@ package handler
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -194,4 +196,100 @@ func (h *PodHandler) UpdateSimple(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "updated"})
+}
+
+func (h *PodHandler) ListFiles(c *gin.Context) {
+	var query service.PodFileQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.Error(c, apperror.BadRequest(err.Error()))
+		return
+	}
+	list, err := h.svc.ListFiles(c.Request.Context(), query)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"list": list})
+}
+
+func (h *PodHandler) ReadFile(c *gin.Context) {
+	var query service.PodFileQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.Error(c, apperror.BadRequest(err.Error()))
+		return
+	}
+	data, err := h.svc.ReadFile(c.Request.Context(), query)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"content": string(data)})
+}
+
+func (h *PodHandler) DownloadFile(c *gin.Context) {
+	var query service.PodFileQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		response.Error(c, apperror.BadRequest(err.Error()))
+		return
+	}
+	data, err := h.svc.ReadFile(c.Request.Context(), query)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	filename := filepath.Base(strings.TrimSpace(query.Path))
+	if filename == "" || filename == "." || filename == "/" {
+		filename = "download.bin"
+	}
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(filename))
+	c.Data(200, "application/octet-stream", data)
+}
+
+func (h *PodHandler) DeleteFile(c *gin.Context) {
+	var req service.PodFileQuery
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, apperror.BadRequest(err.Error()))
+		return
+	}
+	if err := h.svc.DeleteFile(c.Request.Context(), req); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "deleted"})
+}
+
+func (h *PodHandler) UploadFile(c *gin.Context) {
+	clusterID, err := strconv.ParseUint(strings.TrimSpace(c.PostForm("cluster_id")), 10, 64)
+	if err != nil || clusterID == 0 {
+		response.Error(c, apperror.BadRequest("cluster_id 非法"))
+		return
+	}
+	query := service.PodFileQuery{
+		ClusterID: uint(clusterID),
+		Namespace: strings.TrimSpace(c.PostForm("namespace")),
+		Name:      strings.TrimSpace(c.PostForm("name")),
+		Container: strings.TrimSpace(c.PostForm("container")),
+		Path:      strings.TrimSpace(c.PostForm("path")),
+	}
+	if query.Namespace == "" || query.Name == "" {
+		response.Error(c, apperror.BadRequest("namespace/name 不能为空"))
+		return
+	}
+	fh, err := c.FormFile("file")
+	if err != nil {
+		response.Error(c, apperror.BadRequest("请上传文件"))
+		return
+	}
+	file, err := fh.Open()
+	if err != nil {
+		response.Error(c, apperror.BadRequest("读取上传文件失败"))
+		return
+	}
+	defer file.Close()
+	if err := h.svc.UploadFile(c.Request.Context(), query, fh.Filename, file); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "uploaded"})
 }

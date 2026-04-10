@@ -46,7 +46,7 @@ export function PoliciesPage() {
 
       const nextRoleId = preferredRoleId ?? selectRoleId(roleData.list, selectedRoleId);
       setSelectedRoleId(nextRoleId);
-      setCheckedPermissionIds(nextRoleId ? getRolePermissionIds(policyList, nextRoleId) : []);
+      setCheckedPermissionIds(nextRoleId ? getRolePermissionIds(policyList, nextRoleId).filter((id) => id > 0) : []);
     } finally {
       setLoading(false);
     }
@@ -54,7 +54,7 @@ export function PoliciesPage() {
 
   function handleRoleChange(value: number) {
     setSelectedRoleId(value);
-    setCheckedPermissionIds(getRolePermissionIds(list, value));
+    setCheckedPermissionIds(getRolePermissionIds(list, value).filter((id) => id > 0));
   }
 
   async function handleSave() {
@@ -63,8 +63,8 @@ export function PoliciesPage() {
       return;
     }
 
-    const currentIds = getRolePermissionIds(list, selectedRoleId);
-    const desiredIds = checkedPermissionIds.filter((id) => permissionIdSet.has(id));
+    const currentIds = getRolePermissionIds(list, selectedRoleId).filter((id) => id > 0);
+    const desiredIds = checkedPermissionIds.filter((id) => id > 0 && permissionIdSet.has(id));
     const currentIdSet = new Set(currentIds);
     const desiredIdSet = new Set(desiredIds);
     const toGrant = desiredIds.filter((id) => !currentIdSet.has(id));

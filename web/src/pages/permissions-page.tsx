@@ -1,5 +1,5 @@
 import { PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
-import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { StatusTag } from "../components/status-tag";
 import { createPermission, deletePermission, getPermissions, getPermission, updatePermission } from "../services/permissions";
@@ -54,7 +54,7 @@ export function PermissionsPage() {
   function openCreate() {
     setCurrent(null);
     form.resetFields();
-    form.setFieldsValue({ action: "GET" });
+    form.setFieldsValue({ action: "GET", k8s_scope_enabled: false });
     setOpen(true);
   }
 
@@ -87,6 +87,15 @@ export function PermissionsPage() {
     await deletePermission(record.id);
     message.success(`已删除能力项 ${record.name}`);
     void loadPermissions();
+  }
+
+  async function handleToggleK8sScope(record: PermissionItem, enabled: boolean) {
+    await updatePermission(record.id, { k8s_scope_enabled: enabled });
+    message.success(enabled ? "已纳入三元授权目录" : "已取消纳入三元授权目录");
+    setList((prev) => prev.map((item) => (item.id === record.id ? { ...item, k8s_scope_enabled: enabled } : item)));
+    if (detailRecord?.id === record.id) {
+      setDetailRecord((prev) => (prev ? { ...prev, k8s_scope_enabled: enabled } : prev));
+    }
   }
 
   async function openDetail(record: PermissionItem) {
@@ -152,6 +161,12 @@ export function PermissionsPage() {
             { title: "能力名称", dataIndex: "name" },
             { title: "资源路径", dataIndex: "resource", render: (value: string) => <Tag>{value}</Tag> },
             { title: "动作", dataIndex: "action", render: (value: string) => <Tag color="processing">{value}</Tag> },
+            {
+              title: "三元授权",
+              dataIndex: "k8s_scope_enabled",
+              width: 110,
+              render: (v?: boolean) => <Tag color={v ? "purple" : "default"}>{v ? "纳入" : "默认规则"}</Tag>,
+            },
             { title: "说明", dataIndex: "description", render: (value?: string) => value || "-" },
             {
               title: "操作",
@@ -167,6 +182,17 @@ export function PermissionsPage() {
                   <Button type="link" icon={<SafetyCertificateOutlined />} onClick={() => openAssignRoles(record)}>
                     分配角色
                   </Button>
+                  <Tooltip title="纳入/取消纳入 Kubernetes 三元授权目录">
+                    <Switch
+                      size="small"
+                      checked={Boolean(record.k8s_scope_enabled)}
+                      checkedChildren="三元开"
+                      unCheckedChildren="三元关"
+                      onChange={(checked) => {
+                        void handleToggleK8sScope(record, checked);
+                      }}
+                    />
+                  </Tooltip>
                   <Popconfirm title="确认删除该能力项吗？" onConfirm={() => void handleDelete(record)}>
                     <Button type="link" danger icon={<DeleteOutlined />}>
                       删除
@@ -187,7 +213,7 @@ export function PermissionsPage() {
         confirmLoading={submitting}
         destroyOnClose
       >
-        <Form form={form} layout="vertical" initialValues={{ action: "GET" }}>
+        <Form form={form} layout="vertical" initialValues={{ action: "GET", k8s_scope_enabled: false }}>
           <Form.Item label="能力名称" name="name" rules={[{ required: true, message: "请输入能力名称" }]}>
             <Input placeholder="例如：查询主机列表" />
           </Form.Item>
@@ -253,6 +279,11 @@ export function PermissionsPage() {
             </Descriptions.Item>
             <Descriptions.Item label="HTTP 动作">
               <Tag color="processing">{detailRecord.action}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="纳入三元授权">
+              <Tag color={detailRecord.k8s_scope_enabled ? "purple" : "default"}>
+                {detailRecord.k8s_scope_enabled ? "是" : "否（默认规则）"}
+              </Tag>
             </Descriptions.Item>
             <Descriptions.Item label="说明" span={2}>{detailRecord.description || "-"}</Descriptions.Item>
             <Descriptions.Item label="创建时间">{formatDateTime(detailRecord.created_at)}</Descriptions.Item>

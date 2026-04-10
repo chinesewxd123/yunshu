@@ -6,6 +6,35 @@ import type { MenuItem } from "../services/menus";
 import { createLazyMenuPage } from "../utils/menu-page-loader";
 import { findMenuByPath, normalizeMenuPath } from "../utils/menu-path";
 
+const PATH_COMPONENT_FALLBACK: Record<string, string> = {
+  "/clusters": "cluster-page",
+  "/pods": "pod-page",
+  "/namespaces": "namespaces-page",
+  "/nodes": "nodes-page",
+  "/component-status": "component-status-page",
+  "/deployments": "deployments-page",
+  "/statefulsets": "statefulsets-page",
+  "/daemonsets": "daemonsets-page",
+  "/cronjobs": "cronjobs-page",
+  "/jobs": "jobs-page",
+  "/configmaps": "configmaps-page",
+  "/secrets": "secrets-page",
+  "/ingresses": "ingresses-page",
+  "/ingress-classes": "ingress-classes-page",
+  "/events": "events-page",
+  "/k8s-services": "k8s-services-page",
+  "/persistentvolumes": "persistentvolumes-page",
+  "/persistentvolumeclaims": "persistentvolumeclaims-page",
+  "/storageclasses": "storageclasses-page",
+  "/crds": "crds-page",
+  "/crs": "crs-page",
+  "/rbac/roles": "rbac-roles-page",
+  "/rbac/rolebindings": "rbac-rolebindings-page",
+  "/rbac/clusterroles": "rbac-clusterroles-page",
+  "/rbac/clusterrolebindings": "rbac-clusterrolebindings-page",
+  "/k8s-scoped-policies": "k8s-scoped-policies-page",
+};
+
 function RouteFallback() {
   return (
     <div className="page-loading">
@@ -40,10 +69,16 @@ export function DynamicMenuPage() {
   }, [menus, location.pathname]);
 
   const LazyComp = useMemo(() => {
-    const c = menuItem?.component?.trim();
+    const normalizedPath = normalizeMenuPath(location.pathname);
+    const fallbackComp = PATH_COMPONENT_FALLBACK[normalizedPath];
+    // 对核心内置页面优先使用 path->component 映射，避免菜单 component 配置错误导致串页
+    const c = (fallbackComp ?? menuItem?.component)?.trim();
     if (!c) return null;
     return createLazyMenuPage(c);
-  }, [menuItem?.component]);
+  }, [location.pathname, menuItem?.component]);
+
+  const normalizedPath = useMemo(() => normalizeMenuPath(location.pathname), [location.pathname]);
+  const hasPathFallback = Boolean(PATH_COMPONENT_FALLBACK[normalizedPath]);
 
   if (loadError) {
     return <Result status="error" title="菜单加载失败" subTitle={loadError} />;
@@ -53,7 +88,7 @@ export function DynamicMenuPage() {
     return <RouteFallback />;
   }
 
-  if (!menuItem) {
+  if (!menuItem && !hasPathFallback) {
     return (
       <Result
         status="404"
@@ -68,7 +103,7 @@ export function DynamicMenuPage() {
     );
   }
 
-  if (menuItem.children && menuItem.children.length > 0) {
+  if (menuItem && menuItem.children && menuItem.children.length > 0) {
     return (
       <Card className="table-card" title={menuItem.name}>
         <Typography.Paragraph type="secondary">这是目录菜单，请从左侧选择具体子菜单进入页面。</Typography.Paragraph>
@@ -86,7 +121,7 @@ export function DynamicMenuPage() {
     );
   }
 
-  if (!menuItem.component?.trim()) {
+  if (menuItem && !menuItem.component?.trim()) {
     return (
       <Card className="table-card">
         <Result
@@ -105,6 +140,9 @@ export function DynamicMenuPage() {
   }
 
   if (!LazyComp) {
+    const normalized = normalizeMenuPath(location.pathname);
+    const fallbackComp = PATH_COMPONENT_FALLBACK[normalized];
+    const compText = (menuItem?.component ?? fallbackComp ?? "").trim();
     return (
       <Card className="table-card">
         <Result
@@ -112,7 +150,7 @@ export function DynamicMenuPage() {
           title="未找到页面文件"
           subTitle={
             <span>
-              已填写 component 为「{menuItem.component}」，但未找到匹配的 <Typography.Text code>src/pages/**/*-page.tsx</Typography.Text>。
+              已填写 component 为「{compText || "（空）"}」，但未找到匹配的 <Typography.Text code>src/pages/**/*-page.tsx</Typography.Text>。
               请新建文件并导出与文件名对应的 PascalCase 组件名。
             </span>
           }

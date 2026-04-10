@@ -10,6 +10,9 @@ interface DashboardMetrics {
   podNormal: number;
   podAbnormal: number;
   podClusterErrors: number;
+  eventTotal: number;
+  eventWarning: number;
+  eventClusterErrors: number;
 }
 
 interface SystemHealth {
@@ -52,6 +55,22 @@ const statItems = [
     color: "#c23a2b",
     gradient: "linear-gradient(135deg, #c23a2b 0%, #f5222d 100%)",
   },
+  {
+    key: "eventTotal",
+    title: "Events 总数",
+    hint: "按集群采样聚合的事件数量",
+    icon: <InfoOutlined />,
+    color: "#7a4dd8",
+    gradient: "linear-gradient(135deg, #7a4dd8 0%, #a855f7 100%)",
+  },
+  {
+    key: "eventWarning",
+    title: "Events 告警",
+    hint: "Type=Warning 的事件条数",
+    icon: <WarningOutlined />,
+    color: "#d4380d",
+    gradient: "linear-gradient(135deg, #d4380d 0%, #fa541c 100%)",
+  },
 ] as const;
 
 function formatUptime(seconds: number): string {
@@ -67,6 +86,9 @@ export function DashboardPage() {
     podNormal: 0,
     podAbnormal: 0,
     podClusterErrors: 0,
+    eventTotal: 0,
+    eventWarning: 0,
+    eventClusterErrors: 0,
   });
   const [health, setHealth] = useState<SystemHealth>({ status: "", version: "", uptime: 0, loading: true });
   const [loading, setLoading] = useState(true);
@@ -90,6 +112,9 @@ export function DashboardPage() {
           podNormal: overview.pod_normal_count,
           podAbnormal: overview.pod_abnormal_count,
           podClusterErrors: overview.pod_cluster_errors,
+          eventTotal: overview.event_total_count,
+          eventWarning: overview.event_warning_count,
+          eventClusterErrors: overview.event_cluster_errors,
         });
 
         if (healthData) {
@@ -121,7 +146,7 @@ export function DashboardPage() {
     <div>
       <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
         {statItems.map((item) => (
-          <Col xs={24} sm={12} lg={6} key={item.key}>
+          <Col xs={24} sm={12} lg={8} xl={6} key={item.key}>
             <Card
               className="stats-card"
               loading={loading}
@@ -241,7 +266,7 @@ export function DashboardPage() {
         <Card className="table-card" title="采集状态" loading={loading}>
           <Space direction="vertical" size={8} style={{ width: "100%" }}>
             <Typography.Text className="inline-muted">
-              Pod 统计按「启用」集群跨命名空间聚合；若集群不可达会计入失败数。
+              Pod 和 Events 均按启用集群聚合；Events 为每集群最近 500 条采样，失败会单独计数。
             </Typography.Text>
             <Row gutter={16}>
               <Col span={12}>
@@ -254,6 +279,18 @@ export function DashboardPage() {
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <Typography.Text type="secondary">采集失败集群数</Typography.Text>
               <Tag color={metrics.podClusterErrors > 0 ? "warning" : "success"}>{metrics.podClusterErrors}</Tag>
+            </div>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Statistic title="Events 总数" value={metrics.eventTotal} valueStyle={{ color: "#7a4dd8", fontWeight: 700 }} />
+              </Col>
+              <Col span={12}>
+                <Statistic title="Warning Events" value={metrics.eventWarning} valueStyle={{ color: "#d4380d", fontWeight: 700 }} />
+              </Col>
+            </Row>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <Typography.Text type="secondary">Event 采集失败集群数</Typography.Text>
+              <Tag color={metrics.eventClusterErrors > 0 ? "warning" : "success"}>{metrics.eventClusterErrors}</Tag>
             </div>
           </Space>
         </Card>

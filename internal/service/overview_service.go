@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"go-permission-system/internal/model"
@@ -10,7 +11,6 @@ import (
 
 	"gorm.io/gorm"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type OverviewResponse struct {
@@ -22,6 +22,11 @@ type OverviewResponse struct {
 
 	// Number of clusters that failed during pod aggregation.
 	PodClusterErrors int64 `json:"pod_cluster_errors"`
+
+	// Event stats (sampled per cluster to control latency).
+	EventTotalCount    int64 `json:"event_total_count"`
+	EventWarningCount  int64 `json:"event_warning_count"`
+	EventClusterErrors int64 `json:"event_cluster_errors"`
 }
 
 type OverviewService struct {
@@ -55,33 +60,82 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 		return out, nil
 	}
 
+	// 产品侧体验优先：总时限内返回“可得数据 + 失败计数”，而不是让首页等待到超时。
+	overallCtx, overallCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer overallCancel()
+
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
 	for _, c := range clusters {
-		// keep per-cluster requests bounded
-		cctx, cancel := context.WithTimeout(ctx, 6*time.Second)
-		_, k, err := s.runtime.GetClusterKubectl(cctx, c.ID)
-		cancel()
-		if err != nil {
-			out.PodClusterErrors++
-			continue
-		}
+		cid := c.ID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		// list all pods in all namespaces
-		pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
-		pods, err := k.Client().CoreV1().Pods("").List(pctx, metav1.ListOptions{})
-		pcancel()
-		if err != nil {
-			out.PodClusterErrors++
-			continue
-		}
-
-		for _, p := range pods.Items {
-			if isPodNormal(p) {
-				out.PodNormalCount++
-			} else {
-				out.PodAbnormalCount++
+			// 连接探测保持短超时，避免不可达集群拖慢全局。
+			cctx, cancel := context.WithTimeout(overallCtx, 2*time.Second)
+			_, k, err := s.runtime.GetClusterKubectl(cctx, cid)
+			cancel()
+			if err != nil {
+				mu.Lock()
+				out.PodClusterErrors++
+				mu.Unlock()
+				return
 			}
-		}
+
+			// Pod 聚合也限制时长，超时按失败集群处理。
+			pctx, pcancel := context.WithTimeout(overallCtx, 4*time.Second)
+			var pods []corev1.Pod
+			err = k.WithContext(pctx).Resource(&corev1.Pod{}).AllNamespace().List(&pods).Error
+			pcancel()
+			if err != nil {
+				mu.Lock()
+				out.PodClusterErrors++
+				mu.Unlock()
+				return
+			}
+
+			normal := int64(0)
+			abnormal := int64(0)
+			for _, p := range pods {
+				if isPodNormal(p) {
+					normal++
+				} else {
+					abnormal++
+				}
+			}
+			mu.Lock()
+			out.PodNormalCount += normal
+			out.PodAbnormalCount += abnormal
+			mu.Unlock()
+
+			// Event 概览仅采样最近 500 条，避免在大集群拖慢首页。
+			ectx, ecancel := context.WithTimeout(overallCtx, 4*time.Second)
+			var events []corev1.Event
+			err = k.WithContext(ectx).Resource(&corev1.Event{}).AllNamespace().Limit(500).List(&events).Error
+			ecancel()
+			if err != nil {
+				mu.Lock()
+				out.EventClusterErrors++
+				mu.Unlock()
+				return
+			}
+			total := int64(len(events))
+			warnings := int64(0)
+			for _, ev := range events {
+				if ev.Type == "Warning" {
+					warnings++
+				}
+			}
+			mu.Lock()
+			out.EventTotalCount += total
+			out.EventWarningCount += warnings
+			mu.Unlock()
+		}()
 	}
+	wg.Wait()
 
 	return out, nil
 }
@@ -105,6 +159,6 @@ func isPodNormal(p corev1.Pod) bool {
 }
 
 func (o OverviewResponse) String() string {
-	return fmt.Sprintf("users=%d clusters=%d normal=%d abnormal=%d errors=%d",
-		o.UsersCount, o.ClustersCount, o.PodNormalCount, o.PodAbnormalCount, o.PodClusterErrors)
+	return fmt.Sprintf("users=%d clusters=%d pod_normal=%d pod_abnormal=%d pod_errors=%d event_total=%d event_warning=%d event_errors=%d",
+		o.UsersCount, o.ClustersCount, o.PodNormalCount, o.PodAbnormalCount, o.PodClusterErrors, o.EventTotalCount, o.EventWarningCount, o.EventClusterErrors)
 }

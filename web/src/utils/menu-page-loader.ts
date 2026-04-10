@@ -55,7 +55,17 @@ export function createLazyMenuPage(componentField: string): LazyExoticComponent<
 
   return lazy(async () => {
     const mod = await pageLoaders[key]();
-    const Comp = (mod as Record<string, ComponentType<object>>)[exportName] ?? (mod as { default?: ComponentType<object> }).default;
+    const named = mod as Record<string, ComponentType<object>>;
+    const direct = named[exportName];
+    const caseInsensitive = Object.entries(named).find(([k, v]) => {
+      if (!v || k === "default") return false;
+      return k.toLowerCase() === exportName.toLowerCase();
+    })?.[1];
+    const firstPageLike = Object.entries(named).find(([k, v]) => {
+      if (!v || k === "default") return false;
+      return /page$/i.test(k);
+    })?.[1];
+    const Comp = direct ?? caseInsensitive ?? (mod as { default?: ComponentType<object> }).default ?? firstPageLike;
     if (!Comp) {
       throw new Error(`页面模块未导出「${exportName}」或 default：${key}`);
     }

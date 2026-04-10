@@ -34,6 +34,10 @@ var seedCmd = &cobra.Command{
 		defer app.Close()
 
 		ctx := context.Background()
+		// 确保新增字段（如 permissions.k8s_scope_enabled）在 seed 前已完成迁移
+		if err := bootstrap.AutoMigrateModels(app.DB); err != nil {
+			return err
+		}
 
 		// 历史错误：撤销策略实际路由为 DELETE /api/v1/policies（JSON body），与 /api/v1/policies/:id 不匹配，会导致无法撤销授权
 		if err := service.RemovePermissionPolicies(app.Enforcer, "/api/v1/policies/:id", "DELETE"); err != nil {
@@ -177,6 +181,10 @@ func defaultPermissions() []model.Permission {
 		{Name: "授权列表", Resource: "/api/v1/policies", Action: "GET", Description: "View policy list"},
 		{Name: "创建授权策略", Resource: "/api/v1/policies", Action: "POST", Description: "Grant permission to role"},
 		{Name: "删除授权策略", Resource: "/api/v1/policies", Action: "DELETE", Description: "Revoke permission from role (JSON body)"},
+		{Name: "K8s 三元策略动作目录", Resource: "/api/v1/k8s-policies/actions", Action: "GET", Description: "List k8s scoped action codes"},
+		{Name: "K8s 三元策略路径目录", Resource: "/api/v1/k8s-policies/paths", Action: "GET", Description: "List k8s scoped paths"},
+		{Name: "K8s 三元策略列表", Resource: "/api/v1/k8s-policies", Action: "GET", Description: "List k8s scoped policies by role"},
+		{Name: "K8s 三元策略下发", Resource: "/api/v1/k8s-policies/grant", Action: "POST", Description: "Grant k8s scoped policies"},
 		{Name: "注册审核列表", Resource: "/api/v1/registrations", Action: "GET", Description: "View registration requests"},
 		{Name: "审核注册申请", Resource: "/api/v1/registrations/:id/review", Action: "POST", Description: "Review registration request"},
 		{Name: "菜单树", Resource: "/api/v1/menus/tree", Action: "GET", Description: "View menu tree"},
@@ -201,12 +209,18 @@ func defaultPermissions() []model.Permission {
 		{Name: "启停集群", Resource: "/api/v1/clusters/:id/status", Action: "PUT", Description: "Enable/disable k8s cluster"},
 		{Name: "集群连接状态", Resource: "/api/v1/clusters/:id/status", Action: "GET", Description: "Check k8s cluster status"},
 		{Name: "集群命名空间", Resource: "/api/v1/clusters/:id/namespaces", Action: "GET", Description: "List cluster namespaces"},
+		{Name: "组件状态列表", Resource: "/api/v1/clusters/:id/component-statuses", Action: "GET", Description: "List control plane component statuses"},
 		{Name: "Pod 列表", Resource: "/api/v1/pods", Action: "GET", Description: "List pods"},
 		{Name: "Pod 详情", Resource: "/api/v1/pods/detail", Action: "GET", Description: "Get pod detail"},
 		{Name: "Pod 事件", Resource: "/api/v1/pods/events", Action: "GET", Description: "List pod events"},
 		{Name: "Pod 日志", Resource: "/api/v1/pods/logs", Action: "GET", Description: "Get pod logs"},
 		{Name: "Pod 日志下载", Resource: "/api/v1/pods/logs/download", Action: "GET", Description: "Download pod logs"},
 		{Name: "Pod 日志流", Resource: "/api/v1/pods/logs/stream", Action: "GET", Description: "Stream pod logs"},
+		{Name: "Pod 文件列表", Resource: "/api/v1/pods/files", Action: "GET", Description: "List pod files"},
+		{Name: "Pod 文件读取", Resource: "/api/v1/pods/file", Action: "GET", Description: "Read pod file content"},
+		{Name: "Pod 文件下载", Resource: "/api/v1/pods/file/download", Action: "GET", Description: "Download pod file"},
+		{Name: "Pod 文件上传", Resource: "/api/v1/pods/file/upload", Action: "POST", Description: "Upload file to pod"},
+		{Name: "Pod 文件删除", Resource: "/api/v1/pods/file/delete", Action: "POST", Description: "Delete pod file"},
 		{Name: "Pod Exec", Resource: "/api/v1/pods/exec", Action: "POST", Description: "Exec command in pod"},
 		{Name: "Pod 交互式终端", Resource: "/api/v1/pods/exec/ws", Action: "GET", Description: "Interactive exec terminal via websocket"},
 		{Name: "Pod 重启", Resource: "/api/v1/pods/restart", Action: "POST", Description: "Restart pod"},
@@ -214,10 +228,118 @@ func defaultPermissions() []model.Permission {
 		{Name: "Pod 快捷创建", Resource: "/api/v1/pods/create/simple", Action: "POST", Description: "Create pod quickly"},
 		{Name: "编辑并重建 Pod", Resource: "/api/v1/pods/update/simple", Action: "POST", Description: "Update pod by recreate"},
 		{Name: "删除 Pod", Resource: "/api/v1/pods", Action: "DELETE", Description: "Delete pod"},
+		{Name: "命名空间列表", Resource: "/api/v1/namespaces", Action: "GET", Description: "List namespaces"},
+		{Name: "命名空间详情", Resource: "/api/v1/namespaces/detail", Action: "GET", Description: "Get namespace detail"},
+		{Name: "命名空间应用 YAML", Resource: "/api/v1/namespaces/apply", Action: "POST", Description: "Apply namespace yaml"},
+		{Name: "删除命名空间", Resource: "/api/v1/namespaces", Action: "DELETE", Description: "Delete namespace"},
+		{Name: "Node 列表", Resource: "/api/v1/nodes", Action: "GET", Description: "List nodes"},
+		{Name: "Node 详情", Resource: "/api/v1/nodes/detail", Action: "GET", Description: "Get node detail"},
+
+		{Name: "RBAC Role 列表", Resource: "/api/v1/rbac/roles", Action: "GET", Description: "List Roles"},
+		{Name: "RBAC RoleBinding 列表", Resource: "/api/v1/rbac/rolebindings", Action: "GET", Description: "List RoleBindings"},
+		{Name: "RBAC ClusterRole 列表", Resource: "/api/v1/rbac/clusterroles", Action: "GET", Description: "List ClusterRoles"},
+		{Name: "RBAC ClusterRoleBinding 列表", Resource: "/api/v1/rbac/clusterrolebindings", Action: "GET", Description: "List ClusterRoleBindings"},
+		{Name: "RBAC 详情", Resource: "/api/v1/rbac/detail", Action: "GET", Description: "Get RBAC detail"},
+		{Name: "RBAC 应用 YAML", Resource: "/api/v1/rbac/apply", Action: "POST", Description: "Apply RBAC yaml"},
+		{Name: "RBAC 删除", Resource: "/api/v1/rbac", Action: "DELETE", Description: "Delete RBAC resource"},
+
+		{Name: "Deployment 列表", Resource: "/api/v1/deployments", Action: "GET", Description: "List deployments"},
+		{Name: "Deployment 详情", Resource: "/api/v1/deployments/detail", Action: "GET", Description: "Get deployment detail"},
+		{Name: "Deployment 应用 YAML", Resource: "/api/v1/deployments/apply", Action: "POST", Description: "Apply deployment yaml"},
+		{Name: "Deployment 扩缩容", Resource: "/api/v1/deployments/scale", Action: "POST", Description: "Scale deployment"},
+		{Name: "Deployment 重启", Resource: "/api/v1/deployments/restart", Action: "POST", Description: "Restart deployment"},
+		{Name: "Deployment 关联 Pods", Resource: "/api/v1/deployments/pods", Action: "GET", Description: "List deployment related pods"},
+		{Name: "删除 Deployment", Resource: "/api/v1/deployments", Action: "DELETE", Description: "Delete deployment"},
+
+		{Name: "StatefulSet 列表", Resource: "/api/v1/statefulsets", Action: "GET", Description: "List statefulsets"},
+		{Name: "StatefulSet 详情", Resource: "/api/v1/statefulsets/detail", Action: "GET", Description: "Get statefulset detail"},
+		{Name: "StatefulSet 应用 YAML", Resource: "/api/v1/statefulsets/apply", Action: "POST", Description: "Apply statefulset yaml"},
+		{Name: "StatefulSet 扩缩容", Resource: "/api/v1/statefulsets/scale", Action: "POST", Description: "Scale statefulset"},
+		{Name: "StatefulSet 重启", Resource: "/api/v1/statefulsets/restart", Action: "POST", Description: "Restart statefulset"},
+		{Name: "StatefulSet 关联 Pods", Resource: "/api/v1/statefulsets/pods", Action: "GET", Description: "List statefulset related pods"},
+		{Name: "删除 StatefulSet", Resource: "/api/v1/statefulsets", Action: "DELETE", Description: "Delete statefulset"},
+
+		{Name: "DaemonSet 列表", Resource: "/api/v1/daemonsets", Action: "GET", Description: "List daemonsets"},
+		{Name: "DaemonSet 详情", Resource: "/api/v1/daemonsets/detail", Action: "GET", Description: "Get daemonset detail"},
+		{Name: "DaemonSet 应用 YAML", Resource: "/api/v1/daemonsets/apply", Action: "POST", Description: "Apply daemonset yaml"},
+		{Name: "DaemonSet 重启", Resource: "/api/v1/daemonsets/restart", Action: "POST", Description: "Restart daemonset"},
+		{Name: "DaemonSet 关联 Pods", Resource: "/api/v1/daemonsets/pods", Action: "GET", Description: "List daemonset related pods"},
+		{Name: "删除 DaemonSet", Resource: "/api/v1/daemonsets", Action: "DELETE", Description: "Delete daemonset"},
+
+		{Name: "Job 列表", Resource: "/api/v1/jobs", Action: "GET", Description: "List jobs"},
+		{Name: "Job 详情", Resource: "/api/v1/jobs/detail", Action: "GET", Description: "Get job detail"},
+		{Name: "Job 关联 Pods", Resource: "/api/v1/jobs/pods", Action: "GET", Description: "List job related pods"},
+		{Name: "Job 重新执行", Resource: "/api/v1/jobs/rerun", Action: "POST", Description: "Rerun a job"},
+		{Name: "Job 应用 YAML", Resource: "/api/v1/jobs/apply", Action: "POST", Description: "Apply job yaml"},
+		{Name: "删除 Job", Resource: "/api/v1/jobs", Action: "DELETE", Description: "Delete job"},
+
+		{Name: "CronJob 列表", Resource: "/api/v1/cronjobs", Action: "GET", Description: "List cronjobs"},
+		{Name: "CronJob 列表V2", Resource: "/api/v1/cronjobs/v2", Action: "GET", Description: "List cronjobs with suspend and last schedule"},
+		{Name: "CronJob 详情", Resource: "/api/v1/cronjobs/detail", Action: "GET", Description: "Get cronjob detail"},
+		{Name: "CronJob 关联 Pods", Resource: "/api/v1/cronjobs/pods", Action: "GET", Description: "List cronjob related pods"},
+		{Name: "CronJob 应用 YAML", Resource: "/api/v1/cronjobs/apply", Action: "POST", Description: "Apply cronjob yaml"},
+		{Name: "CronJob 暂停/恢复", Resource: "/api/v1/cronjobs/suspend", Action: "POST", Description: "Suspend/resume cronjob"},
+		{Name: "CronJob 触发执行", Resource: "/api/v1/cronjobs/trigger", Action: "POST", Description: "Trigger cronjob once"},
+		{Name: "删除 CronJob", Resource: "/api/v1/cronjobs", Action: "DELETE", Description: "Delete cronjob"},
+
+		{Name: "ConfigMap 列表", Resource: "/api/v1/configmaps", Action: "GET", Description: "List configmaps"},
+		{Name: "ConfigMap 详情", Resource: "/api/v1/configmaps/detail", Action: "GET", Description: "Get configmap detail"},
+		{Name: "ConfigMap 应用 YAML", Resource: "/api/v1/configmaps/apply", Action: "POST", Description: "Apply configmap yaml"},
+		{Name: "删除 ConfigMap", Resource: "/api/v1/configmaps", Action: "DELETE", Description: "Delete configmap"},
+
+		{Name: "Secret 列表", Resource: "/api/v1/secrets", Action: "GET", Description: "List secrets"},
+		{Name: "Secret 详情", Resource: "/api/v1/secrets/detail", Action: "GET", Description: "Get secret detail"},
+		{Name: "Secret 应用 YAML", Resource: "/api/v1/secrets/apply", Action: "POST", Description: "Apply secret yaml"},
+		{Name: "删除 Secret", Resource: "/api/v1/secrets", Action: "DELETE", Description: "Delete secret"},
+
+		{Name: "Service 列表", Resource: "/api/v1/k8s-services", Action: "GET", Description: "List services"},
+		{Name: "Service 详情", Resource: "/api/v1/k8s-services/detail", Action: "GET", Description: "Get service detail"},
+		{Name: "Service 应用 YAML", Resource: "/api/v1/k8s-services/apply", Action: "POST", Description: "Apply service yaml"},
+		{Name: "删除 Service", Resource: "/api/v1/k8s-services", Action: "DELETE", Description: "Delete service"},
+
+		{Name: "PersistentVolume 列表", Resource: "/api/v1/persistentvolumes", Action: "GET", Description: "List persistent volumes"},
+		{Name: "PersistentVolume 详情", Resource: "/api/v1/persistentvolumes/detail", Action: "GET", Description: "Get persistent volume detail"},
+		{Name: "PersistentVolume 应用 YAML", Resource: "/api/v1/persistentvolumes/apply", Action: "POST", Description: "Apply persistent volume yaml"},
+		{Name: "删除 PersistentVolume", Resource: "/api/v1/persistentvolumes", Action: "DELETE", Description: "Delete persistent volume"},
+
+		{Name: "PersistentVolumeClaim 列表", Resource: "/api/v1/persistentvolumeclaims", Action: "GET", Description: "List persistent volume claims"},
+		{Name: "PersistentVolumeClaim 详情", Resource: "/api/v1/persistentvolumeclaims/detail", Action: "GET", Description: "Get persistent volume claim detail"},
+		{Name: "PersistentVolumeClaim 应用 YAML", Resource: "/api/v1/persistentvolumeclaims/apply", Action: "POST", Description: "Apply persistent volume claim yaml"},
+		{Name: "删除 PersistentVolumeClaim", Resource: "/api/v1/persistentvolumeclaims", Action: "DELETE", Description: "Delete persistent volume claim"},
+
+		{Name: "StorageClass 列表", Resource: "/api/v1/storageclasses", Action: "GET", Description: "List storage classes"},
+		{Name: "StorageClass 详情", Resource: "/api/v1/storageclasses/detail", Action: "GET", Description: "Get storage class detail"},
+		{Name: "StorageClass 应用 YAML", Resource: "/api/v1/storageclasses/apply", Action: "POST", Description: "Apply storage class yaml"},
+		{Name: "删除 StorageClass", Resource: "/api/v1/storageclasses", Action: "DELETE", Description: "Delete storage class"},
+
+		{Name: "Ingress 列表", Resource: "/api/v1/ingresses", Action: "GET", Description: "List ingresses"},
+		{Name: "Ingress 详情", Resource: "/api/v1/ingresses/detail", Action: "GET", Description: "Get ingress detail"},
+		{Name: "Ingress 应用 YAML", Resource: "/api/v1/ingresses/apply", Action: "POST", Description: "Apply ingress yaml"},
+		{Name: "IngressClass 列表", Resource: "/api/v1/ingresses/classes", Action: "GET", Description: "List ingress classes"},
+		{Name: "IngressClass 详情", Resource: "/api/v1/ingresses/classes/detail", Action: "GET", Description: "Get ingress class detail"},
+		{Name: "IngressClass 应用 YAML", Resource: "/api/v1/ingresses/classes/apply", Action: "POST", Description: "Apply ingress class yaml"},
+		{Name: "删除 IngressClass", Resource: "/api/v1/ingresses/classes", Action: "DELETE", Description: "Delete ingress class"},
+		{Name: "重启 Ingress-Nginx Pods", Resource: "/api/v1/ingresses/nginx/restart", Action: "POST", Description: "Restart ingress-nginx controller pods to refresh cert"},
+		{Name: "删除 Ingress", Resource: "/api/v1/ingresses", Action: "DELETE", Description: "Delete ingress"},
+
+		{Name: "Event 列表", Resource: "/api/v1/events", Action: "GET", Description: "List events"},
+		{Name: "CRD 列表", Resource: "/api/v1/crds", Action: "GET", Description: "List custom resource definitions"},
+		{Name: "CRD 详情", Resource: "/api/v1/crds/detail", Action: "GET", Description: "Get custom resource definition detail"},
+		{Name: "CRD 应用 YAML", Resource: "/api/v1/crds/apply", Action: "POST", Description: "Apply custom resource definition yaml"},
+		{Name: "删除 CRD", Resource: "/api/v1/crds", Action: "DELETE", Description: "Delete custom resource definition"},
+		{Name: "CR 资源类型列表", Resource: "/api/v1/crs/resources", Action: "GET", Description: "List custom resource types"},
+		{Name: "CR 实例列表", Resource: "/api/v1/crs", Action: "GET", Description: "List custom resources"},
+		{Name: "CR 实例详情", Resource: "/api/v1/crs/detail", Action: "GET", Description: "Get custom resource detail"},
+		{Name: "CR 实例应用 YAML", Resource: "/api/v1/crs/apply", Action: "POST", Description: "Apply custom resource yaml"},
+		{Name: "删除 CR 实例", Resource: "/api/v1/crs", Action: "DELETE", Description: "Delete custom resource"},
 	}
 }
 
 func seedMenus(ctx context.Context, db *gorm.DB) error {
+	if err := cleanupDuplicateKubernetesMenu(ctx, db); err != nil {
+		return err
+	}
+
 	menus := defaultMenus()
 	for i := range menus {
 		if err := upsertMenu(ctx, db, &menus[i], 0); err != nil {
@@ -229,7 +351,89 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 			}
 		}
 	}
+	// 再清理一次：防止历史脏数据与 upsert 互相叠加导致仍有重复目录
+	return cleanupDuplicateKubernetesMenu(ctx, db)
+}
+
+func cleanupDuplicateKubernetesMenu(ctx context.Context, db *gorm.DB) error {
+	var roots []model.Menu
+	if err := db.WithContext(ctx).
+		Where("TRIM(path) IN ?", []string{"/kubernetes", "/kubernetes/"}).
+		Find(&roots).Error; err != nil {
+		return err
+	}
+	if len(roots) <= 1 {
+		return nil
+	}
+
+	keepID := roots[0].ID
+	keepScore := -1
+	for _, r := range roots {
+		var children []model.Menu
+		if err := db.WithContext(ctx).
+			Where("parent_id = ?", r.ID).
+			Find(&children).Error; err != nil {
+			return err
+		}
+		score := 0
+		for _, c := range children {
+			switch c.Path {
+			case "/pods", "/clusters", "/cronjobs", "/jobs", "/events":
+				score++
+			case "/pod", "/cluster":
+				score--
+			}
+		}
+		if score > keepScore {
+			keepScore = score
+			keepID = r.ID
+		}
+	}
+
+	for _, r := range roots {
+		if r.ID == keepID {
+			continue
+		}
+		ids, err := collectMenuSubtreeIDs(ctx, db, r.ID)
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		if err := db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.Menu{}).Error; err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func collectMenuSubtreeIDs(ctx context.Context, db *gorm.DB, rootID uint) ([]uint, error) {
+	var out []uint
+	queue := []uint{rootID}
+	seen := map[uint]bool{}
+
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+
+		var children []model.Menu
+		if err := db.WithContext(ctx).
+			Where("parent_id = ?", id).
+			Find(&children).Error; err != nil {
+			return nil, err
+		}
+		for _, c := range children {
+			queue = append(queue, c.ID)
+		}
+	}
+	return out, nil
 }
 
 func upsertMenu(ctx context.Context, db *gorm.DB, menu *model.Menu, parentID uint) error {
@@ -296,6 +500,7 @@ func defaultMenus() []model.Menu {
 				{Name: "角色管理", Path: "/roles", Icon: "ApartmentOutlined", Sort: 2, Component: "", Status: 1},
 				{Name: "API管理", Path: "/permissions", Icon: "ApiOutlined", Sort: 3, Component: "", Status: 1},
 				{Name: "授权管理", Path: "/policies", Icon: "AuditOutlined", Sort: 4, Component: "", Status: 1},
+				{Name: "K8s 三元策略", Path: "/k8s-scoped-policies", Icon: "AuditOutlined", Sort: 5, Component: "k8s-scoped-policies-page", Status: 1},
 				{Name: "注册审核", Path: "/registrations", Icon: "CheckCircleOutlined", Sort: 5, Component: "", Status: 1},
 				{Name: "菜单管理", Path: "/menus", Icon: "MenuOutlined", Sort: 6, Component: "", Status: 1},
 				{Name: "登录日志", Path: "/login-logs", Icon: "LoginOutlined", Sort: 7, Component: "", Status: 1},
@@ -304,20 +509,43 @@ func defaultMenus() []model.Menu {
 			},
 		},
 		{
-			Name:      "集群管理",
-			Path:      "/clusters",
-			Icon:      "KubernetesOutlined",
-			Sort:      3,
-			Component: "",
-			Status:    1,
+			Name:   "Kubernetes 容器管理",
+			Path:   "/kubernetes",
+			Icon:   "KubernetesOutlined",
+			Sort:   3,
+			Status: 1,
+			Children: []model.Menu{
+				{Name: "集群管理", Path: "/clusters", Icon: "KubernetesOutlined", Sort: 1, Component: "", Status: 1},
+				{Name: "命名空间管理", Path: "/namespaces", Icon: "AppstoreOutlined", Sort: 2, Component: "namespaces-page", Status: 1},
+				{Name: "Node 管理", Path: "/nodes", Icon: "HddOutlined", Sort: 3, Component: "nodes-page", Status: 1},
+				{Name: "组件状态", Path: "/component-status", Icon: "HeartOutlined", Sort: 4, Component: "component-status-page", Status: 1},
+				{Name: "Pod 管理", Path: "/pods", Icon: "KubernetesOutlined", Sort: 5, Component: "", Status: 1},
+				{Name: "Deployment 管理", Path: "/deployments", Icon: "DeploymentUnitOutlined", Sort: 6, Component: "deployments-page", Status: 1},
+				{Name: "StatefulSet 管理", Path: "/statefulsets", Icon: "ClusterOutlined", Sort: 7, Component: "statefulsets-page", Status: 1},
+				{Name: "DaemonSet 管理", Path: "/daemonsets", Icon: "ApiOutlined", Sort: 8, Component: "daemonsets-page", Status: 1},
+				{Name: "CronJob 管理", Path: "/cronjobs", Icon: "ClockCircleOutlined", Sort: 9, Component: "cronjobs-page", Status: 1},
+				{Name: "Job 管理", Path: "/jobs", Icon: "ThunderboltOutlined", Sort: 10, Component: "jobs-page", Status: 1},
+				{Name: "ConfigMap 管理", Path: "/configmaps", Icon: "FileTextOutlined", Sort: 11, Component: "configmaps-page", Status: 1},
+				{Name: "Secret 管理", Path: "/secrets", Icon: "SafetyOutlined", Sort: 12, Component: "secrets-page", Status: 1},
+				{Name: "Service 管理", Path: "/k8s-services", Icon: "ApartmentOutlined", Sort: 13, Component: "k8s-services-page", Status: 1},
+				{Name: "PersistentVolume", Path: "/persistentvolumes", Icon: "DatabaseOutlined", Sort: 14, Component: "persistentvolumes-page", Status: 1},
+				{Name: "PersistentVolumeClaim", Path: "/persistentvolumeclaims", Icon: "HddOutlined", Sort: 15, Component: "persistentvolumeclaims-page", Status: 1},
+				{Name: "StorageClass", Path: "/storageclasses", Icon: "FolderOpenOutlined", Sort: 16, Component: "storageclasses-page", Status: 1},
+				{Name: "Ingress 管理", Path: "/ingresses", Icon: "GatewayOutlined", Sort: 17, Component: "ingresses-page", Status: 1},
+				{Name: "IngressClass 入口类", Path: "/ingress-classes", Icon: "GatewayOutlined", Sort: 18, Component: "ingress-classes-page", Status: 1},
+				{Name: "Event 事件", Path: "/events", Icon: "NotificationOutlined", Sort: 19, Component: "events-page", Status: 1},
+			},
 		},
 		{
-			Name:      "Pod 管理",
-			Path:      "/pods",
-			Icon:      "KubernetesOutlined",
-			Sort:      4,
-			Component: "",
-			Status:    1,
+			Name:   "Kubernetes CRD 管理",
+			Path:   "/kubernetes-crd",
+			Icon:   "BranchesOutlined",
+			Sort:   4,
+			Status: 1,
+			Children: []model.Menu{
+				{Name: "CRD 管理", Path: "/crds", Icon: "BranchesOutlined", Sort: 1, Component: "crds-page", Status: 1},
+				{Name: "CR 实例管理", Path: "/crs", Icon: "DatabaseOutlined", Sort: 2, Component: "crs-page", Status: 1},
+			},
 		},
 	}
 }

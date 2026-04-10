@@ -6,51 +6,23 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"reflect"
-	"regexp"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"go-permission-system/internal/pkg/apperror"
+	"go-permission-system/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-var (
-	// RFC 1123 label: lower case alphanumeric or '-', start/end alphanumeric.
-	rfc1123LabelRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
-	// RFC 1123 subdomain (simplified): labels separated by '.', each a label.
-	rfc1123SubdomainRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
-)
-
-func validateRFC1123Label(name string) error {
-	n := strings.TrimSpace(name)
-	if n == "" || !rfc1123LabelRe.MatchString(n) {
-		return apperror.BadRequest("容器名称不合法：必须为 RFC1123 label（小写字母/数字/短横线，且首尾为字母或数字）")
-	}
-	return nil
-}
-
-func validateRFC1123Subdomain(name string) error {
-	n := strings.TrimSpace(name)
-	if n == "" || !rfc1123SubdomainRe.MatchString(n) {
-		return apperror.BadRequest("Pod 名称不合法：必须为 RFC1123 subdomain（小写字母/数字/短横线/点，且首尾为字母或数字）")
-	}
-	return nil
-}
-
-type PodListQuery struct {
-	ClusterID uint   `form:"cluster_id" binding:"required"`
-	Namespace string `form:"namespace"`
-	Keyword   string `form:"keyword"`
-}
+type PodListQuery = ClusterNamespaceOptionalKeywordQuery
 
 type PodLogsQuery struct {
 	ClusterID uint   `form:"cluster_id" binding:"required"`
@@ -64,50 +36,30 @@ type PodLogsQuery struct {
 	EndTime   string `form:"end_time"`
 }
 
+type PodFileQuery struct {
+	ClusterID uint   `form:"cluster_id" binding:"required"`
+	Namespace string `form:"namespace" binding:"required"`
+	Name      string `form:"name" binding:"required"`
+	Container string `form:"container"`
+	Path      string `form:"path"`
+}
+
 type PodExecRequest struct {
-	ClusterID uint   `json:"cluster_id" binding:"required"`
-	Namespace string `json:"namespace" binding:"required"`
-	Name      string `json:"name" binding:"required"`
+	ClusterNamespaceNameCommandRequest
 	Container string `json:"container"`
-	Command   string `json:"command" binding:"required"`
 }
 
-type PodDeleteRequest struct {
-	ClusterID uint   `json:"cluster_id" binding:"required"`
-	Namespace string `json:"namespace" binding:"required"`
-	Name      string `json:"name" binding:"required"`
-}
+type PodDeleteRequest = ClusterNamespaceNameRequest
 
-type PodDetailQuery struct {
-	ClusterID uint   `form:"cluster_id" binding:"required"`
-	Namespace string `form:"namespace" binding:"required"`
-	Name      string `form:"name" binding:"required"`
-}
-
-type PodEventQuery struct {
-	ClusterID uint   `form:"cluster_id" binding:"required"`
-	Namespace string `form:"namespace" binding:"required"`
-	Name      string `form:"name" binding:"required"`
-}
-
-type PodRestartRequest struct {
-	ClusterID uint   `json:"cluster_id" binding:"required"`
-	Namespace string `json:"namespace" binding:"required"`
-	Name      string `json:"name" binding:"required"`
-}
-
-type PodCreateYAMLRequest struct {
-	ClusterID uint   `json:"cluster_id" binding:"required"`
-	Namespace string `json:"namespace" binding:"required"`
-	Manifest  string `json:"manifest" binding:"required"`
-}
+type PodDetailQuery = ClusterNamespaceNameQuery
+type PodEventQuery = ClusterNamespaceNameQuery
+type PodRestartRequest = ClusterNamespaceNameRequest
+type PodCreateYAMLRequest = ClusterManifestApplyRequest
 
 type PodCreateSimpleRequest struct {
-	ClusterID uint   `json:"cluster_id" binding:"required"`
-	Namespace string `json:"namespace" binding:"required"`
-	Name      string `json:"name" binding:"required"`
-	Image     string `json:"image" binding:"required"`
-	Command   string `json:"command"`
+	ClusterNamespaceNameRequest
+	Image   string `json:"image" binding:"required"`
+	Command string `json:"command"`
 
 	ContainerName   string            `json:"container_name"`
 	ImagePullPolicy string            `json:"image_pull_policy"`
@@ -133,6 +85,18 @@ type PodCreateSimpleToleration struct {
 	Value             string `json:"value"`
 	Effect            string `json:"effect"`
 	TolerationSeconds *int64 `json:"toleration_seconds"`
+}
+
+type PodFileItem struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Type        string `json:"type"`
+	IsDir       bool   `json:"is_dir"`
+	Size        int64  `json:"size"`
+	Permissions string `json:"permissions"`
+	Owner       string `json:"owner"`
+	Group       string `json:"group"`
+	ModTime     string `json:"mod_time"`
 }
 
 type PodItem struct {
@@ -263,8 +227,8 @@ func (s *K8sPodService) Detail(ctx context.Context, query PodDetailQuery) (*PodD
 	if err != nil {
 		return nil, err
 	}
-	pod, err := k.Client().CoreV1().Pods(query.Namespace).Get(ctx, query.Name, metav1.GetOptions{})
-	if err != nil {
+	var pod corev1.Pod
+	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(query.Namespace).Name(query.Name).Get(&pod).Error; err != nil {
 		return nil, apperror.Internal(fmt.Sprintf("获取 Pod 详情失败: %v", err))
 	}
 	containers := make([]PodContainerInfo, 0, len(pod.Status.ContainerStatuses))
@@ -274,7 +238,7 @@ func (s *K8sPodService) Detail(ctx context.Context, query PodDetailQuery) (*PodD
 			Image:        c.Image,
 			Ready:        c.Ready,
 			RestartCount: c.RestartCount,
-			State:        containerState(c.State),
+			State:        k8sutil.ContainerState(c.State),
 		})
 	}
 	initContainers := make([]PodContainerInfo, 0, len(pod.Status.InitContainerStatuses))
@@ -284,7 +248,7 @@ func (s *K8sPodService) Detail(ctx context.Context, query PodDetailQuery) (*PodD
 			Image:        c.Image,
 			Ready:        c.Ready,
 			RestartCount: c.RestartCount,
-			State:        containerState(c.State),
+			State:        k8sutil.ContainerState(c.State),
 		})
 	}
 	startTime := time.Time{}
@@ -316,32 +280,21 @@ func (s *K8sPodService) Detail(ctx context.Context, query PodDetailQuery) (*PodD
 	}, nil
 }
 
-func containerState(st corev1.ContainerState) string {
-	switch {
-	case st.Running != nil:
-		return "Running"
-	case st.Waiting != nil:
-		return "Waiting"
-	case st.Terminated != nil:
-		return "Terminated"
-	default:
-		return "Unknown"
-	}
-}
-
 func (s *K8sPodService) Events(ctx context.Context, query PodEventQuery) ([]PodEventItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
 		return nil, err
 	}
-	list, err := k.Client().CoreV1().Events(query.Namespace).List(ctx, metav1.ListOptions{
-		FieldSelector: fmt.Sprintf("involvedObject.name=%s,involvedObject.kind=Pod", query.Name),
-	})
-	if err != nil {
+	var list []corev1.Event
+	if err := k.WithContext(ctx).
+		Resource(&corev1.Event{}).
+		Namespace(query.Namespace).
+		WithFieldSelector(fmt.Sprintf("involvedObject.name=%s,involvedObject.kind=Pod", query.Name)).
+		List(&list).Error; err != nil {
 		return nil, apperror.Internal(fmt.Sprintf("获取 Pod 事件失败: %v", err))
 	}
-	out := make([]PodEventItem, 0, len(list.Items))
-	for _, e := range list.Items {
+	out := make([]PodEventItem, 0, len(list))
+	for _, e := range list {
 		out = append(out, PodEventItem{
 			Type:           e.Type,
 			Reason:         e.Reason,
@@ -359,7 +312,7 @@ func (s *K8sPodService) Delete(ctx context.Context, req PodDeleteRequest) error 
 	if err != nil {
 		return err
 	}
-	if err := k.Client().CoreV1().Pods(req.Namespace).Delete(ctx, req.Name, metav1.DeleteOptions{}); err != nil {
+	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Name(req.Name).Delete().Error; err != nil {
 		return apperror.Internal(fmt.Sprintf("删除 Pod 失败: %v", err))
 	}
 	return nil
@@ -372,7 +325,8 @@ func (s *K8sPodService) Exec(ctx context.Context, req PodExecRequest) (string, e
 	}
 	container := strings.TrimSpace(req.Container)
 	if container == "" {
-		pod, e := k.Client().CoreV1().Pods(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
+		var pod corev1.Pod
+		e := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Name(req.Name).Get(&pod).Error
 		if e == nil && len(pod.Spec.Containers) > 0 {
 			container = pod.Spec.Containers[0].Name
 		}
@@ -396,6 +350,8 @@ type ExecTerminalSize struct {
 }
 
 // ExecTTYStream opens an interactive TTY exec stream to the container.
+// 保留 client-go 直连：需要 remotecommand.TerminalSizeQueue 来支持前端终端窗口 resize，
+// 当前 kom StreamExecute 不暴露该能力（且默认 TTY=false），因此这里采用最小原生实现。
 func (s *K8sPodService) ExecTTYStream(
 	ctx context.Context,
 	clusterID uint,
@@ -465,16 +421,26 @@ func (s *K8sPodService) GetLogs(ctx context.Context, query PodLogsQuery) (string
 		Container: strings.TrimSpace(query.Container),
 		TailLines: &tail,
 	}
-	stream, err := k.Client().CoreV1().Pods(query.Namespace).GetLogs(query.Name, opts).Stream(ctx)
+	var stream io.ReadCloser
+	err = k.WithContext(ctx).
+		Namespace(query.Namespace).
+		Name(query.Name).
+		Ctl().
+		Pod().
+		ContainerName(strings.TrimSpace(query.Container)).
+		GetLogs(&stream, opts).Error
 	if err != nil {
 		return "", apperror.Internal(fmt.Sprintf("获取 Pod 日志失败: %v", err))
+	}
+	if stream == nil {
+		return "", apperror.Internal("获取 Pod 日志失败: 日志流为空")
 	}
 	defer stream.Close()
 	var buf bytes.Buffer
 	if _, err = io.Copy(&buf, stream); err != nil {
 		return "", apperror.Internal(fmt.Sprintf("读取 Pod 日志失败: %v", err))
 	}
-	return filterLogLines(buf.String(), query.Keyword, query.StartTime, query.EndTime), nil
+	return k8sutil.FilterLogLines(buf.String(), query.Keyword, query.StartTime, query.EndTime), nil
 }
 
 func (s *K8sPodService) StreamLogs(ctx context.Context, query PodLogsQuery, onLine func(string) error) error {
@@ -491,9 +457,19 @@ func (s *K8sPodService) StreamLogs(ctx context.Context, query PodLogsQuery, onLi
 		TailLines: &tail,
 		Follow:    true,
 	}
-	stream, err := k.Client().CoreV1().Pods(query.Namespace).GetLogs(query.Name, opts).Stream(ctx)
+	var stream io.ReadCloser
+	err = k.WithContext(ctx).
+		Namespace(query.Namespace).
+		Name(query.Name).
+		Ctl().
+		Pod().
+		ContainerName(strings.TrimSpace(query.Container)).
+		GetLogs(&stream, opts).Error
 	if err != nil {
 		return apperror.Internal(fmt.Sprintf("获取 Pod 流日志失败: %v", err))
+	}
+	if stream == nil {
+		return apperror.Internal("获取 Pod 流日志失败: 日志流为空")
 	}
 	defer stream.Close()
 
@@ -525,9 +501,123 @@ func (s *K8sPodService) Restart(ctx context.Context, req PodRestartRequest) erro
 	if err != nil {
 		return err
 	}
-	grace := int64(0)
-	if err := k.Client().CoreV1().Pods(req.Namespace).Delete(ctx, req.Name, metav1.DeleteOptions{GracePeriodSeconds: &grace}); err != nil {
+	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Name(req.Name).Delete().Error; err != nil {
 		return apperror.Internal(fmt.Sprintf("重启 Pod 失败: %v", err))
+	}
+	return nil
+}
+
+func (s *K8sPodService) ListFiles(ctx context.Context, query PodFileQuery) ([]PodFileItem, error) {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
+	if err != nil {
+		return nil, err
+	}
+	path := strings.TrimSpace(query.Path)
+	if path == "" {
+		path = "/"
+	}
+	files, err := k.WithContext(ctx).
+		Namespace(query.Namespace).
+		Name(query.Name).
+		Ctl().
+		Pod().
+		ContainerName(strings.TrimSpace(query.Container)).
+		ListAllFiles(path)
+	if err != nil {
+		return nil, apperror.Internal(fmt.Sprintf("获取 Pod 文件列表失败: %v", err))
+	}
+	out := make([]PodFileItem, 0, len(files))
+	for _, f := range files {
+		if f == nil {
+			continue
+		}
+		out = append(out, PodFileItem{
+			Name:        f.Name,
+			Path:        f.Path,
+			Type:        f.Type,
+			IsDir:       f.IsDir,
+			Size:        f.Size,
+			Permissions: f.Permissions,
+			Owner:       f.Owner,
+			Group:       f.Group,
+			ModTime:     f.ModTime,
+		})
+	}
+	return out, nil
+}
+
+func (s *K8sPodService) ReadFile(ctx context.Context, query PodFileQuery) ([]byte, error) {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
+	if err != nil {
+		return nil, err
+	}
+	path := strings.TrimSpace(query.Path)
+	if path == "" {
+		return nil, apperror.BadRequest("path 不能为空")
+	}
+	data, err := k.WithContext(ctx).
+		Namespace(query.Namespace).
+		Name(query.Name).
+		Ctl().
+		Pod().
+		ContainerName(strings.TrimSpace(query.Container)).
+		DownloadFile(path)
+	if err != nil {
+		return nil, apperror.Internal(fmt.Sprintf("读取 Pod 文件失败: %v", err))
+	}
+	return data, nil
+}
+
+func (s *K8sPodService) DeleteFile(ctx context.Context, query PodFileQuery) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
+	if err != nil {
+		return err
+	}
+	path := strings.TrimSpace(query.Path)
+	if path == "" {
+		return apperror.BadRequest("path 不能为空")
+	}
+	if _, err := k.WithContext(ctx).
+		Namespace(query.Namespace).
+		Name(query.Name).
+		Ctl().
+		Pod().
+		ContainerName(strings.TrimSpace(query.Container)).
+		DeleteFile(path); err != nil {
+		return apperror.Internal(fmt.Sprintf("删除 Pod 文件失败: %v", err))
+	}
+	return nil
+}
+
+func (s *K8sPodService) UploadFile(ctx context.Context, query PodFileQuery, filename string, r io.Reader) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
+	if err != nil {
+		return err
+	}
+	dest := strings.TrimSpace(query.Path)
+	if dest == "" {
+		dest = "/tmp"
+	}
+	tmp, err := os.CreateTemp("", "pod-upload-*"+filepath.Ext(filename))
+	if err != nil {
+		return apperror.Internal(fmt.Sprintf("创建临时文件失败: %v", err))
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	if _, err := io.Copy(tmp, r); err != nil {
+		return apperror.Internal(fmt.Sprintf("保存上传文件失败: %v", err))
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return apperror.Internal(fmt.Sprintf("处理上传文件失败: %v", err))
+	}
+	if err := k.WithContext(ctx).
+		Namespace(query.Namespace).
+		Name(query.Name).
+		Ctl().
+		Pod().
+		ContainerName(strings.TrimSpace(query.Container)).
+		UploadFile(dest, tmp); err != nil {
+		return apperror.Internal(fmt.Sprintf("上传文件到 Pod 失败: %v", err))
 	}
 	return nil
 }
@@ -546,21 +636,21 @@ func (s *K8sPodService) CreateSimple(ctx context.Context, req PodCreateSimpleReq
 	if err != nil {
 		return err
 	}
-	if err := validateRFC1123Subdomain(req.Name); err != nil {
+	if err := k8sutil.ValidateRFC1123Subdomain(req.Name); err != nil {
 		return err
 	}
 	if cn := strings.TrimSpace(req.ContainerName); cn != "" {
-		if err := validateRFC1123Label(cn); err != nil {
+		if err := k8sutil.ValidateRFC1123Label(cn); err != nil {
 			return err
 		}
 	} else {
 		// default container name equals pod name; validate as label too
-		if err := validateRFC1123Label(req.Name); err != nil {
+		if err := k8sutil.ValidateRFC1123Label(req.Name); err != nil {
 			return err
 		}
 	}
 	pod := buildSimplePod(req)
-	if _, err := k.Client().CoreV1().Pods(req.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Create(pod).Error; err != nil {
 		return apperror.Internal(fmt.Sprintf("快捷创建 Pod 失败: %v", err))
 	}
 	return nil
@@ -571,22 +661,21 @@ func (s *K8sPodService) UpdateSimple(ctx context.Context, req PodCreateSimpleReq
 	if err != nil {
 		return err
 	}
-	if err := validateRFC1123Subdomain(req.Name); err != nil {
+	if err := k8sutil.ValidateRFC1123Subdomain(req.Name); err != nil {
 		return err
 	}
 	if cn := strings.TrimSpace(req.ContainerName); cn != "" {
-		if err := validateRFC1123Label(cn); err != nil {
+		if err := k8sutil.ValidateRFC1123Label(cn); err != nil {
 			return err
 		}
 	} else {
-		if err := validateRFC1123Label(req.Name); err != nil {
+		if err := k8sutil.ValidateRFC1123Label(req.Name); err != nil {
 			return err
 		}
 	}
 
-	client := k.Client().CoreV1().Pods(req.Namespace)
-	existing, err := client.Get(ctx, req.Name, metav1.GetOptions{})
-	if err != nil {
+	var existing corev1.Pod
+	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Name(req.Name).Get(&existing).Error; err != nil {
 		if apierrors.IsNotFound(err) {
 			return apperror.BadRequest("Pod 不存在，无法编辑")
 		}
@@ -594,25 +683,25 @@ func (s *K8sPodService) UpdateSimple(ctx context.Context, req PodCreateSimpleReq
 	}
 
 	desired := buildSimplePod(req)
-	if msg := workloadManagedPodHint(ctx, k, existing); msg != "" {
+	if msg := workloadManagedPodHint(ctx, k, &existing); msg != "" {
 		return apperror.BadRequest(msg)
 	}
-	if canUpdateImageOnly(existing, desired) {
+	if k8sutil.CanUpdateImageOnly(&existing, desired) {
 		// Kubernetes 生态做法：仅更新镜像时，不删除重建 Pod
-		existing = existing.DeepCopy()
-		existing.Spec.Containers[0].Image = desired.Spec.Containers[0].Image
-		if _, err := client.Update(ctx, existing, metav1.UpdateOptions{}); err != nil {
+		copyPod := existing.DeepCopy()
+		copyPod.Spec.Containers[0].Image = desired.Spec.Containers[0].Image
+		if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Update(copyPod).Error; err != nil {
 			return apperror.Internal(fmt.Sprintf("更新 Pod 镜像失败: %v", err))
 		}
 		return nil
 	}
 
 	// 其他字段多为不可变：按同名删除后重建，并等待删除完成避免 Terminating 占用导致创建失败
-	grace := int64(0)
-	_ = client.Delete(ctx, req.Name, metav1.DeleteOptions{GracePeriodSeconds: &grace})
+	_ = k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Name(req.Name).Delete().Error
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		_, err := client.Get(ctx, req.Name, metav1.GetOptions{})
+		var current corev1.Pod
+		err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Name(req.Name).Get(&current).Error
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				break
@@ -625,7 +714,7 @@ func (s *K8sPodService) UpdateSimple(ctx context.Context, req PodCreateSimpleReq
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	if _, err := client.Create(ctx, desired, metav1.CreateOptions{}); err != nil {
+	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Create(desired).Error; err != nil {
 		return apperror.Internal(fmt.Sprintf("编辑并重建 Pod 失败: %v", err))
 	}
 	return nil
@@ -635,7 +724,7 @@ func workloadManagedPodHint(ctx context.Context, k *kom.Kubectl, pod *corev1.Pod
 	if k == nil || pod == nil {
 		return ""
 	}
-	owner := controllerOwner(pod.OwnerReferences)
+	owner := k8sutil.ControllerOwner(pod.OwnerReferences)
 	if owner == nil {
 		return ""
 	}
@@ -644,9 +733,10 @@ func workloadManagedPodHint(ctx context.Context, k *kom.Kubectl, pod *corev1.Pod
 		return "该 Pod 由 StatefulSet 管理，直接编辑 Pod 可能会被控制器回滚/重建；请到 StatefulSet 中修改镜像或配置后滚动更新。"
 	case "ReplicaSet":
 		// 绝大多数情况 ReplicaSet 来自 Deployment，尽力探测 Deployment 名称
-		rs, err := k.Client().AppsV1().ReplicaSets(pod.Namespace).Get(ctx, owner.Name, metav1.GetOptions{})
+		var rs appsv1.ReplicaSet
+		err := k.WithContext(ctx).Resource(&appsv1.ReplicaSet{}).Namespace(pod.Namespace).Name(owner.Name).Get(&rs).Error
 		if err == nil {
-			if depName := rsOwnerDeploymentName(rs); depName != "" {
+			if depName := k8sutil.RSOwnerDeploymentName(&rs); depName != "" {
 				return fmt.Sprintf("该 Pod 由 Deployment(%s) 管理，直接编辑 Pod 可能会被控制器回滚/重建；请到 Deployment 中修改镜像或配置后滚动更新。", depName)
 			}
 		}
@@ -657,275 +747,35 @@ func workloadManagedPodHint(ctx context.Context, k *kom.Kubectl, pod *corev1.Pod
 	return ""
 }
 
-func controllerOwner(refs []metav1.OwnerReference) *metav1.OwnerReference {
-	for i := range refs {
-		if refs[i].Controller != nil && *refs[i].Controller {
-			return &refs[i]
-		}
-	}
-	return nil
-}
-
-func rsOwnerDeploymentName(rs *appsv1.ReplicaSet) string {
-	if rs == nil {
-		return ""
-	}
-	for i := range rs.OwnerReferences {
-		ref := rs.OwnerReferences[i]
-		if ref.Controller != nil && *ref.Controller && ref.Kind == "Deployment" && ref.Name != "" {
-			return ref.Name
-		}
-	}
-	return ""
-}
-
-func canUpdateImageOnly(existing, desired *corev1.Pod) bool {
-	if existing == nil || desired == nil {
-		return false
-	}
-	if existing.Name != desired.Name || existing.Namespace != desired.Namespace {
-		return false
-	}
-	// “快捷创建”只支持单容器；多容器场景保守走重建
-	if len(existing.Spec.Containers) != 1 || len(desired.Spec.Containers) != 1 {
-		return false
-	}
-	// 容器名变更属于重建场景
-	if existing.Spec.Containers[0].Name != desired.Spec.Containers[0].Name {
-		return false
-	}
-	// 仅镜像变更才允许走 Update；其他字段一律走重建，避免用户“以为已改但实际上没生效”
-	if existing.Spec.Containers[0].Image == desired.Spec.Containers[0].Image {
-		return false
-	}
-
-	if strings.TrimSpace(string(existing.Spec.Containers[0].ImagePullPolicy)) != strings.TrimSpace(string(desired.Spec.Containers[0].ImagePullPolicy)) {
-		return false
-	}
-	if strings.TrimSpace(string(existing.Spec.RestartPolicy)) != strings.TrimSpace(string(desired.Spec.RestartPolicy)) {
-		return false
-	}
-	if !reflect.DeepEqual(existing.Spec.NodeSelector, desired.Spec.NodeSelector) {
-		return false
-	}
-	if strings.TrimSpace(existing.Spec.PriorityClassName) != strings.TrimSpace(desired.Spec.PriorityClassName) {
-		return false
-	}
-	if !reflect.DeepEqual(existing.Spec.Affinity, desired.Spec.Affinity) {
-		return false
-	}
-	if !reflect.DeepEqual(existing.Spec.Tolerations, desired.Spec.Tolerations) {
-		return false
-	}
-
-	exC := existing.Spec.Containers[0]
-	desC := desired.Spec.Containers[0]
-	if !reflect.DeepEqual(exC.Command, desC.Command) {
-		return false
-	}
-	if !reflect.DeepEqual(exC.Ports, desC.Ports) {
-		return false
-	}
-	if !reflect.DeepEqual(envToMap(exC.Env), envToMap(desC.Env)) {
-		return false
-	}
-	if !resourceRequirementsEqual(exC.Resources, desC.Resources) {
-		return false
-	}
-	if !reflect.DeepEqual(existing.Labels, desired.Labels) {
-		return false
-	}
-	return true
-}
-
-func envToMap(env []corev1.EnvVar) map[string]string {
-	m := make(map[string]string, len(env))
-	for _, e := range env {
-		name := strings.TrimSpace(e.Name)
-		if name == "" {
-			continue
-		}
-		m[name] = e.Value
-	}
-	return m
-}
-
-func resourceRequirementsEqual(a, b corev1.ResourceRequirements) bool {
-	// Requests/Limits 都为空时认为相等
-	if len(a.Requests) == 0 && len(a.Limits) == 0 && len(b.Requests) == 0 && len(b.Limits) == 0 {
-		return true
-	}
-	if len(a.Requests) != len(b.Requests) || len(a.Limits) != len(b.Limits) {
-		return false
-	}
-	for k, av := range a.Requests {
-		bv, ok := b.Requests[k]
-		if !ok || av.Cmp(bv) != 0 {
-			return false
-		}
-	}
-	for k, av := range a.Limits {
-		bv, ok := b.Limits[k]
-		if !ok || av.Cmp(bv) != 0 {
-			return false
-		}
-	}
-	return true
-}
-
 func buildSimplePod(req PodCreateSimpleRequest) *corev1.Pod {
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      req.Name,
-			Namespace: req.Namespace,
-			Labels:    req.Labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:  req.Name,
-					Image: req.Image,
-				},
-			},
-			RestartPolicy: corev1.RestartPolicyAlways,
-		},
+	tolerations := make([]k8sutil.SimpleTolerationInput, 0, len(req.Tolerations))
+	for _, t := range req.Tolerations {
+		tolerations = append(tolerations, k8sutil.SimpleTolerationInput{
+			Key:               t.Key,
+			Operator:          t.Operator,
+			Value:             t.Value,
+			Effect:            t.Effect,
+			TolerationSeconds: t.TolerationSeconds,
+		})
 	}
-	container := &pod.Spec.Containers[0]
-	if cn := strings.TrimSpace(req.ContainerName); cn != "" {
-		container.Name = cn
-	}
-	switch strings.TrimSpace(req.ImagePullPolicy) {
-	case "Always", "IfNotPresent", "Never":
-		container.ImagePullPolicy = corev1.PullPolicy(req.ImagePullPolicy)
-	}
-	switch strings.TrimSpace(req.RestartPolicy) {
-	case "Always", "OnFailure", "Never":
-		pod.Spec.RestartPolicy = corev1.RestartPolicy(req.RestartPolicy)
-	}
-	if req.Port > 0 {
-		container.Ports = []corev1.ContainerPort{{ContainerPort: req.Port}}
-	}
-	if len(req.Env) > 0 {
-		envs := make([]corev1.EnvVar, 0, len(req.Env))
-		for k, v := range req.Env {
-			name := strings.TrimSpace(k)
-			if name == "" {
-				continue
-			}
-			envs = append(envs, corev1.EnvVar{Name: name, Value: v})
-		}
-		container.Env = envs
-	}
-	reqs := corev1.ResourceList{}
-	lims := corev1.ResourceList{}
-	if v := strings.TrimSpace(req.RequestsCPU); v != "" {
-		if q, e := resource.ParseQuantity(v); e == nil {
-			reqs[corev1.ResourceCPU] = q
-		}
-	}
-	if v := strings.TrimSpace(req.RequestsMemory); v != "" {
-		if q, e := resource.ParseQuantity(v); e == nil {
-			reqs[corev1.ResourceMemory] = q
-		}
-	}
-	if v := strings.TrimSpace(req.LimitsCPU); v != "" {
-		if q, e := resource.ParseQuantity(v); e == nil {
-			lims[corev1.ResourceCPU] = q
-		}
-	}
-	if v := strings.TrimSpace(req.LimitsMemory); v != "" {
-		if q, e := resource.ParseQuantity(v); e == nil {
-			lims[corev1.ResourceMemory] = q
-		}
-	}
-	if len(reqs) > 0 || len(lims) > 0 {
-		container.Resources = corev1.ResourceRequirements{Requests: reqs, Limits: lims}
-	}
-	if len(req.Tolerations) > 0 {
-		tolerations := make([]corev1.Toleration, 0, len(req.Tolerations))
-		for _, t := range req.Tolerations {
-			op := strings.TrimSpace(t.Operator)
-			if op == "" {
-				op = string(corev1.TolerationOpEqual)
-			}
-			effect := strings.TrimSpace(t.Effect)
-			item := corev1.Toleration{
-				Key:      strings.TrimSpace(t.Key),
-				Operator: corev1.TolerationOperator(op),
-				Value:    strings.TrimSpace(t.Value),
-				Effect:   corev1.TaintEffect(effect),
-			}
-			if t.TolerationSeconds != nil {
-				item.TolerationSeconds = t.TolerationSeconds
-			}
-			tolerations = append(tolerations, item)
-		}
-		pod.Spec.Tolerations = tolerations
-	}
-	if len(req.NodeSelector) > 0 {
-		pod.Spec.NodeSelector = req.NodeSelector
-	}
-	if v := strings.TrimSpace(req.PriorityClassName); v != "" {
-		pod.Spec.PriorityClassName = v
-	}
-	if req.Affinity != nil {
-		pod.Spec.Affinity = req.Affinity
-	}
-	if cmd := strings.TrimSpace(req.Command); cmd != "" {
-		container.Command = []string{"sh", "-c", cmd}
-	}
-	return pod
-}
-
-func filterLogLines(text, keyword, startStr, endStr string) string {
-	lines := strings.Split(text, "\n")
-	kw := strings.ToLower(strings.TrimSpace(keyword))
-	start, _ := parseAnyTime(startStr)
-	end, _ := parseAnyTime(endStr)
-	out := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if kw != "" && !strings.Contains(strings.ToLower(line), kw) {
-			continue
-		}
-		if !start.IsZero() || !end.IsZero() {
-			ts, ok := extractLineTimestamp(line)
-			if ok {
-				if !start.IsZero() && ts.Before(start) {
-					continue
-				}
-				if !end.IsZero() && ts.After(end) {
-					continue
-				}
-			}
-		}
-		out = append(out, line)
-	}
-	return strings.Join(out, "\n")
-}
-
-func parseAnyTime(v string) (time.Time, error) {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return time.Time{}, nil
-	}
-	layouts := []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"}
-	for _, l := range layouts {
-		if t, err := time.Parse(l, v); err == nil {
-			return t, nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("invalid time")
-}
-
-var logTSRegexp = regexp.MustCompile(`\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}Z?`)
-
-func extractLineTimestamp(line string) (time.Time, bool) {
-	match := logTSRegexp.FindString(line)
-	if match == "" {
-		return time.Time{}, false
-	}
-	if t, err := parseAnyTime(match); err == nil {
-		return t, true
-	}
-	return time.Time{}, false
+	return k8sutil.BuildSimplePod(k8sutil.SimplePodBuildInput{
+		Name:              req.Name,
+		Namespace:         req.Namespace,
+		Image:             req.Image,
+		Command:           req.Command,
+		ContainerName:     req.ContainerName,
+		ImagePullPolicy:   req.ImagePullPolicy,
+		RestartPolicy:     req.RestartPolicy,
+		Port:              req.Port,
+		Env:               req.Env,
+		Labels:            req.Labels,
+		RequestsCPU:       req.RequestsCPU,
+		RequestsMemory:    req.RequestsMemory,
+		LimitsCPU:         req.LimitsCPU,
+		LimitsMemory:      req.LimitsMemory,
+		Tolerations:       tolerations,
+		NodeSelector:      req.NodeSelector,
+		PriorityClassName: req.PriorityClassName,
+		Affinity:          req.Affinity,
+	})
 }

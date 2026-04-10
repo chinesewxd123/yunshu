@@ -3,22 +3,8 @@ import type { MenuProps } from "antd";
 import { Link } from "react-router-dom";
 import type { ReactNode } from "react";
 import type { MenuItem } from "../services/menus";
-import { LoginOutlined, HistoryOutlined, ApiOutlined } from "@ant-design/icons";
 
 export type AntdMenuItem = NonNullable<MenuProps["items"]>[number];
-
-const LOG_MENU_ITEMS: AntdMenuItem[] = [
-  { key: "/login-logs", icon: <LoginOutlined />, label: <Link to="/login-logs">登录日志</Link> },
-  { key: "/operation-logs", icon: <HistoryOutlined />, label: <Link to="/operation-logs">操作历史</Link> },
-];
-
-const LOG_MENU_KEYS = new Set(["/login-logs", "/operation-logs"]);
-
-const BANNED_MENU_ITEM: AntdMenuItem = {
-  key: "/banned-ips",
-  icon: <ApiOutlined />,
-  label: <Link to="/banned-ips">封禁 IP 管理</Link>,
-};
 
 function menuIconByName(name?: string): ReactNode {
   if (!name?.trim()) return undefined;
@@ -41,7 +27,8 @@ function filterVisible(menus: MenuItem[]): MenuItem[] {
 export function buildSiderMenuItems(menus: MenuItem[]): AntdMenuItem[] {
   const nodes = filterVisible(menus);
   const items = nodes.map((m) => toAntdItem(m));
-  return dedupeMenuByKey(compactK8sDuplicates(ensureLogMenus(items)));
+  // 菜单以数据库为准，不在前端侧做“兜底注入”。
+  return dedupeMenuByKey(items);
 }
 
 function toAntdItem(m: MenuItem): AntdMenuItem {
@@ -86,97 +73,6 @@ function dedupeMenuByKey(items: AntdMenuItem[], globalSeen?: Set<string>): AntdM
     out.push(item);
   }
   return out;
-}
-
-function compactK8sDuplicates(items: AntdMenuItem[]): AntdMenuItem[] {
-  const list = [...items];
-  const k8sGroupIndex = list.findIndex((it) => {
-    if (!it || typeof it !== "object" || !("children" in it) || !Array.isArray(it.children)) return false;
-    const label = "label" in it ? it.label : undefined;
-    const labelText = typeof label === "string" ? label : "";
-    return labelText.includes("Kubernetes") || String((it as any).key ?? "").toLowerCase().includes("kubernetes");
-  });
-  if (k8sGroupIndex === -1) return list;
-
-  const group = list[k8sGroupIndex] as any;
-  const children: AntdMenuItem[] = Array.isArray(group.children) ? group.children : [];
-  const childKeySet = new Set(children.map((c: any) => normalizeMenuKey(String(c?.key ?? ""))));
-
-  return list.filter((it, idx) => {
-    if (idx === k8sGroupIndex) return true;
-    if (!it || typeof it !== "object" || !("key" in it)) return true;
-    if ("children" in it && Array.isArray(it.children)) return true;
-    const key = normalizeMenuKey(String(it.key));
-    if (key === "/pods" || key === "/clusters") {
-      return !childKeySet.has(key);
-    }
-    return true;
-  });
-}
-
-function ensureLogMenus(items: AntdMenuItem[]): AntdMenuItem[] {
-  // Try to find the logical "系统管理" group: the first top-level item whose children
-  // already contain login/operation logs. If found, ensure the log items and the banned-ip
-  // item exist under that group. Otherwise, fallback to previous behavior of injecting
-  // log items into existing parent nodes that have children.
-  const itemsCopy = items.map((i) => i) as AntdMenuItem[];
-
-  let systemIndex = -1;
-  // Prefer explicit `/system` top-level group if present
-  for (let i = 0; i < itemsCopy.length; i++) {
-    const candidate = itemsCopy[i];
-    if (candidate && typeof candidate === "object" && "key" in candidate && String(candidate.key) === "/system") {
-      systemIndex = i;
-      break;
-    }
-  }
-
-  if (systemIndex === -1) {
-    for (let i = 0; i < itemsCopy.length; i++) {
-    const it = itemsCopy[i];
-    if (!it || typeof it !== "object" || !("children" in it) || !Array.isArray(it.children)) continue;
-    const childKeys = new Set((it.children as AntdMenuItem[]).map((c) => (c && typeof c === "object" && "key" in c ? String(c.key) : "")));
-    for (const lk of LOG_MENU_KEYS) {
-      if (childKeys.has(lk)) {
-        systemIndex = i;
-        break;
-      }
-    }
-    if (systemIndex !== -1) break;
-  }
-  }
-  if (systemIndex !== -1) {
-    const it = itemsCopy[systemIndex] as any;
-    const children: AntdMenuItem[] = Array.isArray(it.children) ? [...(it.children as AntdMenuItem[])] : [];
-    const childKeys = new Set(children.map((c: any) => String(c?.key ?? "")));
-    for (const logItem of LOG_MENU_ITEMS) {
-      const logKey = String((logItem as any).key ?? "");
-      if (!childKeys.has(logKey)) {
-        children.push(logItem);
-        childKeys.add(logKey);
-      }
-    }
-    const bannedKey = String((BANNED_MENU_ITEM as any).key ?? "");
-    if (!childKeys.has(bannedKey)) {
-      children.push(BANNED_MENU_ITEM);
-    }
-    itemsCopy[systemIndex] = { ...(it as AntdMenuItem), children } as AntdMenuItem;
-    return itemsCopy;
-  }
-
-  // fallback: inject log items into any parent that has children (previous behavior)
-  return items.map((item) => {
-    if (!item || typeof item !== "object" || !("children" in item)) return item;
-    const children = Array.isArray(item.children) ? [...(item.children as AntdMenuItem[])] : [];
-    const childKeys = new Set(children.map((c) => (c && typeof c === "object" && "key" in c ? String(c.key) : "")));
-    for (const logItem of LOG_MENU_ITEMS) {
-      const logKey = logItem && typeof logItem.key === "string" ? logItem.key : String(logItem?.key);
-      if (!childKeys.has(logKey)) {
-        children.push(logItem);
-      }
-    }
-    return { ...item, children } as AntdMenuItem;
-  });
 }
 
 // collectAllKeys removed — no longer needed after refactor

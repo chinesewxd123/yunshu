@@ -127,7 +127,7 @@ export function AdminLayout() {
         <div className="brand-block__hint">
           <Typography.Text>{BRAND_EN_NAME}</Typography.Text>
           <Typography.Paragraph className="brand-block__hint-copy">
-            侧栏数据来自「菜单管理」与 /api/v1/menus/tree；隐藏或停用的项不会显示。页面访问仍受 Casbin 与 JWT 约束。
+            聚焦云原生运维治理，统一提供账号权限、Kubernetes 资源编排、三元授权策略与审计追踪能力。
           </Typography.Paragraph>
         </div>
 

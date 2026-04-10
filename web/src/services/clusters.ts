@@ -27,6 +27,11 @@ export interface ClusterUpdatePayload {
 
 export interface ClusterStatusResponse {
   server_version: string;
+  connection_state?: string;
+  last_error?: string;
+  last_attempt_at?: string;
+  last_success_at?: string;
+  consecutive_failures?: number;
 }
 
 export interface NamespaceItem {
@@ -41,6 +46,15 @@ export interface PodItem {
   node_name: string;
   ready: boolean;
   start_time: string;
+}
+
+export interface ComponentStatusItem {
+  name: string;
+  status: string;
+  healthy: boolean;
+  message?: string;
+  error?: string;
+  last_probe_at?: string;
 }
 
 export function getClusters(query: { keyword?: string; page?: number; page_size?: number }) {
@@ -73,5 +87,9 @@ export function listNamespaces(id: number) {
 
 export function listPods(id: number, namespace: string) {
   return getData<{ list: PodItem[] }>(http.get("/pods", { params: { cluster_id: id, namespace } }));
+}
+
+export function listComponentStatuses(id: number) {
+  return getData<{ list: ComponentStatusItem[] }>(http.get(`/clusters/${id}/component-statuses`));
 }
 

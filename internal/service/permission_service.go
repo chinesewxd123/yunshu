@@ -27,10 +27,11 @@ func NewPermissionService(permissionRepo *repository.PermissionRepository, enfor
 
 func (s *PermissionService) Create(ctx context.Context, req PermissionCreateRequest) (*PermissionItem, error) {
 	permission := model.Permission{
-		Name:        req.Name,
-		Resource:    req.Resource,
-		Action:      req.Action,
-		Description: req.Description,
+		Name:            req.Name,
+		Resource:        req.Resource,
+		Action:          req.Action,
+		Description:     req.Description,
+		K8sScopeEnabled: req.K8sScopeEnabled,
 	}
 	if err := s.permissionRepo.Create(ctx, &permission); err != nil {
 		return nil, err
@@ -61,6 +62,9 @@ func (s *PermissionService) Update(ctx context.Context, id uint, req PermissionU
 	}
 	if req.Description != nil {
 		permission.Description = *req.Description
+	}
+	if req.K8sScopeEnabled != nil {
+		permission.K8sScopeEnabled = *req.K8sScopeEnabled
 	}
 
 	if err = s.permissionRepo.Save(ctx, permission); err != nil {
