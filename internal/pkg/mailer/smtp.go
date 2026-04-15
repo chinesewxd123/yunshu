@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/smtp"
 	"strings"
@@ -16,6 +18,8 @@ import (
 type Sender interface {
 	Enabled() bool
 	Send(ctx context.Context, toEmail, subject, textBody string) error
+	// SendMultipart 发送 multipart/alternative邮件：textPlain 为纯文本，htmlBody 非空时同时附带 HTML（客户端优先展示 HTML）。
+	SendMultipart(ctx context.Context, toEmail, subject, textPlain, htmlBody string) error
 }
 
 type SMTPSender struct {
@@ -33,6 +37,10 @@ func (s *SMTPSender) Enabled() bool {
 }
 
 func (s *SMTPSender) Send(ctx context.Context, toEmail, subject, textBody string) error {
+	return s.SendMultipart(ctx, toEmail, subject, textBody, "")
+}
+
+func (s *SMTPSender) SendMultipart(ctx context.Context, toEmail, subject, textPlain, htmlBody string) error {
 	if !s.Enabled() {
 		return errors.New("mail channel is not configured")
 	}
@@ -91,7 +99,7 @@ func (s *SMTPSender) Send(ctx context.Context, toEmail, subject, textBody string
 		return err
 	}
 
-	message := buildMessage(s.cfg, toEmail, subject, textBody)
+	message := buildMessage(s.cfg, toEmail, subject, textPlain, htmlBody)
 	if _, err = writer.Write([]byte(message)); err != nil {
 		_ = writer.Close()
 		return err
@@ -103,19 +111,49 @@ func (s *SMTPSender) Send(ctx context.Context, toEmail, subject, textBody string
 	return client.Quit()
 }
 
-func buildMessage(cfg config.MailConfig, toEmail, subject, textBody string) string {
+func buildMessage(cfg config.MailConfig, toEmail, subject, textPlain, htmlBody string) string {
 	from := strings.TrimSpace(cfg.FromEmail)
 	if strings.TrimSpace(cfg.FromName) != "" {
 		from = fmt.Sprintf("%s <%s>", strings.TrimSpace(cfg.FromName), strings.TrimSpace(cfg.FromEmail))
 	}
+	to := strings.TrimSpace(toEmail)
+	subjEnc := mime.QEncoding.Encode("UTF-8", subject)
+
+	if strings.TrimSpace(htmlBody) == "" {
+		return strings.Join([]string{
+			fmt.Sprintf("From: %s", from),
+			fmt.Sprintf("To: %s", to),
+			fmt.Sprintf("Subject: %s", subjEnc),
+			"MIME-Version: 1.0",
+			"Content-Type: text/plain; charset=UTF-8",
+			"Content-Transfer-Encoding: 8bit",
+			"",
+			textPlain,
+		}, "\r\n")
+	}
+
+	var altBody strings.Builder
+	mw := multipart.NewWriter(&altBody)
+	boundary := mw.Boundary()
+	p1, _ := mw.CreatePart(map[string][]string{
+		"Content-Type":              {"text/plain; charset=UTF-8"},
+		"Content-Transfer-Encoding": {"8bit"},
+	})
+	_, _ = p1.Write([]byte(textPlain))
+	p2, _ := mw.CreatePart(map[string][]string{
+		"Content-Type":              {"text/html; charset=UTF-8"},
+		"Content-Transfer-Encoding": {"8bit"},
+	})
+	_, _ = p2.Write([]byte(htmlBody))
+	_ = mw.Close()
 
 	return strings.Join([]string{
 		fmt.Sprintf("From: %s", from),
-		fmt.Sprintf("To: %s", strings.TrimSpace(toEmail)),
-		fmt.Sprintf("Subject: %s", subject),
+		fmt.Sprintf("To: %s", to),
+		fmt.Sprintf("Subject: %s", subjEnc),
 		"MIME-Version: 1.0",
-		"Content-Type: text/plain; charset=UTF-8",
+		fmt.Sprintf("Content-Type: multipart/alternative; boundary=%s", boundary),
 		"",
-		textBody,
+		strings.TrimSuffix(altBody.String(), "\r\n"),
 	}, "\r\n")
 }

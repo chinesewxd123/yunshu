@@ -7,159 +7,160 @@
 [![Casbin](https://img.shields.io/badge/Casbin-RBAC-blueviolet?style=flat-square)](https://casbin.org/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](./LICENSE)
 
-基于 **Go + React + Casbin + Kom SDK** 的权限与 Kubernetes 管理平台。  
-在传统 RBAC 基础上，扩展 **K8s 三元权限（集群 + 命名空间 + 动作）**，并实现 Kubernetes 多资源可视化运维与审计。
+基于 **Go + React + Casbin + Kom SDK** 的权限与 Kubernetes 管理平台，支持：
+
+- 传统 RBAC（用户/角色/API 权限）
+- K8s 三元权限（cluster + namespace + action）
+- 项目化日志平台（Log Source + Agent + 实时流 + 文件级筛选）
 
 ---
 
 ## 目录
 
-- [1. 项目定位](#1-项目定位)
-- [2. 版本与技术栈](#2-版本与技术栈)
-- [3. 功能总览](#3-功能总览)
-- [4. 架构设计（增强版）](#4-架构设计增强版)
-- [5. 快速开始](#5-快速开始)
-- [6. 配置说明](#6-配置说明)
-- [7. 前端页面与菜单](#7-前端页面与菜单)
-- [8. API 接口清单（详细）](#8-api-接口清单详细)
-- [9. 权限模型：Casbin + K8s 三元权限](#9-权限模型casbin--k8s-三元权限)
-- [10. 典型请求与返回示例](#10-典型请求与返回示例)
-- [11. 验证流程（admin/dev）](#11-验证流程admindev)
-- [12. 排障指南](#12-排障指南)
-- [13. 性能与可维护性建议](#13-性能与可维护性建议)
-- [14. 项目结构](#14-项目结构)
-- [15. 开发命令](#15-开发命令)
+- [1. 功能清单（Implemented Features）](#1-功能清单implemented-features)
+- [2. 项目功能总览](#2-项目功能总览)
+- [3. 技术栈与架构](#3-技术栈与架构)
+- [4. 快速开始](#4-快速开始)
+- [5. 日志平台设计与实现（重点）](#5-日志平台设计与实现重点)
+- [6. 日志平台接口说明（详细）](#6-日志平台接口说明详细)
+- [7. 日志平台验证流程（详细）](#7-日志平台验证流程详细)
+- [8. Agent 启动命令（3种模式）](#8-agent-启动命令3种模式)
+- [9. 常见问题与排障](#9-常见问题与排障)
+- [10. 其他核心接口](#10-其他核心接口)
+- [11. 项目结构](#11-项目结构)
+- [12. 开发命令](#12-开发命令)
 
 ---
 
-## 1. 项目定位
+## 1. 功能清单（Implemented Features）
 
-适用于：
+> 以下为当前代码中已实现并可用的功能模块，按 GitHub 常见 checklist 形式展示。
 
-- 企业统一账号、角色、API 权限治理
-- CMDB / 运维平台权限底座
-- 多集群 Kubernetes 资源统一纳管
-- 高危操作（`exec/delete/scale`）细粒度授权与审计
+### 1.1 平台基础能力
+
+- [x] 配置化启动（`server/migrate/seed` 命令）
+- [x] MySQL + Redis 基础依赖接入
+- [x] JWT 认证、登录态管理
+- [x] 统一错误响应与审计中间件
+
+### 1.2 权限与系统管理
+
+- [x] 用户管理（增删改查、导入导出、角色绑定）
+- [x] 角色管理（增删改查）
+- [x] API 权限管理（resource + action）
+- [x] Casbin 策略下发与回收
+- [x] 注册审核流程
+- [x] 菜单树管理（创建/编辑/删除/树查询）
+- [x] 菜单内置修复与自动补齐（项目管理、告警通知、K8s 菜单）
+- [x] 菜单同级排序自动去重（冲突自动顺延）
+- [x] 登录日志、操作日志查询与清理
+- [x] 封禁 IP 管理
+
+### 1.3 K8s 管理能力
+
+- [x] 集群管理（状态、命名空间、组件状态）
+- [x] 核心资源：Pod / Namespace / Node
+- [x] 工作负载：Deployment / StatefulSet / DaemonSet / CronJob / Job
+- [x] 配置资源：ConfigMap / Secret
+- [x] 网络资源：Service / Ingress / IngressClass / Event
+- [x] 存储资源：PV / PVC / StorageClass
+- [x] CRD / CR 动态资源管理
+- [x] RBAC 资源管理（Role/RoleBinding/ClusterRole/ClusterRoleBinding）
+- [x] K8s 三元权限（cluster + namespace + action）
+
+### 1.4 日志平台（Project Logs）
+
+- [x] 项目-服务器-服务-日志源模型
+- [x] 日志源管理（Upsert + 删除）
+- [x] Agent 公共注册（`register_secret`）
+- [x] Agent token 鉴权 + runtime-config 下发
+- [x] Agent WebSocket 日志上报（含 ACK/重发窗口）
+- [x] Agent discovery 上报与平台查询
+- [x] `file` 类型 Go 原生合并采集（非多 tail 子进程）
+- [x] 支持文件路径元数据上报（`file_path`）
+- [x] 前端 SSE 实时日志流
+- [x] include/exclude regex 过滤
+- [x] highlight 关键字高亮
+- [x] 文件级筛选（日志文件下拉）
+- [x] 无新增写入时历史回放（`tail_lines`）
+- [x] Agent 运行日志增强（默认 info + `--debug`）
+
+### 1.5 前端能力
+
+- [x] React + TS + Vite 单页应用
+- [x] 动态菜单加载与页面路由
+- [x] 日志平台终端式显示（xterm）
+- [x] 日志平台流状态/Agent 状态面板
 
 ---
 
-## 2. 版本与技术栈
+## 2. 项目功能总览
 
-### 后端
+### 1.1 权限与系统管理
 
-- Go 1.23+
-- Gin / GORM / Casbin / Redis / MySQL
-- Kom SDK（K8s 资源与 dynamic 能力）
-- Swagger
+- 认证登录：用户名密码、邮箱验证码、JWT
+- 用户与角色：用户管理、角色分配、导入导出
+- API 权限：资源路径 + HTTP 动作
+- Casbin 授权：策略授予与回收
+- 菜单管理：动态菜单树、动态路由
+- 安全审计：登录日志、操作日志、封禁 IP
 
-### 前端
+### 1.2 Kubernetes 运维管理
 
-- React 18 + TypeScript + Vite
-- Ant Design 5
-- Axios
-
----
-
-## 3. 功能总览
-
-### 3.1 系统管理
-
-- 认证：用户名密码、邮箱验证码、JWT
-- 用户：增删改查、角色绑定、导入导出
-- 角色：模板化管理
-- API 权限：资源路径 + 方法维度
-- 授权：Casbin 策略授予/回收
-- 菜单：动态菜单树、动态路由加载
-- 注册审核：审批流
-- 日志：登录日志、操作日志、导出
-- 安全：封禁 IP 管理
-
-### 3.2 Kubernetes 管理（Kom）
-
-- 集群：增删改查、启停、状态、命名空间、组件状态
-- 核心：Pod / Namespace / Node
+- 集群：增删改查、启停、状态、组件状态
+- 核心资源：Pod / Namespace / Node
 - 工作负载：Deployment / StatefulSet / DaemonSet / Job / CronJob
-- 配置：ConfigMap / Secret
-- 网络：Service / Ingress / IngressClass / Event
+- 配置与网络：ConfigMap / Secret / Service / Ingress / IngressClass / Event
 - 存储：PV / PVC / StorageClass
-- 扩展：CRD / CR
-- RBAC：Role / RoleBinding / ClusterRole / ClusterRoleBinding
-- Ingress-Nginx：控制器 Pod 重启
+- 扩展：CRD / CR 动态管理
+- RBAC 资源管理
 
-### 3.3 权限升级
+### 1.3 日志平台（本次重点能力）
 
-- 保留传统 Casbin API 级授权
-- 增加 K8s 三元策略（独立页面）
-- 动作码细化：`pods/exec`、`pods/delete`、`deployments/scale` 等
+- 项目-服务器-服务-日志源模型
+- Agent 向平台注册并拉取运行配置
+- Agent 本地采集日志并通过 WS 上报
+- 平台通过 SSE 向前端实时推流
+- 支持 include/exclude/highlight、文件级筛选
+- 支持“无新写入时回放最近历史日志”
 
 ---
 
-## 4. 架构设计（增强版）
+## 3. 技术栈与架构
 
-### 4.1 分层架构图
+### 2.1 技术栈
+
+- 后端：Go, Gin, GORM, Casbin, Redis, MySQL
+- 前端：React 18, TypeScript, Vite, Ant Design
+- K8s：Kom SDK
+- 实时通信：WebSocket（Agent->Server）, SSE（Server->Web）
+
+### 2.2 后端分层架构图
 
 ```mermaid
 flowchart LR
-  A[React + AntD 前端] --> B[Gin Router]
-  B --> C[Middleware\nAuth / Authorize / K8sScope / Audit]
-  C --> D[Handler]
-  D --> E[Service]
-  E --> F[Repository]
-  F --> G[(MySQL)]
-  E --> H[(Redis)]
-  E --> I[Kom SDK]
-  I --> J[(Kubernetes API Server)]
-```
-
-### 4.2 鉴权时序（高危 K8s 操作）
-
-```mermaid
-sequenceDiagram
-  participant U as User(dev)
-  participant FE as Frontend
-  participant BE as Gin API
-  participant CA as Casbin Enforcer
-  participant K8S as K8s API
-
-  U->>FE: 发起 pods/exec
-  FE->>BE: POST /api/v1/pods/exec (JWT)
-  BE->>BE: Auth + Authorize
-  BE->>BE: K8sScopeAuthorize 解析 cluster/ns/action
-  BE->>CA: Enforce(subject, k8s:cluster:id:ns:xx:path, pods/exec)
-  CA-->>BE: allow / deny
-  alt allow
-    BE->>K8S: 调用 Kom 执行操作
-    K8S-->>BE: 结果
-    BE-->>FE: 200
-  else deny
-    BE-->>FE: 403
-  end
-```
-
-### 4.3 三元策略资源编码
-
-```text
-k8s:cluster:<id|*>:ns:<namespace|*>:<api_path>
-```
-
-示例：
-
-```text
-k8s:cluster:2:ns:default:/api/v1/pods
+  FE[React Web] --> API[Gin Router]
+  API --> MW[Middleware\nAuth/Authorize/Audit]
+  MW --> H[Handler]
+  H --> S[Service]
+  S --> R[Repository]
+  R --> DB[(MySQL)]
+  S --> REDIS[(Redis)]
+  S --> K8S[Kom SDK -> K8s API]
 ```
 
 ---
 
-## 5. 快速开始
+## 4. 快速开始
 
-### 5.1 环境要求
+### 3.1 环境要求
 
 - Go >= 1.23
 - Node.js >= 18
 - MySQL >= 5.7
 - Redis >= 6
 
-### 5.2 安装与启动
+### 3.2 启动步骤
 
 ```bash
 git clone <your-repo-url>
@@ -171,554 +172,10 @@ cd web && npm install && cd ..
 go run . migrate
 go run . seed
 
-# 启动后端
+# 后端
 go run . server
 
-# 启动前端（新终端）
-cd web && npm run dev
-```
-
-访问：
-
-- 前端：`http://localhost:5173`
-- 后端：`http://localhost:8080`
-- Swagger：`http://localhost:8080/swagger/index.html`
-
----
-
-## 6. 配置说明
-
-配置文件：`configs/config.yaml`
-
-关键配置：
-
-- `app`：服务信息
-- `mysql`：数据库连接
-- `redis`：缓存与限流
-- `auth`：JWT 与验证码策略
-- `mail`：邮箱验证码
-- `log`：日志输出与级别
-
----
-
-## 7. 前端页面与菜单
-
-### 7.1 系统管理
-
-- `/users`、`/roles`、`/permissions`、`/policies`
-- `/k8s-scoped-policies`
-- `/registrations`、`/menus`
-- `/login-logs`、`/operation-logs`
-- `/banned-ips`
-
-### 7.2 Kubernetes 容器管理
-
-- `/clusters`、`/namespaces`、`/nodes`、`/component-status`
-- `/pods`
-- `/deployments`、`/statefulsets`、`/daemonsets`、`/cronjobs`、`/jobs`
-- `/configmaps`、`/secrets`
-- `/k8s-services`
-- `/persistentvolumes`、`/persistentvolumeclaims`、`/storageclasses`
-- `/ingresses`、`/ingress-classes`
-- `/events`
-- `/rbac/roles`、`/rbac/rolebindings`、`/rbac/clusterroles`、`/rbac/clusterrolebindings`
-
-### 7.3 Kubernetes CRD 管理
-
-- `/crds`
-- `/crs`
-
----
-
-## 8. API 接口清单（详细）
-
-以下接口均带 `/api/v1` 前缀。
-
-### 8.1 系统与认证
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/health` | 健康检查 |
-| POST | `/auth/verification-code` | 邮箱验证码 |
-| POST | `/auth/login-code` | 登录验证码 |
-| POST | `/auth/password-login-code` | 密码登录验证码 |
-| POST | `/auth/login` | 用户名密码登录 |
-| POST | `/auth/email-login` | 邮箱验证码登录 |
-| POST | `/auth/register` | 注册申请 |
-| POST | `/auth/logout` | 退出登录 |
-| GET | `/auth/me` | 当前用户信息 |
-
-### 8.2 用户/角色/权限/策略
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/users` | 用户列表 |
-| GET | `/users/export` | 导出用户 |
-| POST | `/users/import` | 导入用户 |
-| POST | `/users` | 创建用户 |
-| GET | `/users/:id` | 用户详情 |
-| PUT | `/users/:id` | 更新用户 |
-| DELETE | `/users/:id` | 删除用户 |
-| PUT | `/users/:id/roles` | 分配角色 |
-| GET | `/roles` | 角色列表 |
-| POST | `/roles` | 创建角色 |
-| GET | `/roles/:id` | 角色详情 |
-| PUT | `/roles/:id` | 更新角色 |
-| DELETE | `/roles/:id` | 删除角色 |
-| GET | `/permissions` | 权限列表 |
-| POST | `/permissions` | 创建权限 |
-| GET | `/permissions/:id` | 权限详情 |
-| PUT | `/permissions/:id` | 更新权限 |
-| DELETE | `/permissions/:id` | 删除权限 |
-| GET | `/policies` | 传统策略列表 |
-| POST | `/policies` | 授权策略下发 |
-| DELETE | `/policies` | 授权策略回收 |
-
-### 8.3 K8s 三元策略
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/k8s-policies/actions` | 动作码目录 |
-| GET | `/k8s-policies/paths` | 资源路径目录 |
-| GET | `/k8s-policies` | 按角色查询策略 |
-| POST | `/k8s-policies/grant` | 批量下发策略 |
-
-### 8.4 注册审核/菜单/日志/安全
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/registrations` | 注册申请列表 |
-| POST | `/registrations/:id/review` | 审核注册 |
-| GET | `/menus/tree` | 菜单树 |
-| POST | `/menus` | 创建菜单 |
-| PUT | `/menus/:id` | 更新菜单 |
-| DELETE | `/menus/:id` | 删除菜单 |
-| GET | `/login-logs/export` | 导出登录日志 |
-| GET | `/login-logs` | 登录日志 |
-| POST | `/login-logs/delete` | 批量删除登录日志 |
-| DELETE | `/login-logs/:id` | 删除登录日志 |
-| GET | `/operation-logs/export` | 导出操作日志 |
-| GET | `/operation-logs` | 操作日志 |
-| POST | `/operation-logs/delete` | 批量删除操作日志 |
-| DELETE | `/operation-logs/:id` | 删除操作日志 |
-| GET | `/security/banned-ips` | 封禁 IP 列表 |
-| POST | `/security/banned-ips/unban` | 解除 IP 封禁 |
-| GET | `/overview` | 资产总览 |
-
-### 8.5 集群与基础资源
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/clusters` | 集群列表 |
-| POST | `/clusters` | 创建集群 |
-| PUT | `/clusters/:id` | 更新集群 |
-| DELETE | `/clusters/:id` | 删除集群 |
-| PUT | `/clusters/:id/status` | 启停集群 |
-| GET | `/clusters/:id/status` | 集群连接状态 |
-| GET | `/clusters/:id/namespaces` | 集群命名空间 |
-| GET | `/clusters/:id/component-statuses` | 组件状态 |
-| GET | `/pods` | Pod 列表 |
-| GET | `/pods/detail` | Pod 详情 |
-| GET | `/pods/events` | Pod 事件 |
-| GET | `/pods/logs` | Pod 日志 |
-| GET | `/pods/logs/download` | 下载日志 |
-| GET | `/pods/logs/stream` | 实时日志 |
-| GET | `/pods/files` | 文件列表 |
-| GET | `/pods/file` | 读取文件 |
-| GET | `/pods/file/download` | 下载文件 |
-| POST | `/pods/file/upload` | 上传文件 |
-| POST | `/pods/file/delete` | 删除文件 |
-| POST | `/pods/exec` | 执行命令 |
-| GET | `/pods/exec/ws` | 交互终端 |
-| POST | `/pods/restart` | 重启 Pod |
-| POST | `/pods/create/yaml` | YAML 创建 Pod |
-| POST | `/pods/create/simple` | 表单创建 Pod |
-| POST | `/pods/update/simple` | 表单更新 Pod |
-| DELETE | `/pods` | 删除 Pod |
-| GET | `/namespaces` | Namespace 列表 |
-| GET | `/namespaces/detail` | Namespace 详情 |
-| POST | `/namespaces/apply` | 应用 Namespace |
-| DELETE | `/namespaces` | 删除 Namespace |
-| GET | `/nodes` | Node 列表 |
-| GET | `/nodes/detail` | Node 详情 |
-
-### 8.6 工作负载
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/deployments` | Deployment 列表 |
-| GET | `/deployments/detail` | Deployment 详情 |
-| POST | `/deployments/apply` | 应用 Deployment |
-| POST | `/deployments/scale` | 扩缩容 |
-| POST | `/deployments/restart` | 重启 |
-| GET | `/deployments/pods` | 关联 Pods |
-| DELETE | `/deployments` | 删除 |
-| GET | `/statefulsets` | StatefulSet 列表 |
-| GET | `/statefulsets/detail` | StatefulSet 详情 |
-| POST | `/statefulsets/apply` | 应用 StatefulSet |
-| POST | `/statefulsets/scale` | 扩缩容 |
-| POST | `/statefulsets/restart` | 重启 |
-| GET | `/statefulsets/pods` | 关联 Pods |
-| DELETE | `/statefulsets` | 删除 |
-| GET | `/daemonsets` | DaemonSet 列表 |
-| GET | `/daemonsets/detail` | DaemonSet 详情 |
-| POST | `/daemonsets/apply` | 应用 DaemonSet |
-| POST | `/daemonsets/restart` | 重启 |
-| GET | `/daemonsets/pods` | 关联 Pods |
-| DELETE | `/daemonsets` | 删除 |
-| GET | `/cronjobs` | CronJob 列表 |
-| GET | `/cronjobs/v2` | CronJob 增强列表 |
-| GET | `/cronjobs/detail` | CronJob 详情 |
-| GET | `/cronjobs/pods` | 关联 Pods |
-| POST | `/cronjobs/apply` | 应用 CronJob |
-| POST | `/cronjobs/suspend` | 挂起/恢复 |
-| POST | `/cronjobs/trigger` | 手动触发 |
-| DELETE | `/cronjobs` | 删除 |
-| GET | `/jobs` | Job 列表 |
-| GET | `/jobs/detail` | Job 详情 |
-| GET | `/jobs/pods` | 关联 Pods |
-| POST | `/jobs/rerun` | 重跑 Job |
-| POST | `/jobs/apply` | 应用 Job |
-| DELETE | `/jobs` | 删除 |
-
-### 8.7 配置、存储、网络、事件
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/configmaps` | ConfigMap 列表 |
-| GET | `/configmaps/detail` | ConfigMap 详情 |
-| POST | `/configmaps/apply` | 应用 ConfigMap |
-| DELETE | `/configmaps` | 删除 ConfigMap |
-| GET | `/secrets` | Secret 列表 |
-| GET | `/secrets/detail` | Secret 详情 |
-| POST | `/secrets/apply` | 应用 Secret |
-| DELETE | `/secrets` | 删除 Secret |
-| GET | `/k8s-services` | Service 列表 |
-| GET | `/k8s-services/detail` | Service 详情 |
-| POST | `/k8s-services/apply` | 应用 Service |
-| DELETE | `/k8s-services` | 删除 Service |
-| GET | `/persistentvolumes` | PV 列表 |
-| GET | `/persistentvolumes/detail` | PV 详情 |
-| POST | `/persistentvolumes/apply` | 应用 PV |
-| DELETE | `/persistentvolumes` | 删除 PV |
-| GET | `/persistentvolumeclaims` | PVC 列表 |
-| GET | `/persistentvolumeclaims/detail` | PVC 详情 |
-| POST | `/persistentvolumeclaims/apply` | 应用 PVC |
-| DELETE | `/persistentvolumeclaims` | 删除 PVC |
-| GET | `/storageclasses` | StorageClass 列表 |
-| GET | `/storageclasses/detail` | StorageClass 详情 |
-| POST | `/storageclasses/apply` | 应用 StorageClass |
-| DELETE | `/storageclasses` | 删除 StorageClass |
-| GET | `/ingresses` | Ingress 列表 |
-| GET | `/ingresses/detail` | Ingress 详情 |
-| POST | `/ingresses/apply` | 应用 Ingress |
-| DELETE | `/ingresses` | 删除 Ingress |
-| POST | `/ingresses/nginx/restart` | 重启 Ingress-Nginx 控制器 |
-| GET | `/ingresses/classes` | IngressClass 列表 |
-| GET | `/ingresses/classes/detail` | IngressClass 详情 |
-| POST | `/ingresses/classes/apply` | 应用 IngressClass |
-| DELETE | `/ingresses/classes` | 删除 IngressClass |
-| GET | `/events` | Event 列表 |
-
-### 8.8 CRD / CR / RBAC
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/crds` | CRD 列表 |
-| GET | `/crds/detail` | CRD 详情 |
-| POST | `/crds/apply` | 应用 CRD |
-| DELETE | `/crds` | 删除 CRD |
-| GET | `/crs/resources` | CR 资源类型 |
-| GET | `/crs` | CR 实例列表 |
-| GET | `/crs/detail` | CR 实例详情 |
-| POST | `/crs/apply` | 应用 CR 实例 |
-| DELETE | `/crs` | 删除 CR 实例 |
-| GET | `/rbac/roles` | Role 列表 |
-| GET | `/rbac/rolebindings` | RoleBinding 列表 |
-| GET | `/rbac/clusterroles` | ClusterRole 列表 |
-| GET | `/rbac/clusterrolebindings` | ClusterRoleBinding 列表 |
-| GET | `/rbac/detail` | RBAC 详情 |
-| POST | `/rbac/apply` | 应用 RBAC YAML |
-| DELETE | `/rbac` | 删除 RBAC 资源 |
-
----
-
-## 9. 权限模型：Casbin + K8s 三元权限
-
-### 9.1 传统 Casbin
-
-- 角色与 API 能力绑定：`resource + action`
-- 适合普通后台权限治理
-
-### 9.2 K8s 三元权限
-
-- 资源：`cluster + namespace + path`
-- 动作：业务动作码（非仅 HTTP 方法）
-- 中间件：`K8sScopeAuthorize`
-- 特性：
-  - `super-admin` 直接放行
-  - 非高危接口不进入三元校验
-  - 同时兼容旧策略（method 级）
-
----
-
-## 10. 典型请求与返回示例
-
-### 10.1 下发 K8s 三元策略
-
-请求：
-
-```http
-POST /api/v1/k8s-policies/grant
-Content-Type: application/json
-Authorization: Bearer <token>
-```
-
-```json
-{
-  "role_id": 2,
-  "cluster_ids": [1],
-  "namespaces": ["default"],
-  "paths": ["/api/v1/pods"],
-  "actions": ["pods/exec", "pods/delete"]
-}
-```
-
-响应：
-
-```json
-{
-  "code": 0,
-  "message": "ok",
-  "data": {
-    "added": 2,
-    "skipped": 0,
-    "policies": [
-      "dev k8s:cluster:1:ns:default:/api/v1/pods pods/exec",
-      "dev k8s:cluster:1:ns:default:/api/v1/pods pods/delete"
-    ]
-  }
-}
-```
-
-### 10.2 查询组件状态
-
-```http
-GET /api/v1/clusters/1/component-statuses
-Authorization: Bearer <token>
-```
-
----
-
-## 11. 验证流程（admin/dev）
-
-1. 使用 `admin` 登录  
-2. 在 `K8s 三元策略` 页面选择 `dev` 角色并下发策略  
-3. 使用 `dev` 登录验证：
-   - 允许动作：应返回 200
-   - 未授权动作：应返回 403
-4. 通过 `GET /api/v1/k8s-policies?role_id=<devRoleId>` 确认策略已可见
-
----
-
-## 12. 排障指南
-
-### 12.1 三元策略下发后列表为空
-
-- 检查请求是否带 `role_id`
-- 检查 `grant` 返回 `added/skipped`
-- 检查 `GET /k8s-policies?role_id=...` 实际返回
-- 确认当前登录角色是否为目标角色
-
-### 12.2 组件状态页无数据
-
-- 集群必须可连通且启用
-- 确认账号有集群相关读取权限
-- 检查后端日志与 K8s API 可用性
-
-### 12.3 菜单不显示
-
-- 执行 `go run . seed` 同步菜单
-- 检查菜单状态/隐藏标记
-- 检查当前角色权限是否覆盖页面 API
-
----
-
-## 13. 性能与可维护性建议
-
-- 前端按页面懒加载，减少首屏体积
-- 高并发读操作考虑增加缓存层（只读场景）
-- 大列表接口统一分页、过滤与轻量字段
-- 日志与审计字段保持脱敏
-- 三元策略建议按角色模板化维护，降低误配风险
-
----
-
-## 14. 项目结构
-
-```text
-go-permission-system/
-├── cmd/                      # server / migrate / seed
-├── configs/                  # config.yaml, casbin_model.conf
-├── internal/
-│   ├── bootstrap/            # 应用初始化
-│   ├── handler/              # HTTP 入口
-│   ├── middleware/           # 认证、鉴权、审计
-│   ├── model/                # 数据模型
-│   ├── repository/           # 数据访问
-│   ├── router/               # 路由
-│   └── service/              # 业务逻辑
-├── web/                      # React 前端
-└── docs/                     # 文档资源
-```
-
----
-
-## 15. 开发命令
-
-```bash
-# 后端测试
-go test ./...
-
-# 后端格式化
-gofmt -w ./...
-
-# 前端开发
-cd web && npm run dev
-
-# 前端构建
-cd web && npm run build
-```
-
----
-
-## License
-
-MIT
-
-# go-permission-system
-
-基于 **Go + React + Casbin + Kom SDK** 的权限与 Kubernetes 管理平台。  
-本项目在传统 RBAC 基础上，扩展了 **K8s 三元权限（集群 + 命名空间 + 动作）**，并实现了面向多资源的 Kubernetes 可视化运维能力。
-
----
-
-## 目录
-
-- [项目定位](#项目定位)
-- [核心功能](#核心功能)
-- [技术架构](#技术架构)
-- [快速开始](#快速开始)
-- [配置说明](#配置说明)
-- [前端页面与菜单](#前端页面与菜单)
-- [接口清单（详细）](#接口清单详细)
-- [权限模型：Casbin + 三元权限](#权限模型casbin--三元权限)
-- [开发与联调建议](#开发与联调建议)
-- [项目结构](#项目结构)
-
----
-
-## 项目定位
-
-适用于以下场景：
-
-- 企业内部统一账号/角色/API 权限治理
-- CMDB / 运维平台作为权限底座
-- 多集群 Kubernetes 资源纳管与审计
-- 高危操作（exec/delete/scale 等）细粒度授权
-
----
-
-## 核心功能
-
-### 系统管理能力
-
-- 登录认证：用户名密码、邮箱验证码登录、JWT 会话
-- 用户管理：增删改查、角色绑定、导入导出
-- 角色管理：角色模板与状态管理
-- API 权限管理：资源路径 + 方法维度管理
-- Casbin 授权编排：角色与权限策略授予/回收
-- 菜单管理：动态菜单树、路由映射、可见性控制
-- 注册审核：注册申请审批流
-- 安全与审计：登录日志、操作日志、封禁 IP 管理
-
-### Kubernetes 管理能力（基于 Kom SDK）
-
-- 集群：增删改查、启停、连通性状态、命名空间列表、组件状态
-- 核心资源：Pod / Namespace / Node
-- 工作负载：Deployment / StatefulSet / DaemonSet / Job / CronJob
-- 配置资源：ConfigMap / Secret
-- 网络资源：Service / Ingress / IngressClass / Event
-- 存储资源：PV / PVC / StorageClass
-- 扩展资源：CRD / CR（动态发现与实例管理）
-- 访问控制：RBAC（Role/RoleBinding/ClusterRole/ClusterRoleBinding）
-- Ingress-Nginx：控制器 Pod 重启能力
-
-### 权限治理升级
-
-- 传统 Casbin API 级授权保留
-- 新增 K8s 三元策略页（独立于传统授权页）
-- 动作码细化：`pods/exec`、`pods/delete`、`deployments/scale` 等
-- 支持按角色批量下发 `cluster + namespace + path + action` 策略
-
----
-
-## 技术架构
-
-### 后端
-
-- Go, Gin, GORM, Casbin, Redis, MySQL
-- Kom SDK（K8s 资源 CRUD 与动态资源访问）
-- Swagger（接口文档）
-
-### 前端
-
-- React + TypeScript + Vite + Ant Design
-- Axios 服务层
-- 动态菜单 + 动态页面加载
-
-### 分层
-
-- Handler：HTTP 参数绑定与响应
-- Service：业务逻辑与资源编排
-- Repository：数据库访问
-- Middleware：认证、鉴权、审计
-
----
-
-## 快速开始
-
-### 环境要求
-
-- Go >= 1.23
-- Node.js >= 18
-- MySQL >= 5.7
-- Redis >= 6
-
-### 启动步骤
-
-```bash
-git clone <your-repo-url>
-cd go-permission-system
-
-# 后端依赖
-go mod download
-
-# 前端依赖
-cd web
-npm install
-cd ..
-
-# 初始化数据库
-go run . migrate
-
-# 初始化权限、角色、菜单、管理员
-go run . seed
-
-# 启动后端
-go run . server
-
-# 启动前端（新终端）
+# 前端（新终端）
 cd web && npm run dev
 ```
 
@@ -730,332 +187,322 @@ cd web && npm run dev
 
 ---
 
-## 配置说明
+## 5. 日志平台设计与实现（重点）
 
-配置文件：`configs/config.yaml`
+### 4.1 核心流程图
 
-重点配置项：
+```mermaid
+sequenceDiagram
+  participant A as Log Agent
+  participant S as Server API
+  participant B as Broker
+  participant W as Web UI
 
-- `app`：应用名、环境、端口
-- `mysql`：数据库连接
-- `redis`：验证码、会话、限流等缓存
-- `auth`：JWT 密钥与过期时间
-- `mail`：邮箱验证码 SMTP
-- `log`：日志级别与输出方式
-
----
-
-## 前端页面与菜单
-
-### 系统管理
-
-- `/users` 账号管理
-- `/roles` 角色管理
-- `/permissions` API 管理
-- `/policies` 授权管理（传统 Casbin）
-- `/k8s-scoped-policies` K8s 三元策略
-- `/registrations` 注册审核
-- `/menus` 菜单管理
-- `/login-logs` 登录日志
-- `/operation-logs` 操作历史
-- `/banned-ips` 封禁 IP 管理
-
-### Kubernetes 容器管理
-
-- `/clusters` 集群管理
-- `/namespaces` 命名空间管理
-- `/nodes` Node 管理
-- `/component-status` 组件状态
-- `/pods` Pod 管理
-- `/deployments` Deployment
-- `/statefulsets` StatefulSet
-- `/daemonsets` DaemonSet
-- `/cronjobs` CronJob
-- `/jobs` Job
-- `/configmaps` ConfigMap
-- `/secrets` Secret
-- `/k8s-services` Service
-- `/persistentvolumes` PersistentVolume
-- `/persistentvolumeclaims` PersistentVolumeClaim
-- `/storageclasses` StorageClass
-- `/ingresses` Ingress-Nginx 管理
-- `/ingress-classes` IngressClass
-- `/events` Event
-- `/rbac/roles` RBAC Role
-- `/rbac/rolebindings` RBAC RoleBinding
-- `/rbac/clusterroles` RBAC ClusterRole
-- `/rbac/clusterrolebindings` RBAC ClusterRoleBinding
-
-### Kubernetes CRD 管理
-
-- `/crds` CRD 管理
-- `/crs` CR 实例管理
-
----
-
-## 接口清单（详细）
-
-以下均为 `/api/v1` 前缀。
-
-### 1) 系统与认证
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/health` | 健康检查 |
-| POST | `/auth/verification-code` | 发送邮箱验证码 |
-| POST | `/auth/login-code` | 发送登录验证码 |
-| POST | `/auth/password-login-code` | 发送密码登录验证码 |
-| POST | `/auth/login` | 用户名密码登录 |
-| POST | `/auth/email-login` | 邮箱验证码登录 |
-| POST | `/auth/register` | 提交注册申请 |
-| POST | `/auth/logout` | 退出登录 |
-| GET | `/auth/me` | 当前登录用户信息 |
-
-### 2) 用户/角色/权限/策略
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/users` | 用户列表 |
-| GET | `/users/export` | 导出用户 |
-| POST | `/users/import` | 导入用户 |
-| POST | `/users` | 创建用户 |
-| GET | `/users/:id` | 用户详情 |
-| PUT | `/users/:id` | 更新用户 |
-| DELETE | `/users/:id` | 删除用户 |
-| PUT | `/users/:id/roles` | 分配用户角色 |
-| GET | `/roles` | 角色列表 |
-| POST | `/roles` | 创建角色 |
-| GET | `/roles/:id` | 角色详情 |
-| PUT | `/roles/:id` | 更新角色 |
-| DELETE | `/roles/:id` | 删除角色 |
-| GET | `/permissions` | 权限列表 |
-| POST | `/permissions` | 创建权限 |
-| GET | `/permissions/:id` | 权限详情 |
-| PUT | `/permissions/:id` | 更新权限 |
-| DELETE | `/permissions/:id` | 删除权限 |
-| GET | `/policies` | 传统策略列表 |
-| POST | `/policies` | 授权策略下发 |
-| DELETE | `/policies` | 授权策略回收 |
-
-### 3) K8s 三元策略
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/k8s-policies/actions` | 动作码目录 |
-| GET | `/k8s-policies/paths` | 资源路径目录 |
-| GET | `/k8s-policies` | 按角色查询三元策略 |
-| POST | `/k8s-policies/grant` | 批量下发三元策略 |
-
-### 4) 注册审核/菜单/日志/安全
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/registrations` | 注册申请列表 |
-| POST | `/registrations/:id/review` | 审核注册申请 |
-| GET | `/menus/tree` | 菜单树 |
-| POST | `/menus` | 创建菜单 |
-| PUT | `/menus/:id` | 更新菜单 |
-| DELETE | `/menus/:id` | 删除菜单 |
-| GET | `/login-logs/export` | 导出登录日志 |
-| GET | `/login-logs` | 登录日志列表 |
-| POST | `/login-logs/delete` | 批量删除登录日志 |
-| DELETE | `/login-logs/:id` | 删除登录日志 |
-| GET | `/operation-logs/export` | 导出操作日志 |
-| GET | `/operation-logs` | 操作日志列表 |
-| POST | `/operation-logs/delete` | 批量删除操作日志 |
-| DELETE | `/operation-logs/:id` | 删除操作日志 |
-| GET | `/security/banned-ips` | 封禁 IP 列表 |
-| POST | `/security/banned-ips/unban` | 解除 IP 封禁 |
-| GET | `/overview` | 资产总览 |
-
-### 5) 集群与基础资源
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/clusters` | 集群列表 |
-| POST | `/clusters` | 创建集群 |
-| PUT | `/clusters/:id` | 更新集群 |
-| DELETE | `/clusters/:id` | 删除集群 |
-| PUT | `/clusters/:id/status` | 启停集群 |
-| GET | `/clusters/:id/status` | 集群连接状态 |
-| GET | `/clusters/:id/namespaces` | 集群命名空间列表 |
-| GET | `/clusters/:id/component-statuses` | 集群组件状态 |
-| GET | `/pods` | Pod 列表 |
-| GET | `/pods/detail` | Pod 详情 |
-| GET | `/pods/events` | Pod 事件 |
-| GET | `/pods/logs` | Pod 日志 |
-| GET | `/pods/logs/download` | 下载 Pod 日志 |
-| GET | `/pods/logs/stream` | 实时日志流 |
-| GET | `/pods/files` | Pod 文件列表 |
-| GET | `/pods/file` | 读取 Pod 文件 |
-| GET | `/pods/file/download` | 下载 Pod 文件 |
-| POST | `/pods/file/upload` | 上传文件到 Pod |
-| POST | `/pods/file/delete` | 删除 Pod 文件 |
-| POST | `/pods/exec` | Pod exec |
-| GET | `/pods/exec/ws` | Pod 交互终端 |
-| POST | `/pods/restart` | 重启 Pod |
-| POST | `/pods/create/yaml` | YAML 创建 Pod |
-| POST | `/pods/create/simple` | 表单快捷创建 Pod |
-| POST | `/pods/update/simple` | 表单更新 Pod |
-| DELETE | `/pods` | 删除 Pod |
-| GET | `/namespaces` | Namespace 列表 |
-| GET | `/namespaces/detail` | Namespace 详情 |
-| POST | `/namespaces/apply` | 应用 Namespace YAML |
-| DELETE | `/namespaces` | 删除 Namespace |
-| GET | `/nodes` | Node 列表 |
-| GET | `/nodes/detail` | Node 详情 |
-
-### 6) 工作负载
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/deployments` | Deployment 列表 |
-| GET | `/deployments/detail` | Deployment 详情 |
-| POST | `/deployments/apply` | 应用 Deployment |
-| POST | `/deployments/scale` | Deployment 扩缩容 |
-| POST | `/deployments/restart` | Deployment 重启 |
-| GET | `/deployments/pods` | Deployment 关联 Pods |
-| DELETE | `/deployments` | 删除 Deployment |
-| GET | `/statefulsets` | StatefulSet 列表 |
-| GET | `/statefulsets/detail` | StatefulSet 详情 |
-| POST | `/statefulsets/apply` | 应用 StatefulSet |
-| POST | `/statefulsets/scale` | StatefulSet 扩缩容 |
-| POST | `/statefulsets/restart` | StatefulSet 重启 |
-| GET | `/statefulsets/pods` | StatefulSet 关联 Pods |
-| DELETE | `/statefulsets` | 删除 StatefulSet |
-| GET | `/daemonsets` | DaemonSet 列表 |
-| GET | `/daemonsets/detail` | DaemonSet 详情 |
-| POST | `/daemonsets/apply` | 应用 DaemonSet |
-| POST | `/daemonsets/restart` | DaemonSet 重启 |
-| GET | `/daemonsets/pods` | DaemonSet 关联 Pods |
-| DELETE | `/daemonsets` | 删除 DaemonSet |
-| GET | `/cronjobs` | CronJob 列表 |
-| GET | `/cronjobs/v2` | CronJob 增强列表 |
-| GET | `/cronjobs/detail` | CronJob 详情 |
-| GET | `/cronjobs/pods` | CronJob 关联 Pods |
-| POST | `/cronjobs/apply` | 应用 CronJob |
-| POST | `/cronjobs/suspend` | 挂起/恢复 CronJob |
-| POST | `/cronjobs/trigger` | 手动触发 CronJob |
-| DELETE | `/cronjobs` | 删除 CronJob |
-| GET | `/jobs` | Job 列表 |
-| GET | `/jobs/detail` | Job 详情 |
-| GET | `/jobs/pods` | Job 关联 Pods |
-| POST | `/jobs/rerun` | Job 重新执行 |
-| POST | `/jobs/apply` | 应用 Job |
-| DELETE | `/jobs` | 删除 Job |
-
-### 7) 配置、存储、网络、事件
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/configmaps` | ConfigMap 列表 |
-| GET | `/configmaps/detail` | ConfigMap 详情 |
-| POST | `/configmaps/apply` | 应用 ConfigMap |
-| DELETE | `/configmaps` | 删除 ConfigMap |
-| GET | `/secrets` | Secret 列表 |
-| GET | `/secrets/detail` | Secret 详情 |
-| POST | `/secrets/apply` | 应用 Secret |
-| DELETE | `/secrets` | 删除 Secret |
-| GET | `/k8s-services` | Service 列表 |
-| GET | `/k8s-services/detail` | Service 详情 |
-| POST | `/k8s-services/apply` | 应用 Service |
-| DELETE | `/k8s-services` | 删除 Service |
-| GET | `/persistentvolumes` | PV 列表 |
-| GET | `/persistentvolumes/detail` | PV 详情 |
-| POST | `/persistentvolumes/apply` | 应用 PV |
-| DELETE | `/persistentvolumes` | 删除 PV |
-| GET | `/persistentvolumeclaims` | PVC 列表 |
-| GET | `/persistentvolumeclaims/detail` | PVC 详情 |
-| POST | `/persistentvolumeclaims/apply` | 应用 PVC |
-| DELETE | `/persistentvolumeclaims` | 删除 PVC |
-| GET | `/storageclasses` | StorageClass 列表 |
-| GET | `/storageclasses/detail` | StorageClass 详情 |
-| POST | `/storageclasses/apply` | 应用 StorageClass |
-| DELETE | `/storageclasses` | 删除 StorageClass |
-| GET | `/ingresses` | Ingress 列表 |
-| GET | `/ingresses/detail` | Ingress 详情 |
-| POST | `/ingresses/apply` | 应用 Ingress |
-| DELETE | `/ingresses` | 删除 Ingress |
-| POST | `/ingresses/nginx/restart` | 重启 Ingress-Nginx 控制器 Pods |
-| GET | `/ingresses/classes` | IngressClass 列表 |
-| GET | `/ingresses/classes/detail` | IngressClass 详情 |
-| POST | `/ingresses/classes/apply` | 应用 IngressClass |
-| DELETE | `/ingresses/classes` | 删除 IngressClass |
-| GET | `/events` | Event 列表 |
-
-### 8) CRD / CR / RBAC
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/crds` | CRD 列表 |
-| GET | `/crds/detail` | CRD 详情 |
-| POST | `/crds/apply` | 应用 CRD |
-| DELETE | `/crds` | 删除 CRD |
-| GET | `/crs/resources` | CR 可用资源类型 |
-| GET | `/crs` | CR 实例列表 |
-| GET | `/crs/detail` | CR 实例详情 |
-| POST | `/crs/apply` | 应用 CR 实例 |
-| DELETE | `/crs` | 删除 CR 实例 |
-| GET | `/rbac/roles` | Role 列表 |
-| GET | `/rbac/rolebindings` | RoleBinding 列表 |
-| GET | `/rbac/clusterroles` | ClusterRole 列表 |
-| GET | `/rbac/clusterrolebindings` | ClusterRoleBinding 列表 |
-| GET | `/rbac/detail` | RBAC 详情 |
-| POST | `/rbac/apply` | 应用 RBAC YAML |
-| DELETE | `/rbac` | 删除 RBAC 资源 |
-
----
-
-## 权限模型：Casbin + 三元权限
-
-### 传统 Casbin
-
-- 角色与 API 权限绑定：`resource + action`
-- 适合通用后台能力控制
-
-### K8s 三元策略
-
-- 资源编码：`k8s:cluster:<id|*>:ns:<namespace|*>:<path>`
-- 动作码：如 `pods/exec`、`pods/delete`、`deployments/scale`
-- 用于高危 K8s 操作的细粒度授权
-- `super-admin` 默认全放行
-
----
-
-## 开发与联调建议
-
-```bash
-# 后端构建/测试
-go test ./...
-
-# 前端构建
-cd web && npm run build
+  A->>S: POST /api/v1/agents/public-register (optional)
+  A->>S: GET /api/v1/agents/runtime-config?token=...
+  A->>A: Start collectors (file/journal)
+  A->>S: GET /api/v1/agents/ws/ingest?token=... (WebSocket)
+  A->>S: ingest entries (line + file_path + seq)
+  S->>B: Publish by stream key (project:server:logSource)
+  W->>S: GET /api/v1/projects/:id/logs/stream (SSE)
+  S->>B: Subscribe + replay tail_lines history
+  B-->>S: log events
+  S-->>W: SSE event: log
 ```
 
-联调建议：
+### 4.2 日志平台分层
 
-- 先用 `admin` 下发 `dev` 的三元策略
-- 再用 `dev` 验证允许与拒绝动作（exec/删除/扩缩容）
-- 若策略下发后未展示，优先核查 `/api/v1/k8s-policies?role_id=...` 返回
+- **配置层**：`Project -> Server -> Service -> LogSource`
+- **采集层**：`internal/agent`
+  - `runtime.go`: 注册/拉配置/WS 上报/ACK重发
+  - `file_collector.go`: Go 原生文件采集（支持 glob + 多文件合并）
+- **汇聚层**：`internal/service/log_agent_service.go`
+  - `AgentLogBroker` 按 `project:server:logSource` 组织流
+  - 内存历史缓冲（用于订阅时回放 tail）
+- **展示层**：`web/src/pages/project-logs-page.tsx`
+  - SSE 连接 + 过滤条件 + 文件下拉筛选
+
+### 4.3 关键实现点
+
+1. **file 合并采集（Go 原生）**
+   - 不再为每个文件起外部 `tail` 子进程
+   - 支持 glob 匹配、轮转/截断处理、增量偏移跟踪
+
+2. **文件维度元数据**
+   - Agent 上报 `entries[]`，每条包含 `line` + `file_path`
+   - 前端可按具体文件过滤查看
+
+3. **无新写入也可看日志**
+   - 订阅 SSE 时先回放历史缓冲（按 `tail_lines`）
+   - 然后再接实时日志
+
+4. **可观测性增强**
+   - Agent 默认输出启动、连接、配置加载、运行状态日志
+   - `--debug` 输出采集细节与异常细节
+
+5. **动态 discovery（非写死目录）**
+   - 由下发 `log_source.path` 动态发现可选文件
+   - 支持 glob/目录/单文件三种模式
 
 ---
 
-## 项目结构
+## 6. 日志平台接口说明（详细）
+
+以下接口均为 `/api/v1` 前缀。
+
+### 5.1 日志源配置（平台侧）
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/projects/:id/log-sources` | 查询日志源列表 |
+| POST | `/projects/:id/log-sources` | 新建/更新日志源（Upsert） |
+| DELETE | `/projects/:id/log-sources/:logSourceId` | 删除日志源 |
+
+日志源主要字段：
+
+- `service_id`
+- `log_type`（`file` / `journal`）
+- `path`（支持文件、目录、glob）
+- `status`
+
+### 5.2 Agent 生命周期接口
+
+| Method | Path | 说明 |
+|---|---|---|
+| POST | `/agents/public-register` | 公共注册（agent-first，可选） |
+| GET | `/agents/runtime-config?token=...` | 拉取当前 token 对应运行配置 |
+| GET | `/agents/ws/ingest?token=...` | 建立日志上报 WebSocket |
+| POST | `/agents/discovery/report` | 上报可发现文件/目录/unit |
+
+项目侧运维接口：
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/projects/:id/agents/status` | Agent 在线与最近上报状态 |
+| POST | `/projects/:id/agents/bootstrap` | 生成 agent 部署命令与 token |
+| POST | `/projects/:id/agents/rotate-token` | 轮换 token |
+| GET | `/projects/:id/agents/discovery` | 查询可选日志文件（供前端下拉） |
+
+### 5.3 日志流接口（前端消费）
+
+| Method | Path | 说明 |
+|---|---|---|
+| GET | `/projects/:id/logs/stream` | SSE 实时日志流（含历史回放） |
+
+查询参数：
+
+- `server_id`（required）
+- `log_source_id`（required）
+- `tail_lines`（可选，默认 200）
+- `include`（可选，regex）
+- `exclude`（可选，regex）
+- `highlight`（可选，关键字）
+- `file_path`（可选，指定日志文件）
+- `source=agent`
+
+SSE 输出示例：
+
+```json
+event: log
+data: {"line":"...","file_path":"/var/log/pods/.../0.log"}
+```
+
+---
+
+## 7. 日志平台验证流程（详细）
+
+### 6.1 配置准备
+
+1. 在“项目管理”中创建：
+   - 项目
+   - 服务器
+   - 服务
+   - 日志源（`log_type=file`，`path` 可为 `*.log`）
+2. 获取 agent token（bootstrap/rotate token）
+
+### 6.2 启动平台
+
+```bash
+go run . server
+cd web && npm run dev
+```
+
+### 6.3 启动 Agent（Linux）
+
+```bash
+./log-agent \
+  --server-url "http://<platform-host>:8080" \
+  --project-id 1 \
+  --server-id 1 \
+  --token "<agent-token>" \
+  --debug
+```
+
+应看到类似日志：
+
+- `[agent][info] starting agent ...`
+- `[agent][info] runtime-config loaded project=... sources=...`
+- `[agent][info] ingest websocket connected`
+- `[agent][info] running sources=... received=... sent=... pending=...`
+
+### 6.4 页面验证点
+
+在“日志平台”页面依次验证：
+
+1. 选择 `项目 / 服务器 / 服务 / 日志源`
+2. “日志文件”下拉是否出现匹配文件（来自 discovery）
+3. 点击“开始”后：
+   - 有新写入时，实时显示
+   - 无新写入时，仍可看到最近历史（tail 回放）
+4. 验证 `include/exclude/highlight` 生效
+5. 切换 `file_path` 后只显示该文件日志
+
+### 6.5 回归验证建议
+
+- file + glob（如 `/var/log/pods/.../*.log`）
+- file + 目录
+- file + 单文件
+- 轮转文件场景（新文件出现后是否继续采集）
+- Agent 重启后是否可恢复流
+
+---
+
+## 8. Agent 启动命令（3种模式）
+
+> 与 `docs/log-platform-api.md` 保持一致，便于快速复制使用。
+
+### 8.1 Token 标准模式（推荐）
+
+```bash
+./log-agent \
+  --server-url "http://10.10.10.1:5173" \
+  --project-id 1 \
+  --server-id 1 \
+  --token "xxxxxxxxxxxxxxxx"
+```
+
+### 8.2 Token + 调试模式
+
+```bash
+./log-agent \
+  --server-url "http://10.10.10.1:5173" \
+  --project-id 1 \
+  --server-id 1 \
+  --token "xxxxxxxxxxxxxxxx" \
+  --debug
+```
+
+### 8.3 Fallback 单日志源模式
+
+```bash
+./log-agent \
+  --server-url "http://10.10.10.1:5173" \
+  --project-id 1 \
+  --server-id 1 \
+  --token "xxxxxxxxxxxxxxxx" \
+  --log-source-id 9 \
+  --source-type file \
+  --path "/var/log/pods/.../*.log" \
+  --tail-lines 300
+```
+
+---
+
+## 9. 常见问题与排障
+
+### 7.1 Agent 启动无输出
+
+- 使用最新版二进制（已包含默认 info 日志）
+- 如需细节，加 `--debug`
+- 检查 `server-url`、`token`、网络连通性
+
+### 7.2 页面无日志
+
+- 确认 Agent 在线且 `recent_publishing=true`
+- 检查 `server_id/log_source_id` 是否对应
+- 检查日志文件权限与路径匹配
+- 检查是否被 `include/exclude` 过滤掉
+
+### 7.3 “日志文件”下拉为空
+
+- Agent 需先成功上报 discovery
+- 重启 agent 后刷新页面
+- 确认 log source `path` 与实际文件匹配
+
+### 7.4 无新写入时看不到日志
+
+- 确认 `tail_lines > 0`
+- 当前版本已支持订阅时历史回放
+
+---
+
+## 10. 其他核心接口
+
+> 完整接口请以 `internal/router/router.go` 与 Swagger 为准。
+
+### 8.1 认证与系统
+
+- `POST /auth/login`
+- `POST /auth/register`
+- `GET /auth/me`
+- `GET /menus/tree`
+- `GET /overview`
+
+### 8.2 用户/角色/权限
+
+- `GET/POST/PUT/DELETE /users`
+- `GET/POST/PUT/DELETE /roles`
+- `GET/POST/PUT/DELETE /permissions`
+- `GET/POST/DELETE /policies`
+
+### 8.3 K8s 资源（示例）
+
+- `/clusters`, `/pods`, `/deployments`, `/statefulsets`, `/daemonsets`
+- `/cronjobs`, `/jobs`, `/configmaps`, `/secrets`
+- `/k8s-services`, `/ingresses`, `/events`
+- `/crds`, `/crs`, `/rbac/*`
+
+---
+
+## 11. 项目结构
 
 ```text
 go-permission-system/
-├── cmd/                      # server / migrate / seed
-├── configs/                  # 系统配置、casbin model
+├── cmd/                      # 命令入口（server/migrate/seed/logagent）
+├── configs/                  # 配置文件
 ├── internal/
+│   ├── agent/                # log-agent 运行时与采集器
 │   ├── bootstrap/            # 应用初始化
-│   ├── handler/              # HTTP handlers
-│   ├── middleware/           # 认证、鉴权、审计
+│   ├── handler/              # HTTP 入口
+│   ├── middleware/           # 认证/鉴权/审计
 │   ├── model/                # 数据模型
 │   ├── repository/           # 数据访问层
 │   ├── router/               # 路由注册
 │   └── service/              # 业务逻辑层
-├── web/                      # React 前端
-└── docs/                     # 文档与静态资源
+├── web/                      # 前端 React 工程
+└── docs/                     # 扩展文档
+```
+
+---
+
+## 12. 开发命令
+
+```bash
+# 后端测试
+go test ./...
+
+# 启动后端
+go run . server
+
+# 数据迁移与初始化
+go run . migrate
+go run . seed
+
+# 前端开发
+cd web && npm run dev
+
+# 前端构建
+cd web && npm run build
 ```
 
 ---

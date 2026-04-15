@@ -21,5 +21,15 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&model.LoginLog{},
 		&model.OperationLog{},
 		&model.K8sCluster{},
+		&model.AlertChannel{},
+		&model.AlertEvent{},
+		&model.Project{},
+		&model.ProjectMember{},
+		&model.Server{},
+		&model.ServerCredential{},
+		&model.Service{},
+		&model.ServiceLogSource{},
+		&model.LogAgent{},
+		&model.AgentDiscovery{},
 	)
 }

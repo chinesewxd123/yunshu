@@ -17,6 +17,41 @@ func NewMenuService(menuRepo *repository.MenuRepository) *MenuService {
 	return &MenuService{menuRepo: menuRepo}
 }
 
+func sameParent(a, b *uint) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+// ensureUniqueSiblingSort keeps sort unique within same parent scope.
+// If requested sort is occupied, it shifts to next available value.
+func (s *MenuService) ensureUniqueSiblingSort(ctx context.Context, parentID *uint, sort int, excludeID uint) (int, error) {
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return sort, err
+	}
+	used := make(map[int]struct{}, 64)
+	for _, it := range all {
+		if excludeID > 0 && it.ID == excludeID {
+			continue
+		}
+		if !sameParent(parentID, it.ParentID) {
+			continue
+		}
+		used[it.Sort] = struct{}{}
+	}
+	for {
+		if _, ok := used[sort]; !ok {
+			return sort, nil
+		}
+		sort++
+	}
+}
+
 type MenuCreatePayload struct {
 	ParentID  *uint  `json:"parent_id"`
 	Path      string `json:"path"`
@@ -49,14 +84,186 @@ func (s *MenuService) Tree(ctx context.Context) ([]model.Menu, error) {
 	if err != nil {
 		return nil, err
 	}
-	changed, err := s.ensureK8sMenus(ctx, list)
+	changed, err := s.ensureBuiltInMenus(ctx, list)
 	if err != nil {
 		return nil, err
 	}
-	if !changed {
+	repaired, err := s.repairEventMenus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !changed && !repaired {
 		return list, nil
 	}
 	return s.menuRepo.Tree(ctx)
+}
+
+// repairEventMenus 修正误配的 K8s Event 菜单（path/component 与 Webhook 告警事件混淆时）。
+func (s *MenuService) repairEventMenus(ctx context.Context) (bool, error) {
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return false, err
+	}
+	changed := false
+	for i := range all {
+		m := &all[i]
+		p := strings.TrimSpace(m.Path)
+		name := strings.TrimSpace(m.Name)
+		comp := strings.TrimSpace(m.Component)
+
+		needSave := false
+		// 名称是 K8s Event，但 path 误指到告警事件页
+		if name == "Event 事件" && p == "/alert-events" {
+			m.Path = "/events"
+			needSave = true
+		}
+		p = strings.TrimSpace(m.Path)
+		if p == "/events" {
+			if comp != "events-page" {
+				m.Component = "events-page"
+				needSave = true
+			}
+			// 与「Webhook 告警通道」区分，避免同图标误点
+			if strings.TrimSpace(m.Icon) == "NotificationOutlined" {
+				m.Icon = "FileSearchOutlined"
+				needSave = true
+			}
+		}
+		if needSave {
+			if err := s.menuRepo.Update(ctx, m); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+	return changed, nil
+}
+
+func (s *MenuService) ensureBuiltInMenus(ctx context.Context, tree []model.Menu) (bool, error) {
+	changed := false
+
+	k8sChanged, err := s.ensureK8sMenus(ctx, tree)
+	if err != nil {
+		return false, err
+	}
+	if k8sChanged {
+		changed = true
+	}
+
+	alertChanged, err := s.ensureAlertNotifyMenus(ctx)
+	if err != nil {
+		return false, err
+	}
+	if alertChanged {
+		changed = true
+	}
+
+	projectChanged, err := s.ensureProjectMgmtMenus(ctx)
+	if err != nil {
+		return false, err
+	}
+	if projectChanged {
+		changed = true
+	}
+
+	return changed, nil
+}
+
+func (s *MenuService) ensureProjectMgmtMenus(ctx context.Context) (bool, error) {
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	const rootPath = "/project-management"
+	requiredChildren := []model.Menu{
+		{Path: "/projects", Name: "项目列表", Icon: "AppstoreOutlined", Sort: 1, Component: "projects-page", Status: 1},
+		{Path: "/project-servers", Name: "服务器管理", Icon: "HddOutlined", Sort: 2, Component: "project-servers-page", Status: 1},
+		{Path: "/project-services", Name: "服务配置", Icon: "SettingOutlined", Sort: 3, Component: "project-services-page", Status: 1},
+		{Path: "/project-log-sources", Name: "日志源配置", Icon: "FileSearchOutlined", Sort: 4, Component: "project-log-sources-page", Status: 1},
+		{Path: "/project-logs", Name: "日志平台", Icon: "FileTextOutlined", Sort: 5, Component: "project-logs-page", Status: 1},
+	}
+
+	var root *model.Menu
+	for i := range all {
+		if strings.TrimSpace(all[i].Path) == rootPath {
+			root = &all[i]
+			break
+		}
+	}
+
+	changed := false
+	if root == nil {
+		m := model.Menu{Name: "项目管理", Path: rootPath, Icon: "ProjectOutlined", Sort: 4, Status: 1}
+		if err := s.menuRepo.Create(ctx, &m); err != nil {
+			return false, err
+		}
+		root = &m
+		changed = true
+	} else {
+		if root.Sort != 4 {
+			root.Sort = 4
+			if err := s.menuRepo.Update(ctx, root); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+
+	rootID := root.ID
+	for _, spec := range requiredChildren {
+		var found *model.Menu
+		for i := range all {
+			if strings.TrimSpace(all[i].Path) == spec.Path {
+				found = &all[i]
+				break
+			}
+		}
+
+		if found == nil {
+			m := spec
+			m.ParentID = &rootID
+			if err := s.menuRepo.Create(ctx, &m); err != nil {
+				return false, err
+			}
+			changed = true
+			continue
+		}
+
+		needSave := false
+		if found.ParentID == nil || *found.ParentID != rootID {
+			p := rootID
+			found.ParentID = &p
+			needSave = true
+		}
+		if strings.TrimSpace(found.Name) != spec.Name {
+			found.Name = spec.Name
+			needSave = true
+		}
+		if strings.TrimSpace(found.Icon) != spec.Icon {
+			found.Icon = spec.Icon
+			needSave = true
+		}
+		if found.Sort != spec.Sort {
+			found.Sort = spec.Sort
+			needSave = true
+		}
+		if strings.TrimSpace(found.Component) != spec.Component {
+			found.Component = spec.Component
+			needSave = true
+		}
+		if found.Status != spec.Status {
+			found.Status = spec.Status
+			needSave = true
+		}
+		if needSave {
+			if err := s.menuRepo.Update(ctx, found); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+	return changed, nil
 }
 
 func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bool, error) {
@@ -109,14 +316,113 @@ func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bo
 	return changed, nil
 }
 
+// ensureAlertNotifyMenus 保证「告警通知」独立目录及 Webhook 子菜单存在，并从「系统管理」下移出（按 path 归位）。
+func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) {
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	const alertRootPath = "/alert-notify"
+	requiredChildren := []model.Menu{
+		{Path: "/alert-channels", Name: "Webhook 告警通道", Icon: "NotificationOutlined", Sort: 1, Component: "alert-channels-page", Status: 1},
+		{Path: "/alert-events", Name: "Webhook 告警事件", Icon: "AlertOutlined", Sort: 2, Component: "alert-events-page", Status: 1},
+	}
+
+	var root *model.Menu
+	for i := range all {
+		if strings.TrimSpace(all[i].Path) == alertRootPath {
+			root = &all[i]
+			break
+		}
+	}
+
+	changed := false
+	if root == nil {
+		m := model.Menu{
+			Name:   "告警通知",
+			Path:   alertRootPath,
+			Icon:   "BellOutlined",
+			Sort:   2,
+			Status: 1,
+		}
+		if err := s.menuRepo.Create(ctx, &m); err != nil {
+			return false, err
+		}
+		root = &m
+		changed = true
+	}
+
+	rootID := root.ID
+
+	for _, spec := range requiredChildren {
+		var found *model.Menu
+		for i := range all {
+			if strings.TrimSpace(all[i].Path) == spec.Path {
+				found = &all[i]
+				break
+			}
+		}
+
+		if found == nil {
+			m := spec
+			m.ParentID = &rootID
+			if err := s.menuRepo.Create(ctx, &m); err != nil {
+				return false, err
+			}
+			changed = true
+			continue
+		}
+
+		needSave := false
+		if found.ParentID == nil || *found.ParentID != rootID {
+			p := rootID
+			found.ParentID = &p
+			needSave = true
+		}
+		if strings.TrimSpace(found.Name) != spec.Name {
+			found.Name = spec.Name
+			needSave = true
+		}
+		if strings.TrimSpace(found.Icon) != spec.Icon {
+			found.Icon = spec.Icon
+			needSave = true
+		}
+		if found.Sort != spec.Sort {
+			found.Sort = spec.Sort
+			needSave = true
+		}
+		if strings.TrimSpace(found.Component) != spec.Component {
+			found.Component = spec.Component
+			needSave = true
+		}
+		if found.Status != spec.Status {
+			found.Status = spec.Status
+			needSave = true
+		}
+		if needSave {
+			if err := s.menuRepo.Update(ctx, found); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+
+	return changed, nil
+}
+
 func (s *MenuService) Create(ctx context.Context, payload MenuCreatePayload) (*model.Menu, error) {
+	sortVal, err := s.ensureUniqueSiblingSort(ctx, payload.ParentID, payload.Sort, 0)
+	if err != nil {
+		return nil, err
+	}
 	menu := model.Menu{
 		ParentID:  payload.ParentID,
 		Path:      payload.Path,
 		Name:      payload.Name,
 		Icon:      payload.Icon,
 		AdminOnly: payload.AdminOnly,
-		Sort:      payload.Sort,
+		Sort:      sortVal,
 		Hidden:    payload.Hidden,
 		Component: payload.Component,
 		Redirect:  payload.Redirect,
@@ -141,7 +447,15 @@ func (s *MenuService) Update(ctx context.Context, id uint, payload MenuUpdatePay
 	if payload.AdminOnly != nil {
 		menu.AdminOnly = *payload.AdminOnly
 	}
-	menu.Sort = payload.Sort
+	targetParentID := menu.ParentID
+	if payload.ParentID != nil {
+		targetParentID = payload.ParentID
+	}
+	sortVal, err := s.ensureUniqueSiblingSort(ctx, targetParentID, payload.Sort, menu.ID)
+	if err != nil {
+		return nil, err
+	}
+	menu.Sort = sortVal
 	menu.Hidden = payload.Hidden
 	menu.Component = payload.Component
 	menu.Redirect = payload.Redirect

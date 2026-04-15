@@ -26,20 +26,21 @@ type NodeAddressItem struct {
 }
 
 type NodeListItem struct {
-	Name         string            `json:"name"`
-	Status       string            `json:"status"`
-	Roles        []string          `json:"roles,omitempty"`
-	Kernel       string            `json:"kernel"`
-	Kubelet      string            `json:"kubelet"`
-	OsImage      string            `json:"os_image"`
-	Container    string            `json:"container_runtime"`
-	Architecture string            `json:"architecture"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	Annotations  map[string]string `json:"annotations,omitempty"`
-	Taints       []NodeTaint       `json:"taints,omitempty"`
-	InternalIP   string            `json:"internal_ip,omitempty"`
-	CreationTime string            `json:"creation_time"`
-	Age          string            `json:"age,omitempty"`
+	Name          string            `json:"name"`
+	Status        string            `json:"status"`
+	Unschedulable bool              `json:"unschedulable"`
+	Roles         []string          `json:"roles,omitempty"`
+	Kernel        string            `json:"kernel"`
+	Kubelet       string            `json:"kubelet"`
+	OsImage       string            `json:"os_image"`
+	Container     string            `json:"container_runtime"`
+	Architecture  string            `json:"architecture"`
+	Labels        map[string]string `json:"labels,omitempty"`
+	Annotations   map[string]string `json:"annotations,omitempty"`
+	Taints        []NodeTaint       `json:"taints,omitempty"`
+	InternalIP    string            `json:"internal_ip,omitempty"`
+	CreationTime  string            `json:"creation_time"`
+	Age           string            `json:"age,omitempty"`
 
 	PodCount        int     `json:"pod_count"`
 	PodCapacity     int     `json:"pod_capacity,omitempty"`
@@ -125,20 +126,21 @@ func mapNodeItem(n corev1.Node) NodeListItem {
 		taints = append(taints, item)
 	}
 	return NodeListItem{
-		Name:         n.Name,
-		Status:       nodeReadyStatus(n),
-		Roles:        roles,
-		Kernel:       n.Status.NodeInfo.KernelVersion,
-		Kubelet:      n.Status.NodeInfo.KubeletVersion,
-		OsImage:      n.Status.NodeInfo.OSImage,
-		Container:    n.Status.NodeInfo.ContainerRuntimeVersion,
-		Architecture: n.Status.NodeInfo.Architecture,
-		Labels:       n.Labels,
-		Annotations:  n.Annotations,
-		Taints:       taints,
-		InternalIP:   internalIP,
-		CreationTime: n.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
-		Age:          k8sutil.HumanAge(n.CreationTimestamp.Time),
+		Name:          n.Name,
+		Status:        nodeReadyStatus(n),
+		Unschedulable: n.Spec.Unschedulable,
+		Roles:         roles,
+		Kernel:        n.Status.NodeInfo.KernelVersion,
+		Kubelet:       n.Status.NodeInfo.KubeletVersion,
+		OsImage:       n.Status.NodeInfo.OSImage,
+		Container:     n.Status.NodeInfo.ContainerRuntimeVersion,
+		Architecture:  n.Status.NodeInfo.Architecture,
+		Labels:        n.Labels,
+		Annotations:   n.Annotations,
+		Taints:        taints,
+		InternalIP:    internalIP,
+		CreationTime:  n.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		Age:           k8sutil.HumanAge(n.CreationTimestamp.Time),
 	}
 }
 
@@ -392,4 +394,100 @@ func quantityPercent(usage, alloc resource.Quantity) float64 {
 		return 1000
 	}
 	return p
+}
+
+func normalizeTaintEffect(s string) (corev1.TaintEffect, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", apperror.BadRequest("污点 effect 不能为空（NoSchedule / PreferNoSchedule / NoExecute）")
+	}
+	lower := strings.ToLower(s)
+	switch lower {
+	case "noschedule":
+		return corev1.TaintEffectNoSchedule, nil
+	case "prefernoschedule":
+		return corev1.TaintEffectPreferNoSchedule, nil
+	case "noexecute":
+		return corev1.TaintEffectNoExecute, nil
+	}
+	switch corev1.TaintEffect(s) {
+	case corev1.TaintEffectNoSchedule, corev1.TaintEffectPreferNoSchedule, corev1.TaintEffectNoExecute:
+		return corev1.TaintEffect(s), nil
+	default:
+		return "", apperror.BadRequest("无效的 effect，需为 NoSchedule、PreferNoSchedule 或 NoExecute")
+	}
+}
+
+func nodeTaintsToCore(in []NodeTaint) ([]corev1.Taint, error) {
+	out := make([]corev1.Taint, 0, len(in))
+	for _, t := range in {
+		key := strings.TrimSpace(t.Key)
+		if key == "" {
+			return nil, apperror.BadRequest("污点 key 不能为空")
+		}
+		eff, err := normalizeTaintEffect(t.Effect)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, corev1.Taint{
+			Key:    key,
+			Value:  strings.TrimSpace(t.Value),
+			Effect: eff,
+		})
+	}
+	return out, nil
+}
+
+// SetSchedulability 对应 kubectl cordon（禁止调度）/ uncordon（恢复调度）。
+func (s *K8sNodeService) SetSchedulability(ctx context.Context, req NodeSchedulabilityRequest) error {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return apperror.BadRequest("节点名称不能为空")
+	}
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var n corev1.Node
+	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Name(name).Get(&n).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return apperror.BadRequest("Node 不存在")
+		}
+		return apperror.Internal(fmt.Sprintf("获取 Node 失败: %v", err))
+	}
+	updated := n.DeepCopy()
+	updated.Spec.Unschedulable = req.Unschedulable
+	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Update(updated).Error; err != nil {
+		return apperror.Internal(fmt.Sprintf("更新 Node 调度状态失败: %v", err))
+	}
+	return nil
+}
+
+// ReplaceTaints 用请求体中的列表替换节点全部污点。
+func (s *K8sNodeService) ReplaceTaints(ctx context.Context, req NodeTaintsReplaceRequest) error {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return apperror.BadRequest("节点名称不能为空")
+	}
+	taints, err := nodeTaintsToCore(req.Taints)
+	if err != nil {
+		return err
+	}
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var n corev1.Node
+	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Name(name).Get(&n).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return apperror.BadRequest("Node 不存在")
+		}
+		return apperror.Internal(fmt.Sprintf("获取 Node 失败: %v", err))
+	}
+	updated := n.DeepCopy()
+	updated.Spec.Taints = taints
+	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Update(updated).Error; err != nil {
+		return apperror.Internal(fmt.Sprintf("更新 Node 污点失败: %v", err))
+	}
+	return nil
 }

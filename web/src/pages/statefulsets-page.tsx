@@ -1,7 +1,10 @@
 import { DownOutlined, EyeOutlined, FileTextOutlined, ReloadOutlined, ScissorOutlined, TagsOutlined } from "@ant-design/icons";
-import { Button, Drawer, Form, Input, InputNumber, Modal, Progress, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Form, Input, InputNumber, Modal, Progress, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useState } from "react";
+import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
+import { useRelatedPodsDrawer } from "../components/k8s/related-pods-drawer";
+import { useWorkloadFormActions } from "../components/k8s/workload-form-actions";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { listNamespaces as listClusterNamespaces } from "../services/clusters";
 import {
@@ -12,7 +15,6 @@ import {
   listStatefulSetPods,
   restartStatefulSet,
   scaleStatefulSet,
-  type RelatedPodItem,
   type WorkloadDetail,
   type WorkloadItem,
 } from "../services/workloads";
@@ -30,34 +32,29 @@ import {
 } from "../components/k8s/workload-forms";
 
 export function StatefulsetsPage() {
-  const [formOpen, setFormOpen] = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formMode, setFormMode] = useState<"create" | "edit">("create");
-  const [formCtx, setFormCtx] = useState<{ clusterId: number; namespace: string; name?: string } | null>(null);
   const [form] = Form.useForm<StatefulSetFormValues>();
+  const formActions = useWorkloadFormActions<StatefulSetFormValues>({
+    form,
+    mode: true,
+    defaultMode: "create",
+    getDetail: async (clusterId, namespace, name) => await getStatefulSetDetail(clusterId, namespace, name),
+    toFormValues: (d) => statefulSetObjToForm(d.object) ?? statefulSetYamlToForm(d.yaml ?? ""),
+    buildFallbackValues: ({ recordName, namespace, record }) => ({
+      name: recordName,
+      namespace,
+      service_name: `${recordName}-headless`,
+      replicas: Number(record?.replicas ?? 1) || 1,
+      container_name: recordName,
+      image: "",
+      env_pairs: [{ key: "", value: "" }],
+    }),
+  });
 
   const [scaleOpen, setScaleOpen] = useState(false);
   const [scaleValue, setScaleValue] = useState<number>(1);
   const [scaleTarget, setScaleTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
-  const [podsOpen, setPodsOpen] = useState(false);
-  const [podsLoading, setPodsLoading] = useState(false);
-  const [podsTarget, setPodsTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
-  const [pods, setPods] = useState<RelatedPodItem[]>([]);
-  const [kvOpen, setKvOpen] = useState(false);
-  const [kvTitle, setKvTitle] = useState("详情");
-  const [kvData, setKvData] = useState<Record<string, string>>({});
-
-  const openKV = (title: string, data?: Record<string, string>) => {
-    setKvTitle(title);
-    setKvData(data ?? {});
-    setKvOpen(true);
-  };
-
-  const renderKVIcon = (title: string, icon: JSX.Element, data?: Record<string, string>) => (
-    <Tooltip title={title}>
-      <Button type="link" size="small" icon={icon} onClick={() => openKV(title, data)} />
-    </Tooltip>
-  );
+  const { openPods, viewer: podsViewer } = useRelatedPodsDrawer(async ({ clusterId, namespace, name }) => await listStatefulSetPods(clusterId, namespace, name));
+  const { renderKVIcon, viewer } = useKeyValueViewer();
 
   const columns: ColumnsType<WorkloadItem> = [
     { title: "命名空间", dataIndex: "namespace", width: 110 },
@@ -138,50 +135,12 @@ spec:
                     key: "pods",
                     label: "关联 Pods",
                     icon: <EyeOutlined />,
-                    onClick: () => {
-                      setPodsTarget({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
-                      setPodsOpen(true);
-                      setPodsLoading(true);
-                      void (async () => {
-                        try {
-                          const items = await listStatefulSetPods(ctx.clusterId, ctx.namespace ?? "default", record.name);
-                          setPods(items ?? []);
-                        } finally {
-                          setPodsLoading(false);
-                        }
-                      })();
-                    },
+                    onClick: () => openPods({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }),
                   },
                   {
                     key: "edit",
                     label: "编辑",
-                    onClick: () => {
-                      setFormMode("edit");
-                      setFormCtx({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
-                      setFormOpen(true);
-                      setFormLoading(true);
-                      void (async () => {
-                        try {
-                          const d = await getStatefulSetDetail(ctx.clusterId, ctx.namespace ?? "default", record.name);
-                          const fv = statefulSetObjToForm(d.object) ?? statefulSetYamlToForm(d.yaml ?? "");
-                          if (fv) {
-                            form.setFieldsValue({ ...fv, namespace: ctx.namespace ?? fv.namespace } as any);
-                          } else {
-                            form.setFieldsValue({
-                              name: record.name,
-                              namespace: ctx.namespace ?? "default",
-                              service_name: `${record.name}-headless`,
-                              replicas: Number(record.replicas ?? 1) || 1,
-                              container_name: record.name,
-                              image: "",
-                              env_pairs: [{ key: "", value: "" }],
-                            } as any);
-                          }
-                        } finally {
-                          setFormLoading(false);
-                        }
-                      })();
-                    },
+                    onClick: () => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record),
                   },
                   {
                     key: "scale",
@@ -216,18 +175,7 @@ spec:
         )}
       />
 
-      <Modal title={kvTitle} open={kvOpen} onCancel={() => setKvOpen(false)} footer={null} width={720}>
-        <Table
-          rowKey={(r) => r.key}
-          pagination={false}
-          dataSource={Object.entries(kvData).map(([key, value]) => ({ key, value }))}
-          locale={{ emptyText: "暂无数据" }}
-          columns={[
-            { title: "Key", dataIndex: "key", width: 260, render: (v: string) => <Typography.Text copyable>{v}</Typography.Text> },
-            { title: "Value", dataIndex: "value", render: (v: string) => <Typography.Text copyable style={{ whiteSpace: "pre-wrap" }}>{v}</Typography.Text> },
-          ]}
-        />
-      </Modal>
+      {viewer}
 
       <Modal
         title={`StatefulSet 扩缩容${scaleTarget ? `：${scaleTarget.name}` : ""}`}
@@ -248,40 +196,26 @@ spec:
         </Space>
       </Modal>
 
-      <Drawer title={`关联 Pods${podsTarget ? `：${podsTarget.name}` : ""}`} open={podsOpen} onClose={() => setPodsOpen(false)} width={900}>
-        <Table
-          rowKey={(r) => `${r.namespace}/${r.name}`}
-          loading={podsLoading}
-          dataSource={pods}
-          pagination={{ pageSize: 10 }}
-          columns={[
-            { title: "Pod 名称", dataIndex: "name" },
-            { title: "状态", dataIndex: "phase", width: 120, render: (v: string) => <Tag color={v === "Running" ? "green" : "default"}>{v || "-"}</Tag> },
-            { title: "节点", dataIndex: "node_name", width: 160 },
-            { title: "PodIP", dataIndex: "pod_ip", width: 140 },
-            { title: "重启", dataIndex: "restart_count", width: 90 },
-            { title: "启动时间", dataIndex: "start_time", width: 180 },
-          ]}
-        />
-      </Drawer>
+      {podsViewer}
 
       <WorkloadFormModal<StatefulSetFormValues>
-        title={formMode === "create" ? "StatefulSet 表单创建" : "StatefulSet 表单编辑"}
-        open={formOpen}
-        loading={formLoading}
+        title={formActions.mode === "create" ? "StatefulSet 表单创建" : "StatefulSet 表单编辑"}
+        open={formActions.open}
+        loading={formActions.loading}
         form={form}
-        onCancel={() => setFormOpen(false)}
+        onCancel={formActions.close}
         onSubmit={(values) => {
-          if (!formCtx) return;
-          setFormLoading(true);
+          if (!formActions.ctx) return;
+          const ctx = formActions.ctx;
+          formActions.setLoading(true);
           void (async () => {
             try {
               const manifest = buildStatefulSetYaml(values);
-              await applyStatefulSet(formCtx.clusterId, manifest);
+              await applyStatefulSet(ctx.clusterId, manifest);
               message.success("已应用 StatefulSet");
-              setFormOpen(false);
+              formActions.close();
             } finally {
-              setFormLoading(false);
+              formActions.setLoading(false);
             }
           })();
         }}

@@ -1,4 +1,4 @@
-import { getData, http } from "./http";
+import { createK8sResourceService, k8sParams } from "./service-factory";
 
 export type K8sServiceItem = {
   name: string;
@@ -21,23 +21,21 @@ export type K8sServiceItem = {
 
 export type K8sServiceDetail = { yaml: string };
 
+const svc = createK8sResourceService<K8sServiceItem, K8sServiceDetail>("/k8s-services");
+
 export function listK8sServices(clusterId: number, namespace: string, keyword?: string) {
-  return getData<K8sServiceItem[]>(
-    http.get("/k8s-services", { params: { cluster_id: clusterId, namespace, keyword } }),
-  );
+  return svc.list(k8sParams(clusterId, { namespace, keyword }));
 }
 
 export function getK8sServiceDetail(clusterId: number, namespace: string, name: string) {
-  return getData<K8sServiceDetail>(
-    http.get("/k8s-services/detail", { params: { cluster_id: clusterId, namespace, name } }),
-  );
+  return svc.detail(k8sParams(clusterId, { namespace, name }));
 }
 
 export function applyK8sService(clusterId: number, manifest: string) {
-  return getData<boolean>(http.post("/k8s-services/apply", { cluster_id: clusterId, manifest }));
+  return svc.apply({ cluster_id: clusterId, manifest });
 }
 
 export function deleteK8sService(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.delete("/k8s-services", { params: { cluster_id: clusterId, namespace, name } }));
+  return svc.remove(k8sParams(clusterId, { namespace, name }));
 }
 

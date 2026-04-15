@@ -1,0 +1,1 @@
+import{g as r,h as o}from"./index-CW0KuSxy.js";function s(e,t){return{cluster_id:e,...t??{}}}function c(e){return{list:t=>r(o.get(e,{params:t})),detail:t=>r(o.get(`${e}/detail`,{params:t})),apply:t=>r(o.post(`${e}/apply`,t)),remove:t=>r(o.delete(e,{params:t})),get:(t,p)=>r(o.get(`${e}${t}`,{params:p})),post:(t,p)=>r(o.post(`${e}${t}`,p))}}export{c,s as k};

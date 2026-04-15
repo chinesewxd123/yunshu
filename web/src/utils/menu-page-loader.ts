@@ -35,9 +35,8 @@ function resolveGlobKey(componentField: string): string | undefined {
     return undefined;
   }
 
-  const suffix = normalized.endsWith("-page") ? `${normalized}.tsx` : `${normalized}-page.tsx`;
-
-  const key = Object.keys(pageLoaders).find((k) => k.endsWith(`/${suffix}`) || k.endsWith(suffix));
+  const expectedId = normalized.endsWith("-page") ? normalized : `${normalized}-page`;
+  const key = Object.keys(pageLoaders).find((k) => k.replace(/^\.\.\/pages\//, "").replace(/\.tsx$/i, "") === expectedId);
   return key;
 }
 

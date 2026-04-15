@@ -62,16 +62,8 @@ func (r *RoleRepository) List(ctx context.Context, params RoleListParams) ([]mod
 		query = query.Where("name LIKE ? OR code LIKE ?", keyword, keyword)
 	}
 
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
 	var roles []model.Role
-	err := query.Order("id DESC").
-		Offset((params.Page - 1) * params.PageSize).
-		Limit(params.PageSize).
-		Find(&roles).Error
+	total, err := listWithPagination(query, params.Page, params.PageSize, "id DESC", &roles)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -1,7 +1,8 @@
 import { ApartmentOutlined, FileTextOutlined, TagsOutlined } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useState } from "react";
+import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
 import { WorkloadFormModal } from "../components/k8s/workload-forms";
 import { LabelsFormList, ServicePortsFormList, buildServiceYaml, serviceYamlToForm, type ServiceFormValues } from "../components/k8s/service-storage-forms";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
@@ -22,22 +23,14 @@ export function K8sServicesPage() {
   const [formCtx, setFormCtx] = useState<{ clusterId: number; namespace: string; name?: string } | null>(null);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [workloadOptions, setWorkloadOptions] = useState<Array<{ label: string; value: string }>>([]);
-  const [kvOpen, setKvOpen] = useState(false);
-  const [kvTitle, setKvTitle] = useState("详情");
-  const [kvData, setKvData] = useState<Record<string, string>>({});
+  const { renderKVIcon, viewer } = useKeyValueViewer({
+    width: 760,
+    compact: true,
+    pageSize: 10,
+    destroyOnClose: true,
+    emptyText: (title) => `暂无${title}`,
+  });
   const [form] = Form.useForm<ServiceFormValues>();
-
-  const openKV = (title: string, data?: Record<string, string>) => {
-    setKvTitle(title);
-    setKvData(data ?? {});
-    setKvOpen(true);
-  };
-
-  const renderKVIcon = (title: string, icon: JSX.Element, data?: Record<string, string>) => (
-    <Tooltip title={title}>
-      <Button type="link" size="small" icon={icon} onClick={() => openKV(title, data)} />
-    </Tooltip>
-  );
 
   async function loadWorkloadsForSelector(clusterId: number, namespace: string) {
     const [deps, sts, dss] = await Promise.all([
@@ -229,43 +222,7 @@ spec:
         <ServicePortsFormList />
       </Form.Item>
     </WorkloadFormModal>
-    <Modal
-      title={kvTitle}
-      open={kvOpen}
-      onCancel={() => setKvOpen(false)}
-      footer={null}
-      width={760}
-      destroyOnClose
-    >
-      <Table
-        size="small"
-        rowKey={(r) => r.key}
-        pagination={{ pageSize: 10 }}
-        dataSource={Object.entries(kvData).map(([key, value]) => ({ key, value }))}
-        locale={{ emptyText: `暂无${kvTitle}` }}
-        columns={[
-          {
-            title: "Key",
-            dataIndex: "key",
-            width: 280,
-            render: (v: string) => (
-              <Typography.Text copyable style={{ whiteSpace: "pre-wrap" }}>
-                {v || "-"}
-              </Typography.Text>
-            ),
-          },
-          {
-            title: "Value",
-            dataIndex: "value",
-            render: (v: string) => (
-              <Typography.Text copyable style={{ whiteSpace: "pre-wrap" }}>
-                {v || "-"}
-              </Typography.Text>
-            ),
-          },
-        ]}
-      />
-    </Modal>
+    {viewer}
     </>
   );
 }

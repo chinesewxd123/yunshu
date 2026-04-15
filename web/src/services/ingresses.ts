@@ -1,4 +1,4 @@
-import { getData, http } from "./http";
+import { createK8sResourceService, k8sParams } from "./service-factory";
 
 export interface IngressItem {
   name: string;
@@ -38,38 +38,41 @@ export interface IngressNginxRestartResult {
   deleted_names: string[];
 }
 
+const ingressesSvc = createK8sResourceService<IngressItem, IngressDetail>("/ingresses");
+const ingressClassesSvc = createK8sResourceService<IngressClassItem, IngressClassDetail>("/ingresses/classes");
+
 export function listIngresses(clusterId: number, namespace: string, keyword?: string) {
-  return getData<IngressItem[]>(http.get("/ingresses", { params: { cluster_id: clusterId, namespace, keyword } }));
+  return ingressesSvc.list(k8sParams(clusterId, { namespace, keyword }));
 }
 
 export function getIngressDetail(clusterId: number, namespace: string, name: string) {
-  return getData<IngressDetail>(http.get("/ingresses/detail", { params: { cluster_id: clusterId, namespace, name } }));
+  return ingressesSvc.detail(k8sParams(clusterId, { namespace, name }));
 }
 
 export function applyIngress(clusterId: number, manifest: string) {
-  return getData<boolean>(http.post("/ingresses/apply", { cluster_id: clusterId, manifest }));
+  return ingressesSvc.apply({ cluster_id: clusterId, manifest });
 }
 
 export function restartIngressNginxPods(clusterId: number, namespace?: string, selector?: string) {
-  return getData<IngressNginxRestartResult>(http.post("/ingresses/nginx/restart", { cluster_id: clusterId, namespace, selector }));
+  return ingressesSvc.post<IngressNginxRestartResult>("/nginx/restart", { cluster_id: clusterId, namespace, selector });
 }
 
 export function deleteIngress(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.delete("/ingresses", { params: { cluster_id: clusterId, namespace, name } }));
+  return ingressesSvc.remove(k8sParams(clusterId, { namespace, name }));
 }
 
 export function listIngressClasses(clusterId: number, keyword?: string) {
-  return getData<IngressClassItem[]>(http.get("/ingresses/classes", { params: { cluster_id: clusterId, keyword } }));
+  return ingressClassesSvc.list(k8sParams(clusterId, { keyword }));
 }
 
 export function getIngressClassDetail(clusterId: number, name: string) {
-  return getData<IngressClassDetail>(http.get("/ingresses/classes/detail", { params: { cluster_id: clusterId, name } }));
+  return ingressClassesSvc.detail(k8sParams(clusterId, { name }));
 }
 
 export function applyIngressClass(clusterId: number, manifest: string) {
-  return getData<boolean>(http.post("/ingresses/classes/apply", { cluster_id: clusterId, manifest }));
+  return ingressClassesSvc.apply({ cluster_id: clusterId, manifest });
 }
 
 export function deleteIngressClass(clusterId: number, name: string) {
-  return getData<boolean>(http.delete("/ingresses/classes", { params: { cluster_id: clusterId, name } }));
+  return ingressClassesSvc.remove(k8sParams(clusterId, { name }));
 }

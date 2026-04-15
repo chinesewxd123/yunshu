@@ -1,7 +1,10 @@
 import { DownOutlined, EyeOutlined, FileTextOutlined, ReloadOutlined, ScissorOutlined, TagsOutlined } from "@ant-design/icons";
-import { Button, Descriptions, Drawer, Dropdown, InputNumber, Modal, Progress, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Descriptions, Dropdown, InputNumber, Modal, Progress, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useState } from "react";
+import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
+import { useRelatedPodsDrawer } from "../components/k8s/related-pods-drawer";
+import { useWorkloadFormActions } from "../components/k8s/workload-form-actions";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { Form, Input, InputNumber as AntdInputNumber } from "antd";
 import { listNamespaces as listClusterNamespaces } from "../services/clusters";
@@ -13,7 +16,6 @@ import {
   listDeploymentPods,
   restartDeployment,
   scaleDeployment,
-  type RelatedPodItem,
   type WorkloadDetail,
   type WorkloadItem,
 } from "../services/workloads";
@@ -31,34 +33,34 @@ import {
 } from "../components/k8s/workload-forms";
 
 export function DeploymentsPage() {
-  const [formOpen, setFormOpen] = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formMode, setFormMode] = useState<"create" | "edit">("create");
-  const [formCtx, setFormCtx] = useState<{ clusterId: number; namespace: string; name?: string } | null>(null);
   const [form] = Form.useForm<DeploymentFormValues>();
+  const formActions = useWorkloadFormActions<DeploymentFormValues>({
+    form,
+    mode: true,
+    defaultMode: "create",
+    getDetail: async (clusterId, namespace, name) => await getDeploymentDetail(clusterId, namespace, name),
+    toFormValues: (d) => deploymentObjToForm(d.object) ?? deploymentYamlToForm(d.yaml ?? ""),
+    buildFallbackValues: ({ recordName, namespace, record }) => ({
+      name: recordName,
+      namespace,
+      replicas: Number(record?.replicas ?? 1) || 1,
+      container_name: recordName,
+      image: "",
+      env_pairs: [{ key: "", value: "" }],
+    }),
+  });
 
   const [scaleOpen, setScaleOpen] = useState(false);
   const [scaleValue, setScaleValue] = useState<number>(1);
   const [scaleTarget, setScaleTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
-  const [podsOpen, setPodsOpen] = useState(false);
-  const [podsLoading, setPodsLoading] = useState(false);
-  const [podsTarget, setPodsTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
-  const [pods, setPods] = useState<RelatedPodItem[]>([]);
-  const [kvOpen, setKvOpen] = useState(false);
-  const [kvTitle, setKvTitle] = useState("详情");
-  const [kvData, setKvData] = useState<Record<string, string>>({});
-
-  const openKV = (title: string, data?: Record<string, string>) => {
-    setKvTitle(title);
-    setKvData(data ?? {});
-    setKvOpen(true);
-  };
-
-  const renderKVIcon = (title: string, icon: JSX.Element, data?: Record<string, string>) => (
-    <Tooltip title={title}>
-      <Button type="link" size="small" icon={icon} onClick={() => openKV(title, data)} />
-    </Tooltip>
-  );
+  const { openPods, viewer: podsViewer } = useRelatedPodsDrawer(async ({ clusterId, namespace, name }) => await listDeploymentPods(clusterId, namespace, name));
+  const { renderKVIcon, viewer } = useKeyValueViewer({
+    width: 760,
+    compact: true,
+    pageSize: 10,
+    destroyOnClose: true,
+    emptyText: (title) => `暂无${title}`,
+  });
 
   const columns: ColumnsType<WorkloadItem> = [
     { title: "命名空间", dataIndex: "namespace", width: 110 },
@@ -214,50 +216,13 @@ spec:
                     key: "pods",
                     label: "关联 Pods",
                     icon: <EyeOutlined />,
-                    onClick: () => {
-                      setPodsTarget({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
-                      setPodsOpen(true);
-                      setPodsLoading(true);
-                      void (async () => {
-                        try {
-                          const items = await listDeploymentPods(ctx.clusterId, ctx.namespace ?? "default", record.name);
-                          setPods(items ?? []);
-                        } finally {
-                          setPodsLoading(false);
-                        }
-                      })();
-                    },
+                    onClick: () => openPods({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }),
                   },
                   {
                     key: "edit",
                     label: "编辑 Deployment",
                     icon: <FileTextOutlined />,
-                    onClick: () => {
-                      setFormMode("edit");
-                      setFormCtx({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
-                      setFormOpen(true);
-                      setFormLoading(true);
-                      void (async () => {
-                        try {
-                          const d = await getDeploymentDetail(ctx.clusterId, ctx.namespace ?? "default", record.name);
-                          const fv = deploymentObjToForm(d.object) ?? deploymentYamlToForm(d.yaml ?? "");
-                          if (fv) {
-                            form.setFieldsValue({ ...fv, namespace: ctx.namespace ?? fv.namespace } as any);
-                          } else {
-                            form.setFieldsValue({
-                              name: record.name,
-                              namespace: ctx.namespace ?? "default",
-                              replicas: Number(record.replicas ?? 1) || 1,
-                              container_name: record.name,
-                              image: "",
-                              env_pairs: [{ key: "", value: "" }],
-                            } as any);
-                          }
-                        } finally {
-                          setFormLoading(false);
-                        }
-                      })();
-                    },
+                    onClick: () => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record),
                   },
                   {
                     key: "scale",
@@ -311,45 +276,26 @@ spec:
         </Space>
       </Modal>
 
-      <Drawer
-        title={`关联 Pods${podsTarget ? `：${podsTarget.name}` : ""}`}
-        open={podsOpen}
-        onClose={() => setPodsOpen(false)}
-        width={900}
-      >
-        <Table
-          rowKey={(r) => `${r.namespace}/${r.name}`}
-          loading={podsLoading}
-          dataSource={pods}
-          pagination={{ pageSize: 10 }}
-          columns={[
-            { title: "Pod 名称", dataIndex: "name" },
-            { title: "状态", dataIndex: "phase", width: 120, render: (v: string) => <Tag color={v === "Running" ? "green" : "default"}>{v || "-"}</Tag> },
-            { title: "节点", dataIndex: "node_name", width: 160 },
-            { title: "PodIP", dataIndex: "pod_ip", width: 140 },
-            { title: "重启", dataIndex: "restart_count", width: 90 },
-            { title: "启动时间", dataIndex: "start_time", width: 180 },
-          ]}
-        />
-      </Drawer>
+      {podsViewer}
 
       <WorkloadFormModal<DeploymentFormValues>
-        title={formMode === "create" ? "Deployment 表单创建" : "Deployment 表单编辑"}
-        open={formOpen}
-        loading={formLoading}
+        title={formActions.mode === "create" ? "Deployment 表单创建" : "Deployment 表单编辑"}
+        open={formActions.open}
+        loading={formActions.loading}
         form={form}
-        onCancel={() => setFormOpen(false)}
+        onCancel={formActions.close}
         onSubmit={(values) => {
-          if (!formCtx) return;
-          setFormLoading(true);
+          if (!formActions.ctx) return;
+          const ctx = formActions.ctx;
+          formActions.setLoading(true);
           void (async () => {
             try {
               const manifest = buildDeploymentYaml(values);
-              await applyDeployment(formCtx.clusterId, manifest);
+              await applyDeployment(ctx.clusterId, manifest);
               message.success("已应用 Deployment");
-              setFormOpen(false);
+              formActions.close();
             } finally {
-              setFormLoading(false);
+              formActions.setLoading(false);
             }
           })();
         }}
@@ -375,43 +321,7 @@ spec:
           }}
         </Form.Item>
       </WorkloadFormModal>
-      <Modal
-        title={kvTitle}
-        open={kvOpen}
-        onCancel={() => setKvOpen(false)}
-        footer={null}
-        width={760}
-        destroyOnClose
-      >
-        <Table
-          size="small"
-          rowKey={(r) => r.key}
-          pagination={{ pageSize: 10 }}
-          dataSource={Object.entries(kvData).map(([key, value]) => ({ key, value }))}
-          locale={{ emptyText: `暂无${kvTitle}` }}
-          columns={[
-            {
-              title: "Key",
-              dataIndex: "key",
-              width: 280,
-              render: (v: string) => (
-                <Typography.Text copyable style={{ whiteSpace: "pre-wrap" }}>
-                  {v || "-"}
-                </Typography.Text>
-              ),
-            },
-            {
-              title: "Value",
-              dataIndex: "value",
-              render: (v: string) => (
-                <Typography.Text copyable style={{ whiteSpace: "pre-wrap" }}>
-                  {v || "-"}
-                </Typography.Text>
-              ),
-            },
-          ]}
-        />
-      </Modal>
+      {viewer}
     </>
   );
 }

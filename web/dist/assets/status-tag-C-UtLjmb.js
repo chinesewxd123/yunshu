@@ -1,0 +1,1 @@
+import{j as r}from"./react-vendor-D2ezaHNm.js";import{s as t,a as s}from"./format-nfHZ4j4g.js";import{b as a}from"./antd-vendor-DhwHsd1P.js";function n({status:o}){return r.jsx(a,{color:s(o),children:t(o)})}export{n as S};

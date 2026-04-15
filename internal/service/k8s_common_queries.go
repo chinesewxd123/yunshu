@@ -65,3 +65,17 @@ type ClusterNamespaceNameCommandRequest struct {
 	Name      string `json:"name" binding:"required"`
 	Command   string `json:"command" binding:"required"`
 }
+
+// NodeSchedulabilityRequest 设置节点是否禁止调度（kubectl cordon/uncordon）。
+type NodeSchedulabilityRequest struct {
+	ClusterID     uint   `json:"cluster_id" binding:"required"`
+	Name          string `json:"name" binding:"required"`
+	Unschedulable bool   `json:"unschedulable"`
+}
+
+// NodeTaintsReplaceRequest 替换节点污点列表（与 kubectl taint 全量替换 spec 行为一致由调用方保证）。
+type NodeTaintsReplaceRequest struct {
+	ClusterID uint        `json:"cluster_id" binding:"required"`
+	Name      string      `json:"name" binding:"required"`
+	Taints    []NodeTaint `json:"taints"`
+}

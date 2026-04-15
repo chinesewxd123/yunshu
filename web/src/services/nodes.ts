@@ -3,6 +3,8 @@ import { getData, http } from "./http";
 export interface NodeItem {
   name: string;
   status: string;
+  /** 为 true 时表示已 cordon，新 Pod 不会调度到该节点 */
+  unschedulable?: boolean;
   roles?: string[];
   kernel: string;
   kubelet: string;
@@ -67,5 +69,17 @@ export function listNodes(clusterId: number, keyword?: string) {
 
 export function getNodeDetail(clusterId: number, name: string) {
   return getData<NodeDetail>(http.get("/nodes/detail", { params: { cluster_id: clusterId, name } }));
+}
+
+export type NodeTaintInput = { key: string; value?: string; effect?: string };
+
+export function setNodeSchedulability(clusterId: number, name: string, unschedulable: boolean) {
+  return getData<{ ok: boolean }>(
+    http.post("/nodes/schedulability", { cluster_id: clusterId, name, unschedulable }),
+  );
+}
+
+export function replaceNodeTaints(clusterId: number, name: string, taints: NodeTaintInput[]) {
+  return getData<{ ok: boolean }>(http.put("/nodes/taints", { cluster_id: clusterId, name, taints }));
 }
 

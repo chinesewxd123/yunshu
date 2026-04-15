@@ -54,6 +54,8 @@ export interface YamlCrudPageProps<TItem extends { name: string }, TDetail exten
   showEditButton?: boolean;
   confirmOverwrite?: boolean;
   disableMutations?: boolean;
+  /** 操作列宽度，节点等页面操作较多时可加大 */
+  actionColumnWidth?: number;
 }
 
 export function YamlCrudPage<TItem extends { name: string }, TDetail extends { yaml: string }>(props: YamlCrudPageProps<TItem, TDetail>) {
@@ -71,6 +73,7 @@ export function YamlCrudPage<TItem extends { name: string }, TDetail extends { y
     showEditButton = true,
     confirmOverwrite = true,
     disableMutations = false,
+    actionColumnWidth = 260,
   } = props;
   const [clusters, setClusters] = useState<ClusterItem[]>([]);
   const [clusterId, setClusterId] = useState<number | undefined>(undefined);
@@ -168,7 +171,7 @@ export function YamlCrudPage<TItem extends { name: string }, TDetail extends { y
   const actionCol: ColumnsType<TItem>[number] = {
     title: "操作",
     key: "action",
-    width: 260,
+    width: actionColumnWidth,
     fixed: "right",
     render: (_: unknown, record: TItem) => (
       <Space>

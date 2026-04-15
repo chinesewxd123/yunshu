@@ -1,7 +1,8 @@
 package handler
 
 import (
-	"go-permission-system/internal/pkg/response"
+	"context"
+
 	"go-permission-system/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -17,415 +18,133 @@ func NewWorkloadHandler(svc *service.K8sWorkloadService) *WorkloadHandler {
 
 // Deployments
 func (h *WorkloadHandler) ListDeployments(c *gin.Context) {
-	var q service.NamespacedListQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.ListDeployments(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.ListDeployments)
 }
 
 func (h *WorkloadHandler) DeploymentDetail(c *gin.Context) {
-	var q service.NamespacedDetailQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	data, err := h.svc.DeploymentDetail(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleQuery(c, h.svc.DeploymentDetail)
 }
 
 func (h *WorkloadHandler) DeploymentScale(c *gin.Context) {
-	var req service.WorkloadScaleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.DeploymentScale(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleJSONOK(c, true, h.svc.DeploymentScale)
 }
 
 func (h *WorkloadHandler) DeploymentRestart(c *gin.Context) {
-	var q service.NamespacedDetailQuery
-	if err := c.ShouldBindJSON(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.DeploymentRestart(c.Request.Context(), q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleJSONOK(c, true, h.svc.DeploymentRestart)
 }
 
 func (h *WorkloadHandler) DeleteDeployment(c *gin.Context) {
-	var req service.NamespacedDeleteRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.DeleteDeployment(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleQueryOK(c, true, h.svc.DeleteDeployment)
 }
 
 // StatefulSets
 func (h *WorkloadHandler) ListStatefulSets(c *gin.Context) {
-	var q service.NamespacedListQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.ListStatefulSets(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.ListStatefulSets)
 }
 
 func (h *WorkloadHandler) StatefulSetDetail(c *gin.Context) {
-	var q service.NamespacedDetailQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	data, err := h.svc.StatefulSetDetail(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleQuery(c, h.svc.StatefulSetDetail)
 }
 
 func (h *WorkloadHandler) StatefulSetScale(c *gin.Context) {
-	var req service.WorkloadScaleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.StatefulSetScale(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleJSONOK(c, true, h.svc.StatefulSetScale)
 }
 
 func (h *WorkloadHandler) StatefulSetRestart(c *gin.Context) {
-	var q service.NamespacedDetailQuery
-	if err := c.ShouldBindJSON(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.StatefulSetRestart(c.Request.Context(), q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleJSONOK(c, true, h.svc.StatefulSetRestart)
 }
 
 func (h *WorkloadHandler) DeleteStatefulSet(c *gin.Context) {
-	var req service.NamespacedDeleteRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.DeleteStatefulSet(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleQueryOK(c, true, h.svc.DeleteStatefulSet)
 }
 
 // DaemonSets
 func (h *WorkloadHandler) ListDaemonSets(c *gin.Context) {
-	var q service.NamespacedListQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.ListDaemonSets(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.ListDaemonSets)
 }
 
 func (h *WorkloadHandler) DaemonSetDetail(c *gin.Context) {
-	var q service.NamespacedDetailQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	data, err := h.svc.DaemonSetDetail(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleQuery(c, h.svc.DaemonSetDetail)
 }
 
 func (h *WorkloadHandler) DaemonSetRestart(c *gin.Context) {
-	var q service.NamespacedDetailQuery
-	if err := c.ShouldBindJSON(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.DaemonSetRestart(c.Request.Context(), q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleJSONOK(c, true, h.svc.DaemonSetRestart)
 }
 
 func (h *WorkloadHandler) DeleteDaemonSet(c *gin.Context) {
-	var req service.NamespacedDeleteRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.DeleteDaemonSet(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleQueryOK(c, true, h.svc.DeleteDaemonSet)
 }
 
 // Jobs
 func (h *WorkloadHandler) ListJobs(c *gin.Context) {
-	var q service.NamespacedListQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.ListJobs(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.ListJobs)
 }
 
 func (h *WorkloadHandler) JobDetail(c *gin.Context) {
-	var q service.NamespacedDetailQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	data, err := h.svc.JobDetail(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleQuery(c, h.svc.JobDetail)
 }
 
 func (h *WorkloadHandler) DeleteJob(c *gin.Context) {
-	var req service.NamespacedDeleteRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.DeleteJob(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleQueryOK(c, true, h.svc.DeleteJob)
 }
 
 // CronJobs
 func (h *WorkloadHandler) ListCronJobs(c *gin.Context) {
-	var q service.NamespacedListQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.ListCronJobs(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.ListCronJobs)
 }
 
 func (h *WorkloadHandler) ListCronJobsV2(c *gin.Context) {
-	var q service.NamespacedListQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.ListCronJobsV2(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.ListCronJobsV2)
 }
 
 func (h *WorkloadHandler) CronJobDetail(c *gin.Context) {
-	var q service.NamespacedDetailQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	data, err := h.svc.CronJobDetail(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleQuery(c, h.svc.CronJobDetail)
 }
 
 func (h *WorkloadHandler) CronJobSuspend(c *gin.Context) {
-	var req service.CronJobSuspendRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.CronJobSuspend(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleJSONOK(c, true, h.svc.CronJobSuspend)
 }
 
 func (h *WorkloadHandler) CronJobTrigger(c *gin.Context) {
-	var req service.CronJobTriggerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	name, err := h.svc.CronJobTrigger(c.Request.Context(), req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"job_name": name})
+	handleJSON(c, func(ctx context.Context, req service.CronJobTriggerRequest) (gin.H, error) {
+		name, err := h.svc.CronJobTrigger(ctx, req)
+		return gin.H{"job_name": name}, err
+	})
 }
 
 func (h *WorkloadHandler) DeleteCronJob(c *gin.Context) {
-	var req service.NamespacedDeleteRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.DeleteCronJob(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleQueryOK(c, true, h.svc.DeleteCronJob)
 }
 
 func (h *WorkloadHandler) JobRerun(c *gin.Context) {
-	var req service.JobRerunRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	name, err := h.svc.JobRerun(c.Request.Context(), req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"job_name": name})
+	handleJSON(c, func(ctx context.Context, req service.JobRerunRequest) (gin.H, error) {
+		name, err := h.svc.JobRerun(ctx, req)
+		return gin.H{"job_name": name}, err
+	})
 }
 
 // related pods
 func (h *WorkloadHandler) DeploymentPods(c *gin.Context) {
-	var q service.RelatedPodsQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.DeploymentPods(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.DeploymentPods)
 }
 
 func (h *WorkloadHandler) StatefulSetPods(c *gin.Context) {
-	var q service.RelatedPodsQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.StatefulSetPods(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.StatefulSetPods)
 }
 
 func (h *WorkloadHandler) DaemonSetPods(c *gin.Context) {
-	var q service.RelatedPodsQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.DaemonSetPods(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.DaemonSetPods)
 }
 
 func (h *WorkloadHandler) JobPods(c *gin.Context) {
-	var q service.RelatedPodsQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.JobPods(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.JobPods)
 }
 
 func (h *WorkloadHandler) CronJobPods(c *gin.Context) {
-	var q service.RelatedPodsQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, err)
-		return
-	}
-	items, err := h.svc.CronJobPods(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, items)
+	handleQuery(c, h.svc.CronJobPods)
 }
 
 // shared
 func (h *WorkloadHandler) Apply(c *gin.Context) {
-	var req service.NamespacedApplyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.Apply(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleJSONOK(c, true, h.svc.Apply)
 }

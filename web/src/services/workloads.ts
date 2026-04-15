@@ -1,4 +1,4 @@
-import { getData, http } from "./http";
+import { createK8sResourceService, k8sParams } from "./service-factory";
 
 export interface WorkloadItem {
   name: string;
@@ -54,120 +54,116 @@ export interface CronJobItemV2 {
   creation_time: string;
 }
 
+const deploymentsSvc = createK8sResourceService<WorkloadItem, WorkloadDetail>("/deployments");
+const statefulsetsSvc = createK8sResourceService<WorkloadItem, WorkloadDetail>("/statefulsets");
+const daemonsetsSvc = createK8sResourceService<WorkloadItem, WorkloadDetail>("/daemonsets");
+const jobsSvc = createK8sResourceService<WorkloadItem, WorkloadDetail>("/jobs");
+const cronjobsSvc = createK8sResourceService<WorkloadItem, WorkloadDetail>("/cronjobs");
+
 export function listDeployments(clusterId: number, namespace: string, keyword?: string) {
-  return getData<WorkloadItem[]>(
-    http.get("/deployments", { params: { cluster_id: clusterId, namespace, keyword } }),
-  );
+  return deploymentsSvc.list(k8sParams(clusterId, { namespace, keyword }));
 }
 export function getDeploymentDetail(clusterId: number, namespace: string, name: string) {
-  return getData<WorkloadDetail>(http.get("/deployments/detail", { params: { cluster_id: clusterId, namespace, name } }));
+  return deploymentsSvc.detail(k8sParams(clusterId, { namespace, name }));
 }
 export function applyDeployment(clusterId: number, manifest: string) {
-  return getData<boolean>(http.post("/deployments/apply", { cluster_id: clusterId, manifest }));
+  return deploymentsSvc.apply({ cluster_id: clusterId, manifest });
 }
 export function deleteDeployment(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.delete("/deployments", { params: { cluster_id: clusterId, namespace, name } }));
+  return deploymentsSvc.remove(k8sParams(clusterId, { namespace, name }));
 }
 export function scaleDeployment(clusterId: number, namespace: string, name: string, replicas: number) {
-  return getData<boolean>(http.post("/deployments/scale", { cluster_id: clusterId, namespace, name, replicas }));
+  return deploymentsSvc.post<boolean>("/scale", { cluster_id: clusterId, namespace, name, replicas });
 }
 export function restartDeployment(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.post("/deployments/restart", { cluster_id: clusterId, namespace, name }));
+  return deploymentsSvc.post<boolean>("/restart", { cluster_id: clusterId, namespace, name });
 }
 export function listDeploymentPods(clusterId: number, namespace: string, name: string) {
-  return getData<RelatedPodItem[]>(http.get("/deployments/pods", { params: { cluster_id: clusterId, namespace, name } }));
+  return deploymentsSvc.get<RelatedPodItem[]>("/pods", k8sParams(clusterId, { namespace, name }));
 }
 
 export function listStatefulSets(clusterId: number, namespace: string, keyword?: string) {
-  return getData<WorkloadItem[]>(
-    http.get("/statefulsets", { params: { cluster_id: clusterId, namespace, keyword } }),
-  );
+  return statefulsetsSvc.list(k8sParams(clusterId, { namespace, keyword }));
 }
 export function getStatefulSetDetail(clusterId: number, namespace: string, name: string) {
-  return getData<WorkloadDetail>(
-    http.get("/statefulsets/detail", { params: { cluster_id: clusterId, namespace, name } }),
-  );
+  return statefulsetsSvc.detail(k8sParams(clusterId, { namespace, name }));
 }
 export function applyStatefulSet(clusterId: number, manifest: string) {
-  return getData<boolean>(http.post("/statefulsets/apply", { cluster_id: clusterId, manifest }));
+  return statefulsetsSvc.apply({ cluster_id: clusterId, manifest });
 }
 export function deleteStatefulSet(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.delete("/statefulsets", { params: { cluster_id: clusterId, namespace, name } }));
+  return statefulsetsSvc.remove(k8sParams(clusterId, { namespace, name }));
 }
 export function scaleStatefulSet(clusterId: number, namespace: string, name: string, replicas: number) {
-  return getData<boolean>(http.post("/statefulsets/scale", { cluster_id: clusterId, namespace, name, replicas }));
+  return statefulsetsSvc.post<boolean>("/scale", { cluster_id: clusterId, namespace, name, replicas });
 }
 export function restartStatefulSet(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.post("/statefulsets/restart", { cluster_id: clusterId, namespace, name }));
+  return statefulsetsSvc.post<boolean>("/restart", { cluster_id: clusterId, namespace, name });
 }
 export function listStatefulSetPods(clusterId: number, namespace: string, name: string) {
-  return getData<RelatedPodItem[]>(
-    http.get("/statefulsets/pods", { params: { cluster_id: clusterId, namespace, name } }),
-  );
+  return statefulsetsSvc.get<RelatedPodItem[]>("/pods", k8sParams(clusterId, { namespace, name }));
 }
 
 export function listDaemonSets(clusterId: number, namespace: string, keyword?: string) {
-  return getData<WorkloadItem[]>(
-    http.get("/daemonsets", { params: { cluster_id: clusterId, namespace, keyword } }),
-  );
+  return daemonsetsSvc.list(k8sParams(clusterId, { namespace, keyword }));
 }
 export function getDaemonSetDetail(clusterId: number, namespace: string, name: string) {
-  return getData<WorkloadDetail>(http.get("/daemonsets/detail", { params: { cluster_id: clusterId, namespace, name } }));
+  return daemonsetsSvc.detail(k8sParams(clusterId, { namespace, name }));
 }
 export function applyDaemonSet(clusterId: number, manifest: string) {
-  return getData<boolean>(http.post("/daemonsets/apply", { cluster_id: clusterId, manifest }));
+  return daemonsetsSvc.apply({ cluster_id: clusterId, manifest });
 }
 export function deleteDaemonSet(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.delete("/daemonsets", { params: { cluster_id: clusterId, namespace, name } }));
+  return daemonsetsSvc.remove(k8sParams(clusterId, { namespace, name }));
 }
 export function restartDaemonSet(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.post("/daemonsets/restart", { cluster_id: clusterId, namespace, name }));
+  return daemonsetsSvc.post<boolean>("/restart", { cluster_id: clusterId, namespace, name });
 }
 export function listDaemonSetPods(clusterId: number, namespace: string, name: string) {
-  return getData<RelatedPodItem[]>(http.get("/daemonsets/pods", { params: { cluster_id: clusterId, namespace, name } }));
+  return daemonsetsSvc.get<RelatedPodItem[]>("/pods", k8sParams(clusterId, { namespace, name }));
 }
 
 export function listJobs(clusterId: number, namespace: string, keyword?: string) {
-  return getData<WorkloadItem[]>(http.get("/jobs", { params: { cluster_id: clusterId, namespace, keyword } }));
+  return jobsSvc.list(k8sParams(clusterId, { namespace, keyword }));
 }
 export function getJobDetail(clusterId: number, namespace: string, name: string) {
-  return getData<WorkloadDetail>(http.get("/jobs/detail", { params: { cluster_id: clusterId, namespace, name } }));
+  return jobsSvc.detail(k8sParams(clusterId, { namespace, name }));
 }
 export function applyJob(clusterId: number, manifest: string) {
-  return getData<boolean>(http.post("/jobs/apply", { cluster_id: clusterId, manifest }));
+  return jobsSvc.apply({ cluster_id: clusterId, manifest });
 }
 export function deleteJob(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.delete("/jobs", { params: { cluster_id: clusterId, namespace, name } }));
+  return jobsSvc.remove(k8sParams(clusterId, { namespace, name }));
 }
 export function rerunJob(clusterId: number, namespace: string, name: string) {
-  return getData<{ job_name: string }>(http.post("/jobs/rerun", { cluster_id: clusterId, namespace, name }));
+  return jobsSvc.post<{ job_name: string }>("/rerun", { cluster_id: clusterId, namespace, name });
 }
 export function listJobPods(clusterId: number, namespace: string, name: string) {
-  return getData<RelatedPodItem[]>(http.get("/jobs/pods", { params: { cluster_id: clusterId, namespace, name } }));
+  return jobsSvc.get<RelatedPodItem[]>("/pods", k8sParams(clusterId, { namespace, name }));
 }
 
 export function listCronJobs(clusterId: number, namespace: string, keyword?: string) {
-  return getData<WorkloadItem[]>(http.get("/cronjobs", { params: { cluster_id: clusterId, namespace, keyword } }));
+  return cronjobsSvc.list(k8sParams(clusterId, { namespace, keyword }));
 }
 export function listCronJobsV2(clusterId: number, namespace: string, keyword?: string) {
-  return getData<CronJobItemV2[]>(http.get("/cronjobs/v2", { params: { cluster_id: clusterId, namespace, keyword } }));
+  return cronjobsSvc.get<CronJobItemV2[]>("/v2", k8sParams(clusterId, { namespace, keyword }));
 }
 export function getCronJobDetail(clusterId: number, namespace: string, name: string) {
-  return getData<WorkloadDetail>(http.get("/cronjobs/detail", { params: { cluster_id: clusterId, namespace, name } }));
+  return cronjobsSvc.detail(k8sParams(clusterId, { namespace, name }));
 }
 export function applyCronJob(clusterId: number, manifest: string) {
-  return getData<boolean>(http.post("/cronjobs/apply", { cluster_id: clusterId, manifest }));
+  return cronjobsSvc.apply({ cluster_id: clusterId, manifest });
 }
 export function deleteCronJob(clusterId: number, namespace: string, name: string) {
-  return getData<boolean>(http.delete("/cronjobs", { params: { cluster_id: clusterId, namespace, name } }));
+  return cronjobsSvc.remove(k8sParams(clusterId, { namespace, name }));
 }
 export function suspendCronJob(clusterId: number, namespace: string, name: string, suspend: boolean) {
-  return getData<boolean>(http.post("/cronjobs/suspend", { cluster_id: clusterId, namespace, name, suspend }));
+  return cronjobsSvc.post<boolean>("/suspend", { cluster_id: clusterId, namespace, name, suspend });
 }
 export function triggerCronJob(clusterId: number, namespace: string, name: string) {
-  return getData<{ job_name: string }>(http.post("/cronjobs/trigger", { cluster_id: clusterId, namespace, name }));
+  return cronjobsSvc.post<{ job_name: string }>("/trigger", { cluster_id: clusterId, namespace, name });
 }
 export function listCronJobPods(clusterId: number, namespace: string, name: string) {
-  return getData<RelatedPodItem[]>(http.get("/cronjobs/pods", { params: { cluster_id: clusterId, namespace, name } }));
+  return cronjobsSvc.get<RelatedPodItem[]>("/pods", k8sParams(clusterId, { namespace, name }));
 }
 

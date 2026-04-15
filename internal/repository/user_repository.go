@@ -68,17 +68,9 @@ func (r *UserRepository) List(ctx context.Context, params UserListParams) ([]mod
 		query = query.Where("username LIKE ? OR nickname LIKE ? OR email LIKE ?", keyword, keyword, keyword)
 	}
 
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
 	var users []model.User
-	err := query.Preload("Roles").
-		Order("id DESC").
-		Offset((params.Page - 1) * params.PageSize).
-		Limit(params.PageSize).
-		Find(&users).Error
+	query = query.Preload("Roles")
+	total, err := listWithPagination(query, params.Page, params.PageSize, "id DESC", &users)
 	if err != nil {
 		return nil, 0, err
 	}

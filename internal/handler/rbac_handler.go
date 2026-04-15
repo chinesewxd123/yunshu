@@ -1,7 +1,8 @@
 package handler
 
 import (
-	"go-permission-system/internal/pkg/response"
+	"context"
+
 	"go-permission-system/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -16,99 +17,41 @@ func NewRBACHandler(svc *service.K8sRBACService) *RBACHandler {
 }
 
 func (h *RBACHandler) ListRoles(c *gin.Context) {
-	var query service.RbacListQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, err)
-		return
-	}
-	list, err := h.svc.ListRoles(c.Request.Context(), query)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"list": list})
+	handleQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
+		list, err := h.svc.ListRoles(ctx, query)
+		return gin.H{"list": list}, err
+	})
 }
 
 func (h *RBACHandler) ListRoleBindings(c *gin.Context) {
-	var query service.RbacListQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, err)
-		return
-	}
-	list, err := h.svc.ListRoleBindings(c.Request.Context(), query)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"list": list})
+	handleQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
+		list, err := h.svc.ListRoleBindings(ctx, query)
+		return gin.H{"list": list}, err
+	})
 }
 
 func (h *RBACHandler) ListClusterRoles(c *gin.Context) {
-	var query service.RbacListQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, err)
-		return
-	}
-	list, err := h.svc.ListClusterRoles(c.Request.Context(), query)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"list": list})
+	handleQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
+		list, err := h.svc.ListClusterRoles(ctx, query)
+		return gin.H{"list": list}, err
+	})
 }
 
 func (h *RBACHandler) ListClusterRoleBindings(c *gin.Context) {
-	var query service.RbacListQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, err)
-		return
-	}
-	list, err := h.svc.ListClusterRoleBindings(c.Request.Context(), query)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"list": list})
+	handleQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
+		list, err := h.svc.ListClusterRoleBindings(ctx, query)
+		return gin.H{"list": list}, err
+	})
 }
 
 func (h *RBACHandler) Detail(c *gin.Context) {
-	kind := c.Query("kind")
-	var query service.RbacNameQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, err)
-		return
-	}
-	data, err := h.svc.Detail(c.Request.Context(), kind, query)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleQueryWithKind(c, h.svc.Detail)
 }
 
 func (h *RBACHandler) Apply(c *gin.Context) {
-	var req service.RbacApplyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.Apply(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleJSONOK(c, true, h.svc.Apply)
 }
 
 func (h *RBACHandler) Delete(c *gin.Context) {
-	kind := c.Query("kind")
-	var req service.RbacDeleteRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err := h.svc.Delete(c.Request.Context(), kind, req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, true)
+	handleQueryWithKindOK(c, true, h.svc.Delete)
 }

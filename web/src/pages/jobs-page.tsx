@@ -1,7 +1,10 @@
 import { DownOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, TagsOutlined } from "@ant-design/icons";
-import { Button, Drawer, Dropdown, Form, Progress, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Dropdown, Form, Progress, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useState } from "react";
+import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
+import { useRelatedPodsDrawer } from "../components/k8s/related-pods-drawer";
+import { useWorkloadFormActions } from "../components/k8s/workload-form-actions";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { listNamespaces as listClusterNamespaces } from "../services/clusters";
 import {
@@ -11,7 +14,6 @@ import {
   listJobPods,
   listJobs,
   rerunJob,
-  type RelatedPodItem,
   type WorkloadDetail,
   type WorkloadItem,
 } from "../services/workloads";
@@ -28,30 +30,25 @@ import {
 } from "../components/k8s/workload-forms";
 
 export function JobsPage() {
-  const [formOpen, setFormOpen] = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formMode, setFormMode] = useState<"create" | "edit">("create");
-  const [formCtx, setFormCtx] = useState<{ clusterId: number; namespace: string; name?: string } | null>(null);
   const [form] = Form.useForm<JobFormValues>();
+  const formActions = useWorkloadFormActions<JobFormValues>({
+    form,
+    mode: true,
+    defaultMode: "create",
+    getDetail: async (clusterId, namespace, name) => await getJobDetail(clusterId, namespace, name),
+    toFormValues: (d) => jobObjToForm(d.object) ?? jobYamlToForm(d.yaml ?? ""),
+    buildFallbackValues: ({ recordName, namespace }) => ({
+      name: recordName,
+      namespace,
+      restart_policy: "Never",
+      container_name: recordName,
+      image: "",
+      env_pairs: [{ key: "", value: "" }],
+    }),
+  });
 
-  const [podsOpen, setPodsOpen] = useState(false);
-  const [podsLoading, setPodsLoading] = useState(false);
-  const [podsTarget, setPodsTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
-  const [pods, setPods] = useState<RelatedPodItem[]>([]);
-  const [kvOpen, setKvOpen] = useState(false);
-  const [kvTitle, setKvTitle] = useState("详情");
-  const [kvData, setKvData] = useState<Record<string, string>>({});
-
-  const openKV = (title: string, data?: Record<string, string>) => {
-    setKvTitle(title);
-    setKvData(data ?? {});
-    setKvOpen(true);
-  };
-  const renderKVIcon = (title: string, icon: JSX.Element, data?: Record<string, string>) => (
-    <Tooltip title={title}>
-      <Button type="link" size="small" icon={icon} onClick={() => openKV(title, data)} />
-    </Tooltip>
-  );
+  const { openPods, viewer: podsViewer } = useRelatedPodsDrawer(async ({ clusterId, namespace, name }) => await listJobPods(clusterId, namespace, name));
+  const { renderKVIcon, viewer } = useKeyValueViewer({ mode: "drawer" });
 
   const columns: ColumnsType<WorkloadItem> = [
     { title: "命名空间", dataIndex: "namespace", width: 110 },
@@ -130,50 +127,13 @@ spec:
                     key: "pods",
                     label: "关联 Pods",
                     icon: <EyeOutlined />,
-                    onClick: () => {
-                      setPodsTarget({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
-                      setPodsOpen(true);
-                      setPodsLoading(true);
-                      void (async () => {
-                        try {
-                          const items = await listJobPods(ctx.clusterId, ctx.namespace ?? "default", record.name);
-                          setPods(items ?? []);
-                        } finally {
-                          setPodsLoading(false);
-                        }
-                      })();
-                    },
+                    onClick: () => openPods({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }),
                   },
                   {
                     key: "edit",
                     label: "编辑",
                     icon: <EditOutlined />,
-                    onClick: () => {
-                      setFormMode("edit");
-                      setFormCtx({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
-                      setFormOpen(true);
-                      setFormLoading(true);
-                      void (async () => {
-                        try {
-                          const d = await getJobDetail(ctx.clusterId, ctx.namespace ?? "default", record.name);
-                          const fv = jobObjToForm(d.object) ?? jobYamlToForm(d.yaml ?? "");
-                          if (fv) {
-                            form.setFieldsValue({ ...fv, namespace: ctx.namespace ?? fv.namespace } as any);
-                          } else {
-                            form.setFieldsValue({
-                              name: record.name,
-                              namespace: ctx.namespace ?? "default",
-                              restart_policy: "Never",
-                              container_name: record.name,
-                              image: "",
-                              env_pairs: [{ key: "", value: "" }],
-                            } as any);
-                          }
-                        } finally {
-                          setFormLoading(false);
-                        }
-                      })();
-                    },
+                    onClick: () => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record),
                   },
                   {
                     key: "rerun",
@@ -198,53 +158,28 @@ spec:
         )}
       />
 
-      <Drawer title={kvTitle} open={kvOpen} onClose={() => setKvOpen(false)} width={720}>
-        <Table
-          rowKey={(r) => r.key}
-          pagination={false}
-          dataSource={Object.entries(kvData).map(([key, value]) => ({ key, value }))}
-          locale={{ emptyText: "暂无数据" }}
-          columns={[
-            { title: "Key", dataIndex: "key", width: 260, render: (v: string) => <Typography.Text copyable>{v}</Typography.Text> },
-            { title: "Value", dataIndex: "value", render: (v: string) => <Typography.Text copyable style={{ whiteSpace: "pre-wrap" }}>{v}</Typography.Text> },
-          ]}
-        />
-      </Drawer>
+      {viewer}
 
-      <Drawer title={`关联 Pods${podsTarget ? `：${podsTarget.name}` : ""}`} open={podsOpen} onClose={() => setPodsOpen(false)} width={900}>
-        <Table
-          rowKey={(r) => `${r.namespace}/${r.name}`}
-          loading={podsLoading}
-          dataSource={pods}
-          pagination={{ pageSize: 10 }}
-          columns={[
-            { title: "Pod 名称", dataIndex: "name" },
-            { title: "状态", dataIndex: "phase", width: 120, render: (v: string) => <Tag color={v === "Running" ? "green" : "default"}>{v || "-"}</Tag> },
-            { title: "节点", dataIndex: "node_name", width: 160 },
-            { title: "PodIP", dataIndex: "pod_ip", width: 140 },
-            { title: "重启", dataIndex: "restart_count", width: 90 },
-            { title: "启动时间", dataIndex: "start_time", width: 180 },
-          ]}
-        />
-      </Drawer>
+      {podsViewer}
 
       <WorkloadFormModal<JobFormValues>
-        title={formMode === "create" ? "Job 表单创建" : "Job 表单编辑"}
-        open={formOpen}
-        loading={formLoading}
+        title={formActions.mode === "create" ? "Job 表单创建" : "Job 表单编辑"}
+        open={formActions.open}
+        loading={formActions.loading}
         form={form}
-        onCancel={() => setFormOpen(false)}
+        onCancel={formActions.close}
         onSubmit={(values) => {
-          if (!formCtx) return;
-          setFormLoading(true);
+          if (!formActions.ctx) return;
+          const ctx = formActions.ctx;
+          formActions.setLoading(true);
           void (async () => {
             try {
               const manifest = buildJobYaml(values);
-              await applyJob(formCtx.clusterId, manifest);
+              await applyJob(ctx.clusterId, manifest);
               message.success("已应用 Job");
-              setFormOpen(false);
+              formActions.close();
             } finally {
-              setFormLoading(false);
+              formActions.setLoading(false);
             }
           })();
         }}

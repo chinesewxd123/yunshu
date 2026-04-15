@@ -1,27 +1,13 @@
 import { FileTextOutlined, TagsOutlined } from "@ant-design/icons";
-import { Button, Modal, Table, Tooltip, Typography, message } from "antd";
+import { Button, Modal, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { listNamespaces as listClusterNamespaces } from "../services/clusters";
 import { applyIngress, deleteIngress, getIngressDetail, listIngresses, restartIngressNginxPods, type IngressDetail, type IngressItem } from "../services/ingresses";
 
 export function IngressesPage() {
-  const [kvOpen, setKvOpen] = useState(false);
-  const [kvTitle, setKvTitle] = useState("详情");
-  const [kvData, setKvData] = useState<Record<string, string>>({});
-
-  const openKV = (title: string, data?: Record<string, string>) => {
-    setKvTitle(title);
-    setKvData(data ?? {});
-    setKvOpen(true);
-  };
-
-  const renderKVIcon = (title: string, icon: JSX.Element, data?: Record<string, string>) => (
-    <Tooltip title={title}>
-      <Button type="link" size="small" icon={icon} onClick={() => openKV(title, data)} />
-    </Tooltip>
-  );
+  const { renderKVIcon, viewer } = useKeyValueViewer();
 
   const columns: ColumnsType<IngressItem> = [
     { title: "命名空间", dataIndex: "namespace", width: 120 },
@@ -100,18 +86,7 @@ spec:
 `}
       />
 
-      <Modal title={kvTitle} open={kvOpen} onCancel={() => setKvOpen(false)} footer={null} width={720}>
-        <Table
-          rowKey={(r) => r.key}
-          pagination={false}
-          dataSource={Object.entries(kvData).map(([key, value]) => ({ key, value }))}
-          locale={{ emptyText: "暂无数据" }}
-          columns={[
-            { title: "Key", dataIndex: "key", width: 260, render: (v: string) => <Typography.Text copyable>{v}</Typography.Text> },
-            { title: "Value", dataIndex: "value", render: (v: string) => <Typography.Text copyable style={{ whiteSpace: "pre-wrap" }}>{v}</Typography.Text> },
-          ]}
-        />
-      </Modal>
+      {viewer}
     </>
   );
 }

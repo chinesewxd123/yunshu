@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/pagination"
 
 	"gorm.io/gorm"
 )
@@ -41,16 +40,9 @@ func (r *LoginLogRepository) List(ctx context.Context, p LoginLogListParams) ([]
 		q = q.Where("source = ?", p.Source)
 	}
 
-	var total int64
-	if err := q.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	page, pageSize := pagination.Normalize(p.Page, p.PageSize)
-	offset := (page - 1) * pageSize
-
 	var list []model.LoginLog
-	if err := q.Order("id DESC").Offset(offset).Limit(pageSize).Find(&list).Error; err != nil {
+	total, err := listWithPagination(q, p.Page, p.PageSize, "id DESC", &list)
+	if err != nil {
 		return nil, 0, err
 	}
 	return list, total, nil

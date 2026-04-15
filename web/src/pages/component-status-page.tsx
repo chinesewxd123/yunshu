@@ -64,7 +64,7 @@ export function ComponentStatusPage() {
               loading={clusterLoading}
               value={selectedClusterId}
               placeholder="请选择集群"
-              options={clusters.map((c) => ({ label: `${c.name} (#${c.id})`, value: c.id }))}
+              options={clusters.map((c) => ({ label: c.name, value: c.id }))}
               onChange={(v) => {
                 setSelectedClusterId(v);
                 void loadComponentStatuses(v);

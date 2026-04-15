@@ -1,6 +1,6 @@
-﻿app:
+app:
   name: yunshu-cmdb
-  env: dev
+  env: prod
   port: 8080
 
 http:
@@ -54,3 +54,46 @@ casbin:
 swagger:
   enabled: true
   path: /swagger
+
+security:
+  # 32 bytes key for encrypting sensitive data (base64 recommended)
+  encryption_key: "change-me-32bytes-base64"
+
+agent:
+  # log-agent 启动后用于自注册的共享密钥（建议生产环境改为强随机字符串）
+  register_secret: "change-me-agent-register-secret"
+
+alert:
+  # Alertmanager webhook 回调鉴权 token（可留空表示不校验）
+  webhook_token: "change-me-alert-token"
+  # 告警通道默认超时（毫秒），当通道未显式填写 timeout_ms 时生效
+  default_timeout_ms: 5000
+  # 告警事件请求/响应体最大落库存储长度
+  max_payload_chars: 8000
+  # 指纹去重缓存 TTL（秒）
+  dedup_ttl_seconds: 86400
+  # group_key 聚合维度（用于服务端收敛/聚合）
+  group_by: ["alertname", "cluster", "namespace", "severity", "receiver"]
+  # 同 group_key firing 状态最小发送间隔（秒）
+  notify_interval_seconds: 300
+  # 同 group_key resolved 状态最小发送间隔（秒），用于恢复汇总去抖
+  resolved_notify_interval_seconds: 30
+  # group_key 状态在 Redis 中过期时间（秒）
+  aggregate_ttl_seconds: 86400
+  # 平台消息长度限制（字符数，按 rune 计算；默认值偏保守，避免钉钉/企微超限）
+  platform_limits:
+    dingding_max_chars: 4500
+    wecom_max_chars: 3500
+    generic_max_chars: 8000
+  # Prometheus 地址（用于从 generatorURL 中解析表达式并查询当前值）
+  prometheus_url: "http://10.10.10.103:9091"
+  # Prometheus Bearer Token（无则留空）
+  prometheus_token: ""
+  # Prometheus 查询超时（秒）
+  prom_query_timeout_seconds: 5
+  # P3异步增强开关：开启后，通知主链路不阻塞Prometheus查询
+  prometheus_enrich_enabled: true
+  # Prometheus异步增强队列长度
+  prometheus_enrich_queue_size: 1024
+  # Prometheus异步增强worker数量
+  prometheus_enrich_workers: 4

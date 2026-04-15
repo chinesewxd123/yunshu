@@ -1,0 +1,68 @@
+# monitoring 命名空间最小 Pod 告警（仅依赖 kube-state-metrics 最基础的 Pod 指标）
+# 不包含：kube_pod_deletion_timestamp（部分环境查不到）
+# 不包含：job= 筛选（兼容 job 为 kubernetes-kube-state-metrics / kube-state-metrics 等）
+#
+# 部署前自检（任一条有数据即可认为 KSM Pod 指标正常）：
+#   kube_pod_info{namespace="monitoring"}
+#   kube_pod_status_phase{namespace="monitoring"}
+#
+# 放入 rule_files 目录后：promtool check rules 本文件 && reload Prometheus
+
+groups:
+  - name: monitoring-minimal-pod-alerts
+    interval: 30s
+    rules:
+      - alert: MonitoringMinimalPodPending
+        annotations:
+          summary: "[monitoring] Pod Pending"
+          description: "{{ $labels.namespace }}/{{ $labels.pod }} 处于 Pending，请查调度/资源/镜像。"
+        expr: |
+          kube_pod_status_phase{namespace="monitoring", phase="Pending"} == 1
+        for: 5m
+        labels:
+          severity: warning
+
+      - alert: MonitoringMinimalPodFailed
+        annotations:
+          summary: "[monitoring] Pod Failed"
+          description: "{{ $labels.namespace }}/{{ $labels.pod }} 处于 Failed，请查事件与退出原因。"
+        expr: |
+          kube_pod_status_phase{namespace="monitoring", phase="Failed"} == 1
+        for: 2m
+        labels:
+          severity: warning
+
+      - alert: MonitoringMinimalPodUnknown
+        annotations:
+          summary: "[monitoring] Pod Unknown"
+          description: "{{ $labels.namespace }}/{{ $labels.pod }} phase=Unknown，常与节点/网络有关。"
+        expr: |
+          kube_pod_status_phase{namespace="monitoring", phase="Unknown"} == 1
+        for: 5m
+        labels:
+          severity: warning
+
+      - alert: MonitoringMinimalContainerRestarts
+        annotations:
+          summary: "[monitoring] 容器累计重启较多"
+          description: >-
+            {{ $labels.namespace }}/{{ $labels.pod }} 容器 {{ $labels.container }} 累计重启 {{ printf "%.0f" $value }} 次。
+        expr: |
+          kube_pod_container_status_restarts_total{namespace="monitoring"} >= 3
+        for: 10m
+        labels:
+          severity: warning
+
+      - alert: MonitoringMinimalImagePullOrErr
+        annotations:
+          summary: "[monitoring] 镜像拉取类等待"
+          description: >-
+            {{ $labels.namespace }}/{{ $labels.pod }} 容器 {{ $labels.container }} reason={{ $labels.reason }}
+        expr: |
+          kube_pod_container_status_waiting_reason{
+            namespace="monitoring",
+            reason=~"ImagePullBackOff|ErrImagePull"
+          } == 1
+        for: 5m
+        labels:
+          severity: warning
