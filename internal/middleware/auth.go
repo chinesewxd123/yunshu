@@ -3,13 +3,13 @@ package middleware
 import (
 	"strings"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/auth"
-	logx "go-permission-system/internal/pkg/logger"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/repository"
-	"go-permission-system/internal/store"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/auth"
+	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/repository"
+	"yunshu/internal/store"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"

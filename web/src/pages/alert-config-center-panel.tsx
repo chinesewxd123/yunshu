@@ -28,7 +28,7 @@ export type AlertConfigCenterPanelProps = {
 
 const webhookPayloadTemplates: Record<string, Record<string, unknown>> = {
   warning_prod: {
-    receiver: "go-permission-system-webhook",
+    receiver: "yunshu-webhook",
     status: "firing",
     alerts: [
       {
@@ -52,7 +52,7 @@ const webhookPayloadTemplates: Record<string, Record<string, unknown>> = {
     ],
   },
   critical_prod: {
-    receiver: "go-permission-system-webhook",
+    receiver: "yunshu-webhook",
     status: "firing",
     alerts: [
       {
@@ -76,7 +76,7 @@ const webhookPayloadTemplates: Record<string, Record<string, unknown>> = {
     ],
   },
   resolved_prod: {
-    receiver: "go-permission-system-webhook",
+    receiver: "yunshu-webhook",
     status: "resolved",
     alerts: [
       {

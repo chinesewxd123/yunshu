@@ -50,17 +50,6 @@ export function PodPage() {
   const [fileContent, setFileContent] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [detailSubmitting, setDetailSubmitting] = useState(false);
-  const [detailForm] = Form.useForm<{
-    image: string;
-    command?: string;
-    container_name?: string;
-    image_pull_policy?: "Always" | "IfNotPresent" | "Never";
-    restart_policy?: "Always" | "OnFailure" | "Never";
-    labels_text?: string;
-    node_selector_text?: string;
-    priority_class_name?: string;
-  }>();
   const [execCommand, setExecCommand] = useState("sh");
   const execTermHostRef = useRef<HTMLDivElement | null>(null);
   const execTermRef = useRef<Terminal | null>(null);
@@ -314,70 +303,6 @@ export function PodPage() {
     ]);
     setDetail(d);
     setEvents(e.list || []);
-    detailForm.setFieldsValue({
-      image: d.containers?.[0]?.image || "",
-      command: "",
-      container_name: d.containers?.[0]?.name || d.name,
-      image_pull_policy: "IfNotPresent",
-      restart_policy: "Always",
-      labels_text: d.labels && Object.keys(d.labels).length > 0 ? Object.entries(d.labels).map(([k, v]) => `${k}=${v}`).join("\n") : "",
-      node_selector_text: d.node_selector && Object.keys(d.node_selector).length > 0 ? Object.entries(d.node_selector).map(([k, v]) => `${k}=${v}`).join("\n") : "",
-      priority_class_name: d.priority_class_name || "",
-    });
-  }
-
-  function parseKVText(text?: string): Record<string, string> {
-    const out: Record<string, string> = {};
-    const lines = String(text || "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-    for (const line of lines) {
-      const idx = line.indexOf("=");
-      if (idx <= 0) continue;
-      const key = line.slice(0, idx).trim();
-      const value = line.slice(idx + 1).trim();
-      if (key) out[key] = value;
-    }
-    return out;
-  }
-
-  async function submitDetailEdit() {
-    if (!clusterId || !detail) return;
-    const values = await detailForm.validateFields();
-    setDetailSubmitting(true);
-    try {
-      const labels = parseKVText(values.labels_text);
-      const nodeSelector = parseKVText(values.node_selector_text);
-      await updatePodSimple({
-        cluster_id: clusterId,
-        namespace: detail.namespace,
-        name: detail.name,
-        image: values.image,
-        command: (values.command || "").trim() || undefined,
-        container_name: (values.container_name || "").trim() || detail.containers?.[0]?.name || detail.name,
-        image_pull_policy: values.image_pull_policy || "IfNotPresent",
-        restart_policy: values.restart_policy || "Always",
-        labels: Object.keys(labels).length > 0 ? labels : undefined,
-        node_selector: Object.keys(nodeSelector).length > 0 ? nodeSelector : undefined,
-        priority_class_name: (values.priority_class_name || "").trim() || undefined,
-        tolerations: (detail.tolerations || []).map((t) => ({
-          key: t.key,
-          operator: t.operator,
-          value: t.value,
-          effect: t.effect,
-          toleration_seconds: t.tolerationSeconds,
-        })),
-        affinity: detail.affinity,
-      });
-      message.success("Pod 详情已保存并重建");
-      if (selected) {
-        await loadDetail(selected);
-      }
-      await loadPods();
-    } finally {
-      setDetailSubmitting(false);
-    }
   }
 
   function closeExecSocket() {
@@ -1124,19 +1049,12 @@ export function PodPage() {
         onClose={() => setDetailOpen(false)}
         width={760}
         className="detail-edit-drawer"
-        extra={
-          detail ? (
-            <Button type="primary" loading={detailSubmitting} onClick={() => void submitDetailEdit()}>
-              保存修改
-            </Button>
-          ) : null
-        }
       >
         {!detail ? (
           <Typography.Text type="secondary">加载详情中...</Typography.Text>
         ) : (
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
-            <Form form={detailForm} layout="vertical" className="detail-edit-form">
+            <Form layout="vertical" className="detail-edit-form">
               <Form.Item label="名称">
                 <Input value={`${detail.namespace}/${detail.name}`} readOnly />
               </Form.Item>
@@ -1167,43 +1085,47 @@ export function PodPage() {
               <Form.Item label="启动时间">
                 <Input value={formatDateTime(detail.start_time)} readOnly />
               </Form.Item>
-              <Form.Item label="镜像" name="image" rules={[{ required: true, message: "请输入镜像" }]}>
-                <Input />
+              <Form.Item label="镜像">
+                <Input value={detail.containers?.[0]?.image || "-"} readOnly />
               </Form.Item>
-              <Form.Item label="容器名" name="container_name">
-                <Input />
+              <Form.Item label="容器名">
+                <Input value={detail.containers?.[0]?.name || detail.name} readOnly />
               </Form.Item>
-              <Form.Item label="启动命令" name="command">
-                <Input placeholder="例如：sleep 3600" />
+              <Form.Item label="启动命令">
+                <Input value="-（仅支持通过高级编辑修改）" readOnly />
               </Form.Item>
               <Space style={{ width: "100%" }} size="middle">
-                <Form.Item label="镜像拉取策略" name="image_pull_policy" style={{ flex: 1 }}>
-                  <Select
-                    options={[
-                      { label: "IfNotPresent", value: "IfNotPresent" },
-                      { label: "Always", value: "Always" },
-                      { label: "Never", value: "Never" },
-                    ]}
-                  />
+                <Form.Item label="镜像拉取策略" style={{ flex: 1 }}>
+                  <Input value={(detail as any).image_pull_policy || "-"} readOnly />
                 </Form.Item>
-                <Form.Item label="重启策略" name="restart_policy" style={{ flex: 1 }}>
-                  <Select
-                    options={[
-                      { label: "Always", value: "Always" },
-                      { label: "OnFailure", value: "OnFailure" },
-                      { label: "Never", value: "Never" },
-                    ]}
-                  />
+                <Form.Item label="重启策略" style={{ flex: 1 }}>
+                  <Input value={(detail as any).restart_policy || "-"} readOnly />
                 </Form.Item>
               </Space>
-              <Form.Item label="PriorityClassName" name="priority_class_name">
-                <Input placeholder="例如：system-cluster-critical" />
+              <Form.Item label="PriorityClassName">
+                <Input value={detail.priority_class_name || "-"} readOnly />
               </Form.Item>
-              <Form.Item label="标签（每行 key=value）" name="labels_text">
-                <Input.TextArea rows={3} />
+              <Form.Item label="标签（每行 key=value）">
+                <Input.TextArea
+                  rows={3}
+                  value={
+                    detail.labels && Object.keys(detail.labels).length > 0
+                      ? Object.entries(detail.labels).map(([k, v]) => `${k}=${v}`).join("\n")
+                      : "-"
+                  }
+                  readOnly
+                />
               </Form.Item>
-              <Form.Item label="NodeSelector（每行 key=value）" name="node_selector_text">
-                <Input.TextArea rows={3} />
+              <Form.Item label="NodeSelector（每行 key=value）">
+                <Input.TextArea
+                  rows={3}
+                  value={
+                    detail.node_selector && Object.keys(detail.node_selector).length > 0
+                      ? Object.entries(detail.node_selector).map(([k, v]) => `${k}=${v}`).join("\n")
+                      : "-"
+                  }
+                  readOnly
+                />
               </Form.Item>
               <Form.Item label="注解">
                 <Input.TextArea

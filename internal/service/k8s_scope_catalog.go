@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"go-permission-system/internal/model"
+	"yunshu/internal/model"
 )
 
 const (

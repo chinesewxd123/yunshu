@@ -3,8 +3,8 @@ package router
 import (
 	"strings"
 
-	swaggerDocs "go-permission-system/docs/swagger"
-	"go-permission-system/internal/bootstrap"
+	swaggerDocs "yunshu/docs/swagger"
+	"yunshu/internal/bootstrap"
 
 	swaggerfiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -24,9 +24,7 @@ func registerSwagger(app *bootstrap.App) {
 
 	app.Engine.GET(basePath+"/*any", ginSwagger.WrapHandler(
 		swaggerfiles.Handler,
-		ginSwagger.DocExpansion("list"),
-		ginSwagger.DefaultModelsExpandDepth(-1),
-		ginSwagger.PersistAuthorization(true),
+		ginSwagger.DeepLinking(true),
 	))
 }
 

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go-permission-system/internal/model"
+	"yunshu/internal/model"
 
 	"gorm.io/gorm"
 )

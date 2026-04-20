@@ -1,4 +1,4 @@
-# 产品手册（YunShu CMDB / go-permission-system）
+# 产品手册（YunShu CMDB / yunshu）
 
 本目录为与源码同步维护的**需求、数据库、接口、权限**说明，配合根目录 `README.md` 与 `docs/deployment/` 下的部署文档使用。
 

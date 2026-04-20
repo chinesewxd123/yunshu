@@ -3,7 +3,7 @@ package server
 import (
 	"errors"
 
-	"go-permission-system/internal/pkg/apperror"
+	"yunshu/internal/pkg/apperror"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

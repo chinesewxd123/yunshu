@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"go-permission-system/internal/model"
+	"yunshu/internal/model"
 
 	"gorm.io/gorm"
 )

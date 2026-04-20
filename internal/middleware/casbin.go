@@ -1,11 +1,11 @@
 package middleware
 
 import (
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/auth"
-	logx "go-permission-system/internal/pkg/logger"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/service"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/auth"
+	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/service"
 	"strings"
 
 	"github.com/casbin/casbin/v2"

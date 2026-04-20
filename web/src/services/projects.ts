@@ -47,7 +47,6 @@ export interface ProjectMemberItem {
   username: string;
   nickname: string;
   email?: string | null;
-  role: string;
   created_at: string;
 }
 
@@ -55,7 +54,7 @@ export async function listProjectMembers(projectId: number) {
   return await getData<{ list: ProjectMemberItem[] }>(http.get(`/projects/${projectId}/members`));
 }
 
-export async function addProjectMember(projectId: number, payload: { user_id: number; role?: string }) {
+export async function addProjectMember(projectId: number, payload: { user_id: number }) {
   return await getData<ProjectMemberItem>(http.post(`/projects/${projectId}/members`, payload));
 }
 

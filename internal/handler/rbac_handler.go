@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 
-	"go-permission-system/internal/service"
+	"yunshu/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"go-permission-system/internal/bootstrap"
+	"yunshu/internal/bootstrap"
 
 	"github.com/spf13/cobra"
 )

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"go-permission-system/internal/pkg/apperror"
+	"yunshu/internal/pkg/apperror"
 )
 
 func ValidateJSONObjectString(v string, fieldName string) error {

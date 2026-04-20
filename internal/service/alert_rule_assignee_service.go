@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/repository"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/repository"
 
 	"gorm.io/gorm"
 )
@@ -146,10 +146,16 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, rule
 		}
 	}
 	// 未配置处理人时仍可仅依赖项目成员；与 project_members 表对齐。
-	var rule model.AlertMonitorRule
 	if s.memberRepo != nil && s.userRepo != nil {
-		if err := s.db.WithContext(ctx).First(&rule, ruleID).Error; err == nil && rule.ProjectID > 0 {
-			uids, err := s.memberRepo.ListUserIDsByProject(ctx, rule.ProjectID)
+		var projectID uint
+		_ = s.db.WithContext(ctx).
+			Table("alert_monitor_rules amr").
+			Select("ad.project_id AS project_id").
+			Joins("JOIN alert_datasources ad ON ad.id = amr.datasource_id AND ad.deleted_at IS NULL").
+			Where("amr.id = ? AND amr.deleted_at IS NULL", ruleID).
+			Scan(&projectID).Error
+		if projectID > 0 {
+			uids, err := s.memberRepo.ListUserIDsByProject(ctx, projectID)
 			if err == nil && len(uids) > 0 {
 				users, err := s.userRepo.ListByIDs(ctx, uids)
 				if err == nil {

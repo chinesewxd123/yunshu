@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/model"
+	"yunshu/internal/model"
 )
 
 type groupAggregateSpec struct {

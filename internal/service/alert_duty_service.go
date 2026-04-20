@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/pagination"
-	"go-permission-system/internal/repository"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/pagination"
+	"yunshu/internal/repository"
 
 	"gorm.io/gorm"
 )
@@ -47,7 +47,10 @@ func (s *AlertDutyService) ListBlocks(ctx context.Context, q AlertDutyBlockListQ
 		tx = tx.Where("monitor_rule_id = ?", *q.MonitorRuleID)
 	}
 	if q.ProjectID != nil {
-		tx = tx.Joins("JOIN alert_monitor_rules amr ON amr.id = alert_duty_blocks.monitor_rule_id").Where("amr.project_id = ?", *q.ProjectID)
+		tx = tx.
+			Joins("JOIN alert_monitor_rules amr ON amr.id = alert_duty_blocks.monitor_rule_id AND amr.deleted_at IS NULL").
+			Joins("JOIN alert_datasources ad ON ad.id = amr.datasource_id AND ad.deleted_at IS NULL").
+			Where("ad.project_id = ?", *q.ProjectID)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {

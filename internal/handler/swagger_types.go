@@ -1,6 +1,6 @@
 package handler
 
-import "go-permission-system/internal/service"
+import "yunshu/internal/service"
 
 type HealthData struct {
 	Name string `json:"name" example:"yunshu-cmdb"`

@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/auth"
-	logx "go-permission-system/internal/pkg/logger"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/repository"
-	"go-permission-system/internal/service"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/auth"
+	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/repository"
+	"yunshu/internal/service"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"
@@ -145,13 +145,7 @@ func K8sScopeAuthorize(
 		allowed := false
 		for _, res := range resources {
 			for _, act := range actionCandidates {
-				policies, err := enforcer.GetFilteredPolicy(1, res, act)
-				if err != nil {
-					logger.Error.Error("query scoped policies failed", "error", err, "resource", res, "action", act)
-					response.Error(c, apperror.Internal("权限校验失败"))
-					c.Abort()
-					return
-				}
+				policies := enforcer.GetFilteredPolicy(1, res, act)
 				if len(policies) == 0 {
 					continue
 				}

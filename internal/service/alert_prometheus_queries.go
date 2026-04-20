@@ -6,7 +6,7 @@ import (
 	neturl "net/url"
 	"strings"
 
-	"go-permission-system/internal/pkg/platformhttp"
+	"yunshu/internal/pkg/platformhttp"
 )
 
 func (s *AlertService) queryCurrentValueByGeneratorURL(ctx context.Context, generatorURL string) (string, error) {

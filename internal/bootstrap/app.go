@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"time"
 
-	"go-permission-system/internal/config"
-	"go-permission-system/internal/middleware"
-	"go-permission-system/internal/model"
-	logx "go-permission-system/internal/pkg/logger"
-	"go-permission-system/internal/pkg/mailer"
+	"yunshu/internal/config"
+	"yunshu/internal/middleware"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/casbinadapter"
+	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/pkg/mailer"
 
 	"github.com/casbin/casbin/v2"
-	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/mysql"
@@ -161,11 +161,16 @@ func (b *Builder) WithCasbin() *Builder {
 		return b
 	}
 
-	adapter, err := gormadapter.NewAdapterByDB(b.app.DB)
-	if err != nil {
-		b.err = err
-		return b
-	}
+	// Defensive cleanup: if casbin_rule contains malformed rows (e.g. empty ptype),
+	// casbin's LoadPolicyLine may panic. Keep startup resilient by pruning obviously
+	// invalid rows before adapter loads policies.
+	// Keep Casbin startup resilient: prune malformed rules that can make casbin panic
+	// when parsing policy lines (e.g. invalid/garbage ptype).
+	//
+	// Valid Casbin ptype is typically: p, g, p2, g2, ...
+	_ = b.app.DB.Exec("DELETE FROM casbin_rule WHERE ptype IS NULL OR ptype = '' OR ptype NOT REGEXP '^(p|g)[0-9]*$'").Error
+
+	adapter := casbinadapter.NewSafeGormAdapter(b.app.DB, "casbin_rule")
 
 	enforcer, err := casbin.NewSyncedEnforcer(b.app.Config.Casbin.ModelPath, adapter)
 	if err != nil {

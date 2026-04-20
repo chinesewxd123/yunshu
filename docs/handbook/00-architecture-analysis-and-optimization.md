@@ -26,7 +26,7 @@
 
 ### 2.2 告警通知邮箱合并
 
-`AlertRuleAssigneeService.ResolveNotifyEmails`：处理人（用户/部门 JSON）→ 用户邮箱；规则若绑定 `project_id`，再合并 **项目成员** 中启用且有邮箱的用户（去重）。与 `project_members` 表及监控规则 `project_id` 对齐。
+`AlertRuleAssigneeService.ResolveNotifyEmails`：处理人（用户/部门 JSON）→ 用户邮箱；规则所属项目由数据源派生，再合并 **项目成员** 中启用且有邮箱的用户（去重）。与 `project_members` 表对齐。
 
 ### 2.3 gRPC（日志/Agent）
 

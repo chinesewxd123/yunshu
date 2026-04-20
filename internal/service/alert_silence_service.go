@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/pagination"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/pagination"
 
 	"gorm.io/gorm"
 )

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"go-permission-system/internal/pkg/apperror"
+	"yunshu/internal/pkg/apperror"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

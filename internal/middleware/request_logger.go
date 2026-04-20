@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"go-permission-system/internal/pkg/auth"
-	logx "go-permission-system/internal/pkg/logger"
+	"yunshu/internal/pkg/auth"
+	logx "yunshu/internal/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

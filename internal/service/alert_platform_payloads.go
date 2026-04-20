@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go-permission-system/internal/pkg/alertnotify"
-	"go-permission-system/internal/pkg/parseutil"
+	"yunshu/internal/pkg/alertnotify"
+	"yunshu/internal/pkg/parseutil"
 )
 
 func buildWechatPayload(title string, payload map[string]interface{}, settings map[string]interface{}, atMobiles []string, atUsers []string) map[string]interface{} {

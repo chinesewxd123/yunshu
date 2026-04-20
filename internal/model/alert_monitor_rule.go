@@ -11,7 +11,6 @@ type AlertMonitorRule struct {
 	ID uint `json:"id" gorm:"primaryKey;comment:主键ID"`
 
 	DatasourceID uint   `json:"datasource_id" gorm:"not null;index;comment:告警数据源ID"`
-	ProjectID    uint   `json:"project_id" gorm:"not null;default:0;index;comment:所属项目ID（0 表示未绑定）"`
 	Name         string `json:"name" gorm:"size:128;not null;index;comment:规则名称"`
 	Expr         string `json:"expr" gorm:"type:text;not null;comment:PromQL 表达式"`
 

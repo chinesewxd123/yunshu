@@ -156,16 +156,13 @@ export function StatefulsetsPage() {
           return (res.list ?? []).map((n) => ({ label: n.name, value: n.name }));
         }}
         columns={columns}
-        showEditButton={false}
+        onEdit={(record, ctx) => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record)}
         api={{
           list: async ({ clusterId, namespace, keyword }) => await listStatefulSets(clusterId, namespace ?? "default", keyword),
           detail: async ({ clusterId, namespace, name }) => await getStatefulSetDetail(clusterId, namespace ?? "default", name),
           apply: async ({ clusterId, manifest }) => await applyStatefulSet(clusterId, manifest),
           remove: async ({ clusterId, namespace, name }) => await deleteStatefulSet(clusterId, namespace ?? "default", name),
         }}
-        renderDetail={(d, { detailYaml, setDetailYaml }) => (
-          <StatefulSetDetailQuickEdit detail={d} detailYaml={detailYaml} setDetailYaml={setDetailYaml} />
-        )}
         onToolbarReady={(ctx) => {
           listReloadRef.current = ctx.reload;
         }}
@@ -264,11 +261,6 @@ spec:
                     label: "关联 Pods",
                     icon: <EyeOutlined />,
                     onClick: () => openPods({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }),
-                  },
-                  {
-                    key: "edit",
-                    label: "编辑",
-                    onClick: () => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record),
                   },
                   {
                     key: "scale",

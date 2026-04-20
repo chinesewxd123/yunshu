@@ -3,7 +3,7 @@ package handler
 import (
 	"time"
 
-	"go-permission-system/internal/pkg/response"
+	"yunshu/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

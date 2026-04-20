@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"go-permission-system/internal/model"
+	"yunshu/internal/model"
 
 	"gorm.io/gorm"
 )

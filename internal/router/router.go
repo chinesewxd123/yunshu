@@ -1,12 +1,12 @@
 package router
 
 import (
-	"go-permission-system/internal/bootstrap"
-	grpcclient "go-permission-system/internal/grpc/client"
-	"go-permission-system/internal/handler"
-	"go-permission-system/internal/middleware"
-	"go-permission-system/internal/repository"
-	"go-permission-system/internal/service"
+	"yunshu/internal/bootstrap"
+	grpcclient "yunshu/internal/grpc/client"
+	"yunshu/internal/handler"
+	"yunshu/internal/middleware"
+	"yunshu/internal/repository"
+	"yunshu/internal/service"
 )
 
 func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {

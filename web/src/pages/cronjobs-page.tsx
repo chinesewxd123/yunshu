@@ -1,4 +1,4 @@
-import { DownOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, TagsOutlined } from "@ant-design/icons";
+import { DownOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, TagsOutlined } from "@ant-design/icons";
 import { Button, Dropdown, Form, Input, Progress, Space, Switch, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useRef } from "react";
@@ -165,7 +165,7 @@ export function CronjobsPage() {
           return (res.list ?? []).map((n) => ({ label: n.name, value: n.name }));
         }}
         columns={columns}
-        showEditButton={false}
+        onEdit={(record, ctx) => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record)}
         onToolbarReady={(ctx) => {
           listReloadRef.current = ctx.reload;
         }}
@@ -248,7 +248,6 @@ export function CronjobsPage() {
           apply: async ({ clusterId, manifest }) => await applyCronJob(clusterId, manifest),
           remove: async ({ clusterId, namespace, name }) => await deleteCronJob(clusterId, namespace ?? "default", name),
         }}
-        renderDetail={(d, { detailYaml, setDetailYaml }) => <CronJobDetailQuickEdit detail={d} detailYaml={detailYaml} setDetailYaml={setDetailYaml} />}
         createTemplate={({ namespace }) => `apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -277,12 +276,6 @@ spec:
                     label: "关联 Pods",
                     icon: <EyeOutlined />,
                     onClick: () => openPods({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }),
-                  },
-                  {
-                    key: "edit",
-                    label: "编辑",
-                    icon: <EditOutlined />,
-                    onClick: () => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record),
                   },
                   {
                     key: "trigger",

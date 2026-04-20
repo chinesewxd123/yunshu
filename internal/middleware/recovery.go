@@ -3,9 +3,9 @@ package middleware
 import (
 	"runtime/debug"
 
-	logx "go-permission-system/internal/pkg/logger"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/response"
+	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

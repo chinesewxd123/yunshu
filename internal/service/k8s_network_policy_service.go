@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/k8sutil"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/k8sutil"
 
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

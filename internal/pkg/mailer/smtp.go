@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/config"
+	"yunshu/internal/config"
 )
 
 // smtpEnvelopeAddr 返回 MAIL FROM / RCPT TO 使用的裸邮箱（addr-spec）。若配置成「名称 <a@b>」，只取 a@b；否则会触发 QQ 等服务器 501 bad syntax。

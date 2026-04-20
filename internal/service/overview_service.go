@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"

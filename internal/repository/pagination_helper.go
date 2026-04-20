@@ -1,7 +1,7 @@
 package repository
 
 import (
-	"go-permission-system/internal/pkg/pagination"
+	"yunshu/internal/pkg/pagination"
 
 	"gorm.io/gorm"
 )

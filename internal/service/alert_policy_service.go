@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/pagination"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/pagination"
 
 	amconfig "github.com/prometheus/alertmanager/config"
 	"gorm.io/gorm"

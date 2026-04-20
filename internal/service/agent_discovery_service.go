@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/repository"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/repository"
 )
 
 type AgentDiscoveryService struct {

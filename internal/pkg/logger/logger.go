@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go-permission-system/internal/config"
+	"yunshu/internal/config"
 )
 
 type Logger struct {

@@ -195,7 +195,7 @@ export function DeploymentsPage() {
           apply: async ({ clusterId, manifest }) => await applyDeployment(clusterId, manifest),
           remove: async ({ clusterId, namespace, name }) => await deleteDeployment(clusterId, namespace ?? "default", name),
         }}
-        renderDetail={(d, { detailYaml, setDetailYaml }) => <DeploymentDetailQuickEdit detail={d} detailYaml={detailYaml} setDetailYaml={setDetailYaml} />}
+        onEdit={(record, ctx) => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record)}
         onToolbarReady={(ctx) => {
           listReloadRef.current = ctx.reload;
         }}
@@ -261,7 +261,6 @@ export function DeploymentsPage() {
             </Form.Item>
           </WorkloadFormModal>
         )}
-        showEditButton={false}
         createTemplate={({ namespace }) => `apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -293,12 +292,6 @@ spec:
                     label: "关联 Pods",
                     icon: <EyeOutlined />,
                     onClick: () => openPods({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }),
-                  },
-                  {
-                    key: "edit",
-                    label: "编辑 Deployment",
-                    icon: <FileTextOutlined />,
-                    onClick: () => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record),
                   },
                   {
                     key: "scale",

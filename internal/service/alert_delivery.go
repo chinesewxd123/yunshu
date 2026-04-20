@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/alertnotify"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/parseutil"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/alertnotify"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/parseutil"
 )
 
 type channelNotifyFunc func(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}, settings map[string]interface{}) (int, string, error)

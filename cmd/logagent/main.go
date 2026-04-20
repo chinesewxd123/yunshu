@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"go-permission-system/internal/agent"
+	"yunshu/internal/agent"
 )
 
 func main() {

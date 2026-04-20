@@ -341,6 +341,13 @@ function unwrapPrometheusQueryData(body: unknown): unknown {
 
 export function AlertMonitorPlatformPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const projectContextId = useMemo(() => {
+    const raw = String(searchParams.get("project_id") || "").trim();
+    if (!raw) return undefined;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+    return n;
+  }, [searchParams]);
   const tab: TabKey = useMemo(() => {
     const t = searchParams.get("tab");
     if (t === "config" || t === "silences" || t === "rules" || t === "promql") return t;
@@ -373,6 +380,18 @@ export function AlertMonitorPlatformPage() {
         p.set("tab", "config");
         if (key === "policies") p.delete("cfg");
         else p.set("cfg", key);
+        return p;
+      },
+      { replace: true },
+    );
+  }
+
+  function setProjectContext(projectID?: number) {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (projectID && Number.isFinite(projectID) && projectID > 0) p.set("project_id", String(projectID));
+        else p.delete("project_id");
         return p;
       },
       { replace: true },
@@ -493,6 +512,11 @@ export function AlertMonitorPlatformPage() {
   /** 批量静默（从活跃告警勾选）时共用的说明，写入每条 alert_silences.comment */
   const [quickSilenceComment, setQuickSilenceComment] = useState("");
   const projectOptions = useMemo(() => projects.map((p) => ({ label: `${p.name} (${p.code})`, value: p.id })), [projects]);
+  const activeProjectName = useMemo(() => {
+    if (!projectContextId) return "";
+    const p = projects.find((it) => it.id === projectContextId);
+    return p ? `${p.name} (${p.code})` : `项目 ${projectContextId}`;
+  }, [projects, projectContextId]);
 
   const promTableView = useMemo(() => buildPromTableView(promDataInner), [promDataInner]);
   const promScalarText = useMemo(() => formatPromScalarSummary(promDataInner), [promDataInner]);
@@ -702,8 +726,8 @@ export function AlertMonitorPlatformPage() {
     void fillDutyFromUserIds(blkUserIds);
   }, [blkModalOpen, blkUserIds, fillDutyFromUserIds]);
 
-  const loadDatasources = useCallback(async () => {
-    const r = await listAlertDatasources({ page: 1, page_size: 200 });
+  const loadDatasources = useCallback(async (projectID?: number) => {
+    const r = await listAlertDatasources({ project_id: projectID, page: 1, page_size: 200 });
     setDsList(r.list ?? []);
     setPromDsId((prev) => prev ?? r.list?.[0]?.id);
   }, []);
@@ -732,8 +756,8 @@ export function AlertMonitorPlatformPage() {
     }
   }, [silNativeDsId]);
 
-  const loadRules = useCallback(async () => {
-    const r = await listAlertMonitorRules({ page: 1, page_size: 200 });
+  const loadRules = useCallback(async (projectID?: number) => {
+    const r = await listAlertMonitorRules({ project_id: projectID, page: 1, page_size: 200 });
     setRuleList(r.list ?? []);
   }, []);
   useEffect(() => {
@@ -759,10 +783,11 @@ export function AlertMonitorPlatformPage() {
     void (async () => {
       setLoading(true);
       try {
-        if (tab === "datasources" || tab === "promql") await loadDatasources();
-        if (tab === "silences") await Promise.all([loadSilences(), loadDatasources()]);
+        if (tab === "datasources") await loadDatasources(projectContextId);
+        if (tab === "promql") await loadDatasources(projectContextId);
+        if (tab === "silences") await Promise.all([loadSilences(), loadDatasources(projectContextId)]);
         if (tab === "rules") {
-          await Promise.all([loadDatasources(), loadRules()]);
+          await Promise.all([loadDatasources(projectContextId), loadRules(projectContextId)]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -771,14 +796,20 @@ export function AlertMonitorPlatformPage() {
     return () => {
       cancelled = true;
     };
-  }, [tab, loadDatasources, loadSilences, loadRules]);
+  }, [tab, projectContextId, loadDatasources, loadSilences, loadRules]);
 
   useEffect(() => {
     if (tab !== "silences") return;
-    if (silNativeDsId != null) return;
+    if (silNativeDsId != null && dsList.some((d) => d.id === silNativeDsId)) return;
     const first = dsList.find((d) => d.enabled)?.id ?? dsList[0]?.id;
-    if (first) setSilNativeDsId(first);
+    setSilNativeDsId(first);
   }, [tab, dsList, silNativeDsId]);
+  useEffect(() => {
+    if (tab !== "promql") return;
+    if (promDsId != null && dsList.some((d) => d.id === promDsId)) return;
+    const first = dsList.find((d) => d.enabled)?.id ?? dsList[0]?.id;
+    setPromDsId(first);
+  }, [tab, dsList, promDsId]);
 
   async function runProm() {
     if (!promDsId) {
@@ -830,6 +861,7 @@ export function AlertMonitorPlatformPage() {
 
   const dsColumns = [
     { title: "ID", dataIndex: "id", width: 70 },
+    { title: "项目", dataIndex: "project_name", width: 160, render: (v: string, r: AlertDatasourceItem) => v || String(r.project_id || "-") },
     { title: "名称", dataIndex: "name" },
     { title: "地址", dataIndex: "base_url", ellipsis: true },
     { title: "启用", dataIndex: "enabled", width: 80, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
@@ -854,13 +886,15 @@ export function AlertMonitorPlatformPage() {
   function openDsCreate() {
     setDsCurrent(null);
     dsForm.resetFields();
-    dsForm.setFieldsValue({ type: "prometheus", skip_tls_verify: false, enabled: true });
+    const fallbackProjectID = projectContextId ?? projects[0]?.id;
+    dsForm.setFieldsValue({ project_id: fallbackProjectID, type: "prometheus", skip_tls_verify: false, enabled: true });
     setDsModalOpen(true);
   }
 
   function openDsEdit(r: AlertDatasourceItem) {
     setDsCurrent(r);
     dsForm.setFieldsValue({
+      project_id: r.project_id,
       name: r.name,
       type: r.type,
       base_url: r.base_url,
@@ -1159,8 +1193,19 @@ export function AlertMonitorPlatformPage() {
 
   const ruleColumns = [
     { title: "ID", dataIndex: "id", width: 70 },
+    { title: "项目", dataIndex: "project_name", width: 160, render: (v: string, r: AlertMonitorRuleItem) => v || (r.project_id ? String(r.project_id) : "—") },
     { title: "名称", dataIndex: "name", width: 160 },
-    { title: "数据源", dataIndex: "datasource_id", width: 90 },
+    {
+      title: "数据源",
+      key: "ds",
+      width: 200,
+      render: (_: unknown, r: AlertMonitorRuleItem) => {
+        const name = String(r.datasource_name || "").trim();
+        if (name) return name;
+        const ds = dsList.find((d) => d.id === r.datasource_id);
+        return ds ? (ds.project_name ? `${ds.project_name} / ${ds.name}` : ds.name) : String(r.datasource_id);
+      },
+    },
     { title: "级别", dataIndex: "severity", width: 90 },
     { title: "for(s)", dataIndex: "for_seconds", width: 80 },
     { title: "间隔(s)", dataIndex: "eval_interval_seconds", width: 90 },
@@ -1197,7 +1242,6 @@ export function AlertMonitorPlatformPage() {
     ruleForm.resetFields();
     const firstDs = dsList[0]?.id;
     ruleForm.setFieldsValue({
-      project_id: undefined,
       datasource_id: firstDs,
       for_seconds: 0,
       eval_interval_seconds: 30,
@@ -1217,7 +1261,6 @@ export function AlertMonitorPlatformPage() {
   function openRuleEdit(r: AlertMonitorRuleItem) {
     setRuleCurrent(r);
     ruleForm.setFieldsValue({
-      project_id: r.project_id || undefined,
       datasource_id: r.datasource_id,
       name: r.name,
       expr: r.expr,
@@ -1380,10 +1423,8 @@ export function AlertMonitorPlatformPage() {
     try {
       const v = await ruleForm.validateFields();
       const normalizedUnit = String(v.threshold_unit || "raw").trim().toLowerCase() === "precent" ? "percent" : v.threshold_unit;
-      const projectID = Number(v.project_id || 0);
       const payload = {
         ...v,
-        project_id: Number.isFinite(projectID) ? projectID : 0,
         threshold_unit: normalizedUnit,
         labels_json: ruleCurrent?.labels_json ?? "{}",
         annotations_json: ruleCurrent?.annotations_json ?? "{}",
@@ -1659,7 +1700,27 @@ export function AlertMonitorPlatformPage() {
   }
 
   return (
-    <Card className="table-card" title="告警监控平台" loading={loading}>
+    <Card
+      className="table-card"
+      title={
+        <Space size={8}>
+          <span>告警监控平台</span>
+          {projectContextId ? <Tag color="default">当前项目：{activeProjectName}</Tag> : null}
+        </Space>
+      }
+      loading={loading}
+    >
+      <Space style={{ marginBottom: 12 }} wrap>
+        <Typography.Text type="secondary">全局项目上下文</Typography.Text>
+        <Select
+          style={{ minWidth: 280 }}
+          allowClear
+          value={projectContextId}
+          onChange={(v) => setProjectContext(v)}
+          options={projectOptions}
+          placeholder="全部项目（可选）"
+        />
+      </Space>
       <Tabs
         activeKey={tab}
         onChange={(k) => setTab(k as TabKey)}
@@ -1673,7 +1734,7 @@ export function AlertMonitorPlatformPage() {
                   <Button type="primary" icon={<PlusOutlined />} onClick={openDsCreate}>
                     新建数据源
                   </Button>
-                  <Button icon={<ReloadOutlined />} onClick={() => void loadDatasources()}>
+                  <Button icon={<ReloadOutlined />} onClick={() => void loadDatasources(projectContextId)}>
                     刷新
                   </Button>
                 </Space>
@@ -1746,7 +1807,7 @@ export function AlertMonitorPlatformPage() {
                     placeholder="数据源"
                     value={silNativeDsId}
                     onChange={(v) => setSilNativeDsId(v)}
-                    options={dsList.map((d) => ({ label: d.name, value: d.id }))}
+                    options={dsList.map((d) => ({ label: d.project_name ? `${d.project_name} / ${d.name}` : d.name, value: d.id }))}
                   />
                   <Button type="primary" loading={nativeAlertsLoading} onClick={() => void loadNativeSilAlerts()}>
                     拉取活跃告警
@@ -1810,7 +1871,7 @@ export function AlertMonitorPlatformPage() {
                   <Button type="primary" icon={<PlusOutlined />} onClick={openRuleCreate}>
                     新建规则
                   </Button>
-                  <Button icon={<ReloadOutlined />} onClick={() => void Promise.all([loadRules(), loadDatasources()])}>
+                  <Button icon={<ReloadOutlined />} onClick={() => void Promise.all([loadRules(projectContextId), loadDatasources(projectContextId)])}>
                     刷新
                   </Button>
                 </Space>
@@ -1939,6 +2000,9 @@ export function AlertMonitorPlatformPage() {
         }
       >
         <Form form={dsForm} layout="vertical">
+          <Form.Item name="project_id" label="所属项目" rules={[{ required: true, message: "请选择项目" }]}>
+            <Select options={projectOptions} placeholder="请选择项目" />
+          </Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
@@ -2180,10 +2244,12 @@ export function AlertMonitorPlatformPage() {
       >
         <Form form={ruleForm} layout="vertical">
           <Form.Item name="datasource_id" label="数据源" rules={[{ required: true }]}>
-            <Select options={dsList.map((d) => ({ label: d.name, value: d.id }))} />
-          </Form.Item>
-          <Form.Item name="project_id" label="所属项目（可选）">
-            <Select allowClear options={projectOptions} placeholder="选择项目后可在值班总览按项目过滤" />
+            <Select
+              options={(projectContextId ? dsList.filter((d) => d.project_id === projectContextId) : dsList).map((d) => ({
+                label: d.project_name ? `${d.project_name} / ${d.name}` : d.name,
+                value: d.id,
+              }))}
+            />
           </Form.Item>
           <Form.Item name="name" label="规则名称" rules={[{ required: true }]}>
             <Input />

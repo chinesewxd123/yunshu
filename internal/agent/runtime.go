@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	pb "go-permission-system/internal/grpc/proto"
+	pb "yunshu/internal/grpc/proto"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

@@ -17,7 +17,7 @@
 
 ## 3. 联动
 
-- 监控规则若 `project_id` 匹配，则**启用成员邮箱**并入告警通知（与处理人去重）。详见 `AlertRuleAssigneeService.ResolveNotifyEmails`。
+- 监控规则所属项目由数据源派生，则该项目的**启用成员邮箱**并入告警通知（与处理人去重）。详见 `AlertRuleAssigneeService.ResolveNotifyEmails`。
 
 ## 4. 注意事项
 

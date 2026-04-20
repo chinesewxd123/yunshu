@@ -3,10 +3,10 @@ package handler
 import (
 	"context"
 
-	pb "go-permission-system/internal/grpc/proto"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/service"
+	pb "yunshu/internal/grpc/proto"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

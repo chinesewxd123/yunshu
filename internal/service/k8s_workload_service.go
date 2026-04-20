@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/k8sutil"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
 	appsv1 "k8s.io/api/apps/v1"

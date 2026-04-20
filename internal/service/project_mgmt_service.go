@@ -13,12 +13,12 @@ import (
 	"sync"
 	"time"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	cryptox "go-permission-system/internal/pkg/crypto"
-	"go-permission-system/internal/pkg/pagination"
-	"go-permission-system/internal/pkg/sshclient"
-	"go-permission-system/internal/repository"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	cryptox "yunshu/internal/pkg/crypto"
+	"yunshu/internal/pkg/pagination"
+	"yunshu/internal/pkg/sshclient"
+	"yunshu/internal/repository"
 
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
@@ -115,7 +115,7 @@ type ProjectCreateRequest struct {
 	Status      int     `json:"status"`
 }
 
-// CreateProject 创建项目；creatorUserID>0 时自动将创建人写入 project_members 为 owner。
+// CreateProject 创建项目；creatorUserID>0 时自动将创建人写入 project_members。
 func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID uint, req ProjectCreateRequest) (*ProjectItem, error) {
 	status := req.Status
 	if status != model.StatusDisabled {
@@ -126,7 +126,7 @@ func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID ui
 		return nil, err
 	}
 	if s.memberRepo != nil && creatorUserID > 0 {
-		m := model.ProjectMember{ProjectID: p.ID, UserID: creatorUserID, Role: "owner"}
+		m := model.ProjectMember{ProjectID: p.ID, UserID: creatorUserID, Role: "member"}
 		if err := s.memberRepo.Create(ctx, &m); err != nil {
 			_ = s.projectRepo.DeleteByID(ctx, p.ID)
 			return nil, fmt.Errorf("项目已创建但写入负责人失败，请重试或联系管理员: %w", err)
@@ -184,21 +184,6 @@ func (s *ProjectMgmtService) DeleteProject(ctx context.Context, id uint) error {
 
 // --- 项目成员（project_members）：与项目资源、监控规则 project_id 形成租户闭环；成员邮箱并入规则通知（见 AlertRuleAssigneeService）。---
 
-var allowedProjectMemberRoles = map[string]struct{}{
-	"owner": {}, "admin": {}, "member": {}, "readonly": {},
-}
-
-func normalizeProjectMemberRole(role string) string {
-	r := strings.ToLower(strings.TrimSpace(role))
-	if r == "" {
-		return "member"
-	}
-	if _, ok := allowedProjectMemberRoles[r]; ok {
-		return r
-	}
-	return "member"
-}
-
 // ProjectMemberItem 项目成员 API 展示。
 type ProjectMemberItem struct {
 	ID        uint    `json:"id"`
@@ -243,8 +228,7 @@ func (s *ProjectMgmtService) ListProjectMembers(ctx context.Context, projectID u
 
 // ProjectMemberAddRequest 添加成员。
 type ProjectMemberAddRequest struct {
-	UserID uint   `json:"user_id" binding:"required"`
-	Role   string `json:"role" binding:"omitempty,max=32"`
+	UserID uint `json:"user_id" binding:"required"`
 }
 
 // AddProjectMember 将用户加入项目。
@@ -272,7 +256,7 @@ func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uin
 	row := model.ProjectMember{
 		ProjectID: projectID,
 		UserID:    req.UserID,
-		Role:      normalizeProjectMemberRole(req.Role),
+		Role:      "member",
 	}
 	if err := s.memberRepo.Create(ctx, &row); err != nil {
 		return nil, err
@@ -292,11 +276,10 @@ func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uin
 
 // ProjectMemberUpdateRequest 更新成员角色。
 type ProjectMemberUpdateRequest struct {
-	Role string `json:"role" binding:"required,max=32"`
 }
 
 // UpdateProjectMember 更新项目内角色。
-func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID, memberID uint, req ProjectMemberUpdateRequest) (*ProjectMemberItem, error) {
+func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID, memberID uint, _ ProjectMemberUpdateRequest) (*ProjectMemberItem, error) {
 	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperror.NotFound("项目不存在")
@@ -313,7 +296,7 @@ func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID,
 	if m.ProjectID != projectID {
 		return nil, apperror.BadRequest("成员不属于该项目")
 	}
-	m.Role = normalizeProjectMemberRole(req.Role)
+	m.Role = "member"
 	if err := s.memberRepo.Save(ctx, m); err != nil {
 		return nil, err
 	}
@@ -408,12 +391,12 @@ func toServerItem(sv model.Server) ServerItem {
 // ServerDetailItem 在 ServerItem 基础上附带 SSH 凭据元数据（不含密钥明文）。
 type ServerDetailItem struct {
 	ServerItem
-	AuthType            string  `json:"auth_type,omitempty"`
-	Username            string  `json:"username,omitempty"`
-	PasswordSet         bool    `json:"password_set"`
-	PrivateKeySet       bool    `json:"private_key_set"`
-	UsernameDictLabel   *string `json:"username_dict_label,omitempty"`
-	PasswordDictLabel   *string `json:"password_dict_label,omitempty"`
+	AuthType          string  `json:"auth_type,omitempty"`
+	Username          string  `json:"username,omitempty"`
+	PasswordSet       bool    `json:"password_set"`
+	PrivateKeySet     bool    `json:"private_key_set"`
+	UsernameDictLabel *string `json:"username_dict_label,omitempty"`
+	PasswordDictLabel *string `json:"password_dict_label,omitempty"`
 }
 
 type ServerListQuery struct {
@@ -1778,7 +1761,7 @@ func (s *ProjectMgmtService) ServersImportTemplateExcel() (*excelize.File, error
 
 	// Notes sheet
 	noteSheet := "说明"
-	_ = f.NewSheet(noteSheet)
+	_, _ = f.NewSheet(noteSheet)
 	notes := [][]any{
 		{"字段", "说明", "必填", "示例/取值"},
 		{"name", "服务器名称", "是", "app-01"},

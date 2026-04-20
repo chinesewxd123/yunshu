@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	pb "go-permission-system/internal/grpc/proto"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/auth"
-	"go-permission-system/internal/pkg/pagination"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/service"
+	pb "yunshu/internal/grpc/proto"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/pagination"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"context"
-	"go-permission-system/internal/agent"
+	"yunshu/internal/agent"
 	"time"
 
 	"github.com/spf13/cobra"

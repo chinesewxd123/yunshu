@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/service"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	pb "go-permission-system/internal/grpc/proto"
-	"go-permission-system/internal/service"
+	pb "yunshu/internal/grpc/proto"
+	"yunshu/internal/service"
 )
 
 type LogPlatformServer struct {

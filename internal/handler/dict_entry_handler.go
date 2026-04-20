@@ -3,9 +3,9 @@ package handler
 import (
 	"context"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/service"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

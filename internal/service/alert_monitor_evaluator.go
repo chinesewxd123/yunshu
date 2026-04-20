@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/promapi"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/promapi"
 )
 
 func (s *AlertService) runMonitorRuleEvaluator(ctx context.Context) {
@@ -25,8 +25,17 @@ func (s *AlertService) runMonitorRuleEvaluator(ctx context.Context) {
 }
 
 func (s *AlertService) tickMonitorRules(ctx context.Context) error {
-	var rules []model.AlertMonitorRule
-	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&rules).Error; err != nil {
+	type evalRule struct {
+		model.AlertMonitorRule
+		ProjectID uint `gorm:"column:project_id"`
+	}
+	var rules []evalRule
+	if err := s.db.WithContext(ctx).
+		Table("alert_monitor_rules amr").
+		Select("amr.*, ad.project_id AS project_id").
+		Joins("JOIN alert_datasources ad ON ad.id = amr.datasource_id AND ad.deleted_at IS NULL").
+		Where("amr.enabled = ?", true).
+		Find(&rules).Error; err != nil {
 		return err
 	}
 	now := time.Now()
@@ -46,16 +55,16 @@ func (s *AlertService) tickMonitorRules(ctx context.Context) error {
 			if !s.monitorEvalLockAcquire(ctx, rule.ID, lockSec) {
 				continue
 			}
-			func(r *model.AlertMonitorRule) {
+			func(r *evalRule) {
 				defer s.monitorEvalLockRelease(ctx, r.ID)
-				s.evaluateOneMonitorRule(ctx, r)
+				s.evaluateOneMonitorRule(ctx, &r.AlertMonitorRule, r.ProjectID)
 			}(rule)
 			continue
 		}
 		if !s.shouldEvalRule(rule.ID, rule.EvalIntervalSeconds, now) {
 			continue
 		}
-		s.evaluateOneMonitorRule(ctx, rule)
+		s.evaluateOneMonitorRule(ctx, &rule.AlertMonitorRule, rule.ProjectID)
 	}
 	return nil
 }
@@ -79,13 +88,13 @@ func (s *AlertService) shouldEvalRule(ruleID uint, intervalSec int, now time.Tim
 	return false
 }
 
-func buildMonitorRuleLabels(rule *model.AlertMonitorRule) map[string]string {
+func buildMonitorRuleLabels(rule *model.AlertMonitorRule, projectID uint) map[string]string {
 	labels := map[string]string{
 		"alertname":       rule.Name,
 		"severity":        strings.TrimSpace(rule.Severity),
 		"monitor_rule_id": fmt.Sprintf("%d", rule.ID),
 		"datasource_id":   fmt.Sprintf("%d", rule.DatasourceID),
-		"project_id":      fmt.Sprintf("%d", rule.ProjectID),
+		"project_id":      fmt.Sprintf("%d", projectID),
 		"source":          "prometheus_monitor",
 	}
 	if strings.TrimSpace(rule.Severity) == "" {
@@ -120,7 +129,7 @@ func buildMonitorRuleAnnotations(rule *model.AlertMonitorRule) map[string]string
 	return ann
 }
 
-func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.AlertMonitorRule) {
+func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.AlertMonitorRule, projectID uint) {
 	var ds model.AlertDatasource
 	if err := s.db.WithContext(ctx).First(&ds, rule.DatasourceID).Error; err != nil {
 		return
@@ -145,7 +154,10 @@ func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.A
 	if err != nil {
 		return
 	}
-	labels := buildMonitorRuleLabels(rule)
+	if projectID == 0 {
+		projectID = ds.ProjectID
+	}
+	labels := buildMonitorRuleLabels(rule, projectID)
 	annotations := buildMonitorRuleAnnotations(rule)
 	fp := fmt.Sprintf("monitor_rule_%d", rule.ID)
 	now := time.Now()

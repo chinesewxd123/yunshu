@@ -1,4 +1,4 @@
-import { DownOutlined, EditOutlined, EyeOutlined, FileTextOutlined, ReloadOutlined, TagsOutlined } from "@ant-design/icons";
+import { DownOutlined, EyeOutlined, FileTextOutlined, ReloadOutlined, TagsOutlined } from "@ant-design/icons";
 import { Button, Dropdown, Form, Input, InputNumber, Progress, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
@@ -155,7 +155,7 @@ export function DaemonsetsPage() {
           return (res.list ?? []).map((n) => ({ label: n.name, value: n.name }));
         }}
         columns={columns}
-        showEditButton={false}
+        onEdit={(record, ctx) => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record)}
         onToolbarReady={(ctx) => {
           listReloadRef.current = ctx.reload;
         }}
@@ -211,7 +211,6 @@ export function DaemonsetsPage() {
           apply: async ({ clusterId, manifest }) => await applyDaemonSet(clusterId, manifest),
           remove: async ({ clusterId, namespace, name }) => await deleteDaemonSet(clusterId, namespace ?? "default", name),
         }}
-        renderDetail={(d, { detailYaml, setDetailYaml }) => <DaemonSetDetailQuickEdit detail={d} detailYaml={detailYaml} setDetailYaml={setDetailYaml} />}
         createTemplate={({ namespace }) => `apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -240,12 +239,6 @@ spec:
                     label: "关联 Pods",
                     icon: <EyeOutlined />,
                     onClick: () => openPods({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }),
-                  },
-                  {
-                    key: "edit",
-                    label: "编辑",
-                    icon: <EditOutlined />,
-                    onClick: () => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record),
                   },
                   {
                     key: "restart",

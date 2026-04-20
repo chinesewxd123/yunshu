@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/response"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"

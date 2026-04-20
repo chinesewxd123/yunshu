@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	agentpkg "go-permission-system/internal/agent"
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/repository"
+	agentpkg "yunshu/internal/agent"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/repository"
 
 	"gorm.io/gorm"
 )
@@ -522,8 +522,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/go-permission-system
-ExecStart=/opt/go-permission-system/log-agent --grpc-server %s --server-id %d --token %s --version %s --enable-runtime-pull=true --enable-discovery=true --enable-health-report=true --enable-fallback=false
+WorkingDirectory=/opt/yunshu
+ExecStart=/opt/yunshu/log-agent --grpc-server %s --server-id %d --token %s --version %s --enable-runtime-pull=true --enable-discovery=true --enable-health-report=true --enable-fallback=false
 Restart=always
 RestartSec=3
 User=root

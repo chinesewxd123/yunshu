@@ -3,7 +3,7 @@ package bootstrap
 import (
 	"strings"
 
-	"go-permission-system/internal/model"
+	"yunshu/internal/model"
 
 	"gorm.io/gorm"
 )
@@ -34,6 +34,28 @@ func dropAlertMonitorRulesLegacyDutyScheduleID(db *gorm.DB) error {
 		return nil
 	}
 	err := db.Exec("ALTER TABLE `alert_monitor_rules` DROP COLUMN `duty_schedule_id`").Error
+	if err == nil {
+		return nil
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "1091") || strings.Contains(msg, "check that column/key exists") ||
+		strings.Contains(msg, "unknown column") || strings.Contains(msg, "1054") {
+		return nil
+	}
+	return err
+}
+
+// dropAlertMonitorRulesProjectID deletes the legacy column alert_monitor_rules.project_id.
+// Phase-2 cleanup: project_id is now derived from alert_datasources.project_id.
+func dropAlertMonitorRulesProjectID(db *gorm.DB) error {
+	if db == nil || !db.Migrator().HasTable(&model.AlertMonitorRule{}) {
+		return nil
+	}
+	if db.Dialector.Name() != "mysql" {
+		return nil
+	}
+	// If column doesn't exist, this will error; we ignore common MySQL "missing" errors.
+	err := db.Exec("ALTER TABLE `alert_monitor_rules` DROP COLUMN `project_id`").Error
 	if err == nil {
 		return nil
 	}
@@ -160,6 +182,137 @@ func migrateLogAgentsClearPlaceholderListenPort(db *gorm.DB) error {
 		Update("listen_port", 0).Error
 }
 
+// migrateAlertDatasourcesProjectID ensures alert_datasources.project_id exists and is backfilled.
+// Strategy:
+// - Add the column (default 0) if missing.
+// - If a datasource is referenced by rules that belong to exactly one project -> backfill to that project.
+// - If referenced by multiple projects -> duplicate datasource per project and rewrite rules to the per-project datasource.
+// - Any remaining project_id=0 -> set to smallest active project id (fallback), else 1.
+func migrateAlertDatasourcesProjectID(db *gorm.DB) error {
+	if db == nil {
+		return nil
+	}
+	if !db.Migrator().HasTable(&model.AlertDatasource{}) {
+		return nil
+	}
+
+	// 1) Add column if missing (keep it nullable/default during backfill).
+	if !db.Migrator().HasColumn(&model.AlertDatasource{}, "project_id") {
+		// Add as NOT NULL with default 0 for MySQL compatibility.
+		if err := db.Exec("ALTER TABLE `alert_datasources` ADD COLUMN `project_id` BIGINT UNSIGNED NOT NULL DEFAULT 0").Error; err != nil {
+			return err
+		}
+		_ = db.Exec("CREATE INDEX `idx_alert_datasources_project_id` ON `alert_datasources`(`project_id`)").Error
+	}
+
+	// Quick exit if already backfilled.
+	var zeros int64
+	if err := db.Model(&model.AlertDatasource{}).Where("project_id = 0").Count(&zeros).Error; err == nil && zeros == 0 {
+		return nil
+	}
+
+	// 2) Backfill from rules where unambiguous.
+	// In phase-2, alert_monitor_rules.project_id may already be dropped.
+	// Only use this legacy backfill path when the old column still exists.
+	legacyRuleProjectColumnExists := false
+	if db.Dialector.Name() == "mysql" {
+		type colCountRow struct {
+			Count int64 `gorm:"column:cnt"`
+		}
+		var row colCountRow
+		_ = db.Raw(
+			"SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.columns WHERE table_schema = DATABASE() AND table_name = 'alert_monitor_rules' AND column_name = 'project_id'",
+		).Scan(&row).Error
+		legacyRuleProjectColumnExists = row.Count > 0
+	}
+
+	type dsProjRow struct {
+		DatasourceID uint
+		ProjectID    uint
+		Cnt          int64
+	}
+	var rows []dsProjRow
+	if legacyRuleProjectColumnExists {
+		if err := db.Raw(`
+SELECT datasource_id AS datasource_id, project_id AS project_id, COUNT(*) AS cnt
+FROM alert_monitor_rules
+WHERE deleted_at IS NULL
+GROUP BY datasource_id, project_id
+`).Scan(&rows).Error; err != nil {
+			return err
+		}
+	}
+
+	// Build datasource -> distinct projects map.
+	dsToProjects := map[uint]map[uint]struct{}{}
+	for _, r := range rows {
+		if r.DatasourceID == 0 || r.ProjectID == 0 {
+			continue
+		}
+		m, ok := dsToProjects[r.DatasourceID]
+		if !ok {
+			m = map[uint]struct{}{}
+			dsToProjects[r.DatasourceID] = m
+		}
+		m[r.ProjectID] = struct{}{}
+	}
+
+	// Load all datasources with project_id=0 (or all, small table).
+	var dss []model.AlertDatasource
+	if err := db.Model(&model.AlertDatasource{}).Find(&dss).Error; err != nil {
+		return err
+	}
+
+	// For each datasource referenced by >1 projects, duplicate.
+	for _, ds := range dss {
+		projSet := dsToProjects[ds.ID]
+		if len(projSet) == 0 {
+			continue
+		}
+		if len(projSet) == 1 {
+			var pid uint
+			for p := range projSet {
+				pid = p
+			}
+			_ = db.Model(&model.AlertDatasource{}).Where("id = ? AND project_id = 0", ds.ID).Update("project_id", pid).Error
+			continue
+		}
+
+		// multi-project: create per project datasource, then rewrite rules.
+		for pid := range projSet {
+			newDS := model.AlertDatasource{
+				ProjectID:     pid,
+				Name:          ds.Name,
+				Type:          ds.Type,
+				BaseURL:       ds.BaseURL,
+				BearerToken:   ds.BearerToken,
+				BasicUser:     ds.BasicUser,
+				BasicPassword: ds.BasicPassword,
+				SkipTLSVerify: ds.SkipTLSVerify,
+				Enabled:       ds.Enabled,
+				Remark:        ds.Remark,
+			}
+			if err := db.Create(&newDS).Error; err != nil {
+				return err
+			}
+			if err := db.Model(&model.AlertMonitorRule{}).
+				Where("datasource_id = ? AND project_id = ?", ds.ID, pid).
+				Update("datasource_id", newDS.ID).Error; err != nil {
+				return err
+			}
+		}
+		// After duplication, keep the original datasource but assign it later by fallback (or set to one project if you prefer).
+	}
+
+	// 3) Fallback for remaining project_id=0.
+	var minProjectID uint
+	_ = db.Raw("SELECT id FROM projects WHERE deleted_at IS NULL AND status = 1 ORDER BY id ASC LIMIT 1").Scan(&minProjectID).Error
+	if minProjectID == 0 {
+		minProjectID = 1
+	}
+	return db.Model(&model.AlertDatasource{}).Where("project_id = 0").Update("project_id", minProjectID).Error
+}
+
 // AutoMigrateModels 与 `go run . migrate` 使用同一套表结构；server 启动时执行可避免漏跑迁移导致 500。
 func AutoMigrateModels(db *gorm.DB) error {
 	if db == nil {
@@ -175,6 +328,9 @@ func AutoMigrateModels(db *gorm.DB) error {
 		return err
 	}
 	if err := dropAlertMonitorRulesLegacyDutyScheduleID(db); err != nil {
+		return err
+	}
+	if err := dropAlertMonitorRulesProjectID(db); err != nil {
 		return err
 	}
 	if err := db.AutoMigrate(
@@ -217,6 +373,9 @@ func AutoMigrateModels(db *gorm.DB) error {
 		return err
 	}
 	if err := migrateLogAgentsClearPlaceholderListenPort(db); err != nil {
+		return err
+	}
+	if err := migrateAlertDatasourcesProjectID(db); err != nil {
 		return err
 	}
 	return dropLegacyUnusedTables(db)

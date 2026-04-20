@@ -12,7 +12,7 @@ package main
 // @in header
 // @name Authorization
 // @description Enter the JWT token with the `Bearer ` prefix, for example: Bearer eyJhbGciOi...
-import "go-permission-system/cmd"
+import "yunshu/cmd"
 
 func main() {
 	cmd.Execute()

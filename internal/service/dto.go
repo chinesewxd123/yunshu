@@ -3,7 +3,7 @@ package service
 import (
 	"time"
 
-	"go-permission-system/internal/model"
+	"yunshu/internal/model"
 )
 
 type LoginRequest struct {

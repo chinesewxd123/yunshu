@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/k8sutil"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"

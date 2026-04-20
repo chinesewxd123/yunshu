@@ -10,10 +10,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/auth"
-	logx "go-permission-system/internal/pkg/logger"
-	"go-permission-system/internal/service"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/auth"
+	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

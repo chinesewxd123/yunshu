@@ -4,7 +4,7 @@ import (
 	"context"
 	"net"
 
-	pb "go-permission-system/internal/grpc/proto"
+	pb "yunshu/internal/grpc/proto"
 
 	"google.golang.org/grpc"
 )

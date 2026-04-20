@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/repository"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/repository"
 
 	"github.com/casbin/casbin/v2"
 )
@@ -169,10 +169,7 @@ func (s *K8sScopedPolicyService) ListByRole(ctx context.Context, roleID uint) ([
 	}
 	roleCode := role.Code
 
-	policies, err := s.enforcer.GetFilteredPolicy(0, roleCode)
-	if err != nil {
-		return nil, err
-	}
+	policies := s.enforcer.GetFilteredPolicy(0, roleCode)
 
 	out := make([]K8sScopedPolicyItem, 0, len(policies))
 	for _, p := range policies {

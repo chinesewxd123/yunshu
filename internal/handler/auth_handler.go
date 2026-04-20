@@ -3,11 +3,11 @@ package handler
 import (
 	"context"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/auth"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/service"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

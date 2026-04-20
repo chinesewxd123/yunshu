@@ -1,6 +1,6 @@
 # 告警通知与恢复通知使用说明
 
-本文档说明 `go-permission-system` 当前已实现的告警能力，覆盖从配置到发送、从聚合到排障的完整流程。
+本文档说明 `yunshu` 当前已实现的告警能力，覆盖从配置到发送、从聚合到排障的完整流程。
 
 ## 1. 总体流程
 
@@ -65,14 +65,14 @@ alert:
 
 ```yaml
 route:
-  receiver: "go-permission-system-webhook"
+  receiver: "yunshu-webhook"
   group_by: ['alertname','cluster','namespace','severity']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 2h
 
 receivers:
-- name: "go-permission-system-webhook"
+- name: "yunshu-webhook"
   webhook_configs:
   - url: "http://<host>:8080/api/v1/alerts/webhook/alertmanager?token=change-me-alert-token"
     send_resolved: true

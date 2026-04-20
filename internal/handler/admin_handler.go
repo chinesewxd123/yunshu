@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/auth"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/store"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/store"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"

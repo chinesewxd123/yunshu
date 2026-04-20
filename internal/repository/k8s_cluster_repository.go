@@ -3,8 +3,8 @@ package repository
 import (
 	"context"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/pagination"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/pagination"
 
 	"gorm.io/gorm"
 )

@@ -7,12 +7,12 @@ import (
 	"slices"
 	"strings"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/auth"
-	"go-permission-system/internal/pkg/pagination"
-	"go-permission-system/internal/pkg/password"
-	"go-permission-system/internal/repository"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/pagination"
+	"yunshu/internal/pkg/password"
+	"yunshu/internal/repository"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/xuri/excelize/v2"

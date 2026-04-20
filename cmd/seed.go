@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"go-permission-system/internal/bootstrap"
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/password"
-	"go-permission-system/internal/service"
+	"yunshu/internal/bootstrap"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/password"
+	"yunshu/internal/service"
 
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"

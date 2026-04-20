@@ -4,9 +4,9 @@ import (
 	"context"
 	"io"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/pagination"
-	"go-permission-system/internal/repository"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/pagination"
+	"yunshu/internal/repository"
 
 	"github.com/xuri/excelize/v2"
 )

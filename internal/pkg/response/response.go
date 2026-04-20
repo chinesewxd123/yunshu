@@ -3,7 +3,7 @@ package response
 import (
 	"net/http"
 
-	"go-permission-system/internal/pkg/apperror"
+	"yunshu/internal/pkg/apperror"
 
 	"github.com/gin-gonic/gin"
 )

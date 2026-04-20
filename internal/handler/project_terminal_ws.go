@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/pkg/sshclient"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/pkg/sshclient"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"

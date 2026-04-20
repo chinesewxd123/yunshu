@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	"go-permission-system/internal/bootstrap"
-	grpcclient "go-permission-system/internal/grpc/client"
-	grpcserver "go-permission-system/internal/grpc/server"
-	"go-permission-system/internal/repository"
-	"go-permission-system/internal/router"
-	"go-permission-system/internal/service"
+	"yunshu/internal/bootstrap"
+	grpcclient "yunshu/internal/grpc/client"
+	grpcserver "yunshu/internal/grpc/server"
+	"yunshu/internal/repository"
+	"yunshu/internal/router"
+	"yunshu/internal/service"
 
 	"github.com/spf13/cobra"
 )

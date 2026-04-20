@@ -4,11 +4,11 @@ import (
 	"context"
 	"net/http"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/auth"
-	"go-permission-system/internal/pkg/pagination"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/service"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/pagination"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"

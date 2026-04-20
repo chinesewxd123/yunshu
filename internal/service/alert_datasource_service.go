@@ -6,21 +6,23 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/pagination"
-	"go-permission-system/internal/pkg/promapi"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/pagination"
+	"yunshu/internal/pkg/promapi"
 
 	"gorm.io/gorm"
 )
 
 type AlertDatasourceListQuery struct {
-	Keyword  string `form:"keyword"`
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
+	ProjectID uint   `form:"project_id"`
+	Keyword   string `form:"keyword"`
+	Page      int    `form:"page"`
+	PageSize  int    `form:"page_size"`
 }
 
 type AlertDatasourceUpsertRequest struct {
+	ProjectID         uint   `json:"project_id" binding:"required"`
 	Name             string `json:"name" binding:"required,max=128"`
 	Type             string `json:"type" binding:"omitempty,max=32"`
 	BaseURL          string `json:"base_url" binding:"required,max=512"`
@@ -32,6 +34,11 @@ type AlertDatasourceUpsertRequest struct {
 	Remark           string `json:"remark" binding:"omitempty,max=512"`
 	ClearBearerToken bool   `json:"clear_bearer_token"`
 	ClearBasicAuth   bool   `json:"clear_basic_auth"`
+}
+
+type AlertDatasourceItem struct {
+	model.AlertDatasource
+	ProjectName string `json:"project_name,omitempty" gorm:"column:project_name"`
 }
 
 type PromQueryRequest struct {
@@ -63,23 +70,28 @@ func (s *AlertDatasourceService) mask(ds *model.AlertDatasource) {
 	}
 }
 
-func (s *AlertDatasourceService) List(ctx context.Context, q AlertDatasourceListQuery) ([]model.AlertDatasource, int64, int, int, error) {
+func (s *AlertDatasourceService) List(ctx context.Context, q AlertDatasourceListQuery) ([]AlertDatasourceItem, int64, int, int, error) {
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
-	tx := s.db.WithContext(ctx).Model(&model.AlertDatasource{})
+	tx := s.db.WithContext(ctx).Table("alert_datasources ad").
+		Select("ad.*, p.name AS project_name").
+		Joins("LEFT JOIN projects p ON p.id = ad.project_id AND p.deleted_at IS NULL")
+	if q.ProjectID > 0 {
+		tx = tx.Where("ad.project_id = ?", q.ProjectID)
+	}
 	if kw := strings.TrimSpace(q.Keyword); kw != "" {
 		like := "%" + kw + "%"
-		tx = tx.Where("name LIKE ? OR base_url LIKE ? OR remark LIKE ?", like, like, like)
+		tx = tx.Where("ad.name LIKE ? OR ad.base_url LIKE ? OR ad.remark LIKE ? OR p.name LIKE ?", like, like, like, like)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, page, pageSize, err
 	}
-	var list []model.AlertDatasource
-	if err := tx.Order("id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
+	var list []AlertDatasourceItem
+	if err := tx.Order("ad.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
 		return nil, 0, page, pageSize, err
 	}
 	for i := range list {
-		s.mask(&list[i])
+		s.mask(&list[i].AlertDatasource)
 	}
 	return list, total, page, pageSize, nil
 }
@@ -112,7 +124,11 @@ func (s *AlertDatasourceService) Create(ctx context.Context, req AlertDatasource
 	if t != "prometheus" {
 		return nil, apperror.BadRequest("暂仅支持 type=prometheus")
 	}
+	if req.ProjectID == 0 {
+		return nil, apperror.BadRequest("project_id 必填")
+	}
 	row := model.AlertDatasource{
+		ProjectID:     req.ProjectID,
 		Name:          strings.TrimSpace(req.Name),
 		Type:          t,
 		BaseURL:       strings.TrimSpace(req.BaseURL),
@@ -137,6 +153,12 @@ func (s *AlertDatasourceService) Update(ctx context.Context, id uint, req AlertD
 			return nil, apperror.NotFound("告警数据源不存在")
 		}
 		return nil, err
+	}
+	if req.ProjectID == 0 {
+		return nil, apperror.BadRequest("project_id 必填")
+	}
+	if req.ProjectID != row.ProjectID {
+		row.ProjectID = req.ProjectID
 	}
 	if strings.TrimSpace(req.Name) != "" {
 		row.Name = strings.TrimSpace(req.Name)

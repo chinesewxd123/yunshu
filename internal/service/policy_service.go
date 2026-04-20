@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/repository"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/repository"
 
 	"github.com/casbin/casbin/v2"
 	"gorm.io/gorm"
@@ -48,10 +48,7 @@ func (s *PolicyService) List(ctx context.Context) ([]PolicyItemResponse, error) 
 		permissionMap[key] = NewPermissionItem(permission)
 	}
 
-	policies, err := s.enforcer.GetPolicy()
-	if err != nil {
-		return nil, err
-	}
+	policies := s.enforcer.GetPolicy()
 
 	response := make([]PolicyItemResponse, 0, len(policies))
 	for _, policy := range policies {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"go-permission-system/internal/pkg/platformhttp"
+	"yunshu/internal/pkg/platformhttp"
 )
 
 type tokenProvider interface {

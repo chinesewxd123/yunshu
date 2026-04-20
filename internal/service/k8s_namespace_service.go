@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/k8sutil"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
 	corev1 "k8s.io/api/core/v1"

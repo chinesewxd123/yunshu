@@ -6,7 +6,7 @@ import (
 	neturl "net/url"
 	"strings"
 
-	"go-permission-system/internal/pkg/parseutil"
+	"yunshu/internal/pkg/parseutil"
 )
 
 func (s *AlertService) getDingTalkAccessToken(ctx context.Context, appKey, appSecret string) (string, error) {

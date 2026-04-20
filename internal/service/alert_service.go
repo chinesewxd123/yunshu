@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"go-permission-system/internal/config"
-	"go-permission-system/internal/model"
-	"go-permission-system/internal/pkg/alertnotify"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/mailer"
-	"go-permission-system/internal/pkg/pagination"
+	"yunshu/internal/config"
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/alertnotify"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/mailer"
+	"yunshu/internal/pkg/pagination"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -361,7 +361,7 @@ func (s *AlertService) TestChannel(ctx context.Context, id uint, req AlertTestRe
 	}
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
-		content = "这是一条来自 go-permission-system 的测试告警消息。"
+		content = "这是一条来自 yunshu 的测试告警消息。"
 	}
 	severity := strings.TrimSpace(req.Severity)
 	if severity == "" {

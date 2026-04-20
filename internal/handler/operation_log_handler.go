@@ -2,9 +2,9 @@ package handler
 
 import (
 	"context"
-	"go-permission-system/internal/pkg/apperror"
-	"go-permission-system/internal/pkg/response"
-	"go-permission-system/internal/service"
+	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/response"
+	"yunshu/internal/service"
 
 	"net/http"
 

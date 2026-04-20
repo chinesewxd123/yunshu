@@ -63,7 +63,7 @@ export function ProjectsPage() {
     try {
       if (!current) {
         await createProject(values);
-        message.success("已创建项目（你已自动成为 owner）");
+        message.success("已创建项目（你已自动加入项目成员）");
       } else {
         await updateProject(current.id, values);
         message.success("已更新项目");
@@ -127,17 +127,17 @@ export function ProjectsPage() {
           { title: "创建时间", dataIndex: "created_at", width: 200, render: (v: string) => formatDateTime(v) },
           {
             title: "操作",
-            width: 260,
+            width: 320,
             render: (_: unknown, record: ProjectItem) => (
-              <Space wrap>
+              <Space size={6} wrap={false}>
                 <Button type="link" icon={<TeamOutlined />} onClick={() => setMemberProject(record)}>
                   成员
                 </Button>
-                <Button icon={<EditOutlined />} onClick={() => openEdit(record)}>
+                <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
                   编辑
                 </Button>
                 <Popconfirm title="确定删除该项目？" onConfirm={() => void onDelete(record)}>
-                  <Button danger icon={<DeleteOutlined />}>
+                  <Button type="link" danger icon={<DeleteOutlined />}>
                     删除
                   </Button>
                 </Popconfirm>

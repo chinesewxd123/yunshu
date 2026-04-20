@@ -15,8 +15,9 @@ erDiagram
   projects ||--o{ services : owns
   projects ||--o{ service_log_sources : owns
   projects ||--o{ log_agents : owns
+  projects ||--o{ alert_datasources : owns
   alert_monitor_rules }o--|| alert_datasources : uses
-  alert_monitor_rules }o--o| projects : optional
+  alert_monitor_rules }o--|| projects : derived
   alert_monitor_rules ||--o{ alert_rule_assignees : notify
   alert_monitor_rules ||--o{ alert_duty_blocks : duty
   alert_policies ||--o{ alert_events : matches
@@ -55,9 +56,9 @@ erDiagram
 |----|------|
 | `alert_channels` | 通知通道 |
 | `alert_policies` | 路由策略 |
-| `alert_datasources` | Prometheus 等 |
+| `alert_datasources` | Prometheus 等（绑定 `project_id`） |
 | `alert_silences` | 静默规则 |
-| `alert_monitor_rules` | 监控规则（含 `project_id`） |
+| `alert_monitor_rules` | 监控规则（`project_id` 从数据源推导） |
 | `alert_rule_assignees` | 处理人 JSON |
 | `alert_duty_blocks` | 值班班次 |
 | `alert_events` | 历史事件 |

@@ -1,4 +1,4 @@
-import { DownOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, TagsOutlined } from "@ant-design/icons";
+import { DownOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, TagsOutlined } from "@ant-design/icons";
 import { Button, Dropdown, Form, Input, InputNumber, Progress, Select, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useRef } from "react";
@@ -157,14 +157,13 @@ export function JobsPage() {
           return (res.list ?? []).map((n) => ({ label: n.name, value: n.name }));
         }}
         columns={columns}
-        showEditButton={false}
+        onEdit={(record, ctx) => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record)}
         api={{
           list: async ({ clusterId, namespace, keyword }) => await listJobs(clusterId, namespace ?? "default", keyword),
           detail: async ({ clusterId, namespace, name }) => await getJobDetail(clusterId, namespace ?? "default", name),
           apply: async ({ clusterId, manifest }) => await applyJob(clusterId, manifest),
           remove: async ({ clusterId, namespace, name }) => await deleteJob(clusterId, namespace ?? "default", name),
         }}
-        renderDetail={(d, { detailYaml, setDetailYaml }) => <JobDetailQuickEdit detail={d} detailYaml={detailYaml} setDetailYaml={setDetailYaml} />}
         onToolbarReady={(ctx) => {
           listReloadRef.current = ctx.reload;
         }}
@@ -250,12 +249,6 @@ spec:
                     label: "关联 Pods",
                     icon: <EyeOutlined />,
                     onClick: () => openPods({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }),
-                  },
-                  {
-                    key: "edit",
-                    label: "编辑",
-                    icon: <EditOutlined />,
-                    onClick: () => formActions.openEdit({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }, record),
                   },
                   {
                     key: "rerun",

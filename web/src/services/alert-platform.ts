@@ -2,6 +2,8 @@ import { getData, http } from "./http";
 
 export interface AlertDatasourceItem {
   id: number;
+  project_id: number;
+  project_name?: string;
   name: string;
   type: string;
   base_url: string;
@@ -33,6 +35,8 @@ export interface AlertMonitorRuleItem {
   id: number;
   datasource_id: number;
   project_id?: number;
+  project_name?: string;
+  datasource_name?: string;
   name: string;
   expr: string;
   for_seconds: number;
@@ -72,7 +76,7 @@ export interface AlertDutyBlockItem {
 
 export type Paged<T> = { list: T[]; total: number; page: number; page_size: number };
 
-export function listAlertDatasources(params?: { keyword?: string; page?: number; page_size?: number }) {
+export function listAlertDatasources(params?: { project_id?: number; keyword?: string; page?: number; page_size?: number }) {
   return getData<Paged<AlertDatasourceItem>>(http.get("/alerts/datasources", { params }));
 }
 

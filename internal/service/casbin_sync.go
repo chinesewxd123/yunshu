@@ -3,7 +3,7 @@ package service
 import (
 	"fmt"
 
-	"go-permission-system/internal/model"
+	"yunshu/internal/model"
 
 	"github.com/casbin/casbin/v2"
 )
@@ -30,34 +30,28 @@ func ReplaceRoleCode(enforcer *casbin.SyncedEnforcer, oldCode, newCode string) e
 		return nil
 	}
 
-	policies, err := enforcer.GetFilteredPolicy(0, oldCode)
-	if err != nil {
-		return err
-	}
+	policies := enforcer.GetFilteredPolicy(0, oldCode)
 	for _, policy := range policies {
 		if len(policy) < 3 {
 			continue
 		}
-		if _, err = enforcer.RemovePolicy(policy[0], policy[1], policy[2]); err != nil {
+		if _, err := enforcer.RemovePolicy(policy[0], policy[1], policy[2]); err != nil {
 			return err
 		}
-		if _, err = enforcer.AddPolicy(newCode, policy[1], policy[2]); err != nil {
+		if _, err := enforcer.AddPolicy(newCode, policy[1], policy[2]); err != nil {
 			return err
 		}
 	}
 
-	groupings, err := enforcer.GetFilteredGroupingPolicy(1, oldCode)
-	if err != nil {
-		return err
-	}
+	groupings := enforcer.GetFilteredGroupingPolicy(1, oldCode)
 	for _, grouping := range groupings {
 		if len(grouping) < 2 {
 			continue
 		}
-		if _, err = enforcer.RemoveGroupingPolicy(grouping[0], oldCode); err != nil {
+		if _, err := enforcer.RemoveGroupingPolicy(grouping[0], oldCode); err != nil {
 			return err
 		}
-		if _, err = enforcer.AddGroupingPolicy(grouping[0], newCode); err != nil {
+		if _, err := enforcer.AddGroupingPolicy(grouping[0], newCode); err != nil {
 			return err
 		}
 	}
@@ -79,18 +73,15 @@ func ReplacePermissionResource(enforcer *casbin.SyncedEnforcer, oldResource, old
 		return nil
 	}
 
-	policies, err := enforcer.GetFilteredPolicy(1, oldResource, oldAction)
-	if err != nil {
-		return err
-	}
+	policies := enforcer.GetFilteredPolicy(1, oldResource, oldAction)
 	for _, policy := range policies {
 		if len(policy) < 3 {
 			continue
 		}
-		if _, err = enforcer.RemovePolicy(policy[0], oldResource, oldAction); err != nil {
+		if _, err := enforcer.RemovePolicy(policy[0], oldResource, oldAction); err != nil {
 			return err
 		}
-		if _, err = enforcer.AddPolicy(policy[0], newResource, newAction); err != nil {
+		if _, err := enforcer.AddPolicy(policy[0], newResource, newAction); err != nil {
 			return err
 		}
 	}

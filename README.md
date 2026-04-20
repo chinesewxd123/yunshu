@@ -1,4 +1,4 @@
-# go-permission-system
+# yunshu
 
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat-square&logo=go)](https://go.dev/)
 [![Gin](https://img.shields.io/badge/Gin-1.9+-00ADD8?style=flat-square)](https://gin-gonic.com/)
@@ -171,7 +171,7 @@ flowchart LR
 
 ```bash
 git clone <your-repo-url>
-cd go-permission-system
+cd yunshu
 
 go mod download
 cd web && npm install && cd ..
@@ -474,7 +474,7 @@ cd web && npm run dev
 ## 11. 项目结构
 
 ```text
-go-permission-system/
+yunshu/
 ├── cmd/                      # 命令入口（server/migrate/seed/logagent）
 ├── configs/                  # 配置文件
 ├── internal/

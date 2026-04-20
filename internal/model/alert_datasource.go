@@ -10,6 +10,8 @@ import (
 type AlertDatasource struct {
 	ID uint `json:"id" gorm:"primaryKey;comment:主键ID"`
 
+	ProjectID uint `json:"project_id" gorm:"not null;index;comment:所属项目ID"`
+
 	Name string `json:"name" gorm:"size:128;not null;index;comment:显示名称"`
 	Type string `json:"type" gorm:"size:32;not null;default:prometheus;index;comment:类型 prometheus"`
 
