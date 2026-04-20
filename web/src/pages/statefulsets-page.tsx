@@ -1,7 +1,7 @@
 import { DownOutlined, EyeOutlined, FileTextOutlined, ReloadOutlined, ScissorOutlined, TagsOutlined } from "@ant-design/icons";
 import { Button, Form, Input, InputNumber, Modal, Progress, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
 import { useRelatedPodsDrawer } from "../components/k8s/related-pods-drawer";
 import { useWorkloadFormActions } from "../components/k8s/workload-form-actions";
@@ -24,6 +24,8 @@ import {
   NameNamespaceItems,
   ContainerCommonItems,
   WorkloadAdvancedItems,
+  WorkloadPolicyItems,
+  DeploymentHealthAndImagePullSecretsItems,
   buildStatefulSetYaml,
   statefulSetObjToForm,
   statefulSetYamlToForm,
@@ -31,7 +33,63 @@ import {
   type StatefulSetFormValues,
 } from "../components/k8s/workload-forms";
 
+function StatefulSetDetailQuickEdit({
+  detail,
+  detailYaml,
+  setDetailYaml,
+}: {
+  detail: WorkloadDetail;
+  detailYaml: string;
+  setDetailYaml: (next: string) => void;
+}) {
+  const [detailForm] = Form.useForm<StatefulSetFormValues>();
+  const values = statefulSetYamlToForm(detailYaml || "") ?? statefulSetObjToForm(detail.object) ?? statefulSetYamlToForm(detail.yaml ?? "");
+  return (
+    <Form
+      form={detailForm}
+      layout="vertical"
+      initialValues={values ?? undefined}
+      onValuesChange={(_, allValues) => {
+        try {
+          setDetailYaml(buildStatefulSetYaml(allValues as StatefulSetFormValues));
+        } catch {
+          // ignore partial invalid values during typing
+        }
+      }}
+    >
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="name" label="名称" rules={[{ required: true }]} style={{ flex: 1 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="namespace" label="命名空间" rules={[{ required: true }]} style={{ width: 220 }}>
+          <Input />
+        </Form.Item>
+      </Space>
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="service_name" label="ServiceName（Headless）" style={{ flex: 1 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="replicas" label="副本数" style={{ width: 160 }}>
+          <InputNumber min={0} style={{ width: "100%" }} />
+        </Form.Item>
+      </Space>
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="container_name" label="容器名" style={{ width: 220 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="image" label="镜像" style={{ flex: 1 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="port" label="端口" style={{ width: 160 }}>
+          <InputNumber min={1} max={65535} style={{ width: "100%" }} />
+        </Form.Item>
+      </Space>
+    </Form>
+  );
+}
+
 export function StatefulsetsPage() {
+  const listReloadRef = useRef<() => void>(() => {});
   const [form] = Form.useForm<StatefulSetFormValues>();
   const formActions = useWorkloadFormActions<StatefulSetFormValues>({
     form,
@@ -105,7 +163,77 @@ export function StatefulsetsPage() {
           apply: async ({ clusterId, manifest }) => await applyStatefulSet(clusterId, manifest),
           remove: async ({ clusterId, namespace, name }) => await deleteStatefulSet(clusterId, namespace ?? "default", name),
         }}
-        renderToolbarExtraRight={undefined}
+        renderDetail={(d, { detailYaml, setDetailYaml }) => (
+          <StatefulSetDetailQuickEdit detail={d} detailYaml={detailYaml} setDetailYaml={setDetailYaml} />
+        )}
+        onToolbarReady={(ctx) => {
+          listReloadRef.current = ctx.reload;
+        }}
+        onCreateDrawerOpen={(ctx) => {
+          if (!ctx.clusterId) return;
+          const ns = ctx.namespace ?? "default";
+          formActions.prepareCreate(
+            { clusterId: ctx.clusterId, namespace: ns },
+            {
+              namespace: ns,
+              replicas: 1,
+              service_name: "",
+              env_pairs: [{ key: "", value: "" }],
+              name: "",
+              container_name: "",
+              image: "nginx:latest",
+            } as Partial<StatefulSetFormValues>,
+          );
+        }}
+        renderCreateFormTab={(ctx) => (
+          <WorkloadFormModal<StatefulSetFormValues>
+            embedded
+            title="StatefulSet 表单创建"
+            open={false}
+            loading={formActions.loading}
+            form={form}
+            onCancel={ctx.closeCreateDrawer}
+            onSubmit={(values) => {
+              if (!formActions.ctx) return;
+              const fctx = formActions.ctx;
+              formActions.setLoading(true);
+              void (async () => {
+                try {
+                  const manifest = buildStatefulSetYaml(values);
+                  await applyStatefulSet(fctx.clusterId, manifest);
+                  message.success("已应用 StatefulSet");
+                  ctx.closeCreateDrawer();
+                  listReloadRef.current();
+                } finally {
+                  formActions.setLoading(false);
+                }
+              })();
+            }}
+          >
+            <NameNamespaceItems />
+            <Form.Item name="service_name" label="ServiceName（Headless）" rules={[{ required: true, message: "请输入 serviceName" }]}>
+              <Input placeholder="demo-headless" />
+            </Form.Item>
+            <Form.Item name="replicas" label="副本数" rules={[{ required: true, message: "请输入副本数" }]} style={{ width: 240 }}>
+              <InputNumber min={0} />
+            </Form.Item>
+            <ContainerCommonItems showPort />
+            <WorkloadAdvancedItems />
+            <WorkloadPolicyItems showStatefulSetStrategy />
+            <DeploymentHealthAndImagePullSecretsItems />
+            <Form.Item noStyle shouldUpdate>
+              {() => {
+                const v = form.getFieldsValue();
+                const qos = qosFromResources(v);
+                return (
+                  <Typography.Text type="secondary">
+                    QoS 说明：StatefulSet 不能直接设置 QoS，QoS 由 resources 推导，当前预估为：{qos}
+                  </Typography.Text>
+                );
+              }}
+            </Form.Item>
+          </WorkloadFormModal>
+        )}
         createTemplate={({ namespace }) => `apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -199,21 +327,22 @@ spec:
       {podsViewer}
 
       <WorkloadFormModal<StatefulSetFormValues>
-        title={formActions.mode === "create" ? "StatefulSet 表单创建" : "StatefulSet 表单编辑"}
-        open={formActions.open}
+        title="StatefulSet 表单编辑"
+        open={formActions.open && formActions.mode === "edit"}
         loading={formActions.loading}
         form={form}
         onCancel={formActions.close}
         onSubmit={(values) => {
           if (!formActions.ctx) return;
-          const ctx = formActions.ctx;
+          const wctx = formActions.ctx;
           formActions.setLoading(true);
           void (async () => {
             try {
               const manifest = buildStatefulSetYaml(values);
-              await applyStatefulSet(ctx.clusterId, manifest);
+              await applyStatefulSet(wctx.clusterId, manifest);
               message.success("已应用 StatefulSet");
               formActions.close();
+              listReloadRef.current();
             } finally {
               formActions.setLoading(false);
             }
@@ -229,6 +358,8 @@ spec:
         </Form.Item>
         <ContainerCommonItems showPort />
         <WorkloadAdvancedItems />
+        <WorkloadPolicyItems showStatefulSetStrategy />
+        <DeploymentHealthAndImagePullSecretsItems />
         <Form.Item noStyle shouldUpdate>
           {() => {
             const v = form.getFieldsValue();

@@ -9,6 +9,12 @@ http:
   write_timeout_seconds: 10
   idle_timeout_seconds: 60
 
+grpc:
+  listen_addr: 0.0.0.0:18080
+  target_addr: 0.0.0.0:18080
+  max_recv_msg_bytes: 8388608
+  max_send_msg_bytes: 8388608
+
 log:
   level: debug
   format: text
@@ -34,13 +40,24 @@ redis:
   pool_size: 20
 
 mail:
-  host: smtp.163.com
-  port: 465
-  username: "rootwxd@163.com"
-  password: "UNJUQFVIMEDYSUSH"
-  from_email: rootwxd@163.com
-  from_name: YunShu CMDB
-  use_tls: true
+  # 以下 mail.* 已收敛为“数据字典优先，YAML 兜底”：
+  # - mail_host
+  # - mail_port
+  # - mail_username
+  # - mail_password
+  # - mail_from_email
+  # - mail_from_name
+  # - mail_use_tls
+  #
+  # 若你已在数据字典中启用并配置，可继续保持注释状态；
+  # 若需临时回退 YAML，可取消注释并填写。
+  # host: smtp.163.com
+  # port: 465
+  # username: "rootwxd@163.com"
+  # password: "UNJUQFVIMEDYSUSH"
+  # from_email: rootwxd@163.com
+  # from_name: YunShu CMDB
+  # use_tls: true
 
 auth:
   jwt_secret: change-me-in-production
@@ -63,9 +80,16 @@ agent:
   # log-agent 启动后用于自注册的共享密钥（建议生产环境改为强随机字符串）
   register_secret: "change-me-agent-register-secret"
 
+# 下列键的常见取值可在「系统 → 数据字典」中按类型选用，便于团队统一录入（如 config_yaml_mysql_host、alert_enrich_prometheus_url、k8s_kubeconfig_template 等）。
 alert:
-  # Alertmanager webhook 回调鉴权 token（可留空表示不校验）
-  webhook_token: "change-me-alert-token"
+  # 以下 3 项已收敛为“数据字典优先，YAML 兜底”：
+  # - alert_webhook_token
+  # - alert_enrich_prometheus_url
+  # - alert_enrich_prometheus_token
+  #
+  # 若你已在数据字典中启用并配置，可继续保持注释状态；
+  # 若需临时回退 YAML，可取消注释并填写。
+  # webhook_token: "change-me-alert-token"
   # 告警通道默认超时（毫秒），当通道未显式填写 timeout_ms 时生效
   default_timeout_ms: 5000
   # 告警事件请求/响应体最大落库存储长度
@@ -86,9 +110,9 @@ alert:
     wecom_max_chars: 3500
     generic_max_chars: 8000
   # Prometheus 地址（用于从 generatorURL 中解析表达式并查询当前值）
-  prometheus_url: "http://10.10.10.103:9091"
+  # prometheus_url: "http://10.10.10.103:9091"
   # Prometheus Bearer Token（无则留空）
-  prometheus_token: ""
+  # prometheus_token: ""
   # Prometheus 查询超时（秒）
   prom_query_timeout_seconds: 5
   # P3异步增强开关：开启后，通知主链路不阻塞Prometheus查询
@@ -97,3 +121,22 @@ alert:
   prometheus_enrich_queue_size: 1024
   # Prometheus异步增强worker数量
   prometheus_enrich_workers: 4
+
+# =========================
+# 配置源收敛说明（建议）
+# =========================
+# 1) 启动必需项（必须来自 YAML / ENV）：
+#    - app.*, http.*, grpc.*, log.*
+#    - mysql.*, redis.*
+#    - auth.*, casbin.*, swagger.*, security.*
+#    - agent.register_secret
+#
+# 2) 运行期可运营项（数据字典优先，YAML 兜底）：
+#    - mail.*                 -> mail_host / mail_port / mail_username / mail_password / mail_from_email / mail_from_name / mail_use_tls
+#    - alert.webhook_token    -> alert_webhook_token
+#    - alert.prometheus_url   -> alert_enrich_prometheus_url
+#    - alert.prometheus_token -> alert_enrich_prometheus_token
+#
+# 3) 业务页面辅助选项（仅字典，不在 YAML 维护）：
+#    - dingtalk_webhook_url / wecom_webhook_url / alert_webhook_url
+#    - agent_platform_url / wecom_* / dingtalk_* / alert_promql_label_key / alert_threshold_unit 等

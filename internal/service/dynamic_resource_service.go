@@ -20,10 +20,12 @@ type DynamicResourceService struct {
 	runtime *K8sRuntimeService
 }
 
+// NewDynamicResourceService 创建相关逻辑。
 func NewDynamicResourceService(runtime *K8sRuntimeService) *DynamicResourceService {
 	return &DynamicResourceService{runtime: runtime}
 }
 
+// ListByGVK 查询列表相关的业务逻辑。
 func (s *DynamicResourceService) ListByGVK(ctx context.Context, k *kom.Kubectl, gvk schema.GroupVersionKind, namespace string) ([]unstructured.Unstructured, error) {
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(gvk)
@@ -39,6 +41,7 @@ func (s *DynamicResourceService) ListByGVK(ctx context.Context, k *kom.Kubectl, 
 	return list, nil
 }
 
+// ListByGVKWithSelector 查询列表相关的业务逻辑。
 func (s *DynamicResourceService) ListByGVKWithSelector(ctx context.Context, k *kom.Kubectl, gvk schema.GroupVersionKind, namespace, labelSelector string) ([]unstructured.Unstructured, error) {
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(gvk)
@@ -57,6 +60,7 @@ func (s *DynamicResourceService) ListByGVKWithSelector(ctx context.Context, k *k
 	return list, nil
 }
 
+// GetByGVK 获取相关的业务逻辑。
 func (s *DynamicResourceService) GetByGVK(ctx context.Context, k *kom.Kubectl, gvk schema.GroupVersionKind, namespace, name string) (*unstructured.Unstructured, error) {
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(gvk)
@@ -71,6 +75,7 @@ func (s *DynamicResourceService) GetByGVK(ctx context.Context, k *kom.Kubectl, g
 	return u, nil
 }
 
+// DeleteByGVK 删除相关的业务逻辑。
 func (s *DynamicResourceService) DeleteByGVK(ctx context.Context, k *kom.Kubectl, gvk schema.GroupVersionKind, namespace, name string) error {
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(gvk)
@@ -82,6 +87,7 @@ func (s *DynamicResourceService) DeleteByGVK(ctx context.Context, k *kom.Kubectl
 	return q.Delete().Error
 }
 
+// ResolveCRKindFromCRD 执行对应的业务逻辑。
 func (s *DynamicResourceService) ResolveCRKindFromCRD(ctx context.Context, k *kom.Kubectl, group, version, resource string) (string, error) {
 	group = strings.TrimSpace(group)
 	version = strings.TrimSpace(version)
@@ -117,6 +123,7 @@ func (s *DynamicResourceService) ResolveCRKindFromCRD(ctx context.Context, k *ko
 	return "", apperror.BadRequest("未找到匹配的 CR 资源类型")
 }
 
+// ListCR 查询列表相关的业务逻辑。
 func (s *DynamicResourceService) ListCR(ctx context.Context, k *kom.Kubectl, group, version, resource, namespace string) ([]unstructured.Unstructured, error) {
 	kind, err := s.ResolveCRKindFromCRD(ctx, k, group, version, resource)
 	if err != nil {
@@ -134,6 +141,7 @@ func (s *DynamicResourceService) ListCR(ctx context.Context, k *kom.Kubectl, gro
 	return list, nil
 }
 
+// GetCR 获取相关的业务逻辑。
 func (s *DynamicResourceService) GetCR(ctx context.Context, k *kom.Kubectl, group, version, resource, namespace, name string) (*unstructured.Unstructured, error) {
 	kind, err := s.ResolveCRKindFromCRD(ctx, k, group, version, resource)
 	if err != nil {
@@ -151,6 +159,7 @@ func (s *DynamicResourceService) GetCR(ctx context.Context, k *kom.Kubectl, grou
 	return &obj, nil
 }
 
+// DeleteCR 删除相关的业务逻辑。
 func (s *DynamicResourceService) DeleteCR(ctx context.Context, k *kom.Kubectl, group, version, resource, namespace, name string) error {
 	kind, err := s.ResolveCRKindFromCRD(ctx, k, group, version, resource)
 	if err != nil {
@@ -164,6 +173,7 @@ func (s *DynamicResourceService) DeleteCR(ctx context.Context, k *kom.Kubectl, g
 	return q.Delete().Error
 }
 
+// ApplyManifest 提交申请相关的业务逻辑。
 func (s *DynamicResourceService) ApplyManifest(ctx context.Context, k *kom.Kubectl, manifest string, exists func(context.Context) bool) error {
 	if err := k.WithContext(ctx).Applier().Apply(manifest); err != nil {
 		if k8sutil.IsLikelySuccessfulApplyError(err) {
@@ -177,6 +187,7 @@ func (s *DynamicResourceService) ApplyManifest(ctx context.Context, k *kom.Kubec
 	return nil
 }
 
+// GVKByKind 执行对应的业务逻辑。
 func (s *DynamicResourceService) GVKByKind(kind string) (schema.GroupVersionKind, bool) {
 	switch strings.TrimSpace(kind) {
 	case "Namespace":
@@ -204,6 +215,7 @@ func (s *DynamicResourceService) GVKByKind(kind string) (schema.GroupVersionKind
 	}
 }
 
+// ExistsByKind 执行对应的业务逻辑。
 func (s *DynamicResourceService) ExistsByKind(ctx context.Context, k *kom.Kubectl, kind, namespace, name string) bool {
 	gvk, ok := s.GVKByKind(kind)
 	if !ok || strings.TrimSpace(name) == "" {

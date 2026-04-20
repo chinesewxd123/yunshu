@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, EyeOutlined, FileAddOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Input, Modal, Popconfirm, Select, Space, Table, Tag, TreeSelect, Typography, message } from "antd";
+import { Button, Card, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, TreeSelect, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
 import { getClusters, listNamespaces as listClusterNamespaces, type ClusterItem } from "../services/clusters";
@@ -20,6 +20,8 @@ export function CrsPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailName, setDetailName] = useState("");
   const [detail, setDetail] = useState<CrDetail | null>(null);
+  const [detailYaml, setDetailYaml] = useState("");
+  const [detailSubmitting, setDetailSubmitting] = useState(false);
 
   const [applyOpen, setApplyOpen] = useState(false);
   const [applyLoading, setApplyLoading] = useState(false);
@@ -138,6 +140,7 @@ export function CrsPage() {
         name,
       });
       setDetail(d);
+      setDetailYaml(d.yaml ?? "");
     } finally {
       setDetailLoading(false);
     }
@@ -293,33 +296,81 @@ ${defaultNs}spec: {}
         columns={columns}
         dataSource={data}
         loading={loading}
-        pagination={{ pageSize: 10 }}
+        pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showQuickJumper: true }}
         scroll={{ x: "max-content" }}
       />
 
-      <Modal
+      <Drawer
         title={`详情 - ${detailName}`}
         open={detailOpen}
         width={980}
-        onCancel={() => setDetailOpen(false)}
-        footer={[
-          <Button
-            key="edit"
-            icon={<EditOutlined />}
-            onClick={() => {
-              setManifest(detail?.yaml ?? "");
-              setApplyOpen(true);
-            }}
-          >
-            基于详情编辑
-          </Button>,
-          <Button key="ok" type="primary" onClick={() => setDetailOpen(false)}>
-            关闭
-          </Button>,
-        ]}
+        onClose={() => setDetailOpen(false)}
+        className="detail-edit-drawer"
+        extra={
+          <Space>
+            <Button
+              icon={<EditOutlined />}
+              onClick={() => {
+                setManifest(detail?.yaml ?? "");
+                setApplyOpen(true);
+              }}
+            >
+              基于详情编辑
+            </Button>
+            <Button
+              type="primary"
+              loading={detailSubmitting}
+              onClick={() => {
+                if (!clusterId) {
+                  message.warning("请先选择集群");
+                  return;
+                }
+                setDetailSubmitting(true);
+                void (async () => {
+                  try {
+                    await applyCr(clusterId, detailYaml);
+                    message.success("详情修改已保存");
+                    const latest = await getCrDetail({
+                      clusterId,
+                      group: selectedResource?.group || "",
+                      version: selectedResource?.version || "",
+                      resource: selectedResource?.resource || "",
+                      namespace: selectedResource?.namespaced ? namespace : undefined,
+                      name: detailName,
+                    });
+                    setDetail(latest);
+                    setDetailYaml(latest.yaml ?? "");
+                    await reload();
+                  } finally {
+                    setDetailSubmitting(false);
+                  }
+                })();
+              }}
+            >
+              保存修改
+            </Button>
+          </Space>
+        }
       >
-        {detailLoading ? <Typography.Text type="secondary">加载中...</Typography.Text> : <Typography.Paragraph><pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{detail?.yaml || ""}</pre></Typography.Paragraph>}
-      </Modal>
+        {detailLoading ? (
+          <Typography.Text type="secondary">加载中...</Typography.Text>
+        ) : (
+          <Form layout="vertical">
+            <Form.Item label="资源名称">
+              <Input value={detailName} readOnly />
+            </Form.Item>
+            <Form.Item label="资源类型">
+              <Input value={selectedResource ? `${selectedResource.kind} (${selectedResource.group}/${selectedResource.version})` : "-"} readOnly />
+            </Form.Item>
+            <Form.Item label="命名空间">
+              <Input value={selectedResource?.namespaced ? namespace : "Cluster Scope"} readOnly />
+            </Form.Item>
+            <Form.Item label="YAML">
+              <Input.TextArea value={detailYaml} onChange={(e) => setDetailYaml(e.target.value)} autoSize={{ minRows: 20, maxRows: 28 }} />
+            </Form.Item>
+          </Form>
+        )}
+      </Drawer>
 
       <Modal
         title="应用 YAML"

@@ -48,7 +48,7 @@ var wsUpgrader = websocket.Upgrader{
 func (h *PodHandler) ExecWS(c *gin.Context) {
 	clusterID64, err := strconv.ParseUint(c.Query("cluster_id"), 10, 64)
 	if err != nil || clusterID64 == 0 {
-		response.Error(c, apperror.BadRequest("cluster_id 非法"))
+		response.Error(c, apperror.BadRequest("集群 ID 不合法"))
 		return
 	}
 	namespace := c.Query("namespace")

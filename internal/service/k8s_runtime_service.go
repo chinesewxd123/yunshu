@@ -17,6 +17,7 @@ import (
 
 	"github.com/weibaohui/kom/callbacks"
 	kom "github.com/weibaohui/kom/kom"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -39,6 +40,7 @@ type ClusterConnState struct {
 	ConsecutiveFailures int       `json:"consecutive_failures"`
 }
 
+// NewK8sRuntimeService 创建相关逻辑。
 func NewK8sRuntimeService(repo *repository.K8sClusterRepository) *K8sRuntimeService {
 	return &K8sRuntimeService{
 		repo:           repo,
@@ -125,6 +127,7 @@ func (s *K8sRuntimeService) registerClusterIfNeeded(clusterID string, kubeconfig
 	return nil
 }
 
+// DeleteRegisterCache 删除相关的业务逻辑。
 func (s *K8sRuntimeService) DeleteRegisterCache(clusterID uint) {
 	s.komMu.Lock()
 	key := strconv.FormatUint(uint64(clusterID), 10)
@@ -135,6 +138,7 @@ func (s *K8sRuntimeService) DeleteRegisterCache(clusterID uint) {
 	s.komMu.Unlock()
 }
 
+// GetClusterKubectl 获取相关的业务逻辑。
 func (s *K8sRuntimeService) GetClusterKubectl(ctx context.Context, id uint) (*model.K8sCluster, *kom.Kubectl, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -149,11 +153,33 @@ func (s *K8sRuntimeService) GetClusterKubectl(ctx context.Context, id uint) (*mo
 	}
 	k := kom.Cluster(clusterID)
 	if k == nil {
-		return nil, nil, apperror.Internal("k8s 集群实例不存在")
+		return nil, nil, apperror.Internal("K8s 集群实例不存在")
 	}
 	return cluster, k, nil
 }
 
+// serverGitVersionFromKubeconfig 使用 client-go Discovery 拉取 GitVersion（与 kubectl 一致）。
+// kom 在进程重启后偶发 Status().ServerVersion() 为空，不能作为心跳唯一依据。
+func serverGitVersionFromKubeconfig(kubeconfig string) (string, error) {
+	cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
+	if err != nil {
+		return "", err
+	}
+	clientset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return "", err
+	}
+	sv, err := clientset.Discovery().ServerVersion()
+	if err != nil {
+		return "", err
+	}
+	if sv == nil || strings.TrimSpace(sv.GitVersion) == "" {
+		return "", fmt.Errorf("APIServer 返回的版本信息为空")
+	}
+	return strings.TrimSpace(sv.GitVersion), nil
+}
+
+// CheckClusterHeartbeat 执行对应的业务逻辑。
 func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) (string, ClusterConnState, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -175,30 +201,32 @@ func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) 
 	}
 	k := kom.Cluster(clusterID)
 	if k == nil {
-		return "", s.GetClusterConnState(id), apperror.Internal("k8s 集群实例不存在")
+		return "", s.GetClusterConnState(id), apperror.Internal("K8s 集群实例不存在")
 	}
-	info := k.Status().ServerVersion()
-	if info == nil || strings.TrimSpace(info.GitVersion) == "" {
-		// 失败后清理并强制重连一次
+	gitVer, verr := serverGitVersionFromKubeconfig(cluster.Kubeconfig)
+	if verr != nil || gitVer == "" {
 		s.DeleteRegisterCache(id)
 		if e := s.registerClusterIfNeeded(clusterID, cluster.Kubeconfig, true); e != nil {
 			return "", s.GetClusterConnState(id), apperror.Internal(fmt.Sprintf("k8s 心跳失败: %v", e))
 		}
-		k = kom.Cluster(clusterID)
-		if k == nil {
-			return "", s.GetClusterConnState(id), apperror.Internal("k8s 集群重连失败")
+		if kom.Cluster(clusterID) == nil {
+			return "", s.GetClusterConnState(id), apperror.Internal("K8s 集群重连失败")
 		}
-		info = k.Status().ServerVersion()
-		if info == nil || strings.TrimSpace(info.GitVersion) == "" {
+		gitVer, verr = serverGitVersionFromKubeconfig(cluster.Kubeconfig)
+		if verr != nil || gitVer == "" {
+			errMsg := "server version empty"
+			if verr != nil {
+				errMsg = verr.Error()
+			}
 			s.komMu.Lock()
 			st := s.connState[clusterID]
 			st.State = "degraded"
 			st.LastAttemptAt = time.Now()
-			st.LastError = "server version empty"
+			st.LastError = errMsg
 			st.ConsecutiveFailures++
 			s.connState[clusterID] = st
 			s.komMu.Unlock()
-			return "", s.GetClusterConnState(id), apperror.Internal("k8s 心跳失败: 版本信息为空")
+			return "", s.GetClusterConnState(id), apperror.Internal(fmt.Sprintf("K8s 心跳失败：%s", errMsg))
 		}
 	}
 	s.komMu.Lock()
@@ -210,9 +238,10 @@ func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) 
 	st.ConsecutiveFailures = 0
 	s.connState[clusterID] = st
 	s.komMu.Unlock()
-	return info.GitVersion, s.GetClusterConnState(id), nil
+	return gitVer, s.GetClusterConnState(id), nil
 }
 
+// GetClusterConnState 获取相关的业务逻辑。
 func (s *K8sRuntimeService) GetClusterConnState(id uint) ClusterConnState {
 	s.komMu.Lock()
 	defer s.komMu.Unlock()
@@ -224,6 +253,7 @@ func (s *K8sRuntimeService) GetClusterConnState(id uint) ClusterConnState {
 	return st
 }
 
+// GetClusterRestConfig 获取相关的业务逻辑。
 func (s *K8sRuntimeService) GetClusterRestConfig(ctx context.Context, id uint) (*model.K8sCluster, *rest.Config, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {

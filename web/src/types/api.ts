@@ -38,9 +38,31 @@ export interface UserItem {
   email: string;
   nickname: string;
   status: number;
+  department_id?: number;
+  department_name?: string;
   roles: RoleItem[];
   created_at: string;
   updated_at: string;
+}
+
+export interface DepartmentItem {
+  id: number;
+  parent_id?: number;
+  name: string;
+  code: string;
+  ancestors: string;
+  level: number;
+  sort: number;
+  status: number;
+  leader_id?: number;
+  leader_name?: string;
+  phone?: string;
+  email?: string;
+  remark?: string;
+  user_count?: number;
+  created_at: string;
+  updated_at: string;
+  children?: DepartmentItem[];
 }
 
 export interface PasswordLoginPayload {
@@ -101,12 +123,23 @@ export interface LoginResult {
   user: UserItem;
 }
 
+export interface UpdateProfilePayload {
+  nickname: string;
+  email?: string;
+}
+
+export interface ChangePasswordPayload {
+  old_password: string;
+  new_password: string;
+}
+
 export interface UserCreatePayload {
   username: string;
   email: string;
   password: string;
   nickname: string;
   status: number;
+  department_id?: number;
   role_ids: number[];
 }
 
@@ -115,6 +148,7 @@ export interface UserUpdatePayload {
   nickname?: string;
   password?: string;
   status?: number;
+  department_id?: number;
 }
 
 export interface AssignRolesPayload {
@@ -123,6 +157,7 @@ export interface AssignRolesPayload {
 
 export interface UserQuery {
   keyword?: string;
+  department_id?: number;
   page?: number;
   page_size?: number;
 }

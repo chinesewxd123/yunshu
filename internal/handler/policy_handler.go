@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/response"
 	"go-permission-system/internal/service"
 
@@ -12,6 +11,7 @@ type PolicyHandler struct {
 	service *service.PolicyService
 }
 
+// NewPolicyHandler 创建相关逻辑。
 func NewPolicyHandler(service *service.PolicyService) *PolicyHandler {
 	return &PolicyHandler{service: service}
 }
@@ -23,9 +23,9 @@ func NewPolicyHandler(service *service.PolicyService) *PolicyHandler {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} response.Body{data=[]service.PolicyItemResponse} "success"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 403 {object} response.Body "forbidden"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/policies [get]
 func (h *PolicyHandler) List(c *gin.Context) {
 	data, err := h.service.List(c.Request.Context())
@@ -46,22 +46,13 @@ func (h *PolicyHandler) List(c *gin.Context) {
 // @Param request body service.PolicyGrantRequest true "Grant policy request"
 // @Success 200 {object} response.Body{data=MessageData} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 403 {object} response.Body "forbidden"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限"
 // @Failure 404 {object} response.Body "resource not found"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/policies [post]
 func (h *PolicyHandler) Grant(c *gin.Context) {
-	var req service.PolicyGrantRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-	if err := h.service.Grant(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"message": "granted"})
+	handleJSONOK(c, gin.H{"message": "granted"}, h.service.Grant)
 }
 
 // Revoke godoc
@@ -74,20 +65,11 @@ func (h *PolicyHandler) Grant(c *gin.Context) {
 // @Param request body service.PolicyGrantRequest true "Revoke policy request"
 // @Success 200 {object} response.Body{data=MessageData} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 403 {object} response.Body "forbidden"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限"
 // @Failure 404 {object} response.Body "resource not found"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/policies [delete]
 func (h *PolicyHandler) Revoke(c *gin.Context) {
-	var req service.PolicyGrantRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-	if err := h.service.Revoke(c.Request.Context(), req); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"message": "revoked"})
+	handleJSONOK(c, gin.H{"message": "revoked"}, h.service.Revoke)
 }

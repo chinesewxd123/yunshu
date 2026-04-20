@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"strings"
 
 	"go-permission-system/internal/pkg/apperror"
@@ -16,6 +17,7 @@ type AdminHandler struct {
 	rdb *redis.Client
 }
 
+// NewAdminHandler 创建相关逻辑。
 func NewAdminHandler(rdb *redis.Client) *AdminHandler {
 	return &AdminHandler{rdb: rdb}
 }
@@ -36,7 +38,7 @@ func isSuperAdmin(u *auth.CurrentUser) bool {
 func (h *AdminHandler) ListBannedIPs(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok || !isSuperAdmin(user) {
-		response.Error(c, apperror.Forbidden("forbidden"))
+		response.Error(c, apperror.Forbidden("无访问权限"))
 		return
 	}
 	ctx := c.Request.Context()
@@ -62,18 +64,14 @@ type unbanRequest struct {
 func (h *AdminHandler) UnbanIP(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok || !isSuperAdmin(user) {
-		response.Error(c, apperror.Forbidden("forbidden"))
+		response.Error(c, apperror.Forbidden("无访问权限"))
 		return
 	}
-	var req unbanRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-	key := store.BanIPKey(req.IP)
-	if err := h.rdb.Del(c.Request.Context(), key).Err(); err != nil {
-		response.Error(c, apperror.Internal(err.Error()))
-		return
-	}
-	response.Success(c, gin.H{"message": "unbanned"})
+	handleJSONOK(c, gin.H{"message": "unbanned"}, func(ctx context.Context, req unbanRequest) error {
+		key := store.BanIPKey(req.IP)
+		if err := h.rdb.Del(ctx, key).Err(); err != nil {
+			return apperror.Internal(err.Error())
+		}
+		return nil
+	})
 }

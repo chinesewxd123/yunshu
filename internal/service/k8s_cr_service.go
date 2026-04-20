@@ -67,10 +67,12 @@ type K8sCRService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sCRService 创建相关逻辑。
 func NewK8sCRService(runtime *K8sRuntimeService) *K8sCRService {
 	return &K8sCRService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
 
+// ListResources 查询列表相关的业务逻辑。
 func (s *K8sCRService) ListResources(ctx context.Context, q CRResourceListQuery) ([]CRResourceItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -121,6 +123,7 @@ func (s *K8sCRService) ListResources(ctx context.Context, q CRResourceListQuery)
 	return out, nil
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *K8sCRService) List(ctx context.Context, q CRListQuery) ([]CRItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -150,6 +153,7 @@ func (s *K8sCRService) List(ctx context.Context, q CRListQuery) ([]CRItem, error
 	return out, nil
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *K8sCRService) Detail(ctx context.Context, q CRDetailQuery) (*CRDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -158,7 +162,7 @@ func (s *K8sCRService) Detail(ctx context.Context, q CRDetailQuery) (*CRDetail, 
 	obj, err := s.dyn.GetCR(ctx, k, q.Group, q.Version, q.Resource, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("CR 不存在")
+			return nil, apperror.BadRequest("CR 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 CR 详情失败: %v", err))
 	}
@@ -178,13 +182,14 @@ func (s *K8sCRService) Detail(ctx context.Context, q CRDetailQuery) (*CRDetail, 
 	}, nil
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *K8sCRService) Apply(ctx context.Context, req CRApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
 		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
@@ -192,6 +197,7 @@ func (s *K8sCRService) Apply(ctx context.Context, req CRApplyRequest) error {
 	return nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *K8sCRService) Delete(ctx context.Context, req CRDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {

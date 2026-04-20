@@ -86,10 +86,12 @@ type K8sWorkloadService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sWorkloadService 创建相关逻辑。
 func NewK8sWorkloadService(runtime *K8sRuntimeService) *K8sWorkloadService {
 	return &K8sWorkloadService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
 
+// ListDeployments 查询列表相关的业务逻辑。
 func (s *K8sWorkloadService) ListDeployments(ctx context.Context, q NamespacedListQuery) ([]WorkloadItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -273,6 +275,7 @@ func jobConditionsSummary(j batchv1.Job) string {
 	return strings.Join(out, ", ")
 }
 
+// DeploymentDetail 执行对应的业务逻辑。
 func (s *K8sWorkloadService) DeploymentDetail(ctx context.Context, q NamespacedDetailQuery) (*WorkloadDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -282,7 +285,7 @@ func (s *K8sWorkloadService) DeploymentDetail(ctx context.Context, q NamespacedD
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Deployment 不存在")
+			return nil, apperror.BadRequest("Deployment 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 Deployment 失败: %v", err))
 	}
@@ -298,6 +301,7 @@ func (s *K8sWorkloadService) DeploymentDetail(ctx context.Context, q NamespacedD
 	return &WorkloadDetail{YAML: string(y), Object: copyObj}, nil
 }
 
+// DeploymentScale 执行对应的业务逻辑。
 func (s *K8sWorkloadService) DeploymentScale(ctx context.Context, req WorkloadScaleRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -309,7 +313,7 @@ func (s *K8sWorkloadService) DeploymentScale(ctx context.Context, req WorkloadSc
 	var obj appsv1.Deployment
 	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("Deployment 不存在")
+			return apperror.BadRequest("Deployment 资源不存在")
 		}
 		return apperror.Internal(fmt.Sprintf("获取 Deployment 失败: %v", err))
 	}
@@ -321,6 +325,7 @@ func (s *K8sWorkloadService) DeploymentScale(ctx context.Context, req WorkloadSc
 	return nil
 }
 
+// DeploymentRestart 执行对应的业务逻辑。
 func (s *K8sWorkloadService) DeploymentRestart(ctx context.Context, q NamespacedDetailQuery) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -330,7 +335,7 @@ func (s *K8sWorkloadService) DeploymentRestart(ctx context.Context, q Namespaced
 	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(q.Namespace).Name(q.Name).
 		Patch(&appsv1.Deployment{}, types.StrategicMergePatchType, patch).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("Deployment 不存在")
+			return apperror.BadRequest("Deployment 资源不存在")
 		}
 		if apierrors.IsForbidden(err) {
 			return apperror.Forbidden("无权限重启该 Deployment")
@@ -340,6 +345,7 @@ func (s *K8sWorkloadService) DeploymentRestart(ctx context.Context, q Namespaced
 	return nil
 }
 
+// ListStatefulSets 查询列表相关的业务逻辑。
 func (s *K8sWorkloadService) ListStatefulSets(ctx context.Context, q NamespacedListQuery) ([]WorkloadItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -391,6 +397,7 @@ func (s *K8sWorkloadService) ListStatefulSets(ctx context.Context, q NamespacedL
 	return out, nil
 }
 
+// StatefulSetDetail 执行对应的业务逻辑。
 func (s *K8sWorkloadService) StatefulSetDetail(ctx context.Context, q NamespacedDetailQuery) (*WorkloadDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -400,7 +407,7 @@ func (s *K8sWorkloadService) StatefulSetDetail(ctx context.Context, q Namespaced
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("StatefulSet 不存在")
+			return nil, apperror.BadRequest("StatefulSet 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 StatefulSet 失败: %v", err))
 	}
@@ -415,6 +422,7 @@ func (s *K8sWorkloadService) StatefulSetDetail(ctx context.Context, q Namespaced
 	return &WorkloadDetail{YAML: string(y), Object: copyObj}, nil
 }
 
+// StatefulSetScale 执行对应的业务逻辑。
 func (s *K8sWorkloadService) StatefulSetScale(ctx context.Context, req WorkloadScaleRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -426,7 +434,7 @@ func (s *K8sWorkloadService) StatefulSetScale(ctx context.Context, req WorkloadS
 	var obj appsv1.StatefulSet
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("StatefulSet 不存在")
+			return apperror.BadRequest("StatefulSet 资源不存在")
 		}
 		return apperror.Internal(fmt.Sprintf("获取 StatefulSet 失败: %v", err))
 	}
@@ -438,6 +446,7 @@ func (s *K8sWorkloadService) StatefulSetScale(ctx context.Context, req WorkloadS
 	return nil
 }
 
+// StatefulSetRestart 执行对应的业务逻辑。
 func (s *K8sWorkloadService) StatefulSetRestart(ctx context.Context, q NamespacedDetailQuery) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -447,7 +456,7 @@ func (s *K8sWorkloadService) StatefulSetRestart(ctx context.Context, q Namespace
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(q.Namespace).Name(q.Name).
 		Patch(&appsv1.StatefulSet{}, types.StrategicMergePatchType, patch).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("StatefulSet 不存在")
+			return apperror.BadRequest("StatefulSet 资源不存在")
 		}
 		if apierrors.IsForbidden(err) {
 			return apperror.Forbidden("无权限重启该 StatefulSet")
@@ -457,6 +466,7 @@ func (s *K8sWorkloadService) StatefulSetRestart(ctx context.Context, q Namespace
 	return nil
 }
 
+// ListDaemonSets 查询列表相关的业务逻辑。
 func (s *K8sWorkloadService) ListDaemonSets(ctx context.Context, q NamespacedListQuery) ([]WorkloadItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -507,6 +517,7 @@ func (s *K8sWorkloadService) ListDaemonSets(ctx context.Context, q NamespacedLis
 	return out, nil
 }
 
+// DaemonSetDetail 执行对应的业务逻辑。
 func (s *K8sWorkloadService) DaemonSetDetail(ctx context.Context, q NamespacedDetailQuery) (*WorkloadDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -516,7 +527,7 @@ func (s *K8sWorkloadService) DaemonSetDetail(ctx context.Context, q NamespacedDe
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("DaemonSet 不存在")
+			return nil, apperror.BadRequest("DaemonSet 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 DaemonSet 失败: %v", err))
 	}
@@ -531,6 +542,7 @@ func (s *K8sWorkloadService) DaemonSetDetail(ctx context.Context, q NamespacedDe
 	return &WorkloadDetail{YAML: string(y), Object: copyObj}, nil
 }
 
+// DaemonSetRestart 执行对应的业务逻辑。
 func (s *K8sWorkloadService) DaemonSetRestart(ctx context.Context, q NamespacedDetailQuery) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -540,7 +552,7 @@ func (s *K8sWorkloadService) DaemonSetRestart(ctx context.Context, q NamespacedD
 	if err := k.WithContext(ctx).Resource(&appsv1.DaemonSet{}).Namespace(q.Namespace).Name(q.Name).
 		Patch(&appsv1.DaemonSet{}, types.StrategicMergePatchType, patch).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("DaemonSet 不存在")
+			return apperror.BadRequest("DaemonSet 资源不存在")
 		}
 		if apierrors.IsForbidden(err) {
 			return apperror.Forbidden("无权限重启该 DaemonSet")
@@ -550,6 +562,7 @@ func (s *K8sWorkloadService) DaemonSetRestart(ctx context.Context, q NamespacedD
 	return nil
 }
 
+// ListJobs 查询列表相关的业务逻辑。
 func (s *K8sWorkloadService) ListJobs(ctx context.Context, q NamespacedListQuery) ([]WorkloadItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -620,6 +633,7 @@ func (s *K8sWorkloadService) ListJobs(ctx context.Context, q NamespacedListQuery
 	return out, nil
 }
 
+// JobDetail 执行对应的业务逻辑。
 func (s *K8sWorkloadService) JobDetail(ctx context.Context, q NamespacedDetailQuery) (*WorkloadDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -629,7 +643,7 @@ func (s *K8sWorkloadService) JobDetail(ctx context.Context, q NamespacedDetailQu
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Job 不存在")
+			return nil, apperror.BadRequest("Job 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 Job 失败: %v", err))
 	}
@@ -643,6 +657,7 @@ func (s *K8sWorkloadService) JobDetail(ctx context.Context, q NamespacedDetailQu
 	return &WorkloadDetail{YAML: string(y), Object: copyObj}, nil
 }
 
+// ListCronJobs 查询列表相关的业务逻辑。
 func (s *K8sWorkloadService) ListCronJobs(ctx context.Context, q NamespacedListQuery) ([]WorkloadItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -694,6 +709,7 @@ func (s *K8sWorkloadService) ListCronJobs(ctx context.Context, q NamespacedListQ
 	return out, nil
 }
 
+// ListCronJobsV2 查询列表相关的业务逻辑。
 func (s *K8sWorkloadService) ListCronJobsV2(ctx context.Context, q NamespacedListQuery) ([]CronJobItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -756,6 +772,7 @@ func (s *K8sWorkloadService) ListCronJobsV2(ctx context.Context, q NamespacedLis
 	return out, nil
 }
 
+// JobRerun 执行对应的业务逻辑。
 func (s *K8sWorkloadService) JobRerun(ctx context.Context, req JobRerunRequest) (string, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -764,7 +781,7 @@ func (s *K8sWorkloadService) JobRerun(ctx context.Context, req JobRerunRequest) 
 	var job batchv1.Job
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Name(req.Name).Get(&job).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", apperror.BadRequest("Job 不存在")
+			return "", apperror.BadRequest("Job 资源不存在")
 		}
 		return "", apperror.Internal(fmt.Sprintf("获取 Job 失败: %v", err))
 	}
@@ -798,6 +815,7 @@ type RelatedPodItem struct {
 	StartTime    string `json:"start_time,omitempty"`
 }
 
+// DeploymentPods 执行对应的业务逻辑。
 func (s *K8sWorkloadService) DeploymentPods(ctx context.Context, q RelatedPodsQuery) ([]RelatedPodItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -811,6 +829,7 @@ func (s *K8sWorkloadService) DeploymentPods(ctx context.Context, q RelatedPodsQu
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
 }
 
+// StatefulSetPods 执行对应的业务逻辑。
 func (s *K8sWorkloadService) StatefulSetPods(ctx context.Context, q RelatedPodsQuery) ([]RelatedPodItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -824,6 +843,7 @@ func (s *K8sWorkloadService) StatefulSetPods(ctx context.Context, q RelatedPodsQ
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
 }
 
+// DaemonSetPods 执行对应的业务逻辑。
 func (s *K8sWorkloadService) DaemonSetPods(ctx context.Context, q RelatedPodsQuery) ([]RelatedPodItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -837,6 +857,7 @@ func (s *K8sWorkloadService) DaemonSetPods(ctx context.Context, q RelatedPodsQue
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
 }
 
+// JobPods 执行对应的业务逻辑。
 func (s *K8sWorkloadService) JobPods(ctx context.Context, q RelatedPodsQuery) ([]RelatedPodItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -856,6 +877,7 @@ func (s *K8sWorkloadService) JobPods(ctx context.Context, q RelatedPodsQuery) ([
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
 }
 
+// CronJobPods 执行对应的业务逻辑。
 func (s *K8sWorkloadService) CronJobPods(ctx context.Context, q RelatedPodsQuery) ([]RelatedPodItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -906,7 +928,7 @@ func (s *K8sWorkloadService) CronJobPods(ctx context.Context, q RelatedPodsQuery
 
 func listPodsBySelector(ctx context.Context, k *kom.Kubectl, namespace, selector string) ([]RelatedPodItem, error) {
 	if k == nil {
-		return nil, apperror.Internal("k8s 客户端不存在")
+		return nil, apperror.Internal("K8s 客户端不存在")
 	}
 	opts := metav1.ListOptions{}
 	if strings.TrimSpace(selector) != "" {
@@ -944,6 +966,7 @@ func listPodsBySelector(ctx context.Context, k *kom.Kubectl, namespace, selector
 	return out, nil
 }
 
+// CronJobDetail 执行对应的业务逻辑。
 func (s *K8sWorkloadService) CronJobDetail(ctx context.Context, q NamespacedDetailQuery) (*WorkloadDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -953,7 +976,7 @@ func (s *K8sWorkloadService) CronJobDetail(ctx context.Context, q NamespacedDeta
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("CronJob 不存在")
+			return nil, apperror.BadRequest("CronJob 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 CronJob 失败: %v", err))
 	}
@@ -967,13 +990,14 @@ func (s *K8sWorkloadService) CronJobDetail(ctx context.Context, q NamespacedDeta
 	return &WorkloadDetail{YAML: string(y), Object: copyObj}, nil
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *K8sWorkloadService) Apply(ctx context.Context, req NamespacedApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 
 	refs := extractWorkloadRefsForApply(req.Manifest)
@@ -1060,22 +1084,27 @@ func extractWorkloadRefsForApply(manifest string) []workloadRef {
 	return out
 }
 
+// DeleteDeployment 删除相关的业务逻辑。
 func (s *K8sWorkloadService) DeleteDeployment(ctx context.Context, req NamespacedDeleteRequest) error {
 	return s.deleteWorkloadByKind(ctx, req, "Deployment")
 }
 
+// DeleteStatefulSet 删除相关的业务逻辑。
 func (s *K8sWorkloadService) DeleteStatefulSet(ctx context.Context, req NamespacedDeleteRequest) error {
 	return s.deleteWorkloadByKind(ctx, req, "StatefulSet")
 }
 
+// DeleteDaemonSet 删除相关的业务逻辑。
 func (s *K8sWorkloadService) DeleteDaemonSet(ctx context.Context, req NamespacedDeleteRequest) error {
 	return s.deleteWorkloadByKind(ctx, req, "DaemonSet")
 }
 
+// DeleteJob 删除相关的业务逻辑。
 func (s *K8sWorkloadService) DeleteJob(ctx context.Context, req NamespacedDeleteRequest) error {
 	return s.deleteWorkloadByKind(ctx, req, "Job")
 }
 
+// DeleteCronJob 删除相关的业务逻辑。
 func (s *K8sWorkloadService) DeleteCronJob(ctx context.Context, req NamespacedDeleteRequest) error {
 	return s.deleteWorkloadByKind(ctx, req, "CronJob")
 }
@@ -1098,6 +1127,7 @@ func (s *K8sWorkloadService) deleteWorkloadByKind(ctx context.Context, req Names
 	return nil
 }
 
+// CronJobSuspend 执行对应的业务逻辑。
 func (s *K8sWorkloadService) CronJobSuspend(ctx context.Context, req CronJobSuspendRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -1106,7 +1136,7 @@ func (s *K8sWorkloadService) CronJobSuspend(ctx context.Context, req CronJobSusp
 	var obj batchv1.CronJob
 	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("CronJob 不存在")
+			return apperror.BadRequest("CronJob 资源不存在")
 		}
 		return apperror.Internal(fmt.Sprintf("获取 CronJob 失败: %v", err))
 	}
@@ -1118,6 +1148,7 @@ func (s *K8sWorkloadService) CronJobSuspend(ctx context.Context, req CronJobSusp
 	return nil
 }
 
+// CronJobTrigger 执行对应的业务逻辑。
 func (s *K8sWorkloadService) CronJobTrigger(ctx context.Context, req CronJobTriggerRequest) (string, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -1126,7 +1157,7 @@ func (s *K8sWorkloadService) CronJobTrigger(ctx context.Context, req CronJobTrig
 	var cj batchv1.CronJob
 	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Name(req.Name).Get(&cj).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", apperror.BadRequest("CronJob 不存在")
+			return "", apperror.BadRequest("CronJob 资源不存在")
 		}
 		return "", apperror.Internal(fmt.Sprintf("获取 CronJob 失败: %v", err))
 	}

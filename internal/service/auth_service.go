@@ -47,8 +47,10 @@ type repositoryAuthReader interface {
 	GetByUsername(ctx context.Context, username string) (*model.User, error)
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
 	Create(ctx context.Context, user *model.User) error
+	Save(ctx context.Context, user *model.User) error
 }
 
+// NewAuthService 创建相关逻辑。
 func NewAuthService(
 	userRepo repositoryAuthReader,
 	redisClient *redis.Client,
@@ -65,6 +67,7 @@ func NewAuthService(
 	}
 }
 
+// SendEmailCode 发送相关的业务逻辑。
 func (s *AuthService) SendEmailCode(ctx context.Context, req SendEmailCodeRequest) (*SendEmailCodeResponse, error) {
 	email := normalizeEmail(req.Email)
 	scene := strings.TrimSpace(req.Scene)
@@ -100,7 +103,7 @@ func (s *AuthService) SendEmailCode(ctx context.Context, req SendEmailCodeReques
 	subject, body := s.buildVerificationEmail(scene, code, codeTTL)
 	if err = s.mailer.Send(ctx, email, subject, body); err != nil {
 		_ = s.redis.Del(ctx, codeKey, cooldownKey).Err()
-		return nil, apperror.Internal("failed to send verification code email")
+		return nil, apperror.Internal("验证码邮件发送失败，请稍后重试")
 	}
 
 	return &SendEmailCodeResponse{
@@ -122,7 +125,7 @@ func (s *AuthService) SendEmailCodeWithIP(ctx context.Context, req SendEmailCode
 				s.redis.Expire(ctx, ipKey, time.Minute)
 			}
 			if n > limit {
-				return nil, apperror.Conflict("too many verification requests from this IP, try later")
+				return nil, apperror.Conflict("当前 IP 验证码请求过于频繁，请稍后重试")
 			}
 		}
 	}
@@ -131,23 +134,24 @@ func (s *AuthService) SendEmailCodeWithIP(ctx context.Context, req SendEmailCode
 	return s.SendEmailCode(ctx, SendEmailCodeRequest{Email: req.Email, Scene: req.Scene})
 }
 
+// SendLoginCodeByUsername 发送相关的业务逻辑。
 func (s *AuthService) SendLoginCodeByUsername(ctx context.Context, req SendLoginCodeByUsernameRequest) (*SendEmailCodeResponse, error) {
 	username := strings.TrimSpace(req.Username)
 	user, err := s.userRepo.GetByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("user not found")
+			return nil, apperror.NotFound("用户不存在")
 		}
 		return nil, err
 	}
 
 	if user.Status != model.StatusEnabled {
-		return nil, apperror.Forbidden("user is disabled")
+		return nil, apperror.Forbidden("用户已被禁用")
 	}
 
 	// Reuse SendEmailCode logic with the user's email
 	if user.Email == nil {
-		return nil, apperror.BadRequest("user email is not set")
+		return nil, apperror.BadRequest("用户未绑定邮箱")
 	}
 	return s.SendEmailCode(ctx, SendEmailCodeRequest{
 		Email: *user.Email,
@@ -155,21 +159,22 @@ func (s *AuthService) SendLoginCodeByUsername(ctx context.Context, req SendLogin
 	})
 }
 
+// Login 登录相关的业务逻辑。
 func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginResponse, error) {
 	username := strings.TrimSpace(req.Username)
 	user, err := s.userRepo.GetByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.Unauthorized("invalid username or password")
+			return nil, apperror.Unauthorized("用户名或密码错误")
 		}
 		return nil, err
 	}
 
 	if user.Status != model.StatusEnabled {
-		return nil, apperror.Forbidden("user is disabled")
+		return nil, apperror.Forbidden("用户已被禁用")
 	}
 	if err = password.Compare(user.Password, req.Password); err != nil {
-		return nil, apperror.Unauthorized("invalid username or password")
+		return nil, apperror.Unauthorized("用户名或密码错误")
 	}
 
 	// Validate password login code
@@ -181,18 +186,19 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginRespon
 	return s.issueLoginResponse(ctx, user)
 }
 
+// EmailLogin 执行对应的业务逻辑。
 func (s *AuthService) EmailLogin(ctx context.Context, req EmailLoginRequest) (*LoginResponse, error) {
 	email := normalizeEmail(req.Email)
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("user not found")
+			return nil, apperror.NotFound("用户不存在")
 		}
 		return nil, err
 	}
 
 	if user.Status != model.StatusEnabled {
-		return nil, apperror.Forbidden("user is disabled")
+		return nil, apperror.Forbidden("用户已被禁用")
 	}
 	if err = s.validateEmailCode(ctx, emailCodeSceneLogin, email, req.Code); err != nil {
 		return nil, err
@@ -202,6 +208,7 @@ func (s *AuthService) EmailLogin(ctx context.Context, req EmailLoginRequest) (*L
 	return s.issueLoginResponse(ctx, user)
 }
 
+// Register 注册相关的业务逻辑。
 func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*RegisterResponse, error) {
 	email := normalizeEmail(req.Email)
 	username := strings.TrimSpace(req.Username)
@@ -234,11 +241,12 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*Regis
 	s.clearEmailCode(ctx, emailCodeSceneRegister, email)
 
 	return &RegisterResponse{
-		Message: "registration success, wait for role assignment before entering protected pages",
+		Message: "注册成功，请等待管理员审核并分配角色",
 		User:    NewUserDetailResponse(user),
 	}, nil
 }
 
+// Logout 退出登录相关的业务逻辑。
 func (s *AuthService) Logout(ctx context.Context, tokenID string) error {
 	if s.redis == nil {
 		return nil
@@ -246,17 +254,78 @@ func (s *AuthService) Logout(ctx context.Context, tokenID string) error {
 	return s.redis.Del(ctx, store.AccessTokenKey(tokenID)).Err()
 }
 
+// Me 执行对应的业务逻辑。
 func (s *AuthService) Me(ctx context.Context, userID uint) (*UserDetailResponse, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("user not found")
+			return nil, apperror.NotFound("用户不存在")
 		}
 		return nil, err
 	}
 
 	response := NewUserDetailResponse(*user)
 	return &response, nil
+}
+
+// UpdateProfile updates current user's profile fields.
+func (s *AuthService) UpdateProfile(ctx context.Context, userID uint, req UpdateProfileRequest) (*UserDetailResponse, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.NotFound("用户不存在")
+		}
+		return nil, err
+	}
+
+	nickname := strings.TrimSpace(req.Nickname)
+	if nickname == "" {
+		return nil, apperror.BadRequest("昵称不能为空")
+	}
+	user.Nickname = nickname
+
+	if strings.TrimSpace(req.Email) != "" {
+		email := normalizeEmail(req.Email)
+		existing, findErr := s.userRepo.GetByEmail(ctx, email)
+		if findErr == nil && existing.ID != user.ID {
+			return nil, apperror.Conflict("邮箱已存在")
+		}
+		if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return nil, findErr
+		}
+		user.Email = &email
+	}
+
+	if err = s.userRepo.Save(ctx, user); err != nil {
+		return nil, err
+	}
+	resp := NewUserDetailResponse(*user)
+	return &resp, nil
+}
+
+// ChangePassword updates current user's password.
+func (s *AuthService) ChangePassword(ctx context.Context, userID uint, req ChangePasswordRequest) error {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.NotFound("用户不存在")
+		}
+		return err
+	}
+
+	if err = password.Compare(user.Password, req.OldPassword); err != nil {
+		return apperror.BadRequest("旧密码不正确")
+	}
+	if strings.TrimSpace(req.NewPassword) == strings.TrimSpace(req.OldPassword) {
+		return apperror.BadRequest("新密码不能与旧密码相同")
+	}
+
+	hashed, err := password.Hash(req.NewPassword)
+	if err != nil {
+		return err
+	}
+	user.Password = hashed
+	return s.userRepo.Save(ctx, user)
 }
 
 func (s *AuthService) issueLoginResponse(ctx context.Context, user *model.User) (*LoginResponse, error) {
@@ -296,13 +365,13 @@ func (s *AuthService) issueLoginResponse(ctx context.Context, user *model.User) 
 func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string) (*SendPasswordLoginCodeResponse, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
-		return nil, apperror.BadRequest("username is required")
+		return nil, apperror.BadRequest("用户名不能为空")
 	}
 
 	// Check if user exists
 	if _, err := s.userRepo.GetByUsername(ctx, username); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("user not found")
+			return nil, apperror.NotFound("用户不存在")
 		}
 		return nil, err
 	}
@@ -319,7 +388,7 @@ func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string
 			return &SendPasswordLoginCodeResponse{
 				CaptchaKey: "", Image: "", ExpiresIn: int(s.emailCodeTTL().Seconds()),
 				CooldownIn: int(ttl.Seconds()),
-			}, apperror.Conflict("verification code was just sent, please wait before requesting again")
+			}, apperror.Conflict("验证码已发送，请稍后再试")
 		}
 	}
 
@@ -370,7 +439,7 @@ func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string
 	// Convert to PNG bytes
 	var buf bytes.Buffer
 	if err = png.Encode(&buf, img); err != nil {
-		return nil, apperror.Internal("failed to encode captcha image")
+		return nil, apperror.Internal("验证码图片生成失败")
 	}
 
 	// Convert to base64
@@ -408,13 +477,13 @@ func (s *AuthService) validatePasswordLoginCode(ctx context.Context, captchaKey,
 	storedCode, err := s.redis.Get(ctx, codeKey).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return apperror.Unauthorized("verification code has expired or not sent")
+			return apperror.Unauthorized("验证码已过期或未发送，请重新获取")
 		}
 		return err
 	}
 
 	if storedCode != strings.TrimSpace(code) {
-		return apperror.Unauthorized("invalid verification code")
+		return apperror.Unauthorized("验证码错误")
 	}
 
 	return nil
@@ -429,10 +498,10 @@ func (s *AuthService) clearPasswordLoginCode(ctx context.Context, captchaKey str
 
 func (s *AuthService) ensureEmailCodeDependencies() error {
 	if s.redis == nil {
-		return apperror.Internal("redis is required for email verification")
+		return apperror.Internal("验证码服务未就绪，请稍后重试")
 	}
 	if s.mailer == nil || !s.mailer.Enabled() {
-		return apperror.Internal("mail channel is not configured")
+		return apperror.Internal("邮件服务未配置，暂时无法发送验证码")
 	}
 	return nil
 }
@@ -443,21 +512,21 @@ func (s *AuthService) validateScenePreconditions(ctx context.Context, scene, ema
 		user, err := s.userRepo.GetByEmail(ctx, email)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apperror.NotFound("user not found")
+				return apperror.NotFound("用户不存在")
 			}
 			return err
 		}
 		if user.Status != model.StatusEnabled {
-			return apperror.Forbidden("user is disabled")
+			return apperror.Forbidden("用户已被禁用")
 		}
 	case emailCodeSceneRegister:
 		if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
-			return apperror.Conflict("email already registered")
+			return apperror.Conflict("邮箱已注册")
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 	default:
-		return apperror.BadRequest("invalid verification scene")
+		return apperror.BadRequest("验证码场景不合法")
 	}
 
 	return nil
@@ -469,26 +538,26 @@ func (s *AuthService) ensureEmailCodeCooldown(ctx context.Context, scene, email 
 		return err
 	}
 	if ttl > 0 {
-		return apperror.BadRequest(fmt.Sprintf("please wait %d seconds before requesting another code", int(ttl.Seconds())))
+		return apperror.BadRequest(fmt.Sprintf("请求过于频繁，请 %d 秒后重试", int(ttl.Seconds())))
 	}
 	return nil
 }
 
 func (s *AuthService) validateEmailCode(ctx context.Context, scene, email, code string) error {
 	if s.redis == nil {
-		return apperror.Internal("redis is required for email verification")
+		return apperror.Internal("验证码服务未就绪，请稍后重试")
 	}
 
 	storedCode, err := s.redis.Get(ctx, store.EmailCodeKey(scene, email)).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return apperror.BadRequest("verification code has expired, please request a new one")
+			return apperror.BadRequest("验证码已过期，请重新获取")
 		}
 		return err
 	}
 
 	if strings.TrimSpace(code) != storedCode {
-		return apperror.BadRequest("invalid verification code")
+		return apperror.BadRequest("验证码错误")
 	}
 
 	return nil
@@ -503,13 +572,13 @@ func (s *AuthService) clearEmailCode(ctx context.Context, scene, email string) {
 
 func (s *AuthService) ensureUserDoesNotExist(ctx context.Context, username, email string) error {
 	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
-		return apperror.Conflict("email already registered")
+		return apperror.Conflict("邮箱已注册")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
 
 	if _, err := s.userRepo.GetByUsername(ctx, username); err == nil {
-		return apperror.Conflict("username already exists")
+		return apperror.Conflict("用户名已存在")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
@@ -561,7 +630,7 @@ func normalizeEmail(email string) string {
 
 func generateNumericCode(length int) (string, error) {
 	if length <= 0 {
-		return "", errors.New("length must be positive")
+		return "", apperror.BadRequest("验证码长度必须大于 0")
 	}
 
 	max := big.NewInt(1)

@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// App 运行时全局依赖：配置、日志、DB、Redis、Casbin、邮件与 Gin 引擎。
 type App struct {
 	Config   *config.Config
 	Logger   *logx.Logger
@@ -114,6 +116,20 @@ func (b *Builder) WithMySQL() *Builder {
 	sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeSeconds) * time.Second)
 
 	b.app.DB = db
+	return b
+}
+
+// WithDictOverrides 在 MySQL 已就绪后，从数据字典覆盖“运行期可变”的配置项（告警域 + 邮件）。
+// 注意：mysql/redis/app.env/grpc.listen_addr 等启动期项仍以 env/yaml 为准，避免启动鸡生蛋。
+func (b *Builder) WithDictOverrides() *Builder {
+	if b.err != nil {
+		return b
+	}
+	if b.app == nil || b.app.Config == nil || b.app.DB == nil {
+		// MySQL 未就绪则跳过；不作为错误
+		return b
+	}
+	b.applyDictConfigOverrides(context.Background(), defaultDictConfigOverrides())
 	return b
 }
 

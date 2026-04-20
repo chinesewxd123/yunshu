@@ -5,14 +5,17 @@ import (
 	"time"
 
 	"go-permission-system/internal/model"
+	"go-permission-system/internal/pkg/pagination"
 
 	"gorm.io/gorm"
 )
 
+// RegistrationRequestRepository 用户自助注册申请的持久化访问。
 type RegistrationRequestRepository struct {
 	db *gorm.DB
 }
 
+// RegistrationRequestListParams 注册申请列表查询条件。
 type RegistrationRequestListParams struct {
 	Keyword  string
 	Status   *int
@@ -39,8 +42,6 @@ func (r *RegistrationRequestRepository) GetByID(ctx context.Context, id uint) (*
 
 func (r *RegistrationRequestRepository) List(ctx context.Context, params RegistrationRequestListParams) ([]model.RegistrationRequest, int64, error) {
 	var list []model.RegistrationRequest
-	var total int64
-
 	query := r.db.WithContext(ctx).Model(&model.RegistrationRequest{})
 
 	if params.Keyword != "" {
@@ -51,12 +52,8 @@ func (r *RegistrationRequestRepository) List(ctx context.Context, params Registr
 		query = query.Where("status = ?", *params.Status)
 	}
 
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	offset := (params.Page - 1) * params.PageSize
-	err := query.Order("id DESC").Offset(offset).Limit(params.PageSize).Find(&list).Error
+	page, pageSize := pagination.Normalize(params.Page, params.PageSize)
+	total, err := listWithPagination(query, page, pageSize, "id DESC", &list)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -77,6 +74,6 @@ func (r *RegistrationRequestRepository) CountPending(ctx context.Context, userna
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.RegistrationRequest{}).
 		Where("(username = ? OR email = ?) AND status = ?", username, email, model.RegistrationPending).
-		Count(&count)
-	return count, err.Error
+		Count(&count).Error
+	return count, err
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go-permission-system/internal/model"
+	"go-permission-system/internal/pkg/pagination"
 
 	"gorm.io/gorm"
 )
@@ -49,17 +50,9 @@ func (r *PermissionRepository) List(ctx context.Context, params PermissionListPa
 		keyword := "%" + params.Keyword + "%"
 		query = query.Where("name LIKE ? OR resource LIKE ? OR action LIKE ?", keyword, keyword, keyword)
 	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
 	var permissions []model.Permission
-	err := query.Order("id DESC").
-		Offset((params.Page - 1) * params.PageSize).
-		Limit(params.PageSize).
-		Find(&permissions).Error
+	page, pageSize := pagination.Normalize(params.Page, params.PageSize)
+	total, err := listWithPagination(query, page, pageSize, "id DESC", &permissions)
 	if err != nil {
 		return nil, 0, err
 	}

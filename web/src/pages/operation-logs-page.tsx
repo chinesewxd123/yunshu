@@ -163,6 +163,8 @@ export function OperationLogsPage() {
             pageSize: query.page_size,
             total,
             showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showQuickJumper: true,
             showTotal: (t) => `共 ${t} 条`,
             onChange: (page, pageSize) => setQuery((p) => ({ ...p, page, page_size: pageSize })),
           }}

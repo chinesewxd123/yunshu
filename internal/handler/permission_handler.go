@@ -1,7 +1,8 @@
 package handler
 
 import (
-	"go-permission-system/internal/pkg/apperror"
+	"context"
+
 	"go-permission-system/internal/pkg/response"
 	"go-permission-system/internal/service"
 
@@ -12,6 +13,7 @@ type PermissionHandler struct {
 	service *service.PermissionService
 }
 
+// NewPermissionHandler 创建相关逻辑。
 func NewPermissionHandler(service *service.PermissionService) *PermissionHandler {
 	return &PermissionHandler{service: service}
 }
@@ -26,22 +28,12 @@ func NewPermissionHandler(service *service.PermissionService) *PermissionHandler
 // @Param request body service.PermissionCreateRequest true "Create permission request"
 // @Success 201 {object} response.Body{data=service.PermissionItem} "created"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 403 {object} response.Body "forbidden"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/permissions [post]
 func (h *PermissionHandler) Create(c *gin.Context) {
-	var req service.PermissionCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-	data, err := h.service.Create(c.Request.Context(), req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Created(c, data)
+	handleJSONCreated(c, h.service.Create)
 }
 
 // Update godoc
@@ -55,10 +47,10 @@ func (h *PermissionHandler) Create(c *gin.Context) {
 // @Param request body service.PermissionUpdateRequest true "Update permission request"
 // @Success 200 {object} response.Body{data=service.PermissionItem} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 403 {object} response.Body "forbidden"
-// @Failure 404 {object} response.Body "permission not found"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限"
+// @Failure 404 {object} response.Body "权限不存在"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/permissions/{id} [put]
 func (h *PermissionHandler) Update(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
@@ -66,17 +58,9 @@ func (h *PermissionHandler) Update(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	var req service.PermissionUpdateRequest
-	if err = c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-	data, err := h.service.Update(c.Request.Context(), id, req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleJSON(c, func(ctx context.Context, req service.PermissionUpdateRequest) (*service.PermissionItem, error) {
+		return h.service.Update(ctx, id, req)
+	})
 }
 
 // Delete godoc
@@ -88,10 +72,10 @@ func (h *PermissionHandler) Update(c *gin.Context) {
 // @Param id path int true "Permission ID"
 // @Success 200 {object} response.Body{data=MessageData} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 403 {object} response.Body "forbidden"
-// @Failure 404 {object} response.Body "permission not found"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限"
+// @Failure 404 {object} response.Body "权限不存在"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/permissions/{id} [delete]
 func (h *PermissionHandler) Delete(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
@@ -115,10 +99,10 @@ func (h *PermissionHandler) Delete(c *gin.Context) {
 // @Param id path int true "Permission ID"
 // @Success 200 {object} response.Body{data=service.PermissionItem} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 403 {object} response.Body "forbidden"
-// @Failure 404 {object} response.Body "permission not found"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限"
+// @Failure 404 {object} response.Body "权限不存在"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/permissions/{id} [get]
 func (h *PermissionHandler) Detail(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
@@ -145,20 +129,10 @@ func (h *PermissionHandler) Detail(c *gin.Context) {
 // @Param page_size query int false "Page size"
 // @Success 200 {object} response.Body{data=PermissionPageData} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 403 {object} response.Body "forbidden"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/permissions [get]
 func (h *PermissionHandler) List(c *gin.Context) {
-	var query service.PermissionListQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-	data, err := h.service.List(c.Request.Context(), query)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleQuery(c, h.service.List)
 }

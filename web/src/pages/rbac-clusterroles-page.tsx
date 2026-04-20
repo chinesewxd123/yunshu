@@ -1,5 +1,7 @@
 import { Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { useRef } from "react";
+import { RbacClusterRoleFormCreateDrawer } from "../components/k8s/k8s-resource-form-drawers";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { applyRbac, deleteRbac, getRbacDetail, listClusterRoles, type RbacClusterRoleItem, type RbacDetail } from "../services/rbac";
 
@@ -7,6 +9,8 @@ type Item = RbacClusterRoleItem;
 type Detail = RbacDetail;
 
 export function RbacClusterRolesPage() {
+  const listReloadRef = useRef<() => void>(() => {});
+
   const columns: ColumnsType<Item> = [
     { title: "名称", dataIndex: "name", width: 280 },
     { title: "规则数", dataIndex: "rules", width: 100, render: (v: number) => <Tag color="blue">{v}</Tag> },
@@ -14,10 +18,26 @@ export function RbacClusterRolesPage() {
   ];
 
   return (
+    <>
     <YamlCrudPage<Item, Detail>
       title="RBAC - ClusterRole"
       needNamespace={false}
       columns={columns}
+      onToolbarReady={(ctx) => {
+        listReloadRef.current = ctx.reload;
+      }}
+      renderCreateFormTab={(ctx) => (
+        <RbacClusterRoleFormCreateDrawer
+          embedded
+          open
+          clusterId={ctx.clusterId}
+          onClose={ctx.closeCreateDrawer}
+          onSuccess={() => {
+            listReloadRef.current();
+            ctx.closeCreateDrawer();
+          }}
+        />
+      )}
       api={{
         list: async ({ clusterId, keyword }) => (await listClusterRoles(clusterId, keyword)).list,
         detail: async ({ clusterId, name }) => await getRbacDetail({ cluster_id: clusterId, kind: "ClusterRole", name }),
@@ -35,6 +55,7 @@ rules:
     verbs: ["get", "list"]
 `}
     />
+    </>
   );
 }
 

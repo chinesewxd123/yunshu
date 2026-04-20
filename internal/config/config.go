@@ -1,10 +1,16 @@
 package config
 
-import "github.com/spf13/viper"
+import (
+	"strings"
 
+	"github.com/spf13/viper"
+)
+
+// Config 根配置：聚合应用、HTTP、gRPC、存储、认证、告警与安全等子配置。
 type Config struct {
 	App      AppConfig      `mapstructure:"app"`
 	HTTP     HTTPConfig     `mapstructure:"http"`
+	GRPC     GRPCConfig     `mapstructure:"grpc"`
 	Log      LogConfig      `mapstructure:"log"`
 	MySQL    MySQLConfig    `mapstructure:"mysql"`
 	Redis    RedisConfig    `mapstructure:"redis"`
@@ -15,6 +21,13 @@ type Config struct {
 	Alert    AlertConfig    `mapstructure:"alert"`
 	Security SecurityConfig `mapstructure:"security"`
 	Agent    AgentConfig    `mapstructure:"agent"`
+}
+
+type GRPCConfig struct {
+	ListenAddr      string `mapstructure:"listen_addr"`
+	TargetAddr      string `mapstructure:"target_addr"`
+	MaxRecvMsgBytes int    `mapstructure:"max_recv_msg_bytes"`
+	MaxSendMsgBytes int    `mapstructure:"max_send_msg_bytes"`
 }
 
 type AppConfig struct {
@@ -180,6 +193,18 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Alert.PlatformLimits.GenericMaxChars <= 0 {
 		cfg.Alert.PlatformLimits.GenericMaxChars = 8000
+	}
+	if strings.TrimSpace(cfg.GRPC.ListenAddr) == "" {
+		cfg.GRPC.ListenAddr = "127.0.0.1:18080"
+	}
+	if strings.TrimSpace(cfg.GRPC.TargetAddr) == "" {
+		cfg.GRPC.TargetAddr = cfg.GRPC.ListenAddr
+	}
+	if cfg.GRPC.MaxRecvMsgBytes <= 0 {
+		cfg.GRPC.MaxRecvMsgBytes = 8 * 1024 * 1024
+	}
+	if cfg.GRPC.MaxSendMsgBytes <= 0 {
+		cfg.GRPC.MaxSendMsgBytes = 8 * 1024 * 1024
 	}
 	return &cfg, nil
 }

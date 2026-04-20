@@ -1,0 +1,23 @@
+.DS_Store
+
+# Local temp
+.tmp/
+
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Project-specific binaries
+log-agent-linux-amd64
+
+# Logs
+logs/*.log
+
+# Frontend build artifacts
+web/dist/
+web/node_modules/
+web/tsconfig.*.tsbuildinfo

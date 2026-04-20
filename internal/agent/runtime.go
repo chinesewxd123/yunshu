@@ -2,13 +2,13 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,11 +18,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
+	pb "go-permission-system/internal/grpc/proto"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Config struct {
-	ServerURL      string
+	GrpcServer     string
+	PlatformURL    string
 	ProjectID      uint
 	ServerID       uint
 	LogSourceID    uint
@@ -37,6 +41,11 @@ type Config struct {
 	FlushInterval  time.Duration
 	ResendAfter    time.Duration
 	Debug          bool
+	ListenPort     int
+	EnableRuntimePull bool
+	EnableFallback    bool
+	EnableDiscovery   bool
+	EnableHealth      bool
 }
 
 func logInfof(format string, args ...any) {
@@ -56,24 +65,15 @@ type runtimeSource struct {
 	Path        string `json:"path"`
 }
 
-type runtimeConfigResp struct {
-	Code int `json:"code"`
-	Data struct {
-		ProjectID uint            `json:"project_id"`
-		ServerID  uint            `json:"server_id"`
-		Sources   []runtimeSource `json:"sources"`
-	} `json:"data"`
-}
-
 func (c *Config) normalize() error {
 	if c.ServerID == 0 {
 		return errors.New("server-id is required")
 	}
-	base := strings.TrimRight(strings.TrimSpace(c.ServerURL), "/")
+	base := strings.TrimSpace(c.GrpcServer)
 	if base == "" {
-		return errors.New("server-url is required")
+		return errors.New("grpc-server is required")
 	}
-	c.ServerURL = base
+	c.GrpcServer = base
 	if c.TailLines <= 0 {
 		c.TailLines = 200
 	}
@@ -86,49 +86,74 @@ func (c *Config) normalize() error {
 	if c.ResendAfter <= 0 {
 		c.ResendAfter = 3 * time.Second
 	}
+	if c.ListenPort < 0 {
+		c.ListenPort = 0
+	}
+	if !c.EnableRuntimePull && !c.EnableFallback && !c.EnableDiscovery && !c.EnableHealth {
+		// Backward compatible defaults for legacy callers.
+		c.EnableRuntimePull = true
+		c.EnableFallback = false
+		c.EnableDiscovery = true
+		c.EnableHealth = true
+	}
 	return nil
 }
 
-type publicRegisterResp struct {
-	Code int `json:"code"`
-	Data struct {
-		ProjectID uint   `json:"project_id"`
-		AgentID   uint   `json:"agent_id"`
-		Token     string `json:"token"`
-	} `json:"data"`
-	Message string `json:"message"`
+func inferPlatformURL(grpcServer string) string {
+	v := strings.TrimSpace(grpcServer)
+	if v == "" {
+		return ""
+	}
+	// host:port => http://host:8080
+	if strings.Contains(v, "://") {
+		return strings.TrimRight(v, "/")
+	}
+	host := v
+	if idx := strings.Index(v, ":"); idx > 0 {
+		host = v[:idx]
+	}
+	if strings.TrimSpace(host) == "" {
+		return ""
+	}
+	return "http://" + host + ":8080"
 }
 
-func publicRegister(ctx context.Context, base string, serverID uint, name, version, secret string) (projectID uint, token string, err error) {
-	url := base + "/api/v1/agents/public-register"
-	body := map[string]any{
-		"server_id":       serverID,
-		"name":            strings.TrimSpace(name),
-		"version":         strings.TrimSpace(version),
-		"register_secret": strings.TrimSpace(secret),
+func reportHealth(ctx context.Context, platformURL string, payload map[string]any) error {
+	platformURL = strings.TrimRight(strings.TrimSpace(platformURL), "/")
+	if platformURL == "" {
+		return nil
 	}
-	b, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(b)))
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, platformURL+"/api/v1/agents/health/report", bytes.NewReader(body))
 	if err != nil {
-		return 0, "", err
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, "", err
+		return err
 	}
 	defer resp.Body.Close()
-	var out publicRegisterResp
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("health report status=%d", resp.StatusCode)
+	}
+	return nil
+}
+
+func publicRegister(ctx context.Context, cli pb.AgentRuntimeServiceClient, serverID uint, name, version, secret string) (projectID uint, token string, err error) {
+	resp, err := cli.PublicRegister(ctx, &pb.PublicRegisterRequest{
+		ServerId:       uint64(serverID),
+		Name:           strings.TrimSpace(name),
+		Version:        strings.TrimSpace(version),
+		RegisterSecret: strings.TrimSpace(secret),
+	})
+	if err != nil {
 		return 0, "", err
 	}
-	if resp.StatusCode/100 != 2 {
-		return 0, "", fmt.Errorf("public-register failed: status=%d", resp.StatusCode)
-	}
-	if strings.TrimSpace(out.Data.Token) == "" {
+	if strings.TrimSpace(resp.GetToken()) == "" {
 		return 0, "", fmt.Errorf("public-register empty token")
 	}
-	return out.Data.ProjectID, out.Data.Token, nil
+	return uint(resp.GetProjectId()), resp.GetToken(), nil
 }
 
 type ingestMessage struct {
@@ -259,29 +284,28 @@ func scanDiscovery(ctx context.Context, sources []runtimeSource) []discoveryItem
 	return out
 }
 
-func reportDiscovery(ctx context.Context, base, token string, items []discoveryItem) error {
+func reportDiscovery(ctx context.Context, cli pb.AgentRuntimeServiceClient, token string, items []discoveryItem) error {
 	if len(items) == 0 {
 		return nil
 	}
-	url := base + "/api/v1/agents/discovery/report"
-	payload := map[string]any{
-		"token": token,
-		"items": items,
+	reqItems := make([]*pb.AgentDiscoveryItem, 0, len(items))
+	for _, it := range items {
+		extra := map[string]string{}
+		for k, v := range it.Extra {
+			extra[k] = fmt.Sprint(v)
+		}
+		reqItems = append(reqItems, &pb.AgentDiscoveryItem{
+			Kind:  it.Kind,
+			Value: it.Value,
+			Extra: extra,
+		})
 	}
-	b, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(b)))
+	_, err := cli.ReportDiscovery(ctx, &pb.ReportDiscoveryRequest{
+		Token: token,
+		Items: reqItems,
+	})
 	if err != nil {
 		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	_, _ = io.ReadAll(resp.Body)
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("discovery report failed: status=%d", resp.StatusCode)
 	}
 	return nil
 }
@@ -301,15 +325,25 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := cfg.normalize(); err != nil {
 		return err
 	}
-	logInfof("starting agent name=%s version=%s server=%d url=%s", strings.TrimSpace(cfg.Name), strings.TrimSpace(cfg.Version), cfg.ServerID, cfg.ServerURL)
+	logInfof("starting agent name=%s version=%s server=%d grpc=%s", strings.TrimSpace(cfg.Name), strings.TrimSpace(cfg.Version), cfg.ServerID, cfg.GrpcServer)
+	logInfof(
+		"features runtime=%v fallback=%v discovery=%v health=%v",
+		cfg.EnableRuntimePull, cfg.EnableFallback, cfg.EnableDiscovery, cfg.EnableHealth,
+	)
+	conn, err := grpc.NewClient(cfg.GrpcServer, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	agentClient := pb.NewAgentRuntimeServiceClient(conn)
 	token := strings.TrimSpace(cfg.Token)
 	projectID := cfg.ProjectID
 	if token == "" {
 		sec := strings.TrimSpace(cfg.RegisterSecret)
 		if sec == "" {
-			return errors.New("token is required (or provide register-secret for agent-first mode)")
+			return errors.New("令牌不能为空 (or provide register-secret for agent-first mode)")
 		}
-		pid, tk, err := publicRegister(ctx, cfg.ServerURL, cfg.ServerID, cfg.Name, cfg.Version, sec)
+		pid, tk, err := publicRegister(ctx, agentClient, cfg.ServerID, cfg.Name, cfg.Version, sec)
 		if err != nil {
 			return err
 		}
@@ -317,19 +351,45 @@ func Run(ctx context.Context, cfg Config) error {
 		token = tk
 		logInfof("public register succeeded project=%d server=%d", projectID, cfg.ServerID)
 	}
+	if strings.TrimSpace(cfg.PlatformURL) == "" {
+		cfg.PlatformURL = inferPlatformURL(cfg.GrpcServer)
+	}
+	if cfg.EnableHealth {
+		_ = reportHealth(ctx, cfg.PlatformURL, map[string]any{
+			"token":            token,
+			"listen_port":      cfg.ListenPort,
+			"install_progress": 60,
+			"health_status":    "starting",
+			"version":          cfg.Version,
+		})
+	}
 
-	sources, pID, err := fetchRuntimeConfig(ctx, cfg.ServerURL, token)
-	if err == nil && len(sources) > 0 {
-		projectID = pID
-		logInfof("runtime-config loaded project=%d sources=%d", projectID, len(sources))
-	} else {
+	var sources []runtimeSource
+	var pID uint
+	if cfg.EnableRuntimePull {
+		sources, pID, err = fetchRuntimeConfig(ctx, agentClient, token)
+		if err == nil && len(sources) > 0 {
+			projectID = pID
+			logInfof("runtime-config loaded project=%d sources=%d", projectID, len(sources))
+		}
+	}
+	if len(sources) == 0 {
+		if !cfg.EnableFallback {
+			if cfg.EnableRuntimePull {
+				if err != nil {
+					return fmt.Errorf("runtime-config failed and fallback disabled: %w", err)
+				}
+				return errors.New("runtime-config empty and fallback disabled")
+			}
+			return errors.New("runtime-pull disabled and fallback disabled")
+		}
 		if err != nil {
 			logInfof("runtime-config unavailable, fallback mode enabled err=%v", err)
 		} else {
 			logInfof("runtime-config empty, fallback mode enabled")
 		}
 		if cfg.LogSourceID == 0 || strings.TrimSpace(cfg.Path) == "" {
-			return errors.New("no runtime sources from server and no fallback log-source-id/path provided")
+			return errors.New("fallback enabled but log-source-id/path is missing")
 		}
 		if projectID == 0 {
 			return errors.New("project-id is required when using fallback single source")
@@ -345,54 +405,67 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	// Best-effort discovery report (helps UI bootstrap log sources).
 	// Does not block agent main ingest loop if it fails.
-	discoveryItems := scanDiscovery(ctx, sources)
-	if err := reportDiscovery(ctx, cfg.ServerURL, token, discoveryItems); err != nil {
-		logDebugf(cfg.Debug, "discovery report failed err=%v", err)
-	} else {
-		logDebugf(cfg.Debug, "discovery report sent items=%d", len(discoveryItems))
+	if cfg.EnableDiscovery {
+		discoveryItems := scanDiscovery(ctx, sources)
+		if err := reportDiscovery(ctx, agentClient, token, discoveryItems); err != nil {
+			logDebugf(cfg.Debug, "discovery report failed err=%v", err)
+		} else {
+			logDebugf(cfg.Debug, "discovery report sent items=%d", len(discoveryItems))
+		}
 	}
-	return runAgentLoop(ctx, cfg, projectID, token, sources)
+	err = runAgentLoop(ctx, agentClient, cfg, projectID, token, sources)
+	if cfg.EnableHealth {
+		_ = reportHealth(context.Background(), cfg.PlatformURL, map[string]any{
+			"token":            token,
+			"listen_port":      cfg.ListenPort,
+			"install_progress": 100,
+			"health_status":    "stopped",
+			"last_error":       fmt.Sprint(err),
+			"version":          cfg.Version,
+		})
+	}
+	return err
 }
 
-func fetchRuntimeConfig(ctx context.Context, base, token string) ([]runtimeSource, uint, error) {
-	url := base + "/api/v1/agents/runtime-config?token=" + neturl.QueryEscape(token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func fetchRuntimeConfig(ctx context.Context, cli pb.AgentRuntimeServiceClient, token string) ([]runtimeSource, uint, error) {
+	out, err := cli.GetRuntimeConfig(ctx, &pb.GetRuntimeConfigRequest{Token: token})
 	if err != nil {
 		return nil, 0, err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, 0, err
+	sources := make([]runtimeSource, 0, len(out.GetSources()))
+	for _, it := range out.GetSources() {
+		sources = append(sources, runtimeSource{
+			LogSourceID: uint(it.GetLogSourceId()),
+			LogType:     it.GetLogType(),
+			Path:        it.GetPath(),
+		})
 	}
-	defer resp.Body.Close()
-	var out runtimeConfigResp
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, 0, err
-	}
-	if resp.StatusCode/100 != 2 {
-		return nil, 0, fmt.Errorf("runtime-config failed: status=%d", resp.StatusCode)
-	}
-	return out.Data.Sources, out.Data.ProjectID, nil
+	return sources, uint(out.GetProjectId()), nil
 }
 
-func runAgentLoop(ctx context.Context, cfg Config, projectID uint, token string, sources []runtimeSource) error {
-	wsURL, err := toWSURL(cfg.ServerURL + "/api/v1/agents/ws/ingest?token=" + neturl.QueryEscape(token))
+func runAgentLoop(ctx context.Context, client pb.AgentRuntimeServiceClient, cfg Config, projectID uint, token string, sources []runtimeSource) error {
+	logInfof("connecting ingest stream project=%d server=%d", projectID, cfg.ServerID)
+	stream, err := client.IngestLogs(ctx)
 	if err != nil {
 		return err
 	}
-	logInfof("connecting ingest websocket project=%d server=%d", projectID, cfg.ServerID)
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	logInfof("ingest websocket connected")
+	logInfof("ingest stream connected")
 
 	var writeMu sync.Mutex
-	writeJSON := func(v any) error {
+	writeIngest := func(v ingestMessage) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		return conn.WriteJSON(v)
+		entries := make([]*pb.IngestEntry, 0, len(v.Entries))
+		for _, e := range v.Entries {
+			entries = append(entries, &pb.IngestEntry{Line: e.Line, FilePath: e.FilePath})
+		}
+		return stream.Send(&pb.IngestLogsRequest{
+			ProjectId:   uint64(v.ProjectID),
+			ServerId:    uint64(v.ServerID),
+			LogSourceId: uint64(v.LogSourceID),
+			Seq:         v.Seq,
+			Entries:     entries,
+		})
 	}
 
 	var seq uint64
@@ -401,19 +474,13 @@ func runAgentLoop(ctx context.Context, cfg Config, projectID uint, token string,
 
 	go func() {
 		for {
-			var m map[string]any
-			if err := conn.ReadJSON(&m); err != nil {
+			ack, err := stream.Recv()
+			if err != nil {
 				return
 			}
-			if typ, _ := m["type"].(string); typ == "ack" {
-				n, ok := m["seq"].(float64)
-				if !ok {
-					continue
-				}
-				pendingMu.Lock()
-				delete(pending, uint64(n))
-				pendingMu.Unlock()
-			}
+			pendingMu.Lock()
+			delete(pending, ack.GetSeq())
+			pendingMu.Unlock()
 		}
 	}()
 
@@ -513,7 +580,7 @@ func runAgentLoop(ctx context.Context, cfg Config, projectID uint, token string,
 			Seq:         s,
 			Entries:     entries,
 		}
-		if err := writeJSON(msg); err == nil {
+		if err := writeIngest(msg); err == nil {
 			pendingMu.Lock()
 			pending[s] = &pendingBatch{msg: msg, lastSent: time.Now()}
 			pendingMu.Unlock()
@@ -558,7 +625,7 @@ func runAgentLoop(ctx context.Context, cfg Config, projectID uint, token string,
 			pendingMu.Lock()
 			for _, it := range pending {
 				if now.Sub(it.lastSent) >= cfg.ResendAfter {
-					if err := writeJSON(it.msg); err != nil {
+					if err := writeIngest(it.msg); err != nil {
 						logDebugf(cfg.Debug, "resend batch failed seq=%d err=%v", it.msg.Seq, err)
 						continue
 					}
@@ -586,22 +653,17 @@ func runAgentLoop(ctx context.Context, cfg Config, projectID uint, token string,
 					lastLine,
 				)
 			}
+			if cfg.EnableHealth {
+				_ = reportHealth(ctx, cfg.PlatformURL, map[string]any{
+					"token":            token,
+					"listen_port":      cfg.ListenPort,
+					"install_progress": 100,
+					"health_status":    "running",
+					"version":          cfg.Version,
+				})
+			}
 		}
 	}
-}
-
-func toWSURL(httpURL string) (string, error) {
-	u, err := neturl.Parse(httpURL)
-	if err != nil {
-		return "", err
-	}
-	switch u.Scheme {
-	case "http":
-		u.Scheme = "ws"
-	case "https":
-		u.Scheme = "wss"
-	}
-	return u.String(), nil
 }
 
 func startLocalSource(ctx context.Context, sourceType, path string, tailLines int) (<-chan string, error) {

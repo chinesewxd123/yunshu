@@ -1,7 +1,8 @@
 import { EyeOutlined, TagsOutlined } from "@ant-design/icons";
-import { Button, Descriptions, Divider, Modal, Table, Tag, Tooltip, Typography } from "antd";
+import { Button, Descriptions, Divider, Drawer, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { NamespaceFormCreateDrawer } from "../components/k8s/k8s-resource-form-drawers";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { applyNamespace, deleteNamespace, getNamespaceDetail, listNamespaces } from "../services/namespaces";
 
@@ -27,6 +28,7 @@ type Detail = {
 };
 
 export function NamespacesPage() {
+  const listReloadRef = useRef<() => void>(() => {});
   const [metaOpen, setMetaOpen] = useState(false);
   const [metaTitle, setMetaTitle] = useState<"标签" | "注解">("标签");
   const [metaData, setMetaData] = useState<Record<string, string>>({});
@@ -74,6 +76,21 @@ export function NamespacesPage() {
         apply: async ({ clusterId, manifest }) => await applyNamespace(clusterId, manifest),
         remove: async ({ clusterId, name }) => await deleteNamespace(clusterId, name),
       }}
+      onToolbarReady={(ctx) => {
+        listReloadRef.current = ctx.reload;
+      }}
+      renderCreateFormTab={(ctx) => (
+        <NamespaceFormCreateDrawer
+          embedded
+          open
+          clusterId={ctx.clusterId}
+          onClose={ctx.closeCreateDrawer}
+          onSuccess={() => {
+            listReloadRef.current();
+            ctx.closeCreateDrawer();
+          }}
+        />
+      )}
       createTemplate={() => `apiVersion: v1
 kind: Namespace
 metadata:
@@ -153,18 +170,16 @@ metadata:
         </div>
       )}
     />
-    <Modal
+    <Drawer
       title={`${metaTitle}详情`}
       open={metaOpen}
-      onCancel={() => setMetaOpen(false)}
-      footer={null}
+      onClose={() => setMetaOpen(false)}
       width={760}
-      destroyOnClose
     >
       <Table
         size="small"
         rowKey={(r) => r.key}
-        pagination={{ pageSize: 10 }}
+        pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showQuickJumper: true }}
         dataSource={Object.entries(metaData).map(([key, value]) => ({ key, value }))}
         locale={{ emptyText: `该命名空间暂无${metaTitle}` }}
         columns={[
@@ -189,7 +204,7 @@ metadata:
           },
         ]}
       />
-    </Modal>
+    </Drawer>
     </>
   );
 }

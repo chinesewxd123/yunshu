@@ -1,4 +1,5 @@
 import type {
+  ChangePasswordPayload,
   EmailLoginPayload,
   LoginResult,
   MessageData,
@@ -9,6 +10,7 @@ import type {
   SendEmailCodeResult,
   SendPasswordLoginCodePayload,
   SendPasswordLoginCodeResult,
+  UpdateProfilePayload,
   UserItem,
 } from "../types/api";
 import { getData, http } from "./http";
@@ -34,7 +36,8 @@ export function emailLogin(payload: EmailLoginPayload) {
 }
 
 export function registerByEmail(payload: RegisterPayload) {
-  return getData<MessageData>(http.post("/auth/register", payload));
+  // 注册失败提示由页面自行处理，避免拦截器通用文案覆盖后端细节。
+  return getData<MessageData>(http.post("/auth/register", payload, { silentErrorToast: true }));
 }
 
 export function logout() {
@@ -43,6 +46,14 @@ export function logout() {
 
 export function getCurrentUser() {
   return getData<UserItem>(http.get("/auth/me"));
+}
+
+export function updateProfile(payload: UpdateProfilePayload) {
+  return getData<UserItem>(http.put("/auth/me", payload));
+}
+
+export function changePassword(payload: ChangePasswordPayload) {
+  return getData<MessageData>(http.put("/auth/password", payload));
 }
 
 export interface HealthData {

@@ -158,10 +158,12 @@ type K8sPodService struct {
 	runtime *K8sRuntimeService
 }
 
+// NewK8sPodService 创建相关逻辑。
 func NewK8sPodService(runtime *K8sRuntimeService) *K8sPodService {
 	return &K8sPodService{runtime: runtime}
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *K8sPodService) List(ctx context.Context, query PodListQuery) ([]PodItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -222,6 +224,7 @@ func mapPodItem(p corev1.Pod) PodItem {
 	}
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *K8sPodService) Detail(ctx context.Context, query PodDetailQuery) (*PodDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -280,6 +283,7 @@ func (s *K8sPodService) Detail(ctx context.Context, query PodDetailQuery) (*PodD
 	}, nil
 }
 
+// Events 执行对应的业务逻辑。
 func (s *K8sPodService) Events(ctx context.Context, query PodEventQuery) ([]PodEventItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -307,6 +311,7 @@ func (s *K8sPodService) Events(ctx context.Context, query PodEventQuery) ([]PodE
 	return out, nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *K8sPodService) Delete(ctx context.Context, req PodDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -318,6 +323,7 @@ func (s *K8sPodService) Delete(ctx context.Context, req PodDeleteRequest) error 
 	return nil
 }
 
+// Exec 执行对应的业务逻辑。
 func (s *K8sPodService) Exec(ctx context.Context, req PodExecRequest) (string, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -333,7 +339,7 @@ func (s *K8sPodService) Exec(ctx context.Context, req PodExecRequest) (string, e
 	}
 	cmd := strings.Fields(strings.TrimSpace(req.Command))
 	if len(cmd) == 0 {
-		return "", apperror.BadRequest("command 不能为空")
+		return "", apperror.BadRequest("命令不能为空")
 	}
 
 	var out []byte
@@ -408,6 +414,7 @@ func (s *K8sPodService) ExecTTYStream(
 	})
 }
 
+// GetLogs 获取相关的业务逻辑。
 func (s *K8sPodService) GetLogs(ctx context.Context, query PodLogsQuery) (string, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -443,6 +450,7 @@ func (s *K8sPodService) GetLogs(ctx context.Context, query PodLogsQuery) (string
 	return k8sutil.FilterLogLines(buf.String(), query.Keyword, query.StartTime, query.EndTime), nil
 }
 
+// StreamLogs 执行对应的业务逻辑。
 func (s *K8sPodService) StreamLogs(ctx context.Context, query PodLogsQuery, onLine func(string) error) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -496,6 +504,7 @@ func (s *K8sPodService) StreamLogs(ctx context.Context, query PodLogsQuery, onLi
 	}
 }
 
+// Restart 执行对应的业务逻辑。
 func (s *K8sPodService) Restart(ctx context.Context, req PodRestartRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -507,6 +516,7 @@ func (s *K8sPodService) Restart(ctx context.Context, req PodRestartRequest) erro
 	return nil
 }
 
+// ListFiles 查询列表相关的业务逻辑。
 func (s *K8sPodService) ListFiles(ctx context.Context, query PodFileQuery) ([]PodFileItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -546,6 +556,7 @@ func (s *K8sPodService) ListFiles(ctx context.Context, query PodFileQuery) ([]Po
 	return out, nil
 }
 
+// ReadFile 执行对应的业务逻辑。
 func (s *K8sPodService) ReadFile(ctx context.Context, query PodFileQuery) ([]byte, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -553,7 +564,7 @@ func (s *K8sPodService) ReadFile(ctx context.Context, query PodFileQuery) ([]byt
 	}
 	path := strings.TrimSpace(query.Path)
 	if path == "" {
-		return nil, apperror.BadRequest("path 不能为空")
+		return nil, apperror.BadRequest("路径不能为空")
 	}
 	data, err := k.WithContext(ctx).
 		Namespace(query.Namespace).
@@ -568,6 +579,7 @@ func (s *K8sPodService) ReadFile(ctx context.Context, query PodFileQuery) ([]byt
 	return data, nil
 }
 
+// DeleteFile 删除相关的业务逻辑。
 func (s *K8sPodService) DeleteFile(ctx context.Context, query PodFileQuery) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -575,7 +587,7 @@ func (s *K8sPodService) DeleteFile(ctx context.Context, query PodFileQuery) erro
 	}
 	path := strings.TrimSpace(query.Path)
 	if path == "" {
-		return apperror.BadRequest("path 不能为空")
+		return apperror.BadRequest("路径不能为空")
 	}
 	if _, err := k.WithContext(ctx).
 		Namespace(query.Namespace).
@@ -589,6 +601,7 @@ func (s *K8sPodService) DeleteFile(ctx context.Context, query PodFileQuery) erro
 	return nil
 }
 
+// UploadFile 执行对应的业务逻辑。
 func (s *K8sPodService) UploadFile(ctx context.Context, query PodFileQuery, filename string, r io.Reader) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -622,6 +635,7 @@ func (s *K8sPodService) UploadFile(ctx context.Context, query PodFileQuery, file
 	return nil
 }
 
+// CreateByYAML 创建相关的业务逻辑。
 func (s *K8sPodService) CreateByYAML(ctx context.Context, req PodCreateYAMLRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -631,6 +645,7 @@ func (s *K8sPodService) CreateByYAML(ctx context.Context, req PodCreateYAMLReque
 	return nil
 }
 
+// CreateSimple 创建相关的业务逻辑。
 func (s *K8sPodService) CreateSimple(ctx context.Context, req PodCreateSimpleRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -656,6 +671,7 @@ func (s *K8sPodService) CreateSimple(ctx context.Context, req PodCreateSimpleReq
 	return nil
 }
 
+// UpdateSimple 更新相关的业务逻辑。
 func (s *K8sPodService) UpdateSimple(ctx context.Context, req PodCreateSimpleRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {

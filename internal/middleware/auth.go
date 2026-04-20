@@ -3,10 +3,10 @@ package middleware
 import (
 	"strings"
 
-	logx "go-permission-system/internal/pkg/logger"
 	"go-permission-system/internal/model"
 	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/auth"
+	logx "go-permission-system/internal/pkg/logger"
 	"go-permission-system/internal/pkg/response"
 	"go-permission-system/internal/repository"
 	"go-permission-system/internal/store"
@@ -19,7 +19,7 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if header == "" || !strings.HasPrefix(header, "Bearer ") {
-			response.Error(c, apperror.Unauthorized("缺少或非法 Authorization 头"))
+			response.Error(c, apperror.Unauthorized("缺少或非法授权请求头"))
 			c.Abort()
 			return
 		}
@@ -28,7 +28,7 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 		claims, err := auth.ParseToken(secret, tokenString)
 		if err != nil {
 			logger.Info.Warn("parse token failed", "error", err)
-			response.Error(c, apperror.Unauthorized("token 无效"))
+			response.Error(c, apperror.Unauthorized("Token 无效"))
 			c.Abort()
 			return
 		}
@@ -54,11 +54,12 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 		}
 
 		currentUser := &auth.CurrentUser{
-			ID:        user.ID,
-			Username:  user.Username,
-			Nickname:  user.Nickname,
-			Status:    user.Status,
-			RoleCodes: model.ExtractRoleCodes(user.Roles),
+			ID:           user.ID,
+			Username:     user.Username,
+			Nickname:     user.Nickname,
+			Status:       user.Status,
+			DepartmentID: user.DepartmentID,
+			RoleCodes:    model.ExtractRoleCodes(user.Roles),
 		}
 
 		c.Set(auth.ContextClaimsKey, claims)

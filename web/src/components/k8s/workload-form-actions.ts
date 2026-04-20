@@ -23,12 +23,20 @@ export function useWorkloadFormActions<FV>(opts: UseWorkloadFormActionsOptions<F
 
   const close = () => setOpen(false);
 
-  const openCreate = (next: { clusterId: number; namespace: string }) => {
+  /** 仅填充表单与 ctx，不打开独立 Drawer（用于 YamlCrudPage 内嵌「表单创建」Tab） */
+  const prepareCreate = (next: { clusterId: number; namespace: string }, initial?: Partial<FV>) => {
     if (opts.mode) setMode("create");
     setCtx({ clusterId: next.clusterId, namespace: next.namespace });
-    setOpen(true);
-    setLoading(false);
     opts.form.resetFields();
+    if (initial && Object.keys(initial).length > 0) {
+      opts.form.setFieldsValue(initial as any);
+    }
+    setLoading(false);
+  };
+
+  const openCreate = (next: { clusterId: number; namespace: string }, initial?: Partial<FV>) => {
+    prepareCreate(next, initial);
+    setOpen(true);
   };
 
   const openEdit = (next: { clusterId: number; namespace: string; name: string }, record?: any) => {
@@ -52,6 +60,6 @@ export function useWorkloadFormActions<FV>(opts: UseWorkloadFormActionsOptions<F
     })();
   };
 
-  return { open, loading, ctx, mode, setMode, openCreate, openEdit, close, setOpen, setLoading, setCtx };
+  return { open, loading, ctx, mode, setMode, prepareCreate, openCreate, openEdit, close, setOpen, setLoading, setCtx };
 }
 

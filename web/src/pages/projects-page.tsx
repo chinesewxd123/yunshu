@@ -1,7 +1,16 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, message } from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, TeamOutlined } from "@ant-design/icons";
+import { Button, Card, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, message } from "antd";
 import { useEffect, useState } from "react";
-import { createProject, deleteProject, getProjects, updateProject, type ProjectCreatePayload, type ProjectItem, type ProjectUpdatePayload } from "../services/projects";
+import { ProjectMembersPanel } from "../components/project-members-panel";
+import {
+  createProject,
+  deleteProject,
+  getProjects,
+  updateProject,
+  type ProjectCreatePayload,
+  type ProjectItem,
+  type ProjectUpdatePayload,
+} from "../services/projects";
 import { formatDateTime } from "../utils/format";
 
 const defaultQuery = { keyword: "", page: 1, page_size: 10 };
@@ -16,6 +25,8 @@ export function ProjectsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [current, setCurrent] = useState<ProjectItem | null>(null);
   const [form] = Form.useForm<ProjectCreatePayload & ProjectUpdatePayload>();
+
+  const [memberProject, setMemberProject] = useState<ProjectItem | null>(null);
 
   useEffect(() => {
     void load();
@@ -52,7 +63,7 @@ export function ProjectsPage() {
     try {
       if (!current) {
         await createProject(values);
-        message.success("已创建项目");
+        message.success("已创建项目（你已自动成为 owner）");
       } else {
         await updateProject(current.id, values);
         message.success("已更新项目");
@@ -99,6 +110,8 @@ export function ProjectsPage() {
           pageSize: query.page_size,
           total,
           showSizeChanger: true,
+          pageSizeOptions: [10, 20, 50, 100],
+          showQuickJumper: true,
           onChange: (page, pageSize) => setQuery((q) => ({ ...q, page, page_size: pageSize })),
         }}
         columns={[
@@ -114,9 +127,12 @@ export function ProjectsPage() {
           { title: "创建时间", dataIndex: "created_at", width: 200, render: (v: string) => formatDateTime(v) },
           {
             title: "操作",
-            width: 180,
+            width: 260,
             render: (_: unknown, record: ProjectItem) => (
-              <Space>
+              <Space wrap>
+                <Button type="link" icon={<TeamOutlined />} onClick={() => setMemberProject(record)}>
+                  成员
+                </Button>
                 <Button icon={<EditOutlined />} onClick={() => openEdit(record)}>
                   编辑
                 </Button>
@@ -130,6 +146,17 @@ export function ProjectsPage() {
           },
         ]}
       />
+
+      <Drawer
+        title={memberProject ? `项目成员 — ${memberProject.name}` : "项目成员"}
+        placement="right"
+        width={720}
+        open={memberProject !== null}
+        onClose={() => setMemberProject(null)}
+        destroyOnClose
+      >
+        {memberProject ? <ProjectMembersPanel projectId={memberProject.id} /> : null}
+      </Drawer>
 
       <Modal
         title={current ? "编辑项目" : "新增项目"}
@@ -162,4 +189,3 @@ export function ProjectsPage() {
     </Card>
   );
 }
-

@@ -7,12 +7,14 @@ import (
 
 	"go-permission-system/internal/config"
 	"go-permission-system/internal/model"
+	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/mailer"
 	"go-permission-system/internal/pkg/password"
 	"go-permission-system/internal/repository"
 	"go-permission-system/internal/store"
 
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 type RegistrationService struct {
@@ -24,6 +26,7 @@ type RegistrationService struct {
 	appName  string
 }
 
+// NewRegistrationService 创建相关逻辑。
 func NewRegistrationService(
 	regRepo *repository.RegistrationRequestRepository,
 	userRepo *repository.UserRepository,
@@ -55,6 +58,7 @@ type ReviewRequest struct {
 	Comment string `json:"comment"`
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *RegistrationService) Apply(ctx context.Context, req ApplyRegisterRequest) error {
 	email := normalizeEmail(req.Email)
 	username := strings.TrimSpace(req.Username)
@@ -88,6 +92,7 @@ func (s *RegistrationService) Apply(ctx context.Context, req ApplyRegisterReques
 	return nil
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *RegistrationService) List(ctx context.Context, keyword string, status *int, page, pageSize int) ([]model.RegistrationRequest, int64, error) {
 	return s.regRepo.List(ctx, repository.RegistrationRequestListParams{
 		Keyword:  keyword,
@@ -97,13 +102,14 @@ func (s *RegistrationService) List(ctx context.Context, keyword string, status *
 	})
 }
 
+// Review 执行对应的业务逻辑。
 func (s *RegistrationService) Review(ctx context.Context, id uint, reviewerID uint, req ReviewRequest) error {
 	regReq, err := s.regRepo.GetByID(ctx, id)
 	if err != nil {
-		return errors.New("registration request not found")
+		return apperror.NotFound("注册申请不存在")
 	}
 	if regReq.Status != model.RegistrationPending {
-		return errors.New("this request has already been reviewed")
+		return apperror.Conflict("该注册申请已审核，请勿重复操作")
 	}
 
 	newStatus := model.RegistrationRequestStatus(req.Status)
@@ -135,16 +141,21 @@ func (s *RegistrationService) ensureRegistrationDoesNotExist(ctx context.Context
 		return err
 	}
 	if count > 0 {
-		return errors.New("a pending registration already exists for this username or email")
+		return apperror.Conflict("该用户名或邮箱已有待审核注册申请，请勿重复提交")
 	}
 
-	exists, err := s.userRepo.ExistsByUsernameOrEmail(ctx, username, email)
-	if err != nil {
+	if _, err := s.userRepo.GetByUsername(ctx, username); err == nil {
+		return apperror.Conflict("用户名已存在")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	if exists {
-		return errors.New("username or email already registered")
+
+	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
+		return apperror.Conflict("邮箱已注册")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
 	}
+
 	return nil
 }
 
@@ -155,10 +166,13 @@ func (s *RegistrationService) validateEmailCode(ctx context.Context, scene, emai
 	key := store.EmailCodeKey(scene, email)
 	val, err := s.redis.Get(ctx, key).Result()
 	if err != nil {
-		return errors.New("verification code has expired or not sent")
+		if errors.Is(err, redis.Nil) {
+			return apperror.BadRequest("验证码已过期或未发送，请重新获取")
+		}
+		return err
 	}
 	if val != code {
-		return errors.New("verification code is incorrect")
+		return apperror.BadRequest("验证码错误，请检查后重试")
 	}
 	return nil
 }

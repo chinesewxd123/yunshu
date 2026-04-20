@@ -8,12 +8,29 @@ import (
 	"mime"
 	"mime/multipart"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
 
 	"go-permission-system/internal/config"
 )
+
+// smtpEnvelopeAddr 返回 MAIL FROM / RCPT TO 使用的裸邮箱（addr-spec）。若配置成「名称 <a@b>」，只取 a@b；否则会触发 QQ 等服务器 501 bad syntax。
+func smtpEnvelopeAddr(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", errors.New("empty mail address")
+	}
+	a, err := mail.ParseAddress(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid mail address %q: %w", raw, err)
+	}
+	if strings.TrimSpace(a.Address) == "" {
+		return "", fmt.Errorf("empty addr-spec in %q", raw)
+	}
+	return a.Address, nil
+}
 
 type Sender interface {
 	Enabled() bool
@@ -87,10 +104,19 @@ func (s *SMTPSender) SendMultipart(ctx context.Context, toEmail, subject, textPl
 		}
 	}
 
-	if err = client.Mail(strings.TrimSpace(s.cfg.FromEmail)); err != nil {
+	fromAddr, err := smtpEnvelopeAddr(s.cfg.FromEmail)
+	if err != nil {
+		return fmt.Errorf("mail from: %w", err)
+	}
+	toAddr, err := smtpEnvelopeAddr(toEmail)
+	if err != nil {
+		return fmt.Errorf("mail to: %w", err)
+	}
+
+	if err = client.Mail(fromAddr); err != nil {
 		return err
 	}
-	if err = client.Rcpt(strings.TrimSpace(toEmail)); err != nil {
+	if err = client.Rcpt(toAddr); err != nil {
 		return err
 	}
 
@@ -99,7 +125,7 @@ func (s *SMTPSender) SendMultipart(ctx context.Context, toEmail, subject, textPl
 		return err
 	}
 
-	message := buildMessage(s.cfg, toEmail, subject, textPlain, htmlBody)
+	message := buildMessage(s.cfg, toAddr, subject, textPlain, htmlBody)
 	if _, err = writer.Write([]byte(message)); err != nil {
 		_ = writer.Close()
 		return err
@@ -111,12 +137,18 @@ func (s *SMTPSender) SendMultipart(ctx context.Context, toEmail, subject, textPl
 	return client.Quit()
 }
 
-func buildMessage(cfg config.MailConfig, toEmail, subject, textPlain, htmlBody string) string {
-	from := strings.TrimSpace(cfg.FromEmail)
-	if strings.TrimSpace(cfg.FromName) != "" {
-		from = fmt.Sprintf("%s <%s>", strings.TrimSpace(cfg.FromName), strings.TrimSpace(cfg.FromEmail))
+func buildMessage(cfg config.MailConfig, toAddr, subject, textPlain, htmlBody string) string {
+	fromAddr, err := smtpEnvelopeAddr(cfg.FromEmail)
+	if err != nil {
+		fromAddr = strings.TrimSpace(cfg.FromEmail)
 	}
-	to := strings.TrimSpace(toEmail)
+	from := fromAddr
+	if strings.TrimSpace(cfg.FromName) != "" {
+		from = fmt.Sprintf("%s <%s>", strings.TrimSpace(cfg.FromName), fromAddr)
+	}
+	to := strings.TrimSpace(toAddr)
+	subject = strings.TrimSpace(subject)
+	subject = strings.ReplaceAll(strings.ReplaceAll(subject, "\r", " "), "\n", " ")
 	subjEnc := mime.QEncoding.Encode("UTF-8", subject)
 
 	if strings.TrimSpace(htmlBody) == "" {

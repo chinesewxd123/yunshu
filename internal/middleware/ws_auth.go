@@ -35,7 +35,7 @@ func WSAuth(secret string, redisClient *redis.Client, userRepo *repository.UserR
 			if logger != nil {
 				logger.Info.Warn("parse ws token failed", "error", err)
 			}
-			response.Error(c, apperror.Unauthorized("token 无效"))
+			response.Error(c, apperror.Unauthorized("Token 无效"))
 			c.Abort()
 			return
 		}

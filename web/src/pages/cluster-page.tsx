@@ -10,8 +10,10 @@ import {
 } from "@ant-design/icons";
 import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { DictLabelFillSelect } from "../components/dict-fill-select";
+import { useDictOptions } from "../hooks/use-dict-options";
 import { formatDateTime } from "../utils/format";
-import { createCluster, deleteCluster, getClusterStatus, getClusters, setClusterStatus, updateCluster, type ClusterItem, type ClusterCreatePayload, type ClusterUpdatePayload } from "../services/clusters";
+import { createCluster, deleteCluster, getClusterDetail, getClusterStatus, getClusters, setClusterStatus, updateCluster, type ClusterItem, type ClusterCreatePayload, type ClusterUpdatePayload } from "../services/clusters";
 
 type ClusterQuery = {
   keyword: string;
@@ -31,6 +33,8 @@ function phaseColor(phase: string): string {
 }
 
 export function ClusterPage() {
+  const kubeTplDict = useDictOptions("k8s_kubeconfig_template");
+
   const [query, setQuery] = useState<ClusterQuery>(defaultQuery);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -43,7 +47,7 @@ export function ClusterPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [current, setCurrent] = useState<ClusterItem | null>(null);
-  const [form] = Form.useForm<ClusterCreatePayload & Partial<ClusterUpdatePayload>>();
+  const [form] = Form.useForm<ClusterCreatePayload & Partial<ClusterUpdatePayload> & { kubeconfig_dict_label?: string }>();
 
   useEffect(() => {
     void loadClusters();
@@ -111,19 +115,37 @@ export function ClusterPage() {
 
   function openCreate() {
     setCurrent(null);
-    form.resetFields();
     setModalOpen(true);
   }
 
-  function openEdit(record: ClusterItem) {
+  async function openEdit(record: ClusterItem) {
     setCurrent(record);
-    form.setFieldsValue({
-      name: record.name,
-      // kubeconfig intentionally not prefilled (sensitive, not returned by backend)
-      kubeconfig: "",
-    });
+    try {
+      const detail = await getClusterDetail(record.id);
+      setCurrent(detail);
+    } catch {
+      // Keep fallback record when detail request fails.
+    }
     setModalOpen(true);
   }
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    // With Modal `destroyOnClose`, setFieldsValue may run before Form items mount.
+    // Fill values after the modal becomes visible.
+    if (current) {
+      form.resetFields();
+      form.setFieldsValue({
+        name: current.name,
+        kubeconfig: current.kubeconfig || "",
+        kubeconfig_dict_label: undefined,
+      });
+    } else {
+      form.resetFields();
+      form.setFieldsValue({ name: "", kubeconfig: "", kubeconfig_dict_label: undefined });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, current]);
 
   async function handleSubmit() {
     const values = await form.validateFields();
@@ -276,6 +298,8 @@ export function ClusterPage() {
             pageSize: query.page_size,
             total,
             showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showQuickJumper: true,
             onChange: (page, pageSize) => setQuery((prev) => ({ ...prev, page, page_size: pageSize })),
           }}
           scroll={{ x: "max-content" }}
@@ -337,7 +361,7 @@ export function ClusterPage() {
                     </Button>
                   </Popconfirm>
 
-                  <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+                  <Button type="link" icon={<EditOutlined />} onClick={() => void openEdit(record)}>
                     编辑
                   </Button>
                   <Popconfirm title="确认删除该集群吗？" onConfirm={() => void handleDelete(record)}>
@@ -366,6 +390,21 @@ export function ClusterPage() {
           </Form.Item>
 
           <Form.Item
+            label="从数据字典插入 kubeconfig 模板"
+            name="kubeconfig_dict_label"
+            extra="与下方 kubeconfig 内容一致时会自动选中对应模板；修改 yaml 后若不一致会清空此处。"
+          >
+            <DictLabelFillSelect
+              form={form}
+              labelFieldName="kubeconfig_dict_label"
+              targetFieldName="kubeconfig"
+              options={kubeTplDict}
+              placeholder="选择模板后填入下方文本框（按标签选，避免下拉展示整段 yaml）"
+              style={{ maxWidth: 480 }}
+            />
+          </Form.Item>
+
+          <Form.Item
             label="kubeconfig"
             name="kubeconfig"
             rules={
@@ -373,7 +412,7 @@ export function ClusterPage() {
                 ? []
                 : [{ required: true, message: "请填写 kubeconfig" }]
             }
-            extra={current ? "留空则不更新 kubeconfig（不会预填旧值）" : "用于 Kom SDK 注册并访问集群"}
+            extra={current ? "已预填当前 kubeconfig，可直接修改后保存" : "用于 Kom SDK 注册并访问集群"}
           >
             <Input.TextArea
               rows={8}

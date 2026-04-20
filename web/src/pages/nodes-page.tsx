@@ -10,8 +10,8 @@ import {
 } from "@ant-design/icons";
 import {
   Button,
-  Descriptions,
   Divider,
+  Form,
   Input,
   Modal,
   Popconfirm,
@@ -281,19 +281,20 @@ export function NodesPage() {
         )}
         detailExtra={(d) => (
           <div>
-            <Descriptions size="small" bordered column={2} style={{ marginBottom: 10 }}>
-              <Descriptions.Item label="Node">{d.item.name}</Descriptions.Item>
-              <Descriptions.Item label="状态">
-                <Tag color={d.item.status === "Ready" ? "green" : "red"}>{d.item.status || "-"}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="调度" span={2}>
-                {d.item.unschedulable ? <Tag color="orange">禁止调度（Cordon）</Tag> : <Tag color="processing">可调度</Tag>}
-              </Descriptions.Item>
-              <Descriptions.Item label="架构">{d.item.architecture || "-"}</Descriptions.Item>
-              <Descriptions.Item label="内核">{d.item.kernel || "-"}</Descriptions.Item>
-              <Descriptions.Item label="Kubelet">{d.item.kubelet || "-"}</Descriptions.Item>
-              <Descriptions.Item label="容器运行时">{d.item.container_runtime || "-"}</Descriptions.Item>
-            </Descriptions>
+            <Form layout="vertical" style={{ marginBottom: 10 }}>
+              <Form.Item label="Node">
+                <Input value={d.item.name} readOnly />
+              </Form.Item>
+              <Form.Item label="状态">
+                <Input value={d.item.status || "-"} readOnly />
+              </Form.Item>
+              <Form.Item label="调度">
+                <Input value={d.item.unschedulable ? "禁止调度（Cordon）" : "可调度"} readOnly />
+              </Form.Item>
+              <Form.Item label="节点信息">
+                <Input value={`架构 ${d.item.architecture || "-"} | 内核 ${d.item.kernel || "-"} | Kubelet ${d.item.kubelet || "-"} | 运行时 ${d.item.container_runtime || "-"}`} readOnly />
+              </Form.Item>
+            </Form>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 6 }}>
               地址：
               {d.addresses?.length ? (

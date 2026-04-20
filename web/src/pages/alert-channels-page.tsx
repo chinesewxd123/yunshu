@@ -9,7 +9,9 @@ import {
   updateAlertChannel,
   type AlertChannelItem,
 } from "../services/alerts";
+import { useDictOptions } from "../hooks/use-dict-options";
 import { formatDateTime } from "../utils/format";
+import { DictFillSelect } from "../components/dict-fill-select";
 
 export function AlertChannelsPage() {
   const [list, setList] = useState<AlertChannelItem[]>([]);
@@ -21,6 +23,24 @@ export function AlertChannelsPage() {
   const channelType = Form.useWatch("type", form);
   const wecomMode = Form.useWatch("wecom_mode", form);
   const dingMode = Form.useWatch("ding_mode", form);
+  const webhookURLDictOptions = useDictOptions("alert_webhook_url");
+  const wecomWebhookURLDictOptions = useDictOptions("wecom_webhook_url");
+  const dingtalkWebhookURLDictOptions = useDictOptions("dingtalk_webhook_url");
+  const channelTypeOptions = useDictOptions("alert_channel_type");
+  const wecomModeOptions = useDictOptions("wecom_notify_mode");
+  const dingModeOptions = useDictOptions("dingtalk_notify_mode");
+  const wecomCorpIDOptions = useDictOptions("wecom_corp_id");
+  const wecomCorpSecretOptions = useDictOptions("wecom_corp_secret");
+  const wecomAgentIDOptions = useDictOptions("wecom_agent_id");
+  const dingAppKeyOptions = useDictOptions("dingtalk_app_key");
+  const dingAppSecretOptions = useDictOptions("dingtalk_app_secret");
+  const dingChatIDOptions = useDictOptions("dingtalk_chat_id");
+  const dingSignSecretOptions = useDictOptions("dingtalk_sign_secret");
+  const urlFillOptions = channelType === "wechat_work" || channelType === "wechat"
+    ? wecomWebhookURLDictOptions
+    : channelType === "dingding"
+      ? dingtalkWebhookURLDictOptions
+      : webhookURLDictOptions;
 
   function parseChannelSettings(raw?: string) {
     if (!raw?.trim()) return {};
@@ -189,7 +209,7 @@ export function AlertChannelsPage() {
         rowKey="id"
         loading={loading}
         dataSource={list}
-        pagination={{ pageSize: 10 }}
+        pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showQuickJumper: true }}
         columns={[
           { title: "名称", dataIndex: "name", width: 180 },
           { title: "类型", dataIndex: "type", width: 140 },
@@ -248,17 +268,24 @@ export function AlertChannelsPage() {
             <Input />
           </Form.Item>
           <Form.Item name="type" label="通道类型" rules={[{ required: true }]}>
-            <Select
-              options={[
-                { label: "generic_webhook", value: "generic_webhook" },
-                { label: "wechat_work", value: "wechat_work" },
-                { label: "dingding", value: "dingding" },
-                { label: "email", value: "email" },
-              ]}
-            />
+            <Select options={channelTypeOptions} />
           </Form.Item>
           <Form.Item name="url" label="Webhook URL（email、钉钉app_chat 可留空）" rules={[{ type: "url", message: "URL 格式不正确" }]}>
             <Input />
+          </Form.Item>
+          <Form.Item label="从字典填充 URL">
+            <DictFillSelect
+              form={form}
+              fieldName="url"
+              options={urlFillOptions}
+              placeholder={
+                channelType === "dingding"
+                  ? "可选：选择钉钉 Webhook URL"
+                  : channelType === "wechat_work" || channelType === "wechat"
+                    ? "可选：选择企业微信 Webhook URL"
+                    : "可选：选择后自动填入 Webhook URL"
+              }
+            />
           </Form.Item>
           <Form.Item name="secret" label="签名密钥（可选）">
             <Input.Password allowClear />
@@ -277,7 +304,7 @@ export function AlertChannelsPage() {
 
           {channelType === "wechat_work" || channelType === "wechat" ? (
             <Form.Item name="wecom_mode" label="企业微信模式">
-              <Select options={[{ label: "robot（群机器人）", value: "robot" }, { label: "app（企业应用消息）", value: "app" }]} />
+              <Select options={wecomModeOptions} />
             </Form.Item>
           ) : null}
           {channelType === "wechat_work" || channelType === "wechat" ? (
@@ -289,6 +316,9 @@ export function AlertChannelsPage() {
               >
                 <Input placeholder="wxcorp..." />
               </Form.Item>
+              <Form.Item label="从字典填充 corpID" hidden={wecomMode !== "app"}>
+                <DictFillSelect form={form} fieldName="corp_id" options={wecomCorpIDOptions} placeholder="可选：字典中的 corpID" />
+              </Form.Item>
               <Form.Item
                 name="corp_secret"
                 label="企业微信 corpSecret（app 模式：手机号查 userid 用）"
@@ -296,14 +326,20 @@ export function AlertChannelsPage() {
               >
                 <Input.Password allowClear />
               </Form.Item>
+              <Form.Item label="从字典填充 corpSecret" hidden={wecomMode !== "app"}>
+                <DictFillSelect form={form} fieldName="corp_secret" options={wecomCorpSecretOptions} placeholder="可选：字典中的企业密钥" />
+              </Form.Item>
               <Form.Item name="agent_id" label="企业微信 agentId（app 模式必填）" hidden={wecomMode !== "app"}>
                 <Input placeholder="1000002" />
+              </Form.Item>
+              <Form.Item label="从字典填充 agentId" hidden={wecomMode !== "app"}>
+                <DictFillSelect form={form} fieldName="agent_id" options={wecomAgentIDOptions} placeholder="可选：字典中的 agentId" />
               </Form.Item>
             </>
           ) : null}
           {channelType === "dingding" ? (
             <Form.Item name="ding_mode" label="钉钉模式">
-              <Select options={[{ label: "robot（群机器人）", value: "robot" }, { label: "app_chat（官方会话API）", value: "app_chat" }]} />
+              <Select options={dingModeOptions} />
             </Form.Item>
           ) : null}
           {channelType === "dingding" ? (
@@ -311,14 +347,30 @@ export function AlertChannelsPage() {
               <Form.Item name="ding_app_key" label="钉钉 appKey（app_chat 模式）" hidden={dingMode !== "app_chat"}>
                 <Input />
               </Form.Item>
+              <Form.Item label="从字典填充 appKey" hidden={dingMode !== "app_chat"}>
+                <DictFillSelect form={form} fieldName="ding_app_key" options={dingAppKeyOptions} placeholder="可选：字典中的应用账号" />
+              </Form.Item>
               <Form.Item name="ding_app_secret" label="钉钉 appSecret（app_chat 模式）" hidden={dingMode !== "app_chat"}>
                 <Input.Password allowClear />
+              </Form.Item>
+              <Form.Item label="从字典填充 appSecret" hidden={dingMode !== "app_chat"}>
+                <DictFillSelect form={form} fieldName="ding_app_secret" options={dingAppSecretOptions} placeholder="可选：字典中的应用密钥" />
               </Form.Item>
               <Form.Item name="ding_chat_id" label="钉钉 chatId（app_chat 模式必填 / robot 可不填）">
                 <Input placeholder="chatxxxxx" />
               </Form.Item>
+              <Form.Item label="从字典填充 chatId" hidden={dingMode !== "app_chat"}>
+                <DictFillSelect form={form} fieldName="ding_chat_id" options={dingChatIDOptions} placeholder="可选：字典中的 chatId" />
+              </Form.Item>
               <Form.Item name="ding_sign_secret" label="钉钉 signSecret（robot 加签可选）" hidden={dingMode !== "robot"}>
                 <Input.Password allowClear />
+              </Form.Item>
+              <Form.Item
+                label="从字典填充 signSecret"
+                hidden={dingMode !== "robot"}
+                extra="仅展示数据字典中「启用」且类型为 dingtalk_sign_secret 的条目（与 app_chat 的 dingtalk_app_secret 不是同一配置）。若暂无数据，请到数据字典启用或新增该类型。"
+              >
+                <DictFillSelect form={form} fieldName="ding_sign_secret" options={dingSignSecretOptions} placeholder="可选：字典中的 signSecret" />
               </Form.Item>
             </>
           ) : null}
@@ -352,6 +404,22 @@ export function AlertChannelsPage() {
             name="extra_headers_json"
             label="额外配置 JSON（可选）"
             extra={'用于自定义请求头。示例：{"headers":{"Authorization":"Bearer xxxxx"}}'}
+            rules={[
+              {
+                validator: async (_, value) => {
+                  const s = String(value || "").trim();
+                  if (!s) return;
+                  try {
+                    const obj = JSON.parse(s);
+                    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+                      throw new Error("JSON 必须是对象");
+                    }
+                  } catch {
+                    throw new Error("JSON 格式不正确");
+                  }
+                },
+              },
+            ]}
           >
             <Input.TextArea rows={4} />
           </Form.Item>

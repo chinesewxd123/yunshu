@@ -1,5 +1,5 @@
-import { PlusOutlined, ReloadOutlined, UserOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
-import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
+import { PlusOutlined, ReloadOutlined, UserOutlined, EyeOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Button, Card, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
 import { useEffect, useState } from "react";
 import { StatusTag } from "../components/status-tag";
 import { createRole, deleteRole, getRoles, getRole, updateRole } from "../services/roles";
@@ -7,6 +7,7 @@ import { getUsers } from "../services/users";
 import { assignUserRoles } from "../services/users";
 import type { RoleItem, RolePayload, UserItem } from "../types/api";
 import { formatDateTime } from "../utils/format";
+import { useDictOptions } from "../hooks/use-dict-options";
 
 const defaultQuery = { keyword: "", page: 1, page_size: 10 };
 
@@ -16,7 +17,6 @@ export function RolesPage() {
   const [query, setQuery] = useState(defaultQuery);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [current, setCurrent] = useState<RoleItem | null>(null);
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm<RolePayload>();
   const [assignOpen, setAssignOpen] = useState(false);
@@ -25,6 +25,9 @@ export function RolesPage() {
   const [checkedUserIds, setCheckedUserIds] = useState<number[]>([]);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailRecord, setDetailRecord] = useState<RoleItem | null>(null);
+  const [detailSubmitting, setDetailSubmitting] = useState(false);
+  const statusOptions = useDictOptions("common_status");
+  const [detailForm] = Form.useForm<RolePayload>();
 
   useEffect(() => {
     void loadRoles(query);
@@ -46,15 +49,8 @@ export function RolesPage() {
   }
 
   function openCreate() {
-    setCurrent(null);
     form.resetFields();
     form.setFieldsValue({ status: 1 });
-    setOpen(true);
-  }
-
-  function openEdit(record: RoleItem) {
-    setCurrent(record);
-    form.setFieldsValue(record);
     setOpen(true);
   }
 
@@ -62,13 +58,8 @@ export function RolesPage() {
     const values = await form.validateFields();
     setSubmitting(true);
     try {
-      if (current) {
-        await updateRole(current.id, values);
-        message.success("角色模板已更新");
-      } else {
-        await createRole(values);
-        message.success("角色模板创建成功");
-      }
+      await createRole(values);
+      message.success("角色模板创建成功");
       setOpen(false);
       form.resetFields();
       void loadRoles();
@@ -123,7 +114,28 @@ export function RolesPage() {
   async function openDetail(record: RoleItem) {
     const detail = await getRole(record.id);
     setDetailRecord(detail);
+    detailForm.setFieldsValue({
+      name: detail.name,
+      code: detail.code,
+      description: detail.description,
+      status: detail.status,
+    });
     setDetailOpen(true);
+  }
+
+  async function submitDetailEdit() {
+    if (!detailRecord) return;
+    const values = await detailForm.validateFields();
+    setDetailSubmitting(true);
+    try {
+      await updateRole(detailRecord.id, values);
+      message.success("角色详情已更新");
+      setDetailOpen(false);
+      setDetailRecord(null);
+      await loadRoles();
+    } finally {
+      setDetailSubmitting(false);
+    }
   }
 
   return (
@@ -155,6 +167,8 @@ export function RolesPage() {
             pageSize: query.page_size,
             total,
             showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showQuickJumper: true,
             onChange: (page, pageSize) => setQuery((prev) => ({ ...prev, page, page_size: pageSize })),
           }}
           columns={[
@@ -170,9 +184,6 @@ export function RolesPage() {
                 <Space>
                   <Button type="link" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
                     详情
-                  </Button>
-                  <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
-                    编辑
                   </Button>
                   <Button type="link" icon={<UserOutlined />} onClick={() => openAssignUsers(record)}>
                     分配用户
@@ -190,7 +201,7 @@ export function RolesPage() {
       </Card>
 
       <Modal
-        title={current ? `编辑模板 #${current.id}` : "新建角色模板"}
+        title="新建角色模板"
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void handleSubmit()}
@@ -208,7 +219,7 @@ export function RolesPage() {
             <Input.TextArea rows={3} placeholder="请输入模板说明" />
           </Form.Item>
           <Form.Item label="状态" name="status" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select options={[{ label: "启用", value: 1 }, { label: "停用", value: 0 }]} />
+            <Select options={statusOptions} />
           </Form.Item>
         </Form>
       </Modal>
@@ -232,7 +243,7 @@ export function RolesPage() {
           <Table
             rowKey="id"
             dataSource={users}
-            pagination={{ pageSize: 10 }}
+            pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showQuickJumper: true }}
             rowSelection={{
               selectedRowKeys: checkedUserIds,
               onChange: (keys) => setCheckedUserIds(keys as number[]),
@@ -247,30 +258,47 @@ export function RolesPage() {
         </Space>
       </Modal>
 
-      <Modal
+      <Drawer
         title="角色详情"
         open={detailOpen}
-        onCancel={() => setDetailOpen(false)}
-        footer={null}
-        width={600}
+        onClose={() => {
+          setDetailOpen(false);
+          setDetailRecord(null);
+        }}
+        width={680}
+        className="detail-edit-drawer"
+        extra={
+          <Button type="primary" loading={detailSubmitting} onClick={() => void submitDetailEdit()}>
+            保存修改
+          </Button>
+        }
       >
         {detailRecord && (
-          <Descriptions bordered column={2} size="middle">
-            <Descriptions.Item label="ID">{detailRecord.id}</Descriptions.Item>
-            <Descriptions.Item label="模板名称">{detailRecord.name}</Descriptions.Item>
-            <Descriptions.Item label="模板编码">
-              <Tag color="blue">{detailRecord.code}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="状态" span={2}>
-              <StatusTag status={detailRecord.status} />
-            </Descriptions.Item>
-            <Descriptions.Item label="说明" span={2}>{detailRecord.description || "-"}</Descriptions.Item>
-            <Descriptions.Item label="创建时间">{formatDateTime(detailRecord.created_at)}</Descriptions.Item>
-
-            <Descriptions.Item label="更新时间">{formatDateTime(detailRecord.updated_at)}</Descriptions.Item>
-          </Descriptions>
+          <Form form={detailForm} layout="vertical" className="detail-edit-form">
+            <Form.Item label="ID">
+              <Input value={String(detailRecord.id)} readOnly />
+            </Form.Item>
+            <Form.Item label="模板名称" name="name" rules={[{ required: true, message: "请输入模板名称" }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item label="模板编码" name="code" rules={[{ required: true, message: "请输入模板编码" }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item label="状态" name="status" rules={[{ required: true, message: "请选择状态" }]}>
+              <Select options={statusOptions} />
+            </Form.Item>
+            <Form.Item label="说明" name="description">
+              <Input.TextArea rows={4} />
+            </Form.Item>
+            <Form.Item label="创建时间">
+              <Input value={formatDateTime(detailRecord.created_at)} readOnly />
+            </Form.Item>
+            <Form.Item label="更新时间">
+              <Input value={formatDateTime(detailRecord.updated_at)} readOnly />
+            </Form.Item>
+          </Form>
         )}
-      </Modal>
+      </Drawer>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { DownOutlined, EditOutlined, EyeOutlined, FileTextOutlined, ReloadOutlined, TagsOutlined } from "@ant-design/icons";
-import { Button, Descriptions, Drawer, Dropdown, Form, Progress, Space, Tag, Typography, message } from "antd";
+import { Button, Dropdown, Form, Input, InputNumber, Progress, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { listNamespaces as listClusterNamespaces } from "../services/clusters";
@@ -13,7 +13,7 @@ import {
   type WorkloadDetail,
   type WorkloadItem,
 } from "../services/workloads";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
 import { useRelatedPodsDrawer } from "../components/k8s/related-pods-drawer";
 import { useWorkloadFormActions } from "../components/k8s/workload-form-actions";
@@ -23,6 +23,7 @@ import {
   DeploymentHealthAndImagePullSecretsItems,
   NameNamespaceItems,
   WorkloadAdvancedItems,
+  WorkloadPolicyItems,
   WorkloadFormModal,
   buildDaemonSetYaml,
   daemonSetObjToForm,
@@ -30,10 +31,74 @@ import {
   qosFromResources,
 } from "../components/k8s/workload-forms";
 
+function DaemonSetDetailQuickEdit({
+  detail,
+  detailYaml,
+  setDetailYaml,
+}: {
+  detail: WorkloadDetail;
+  detailYaml: string;
+  setDetailYaml: (next: string) => void;
+}) {
+  const [detailForm] = Form.useForm<DaemonSetFormValues>();
+  const values = daemonSetYamlToForm(detailYaml || "") ?? daemonSetObjToForm(detail.object) ?? daemonSetYamlToForm(detail.yaml ?? "");
+  return (
+    <Form
+      form={detailForm}
+      layout="vertical"
+      initialValues={values ?? undefined}
+      onValuesChange={(_, allValues) => {
+        try {
+          setDetailYaml(buildDaemonSetYaml(allValues as DaemonSetFormValues));
+        } catch {
+          // ignore partial invalid values during typing
+        }
+      }}
+    >
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="name" label="名称" rules={[{ required: true }]} style={{ flex: 1 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="namespace" label="命名空间" rules={[{ required: true }]} style={{ width: 220 }}>
+          <Input />
+        </Form.Item>
+      </Space>
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="container_name" label="容器名" style={{ width: 220 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="image" label="镜像" style={{ flex: 1 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="port" label="端口" style={{ width: 160 }}>
+          <InputNumber min={1} max={65535} style={{ width: "100%" }} />
+        </Form.Item>
+      </Space>
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="requests_cpu" label="CPU Request" style={{ width: 180 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="limits_cpu" label="CPU Limit" style={{ width: 180 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="requests_memory" label="MEM Request" style={{ width: 180 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="limits_memory" label="MEM Limit" style={{ width: 180 }}>
+          <Input />
+        </Form.Item>
+      </Space>
+    </Form>
+  );
+}
+
 export function DaemonsetsPage() {
+  const listReloadRef = useRef<() => void>(() => {});
   const [form] = Form.useForm<DaemonSetFormValues>();
   const formActions = useWorkloadFormActions<DaemonSetFormValues>({
     form,
+    mode: true,
+    defaultMode: "create",
     getDetail: async (clusterId, namespace, name) => await getDaemonSetDetail(clusterId, namespace, name),
     toFormValues: (d) => daemonSetObjToForm(d.object) ?? daemonSetYamlToForm(d.yaml ?? ""),
     buildFallbackValues: ({ recordName, namespace }) => ({
@@ -91,61 +156,62 @@ export function DaemonsetsPage() {
         }}
         columns={columns}
         showEditButton={false}
+        onToolbarReady={(ctx) => {
+          listReloadRef.current = ctx.reload;
+        }}
+        onCreateDrawerOpen={(ctx) => {
+          if (!ctx.clusterId) return;
+          const ns = ctx.namespace ?? "default";
+          formActions.prepareCreate(
+            { clusterId: ctx.clusterId, namespace: ns },
+            {
+              namespace: ns,
+              name: "",
+              container_name: "",
+              image: "nginx:latest",
+              env_pairs: [{ key: "", value: "" }],
+            } as Partial<DaemonSetFormValues>,
+          );
+        }}
+        renderCreateFormTab={(ctx) => (
+          <WorkloadFormModal<DaemonSetFormValues>
+            embedded
+            title="DaemonSet 表单创建"
+            open={false}
+            loading={formActions.loading}
+            form={form}
+            onCancel={ctx.closeCreateDrawer}
+            onSubmit={(values) => {
+              if (!formActions.ctx) return;
+              const fctx = formActions.ctx;
+              formActions.setLoading(true);
+              void (async () => {
+                try {
+                  const manifest = buildDaemonSetYaml(values);
+                  await applyDaemonSet(fctx.clusterId, manifest);
+                  message.success("已应用 DaemonSet");
+                  ctx.closeCreateDrawer();
+                  listReloadRef.current();
+                } finally {
+                  formActions.setLoading(false);
+                }
+              })();
+            }}
+          >
+            <NameNamespaceItems />
+            <ContainerCommonItems showPort />
+            <WorkloadAdvancedItems />
+            <WorkloadPolicyItems showDaemonSetStrategy />
+            <DeploymentHealthAndImagePullSecretsItems />
+          </WorkloadFormModal>
+        )}
         api={{
           list: async ({ clusterId, namespace, keyword }) => await listDaemonSets(clusterId, namespace ?? "default", keyword),
           detail: async ({ clusterId, namespace, name }) => await getDaemonSetDetail(clusterId, namespace ?? "default", name),
           apply: async ({ clusterId, manifest }) => await applyDaemonSet(clusterId, manifest),
           remove: async ({ clusterId, namespace, name }) => await deleteDaemonSet(clusterId, namespace ?? "default", name),
         }}
-        renderDetail={(d) => {
-          const fv = daemonSetObjToForm(d.object) ?? daemonSetYamlToForm(d.yaml ?? "");
-          const qos = fv ? qosFromResources(fv) : "-";
-          return (
-            <Descriptions size="small" column={2} bordered>
-              <Descriptions.Item label="名称">{fv?.name || "-"}</Descriptions.Item>
-              <Descriptions.Item label="命名空间">{fv?.namespace || "-"}</Descriptions.Item>
-              <Descriptions.Item label="QoS（推导）">{String(qos)}</Descriptions.Item>
-              <Descriptions.Item label="容器名">{fv?.container_name || "-"}</Descriptions.Item>
-              <Descriptions.Item label="镜像">{fv?.image || "-"}</Descriptions.Item>
-              <Descriptions.Item label="拉取策略">{fv?.image_pull_policy || "默认"}</Descriptions.Item>
-              <Descriptions.Item label="镜像拉取 Secret" span={2}>
-                {(fv?.image_pull_secrets ?? []).filter(Boolean).join("\n") || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="端口">{fv?.port ? String(fv.port) : "-"}</Descriptions.Item>
-              <Descriptions.Item label="CPU Request">{fv?.requests_cpu || "-"}</Descriptions.Item>
-              <Descriptions.Item label="CPU Limit">{fv?.limits_cpu || "-"}</Descriptions.Item>
-              <Descriptions.Item label="Mem Request">{fv?.requests_memory || "-"}</Descriptions.Item>
-              <Descriptions.Item label="Mem Limit">{fv?.limits_memory || "-"}</Descriptions.Item>
-              <Descriptions.Item label="容忍" span={2}>
-                {(fv?.tolerations ?? [])
-                  .filter((t) => t.key || t.operator === "Exists")
-                  .map((t) => `${t.key || "*"} ${t.operator || "Equal"} ${t.value || ""} ${t.effect || ""}`)
-                  .join("\n") || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="卷" span={2}>
-                {(fv?.volumes ?? [])
-                  .filter((v) => v.name)
-                  .map((v) => `${v.name} (${v.type}) ${v.source_name || ""}`)
-                  .join("\n") || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="挂载" span={2}>
-                {(fv?.volume_mounts ?? [])
-                  .filter((m) => m.name && m.mount_path)
-                  .map((m) => `${m.name} -> ${m.mount_path}${m.read_only ? " (ro)" : ""}${m.sub_path ? ` subPath=${m.sub_path}` : ""}`)
-                  .join("\n") || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="环境变量" span={2}>
-                {(fv?.env_pairs ?? [])
-                  .filter((p) => p.key)
-                  .map((p) => `${p.key}=${p.value ?? ""}`)
-                  .join("\n") || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="命令" span={2}>
-                {fv?.command || "-"}
-              </Descriptions.Item>
-            </Descriptions>
-          );
-        }}
+        renderDetail={(d, { detailYaml, setDetailYaml }) => <DaemonSetDetailQuickEdit detail={d} detailYaml={detailYaml} setDetailYaml={setDetailYaml} />}
         createTemplate={({ namespace }) => `apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -209,8 +275,8 @@ spec:
       {podsViewer}
 
       <WorkloadFormModal<DaemonSetFormValues>
-        title={`DaemonSet 编辑${formActions.ctx?.name ? `：${formActions.ctx.name}` : ""}`}
-        open={formActions.open}
+        title={`DaemonSet 表单编辑${formActions.ctx?.name ? `：${formActions.ctx.name}` : ""}`}
+        open={formActions.open && formActions.mode === "edit"}
         loading={formActions.loading}
         form={form}
         onCancel={formActions.close}
@@ -224,6 +290,7 @@ spec:
               await applyDaemonSet(ctx.clusterId, manifest);
               message.success("已应用 DaemonSet");
               formActions.close();
+              listReloadRef.current();
             } finally {
               formActions.setLoading(false);
             }
@@ -233,6 +300,7 @@ spec:
         <NameNamespaceItems />
         <ContainerCommonItems showPort />
         <WorkloadAdvancedItems />
+        <WorkloadPolicyItems showDaemonSetStrategy />
         <DeploymentHealthAndImagePullSecretsItems />
       </WorkloadFormModal>
     </>

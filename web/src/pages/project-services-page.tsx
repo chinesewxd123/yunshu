@@ -1,6 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { useDictOptions } from "../hooks/use-dict-options";
 import { getProjects, getProjectServers, getProjectServices, upsertProjectService, deleteProjectService, type ProjectItem, type ServerItem, type ServiceItem } from "../services/projects";
 
 export function ProjectServicesPage() {
@@ -14,6 +15,7 @@ export function ProjectServicesPage() {
   const [current, setCurrent] = useState<ServiceItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<{ id?: number; server_id: number; name: string; env?: string; labels?: string; remark?: string; status: number }>();
+  const serviceStatusOptions = useDictOptions("common_status");
 
   const projectOptions = useMemo(() => projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` })), [projects]);
   const serverOptions = useMemo(() => servers.map((s) => ({ value: s.id, label: `${s.name} ${s.host}:${s.port}` })), [servers]);
@@ -137,7 +139,7 @@ export function ProjectServicesPage() {
           <Form.Item label="环境" name="env"><Input /></Form.Item>
           <Form.Item label="标签" name="labels"><Input /></Form.Item>
           <Form.Item label="备注" name="remark"><Input.TextArea rows={3} /></Form.Item>
-          <Form.Item label="状态" name="status" rules={[{ required: true }]}><Select options={[{ value: 1, label: "启用" }, { value: 0, label: "停用" }]} /></Form.Item>
+          <Form.Item label="状态" name="status" rules={[{ required: true }]}><Select options={serviceStatusOptions} /></Form.Item>
         </Form>
       </Modal>
     </Card>

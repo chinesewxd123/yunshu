@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"strconv"
 
 	"go-permission-system/internal/pkg/apperror"
@@ -15,23 +16,25 @@ type RegistrationHandler struct {
 	service *service.RegistrationService
 }
 
+// NewRegistrationHandler 创建相关逻辑。
 func NewRegistrationHandler(svc *service.RegistrationService) *RegistrationHandler {
 	return &RegistrationHandler{service: svc}
 }
 
+// Apply 提交申请对应的 HTTP 接口处理逻辑。
 func (h *RegistrationHandler) Apply(c *gin.Context) {
-	var req service.ApplyRegisterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-	if err := h.service.Apply(c.Request.Context(), req); err != nil {
-		response.Error(c, apperror.Conflict(err.Error()))
-		return
-	}
-	response.Success(c, nil)
+	handleJSONOK(c, nil, func(ctx context.Context, req service.ApplyRegisterRequest) error {
+		if err := h.service.Apply(ctx, req); err != nil {
+			if _, ok := apperror.IsAppError(err); ok {
+				return err
+			}
+			return apperror.Internal(err.Error())
+		}
+		return nil
+	})
 }
 
+// List 查询列表对应的 HTTP 接口处理逻辑。
 func (h *RegistrationHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
@@ -58,33 +61,27 @@ func (h *RegistrationHandler) List(c *gin.Context) {
 	})
 }
 
+// Review 处理对应的 HTTP 请求并返回统一响应。
 func (h *RegistrationHandler) Review(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := parseUintParam(c, "id")
 	if err != nil {
-		response.Error(c, apperror.BadRequest("invalid id"))
-		return
-	}
-
-	var req service.ReviewRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, err)
 		return
 	}
 
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("unauthorized"))
+		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
 		return
 	}
-
-	if err := h.service.Review(c.Request.Context(), uint(id), user.ID, req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	statusText := "approved"
-	if req.Status == 2 {
-		statusText = "rejected"
-	}
-	response.Success(c, gin.H{"message": "registration request has been " + statusText})
+	handleJSON(c, func(ctx context.Context, req service.ReviewRequest) (gin.H, error) {
+		if err := h.service.Review(ctx, id, user.ID, req); err != nil {
+			return nil, apperror.BadRequest(err.Error())
+		}
+		statusText := "approved"
+		if req.Status == 2 {
+			statusText = "rejected"
+		}
+		return gin.H{"message": "registration request has been " + statusText}, nil
+	})
 }

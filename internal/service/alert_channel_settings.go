@@ -46,7 +46,7 @@ func parseChannelSettings(v string) (map[string]interface{}, error) {
 	}
 	var m map[string]interface{}
 	if err := json.Unmarshal([]byte(v), &m); err != nil {
-		return nil, apperror.BadRequest("headers_json 解析失败")
+		return nil, apperror.BadRequest("headers_json 解析失败，请检查 JSON 格式")
 	}
 	return m, nil
 }
@@ -102,7 +102,7 @@ func validateEmailChannelRecipients(enabled bool, chType, headersJSON string) er
 		return err
 	}
 	if len(recipients) == 0 {
-		return apperror.BadRequest("email 通道需至少配置一个邮件接收人")
+		return apperror.BadRequest("邮件通道至少需要配置一个收件人")
 	}
 	return nil
 }
@@ -123,7 +123,7 @@ func parseEmailRecipients(headersJSON string) ([]string, error) {
 	}
 	var raw map[string]interface{}
 	if err := json.Unmarshal([]byte(headersJSON), &raw); err != nil {
-		return nil, apperror.BadRequest("email 通道配置 JSON 解析失败")
+		return nil, apperror.BadRequest("邮件通道配置 JSON 解析失败，请检查 JSON 格式")
 	}
 	seen := make(map[string]bool)
 	var out []string

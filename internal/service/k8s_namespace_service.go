@@ -71,12 +71,14 @@ type K8sNamespaceService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sNamespaceService 创建相关逻辑。
 func NewK8sNamespaceService(runtime *K8sRuntimeService) *K8sNamespaceService {
 	return &K8sNamespaceService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
 
 var namespaceGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
 
+// List 查询列表相关的业务逻辑。
 func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery) ([]NamespaceListItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -161,6 +163,7 @@ func quantityOrDash(q resource.Quantity) string {
 	return q.String()
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *K8sNamespaceService) Detail(ctx context.Context, query NamespaceDetailQuery) (*NamespaceDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -277,13 +280,14 @@ func (s *K8sNamespaceService) listNamespaceEvents(ctx context.Context, k *kom.Ku
 	return out, nil
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *K8sNamespaceService) Apply(ctx context.Context, req NamespaceApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 	refs := extractNamespaceRefs(req.Manifest)
 	err = s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -332,6 +336,7 @@ func extractNamespaceRefs(manifest string) []string {
 	return out
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *K8sNamespaceService) Delete(ctx context.Context, req NamespaceDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {

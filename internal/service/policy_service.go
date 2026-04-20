@@ -17,6 +17,7 @@ type PolicyService struct {
 	enforcer       *casbin.SyncedEnforcer
 }
 
+// NewPolicyService 创建相关逻辑。
 func NewPolicyService(roleRepo *repository.RoleRepository, permissionRepo *repository.PermissionRepository, enforcer *casbin.SyncedEnforcer) *PolicyService {
 	return &PolicyService{
 		roleRepo:       roleRepo,
@@ -25,6 +26,7 @@ func NewPolicyService(roleRepo *repository.RoleRepository, permissionRepo *repos
 	}
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *PolicyService) List(ctx context.Context) ([]PolicyItemResponse, error) {
 	roles, err := s.roleRepo.ListAll(ctx)
 	if err != nil {
@@ -72,11 +74,12 @@ func (s *PolicyService) List(ctx context.Context) ([]PolicyItemResponse, error) 
 	return response, nil
 }
 
+// Grant 执行对应的业务逻辑。
 func (s *PolicyService) Grant(ctx context.Context, req PolicyGrantRequest) error {
 	role, err := s.roleRepo.GetByID(ctx, req.RoleID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("role not found")
+			return apperror.NotFound("角色不存在")
 		}
 		return err
 	}
@@ -84,7 +87,7 @@ func (s *PolicyService) Grant(ctx context.Context, req PolicyGrantRequest) error
 	permission, err := s.permissionRepo.GetByID(ctx, req.PermissionID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("permission not found")
+			return apperror.NotFound("权限不存在")
 		}
 		return err
 	}
@@ -93,11 +96,12 @@ func (s *PolicyService) Grant(ctx context.Context, req PolicyGrantRequest) error
 	return err
 }
 
+// Revoke 执行对应的业务逻辑。
 func (s *PolicyService) Revoke(ctx context.Context, req PolicyGrantRequest) error {
 	role, err := s.roleRepo.GetByID(ctx, req.RoleID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("role not found")
+			return apperror.NotFound("角色不存在")
 		}
 		return err
 	}
@@ -105,7 +109,7 @@ func (s *PolicyService) Revoke(ctx context.Context, req PolicyGrantRequest) erro
 	permission, err := s.permissionRepo.GetByID(ctx, req.PermissionID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("permission not found")
+			return apperror.NotFound("权限不存在")
 		}
 		return err
 	}

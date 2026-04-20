@@ -86,6 +86,23 @@ global:
     cluster: prod-1
 ```
 
+**项目名称（通知标题第三段）**：与平台「项目」表主键一致时，在规则 **labels** 中增加 `project_id`（字符串数字即可，如 `"1"`）。后端会按 ID 查询 `projects.name` 填入标题与 `project_name` 字段。也可直接写 `project_name` 标签覆盖显示名（不查库）。
+
+单条 Prometheus 告警规则示例：
+
+```yaml
+groups:
+  - name: example
+    rules:
+      - alert: HostDisk
+        expr: disk_used_percent > 80
+        labels:
+          severity: warning
+          project_id: "1"
+        annotations:
+          summary: "磁盘使用率过高"
+```
+
 ---
 
 ## 4. 通道配置（页面：Webhook 告警通道）

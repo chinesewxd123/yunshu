@@ -330,6 +330,7 @@ export function ProjectLogsPage() {
 
   return (
     <Card
+      className="table-card project-logs-card"
       title="日志平台"
       extra={
         <Space>
@@ -369,15 +370,7 @@ export function ProjectLogsPage() {
         </Space>
       }
     >
-      <div
-        style={{
-          marginBottom: 12,
-          padding: "10px 12px",
-          border: "1px solid #e6f4ff",
-          background: "#f6ffed",
-          borderRadius: 8,
-        }}
-      >
+      <div className="project-logs-status-panel">
         <Space size={12} wrap>
           <span style={{ fontWeight: 600 }}>采集状态面板</span>
           <Tag color={streaming ? "processing" : "default"}>流状态：{streamModeHint}</Tag>
@@ -490,7 +483,7 @@ export function ProjectLogsPage() {
         </Row>
       </Form>
 
-      <div style={{ height: 520, border: "1px solid #f0f0f0", borderRadius: 6, overflow: "hidden" }}>
+      <div className="project-logs-terminal-wrap">
         <div ref={termHostRef} style={{ height: "100%", width: "100%" }} />
       </div>
     </Card>

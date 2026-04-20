@@ -2,17 +2,26 @@ package service
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"go-permission-system/internal/model"
+	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/repository"
 )
 
 type MenuService struct {
-	menuRepo *repository.MenuRepository
+	menuRepo          *repository.MenuRepository
+	mu                sync.RWMutex
+	treeCache         []model.Menu
+	treeCacheExpireAt time.Time
+	maintenanceDone   bool
 }
 
+// NewMenuService 创建相关逻辑。
 func NewMenuService(menuRepo *repository.MenuRepository) *MenuService {
 	return &MenuService{menuRepo: menuRepo}
 }
@@ -79,23 +88,156 @@ type MenuUpdatePayload struct {
 	Status *int `json:"status,omitempty" binding:"omitempty,oneof=0 1"`
 }
 
+type MenuBatchStatusPayload struct {
+	IDs    []uint `json:"ids" binding:"required,min=1,dive,gt=0"`
+	Status int    `json:"status" binding:"oneof=0 1"`
+}
+
+// Tree 获取树形数据相关的业务逻辑。
 func (s *MenuService) Tree(ctx context.Context) ([]model.Menu, error) {
+	s.mu.RLock()
+	if time.Now().Before(s.treeCacheExpireAt) && s.treeCache != nil {
+		cached := s.treeCache
+		s.mu.RUnlock()
+		return cached, nil
+	}
+	done := s.maintenanceDone
+	s.mu.RUnlock()
+
 	list, err := s.menuRepo.Tree(ctx)
 	if err != nil {
 		return nil, err
 	}
-	changed, err := s.ensureBuiltInMenus(ctx, list)
+
+	needRefresh := false
+	if !done {
+		changed, err := s.ensureBuiltInMenus(ctx, list)
+		if err != nil {
+			return nil, err
+		}
+		repaired, err := s.repairEventMenus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		normalized, err := s.normalizeMenuHierarchyAndSort(ctx)
+		if err != nil {
+			return nil, err
+		}
+		needRefresh = changed || repaired || normalized
+		s.mu.Lock()
+		s.maintenanceDone = true
+		s.mu.Unlock()
+	}
+	if needRefresh {
+		list, err = s.menuRepo.Tree(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	s.mu.Lock()
+	s.treeCache = list
+	s.treeCacheExpireAt = time.Now().Add(3 * time.Second)
+	s.mu.Unlock()
+	return list, nil
+}
+
+// normalizeMenuHierarchyAndSort repairs two common data issues:
+// 1) menu path implies parent path but parent_id is missing/wrong
+// 2) sibling sort collisions / disorder
+func (s *MenuService) normalizeMenuHierarchyAndSort(ctx context.Context) (bool, error) {
+	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	repaired, err := s.repairEventMenus(ctx)
+	changed := false
+
+	pathMap := make(map[string]*model.Menu, len(all))
+	for i := range all {
+		p := strings.TrimSpace(all[i].Path)
+		if p != "" {
+			pathMap[p] = &all[i]
+		}
+	}
+
+	// Repair parent_id by route path hierarchy: /a/b/c -> parent /a/b
+	for i := range all {
+		m := &all[i]
+		p := strings.TrimSpace(m.Path)
+		if p == "" || p == "/" {
+			continue
+		}
+		segs := strings.Split(strings.Trim(p, "/"), "/")
+		if len(segs) <= 1 {
+			continue
+		}
+		parentPath := "/" + strings.Join(segs[:len(segs)-1], "/")
+		parent, ok := pathMap[parentPath]
+		if !ok || parent.ID == m.ID {
+			continue
+		}
+		if m.ParentID == nil || *m.ParentID != parent.ID {
+			pid := parent.ID
+			m.ParentID = &pid
+			if err := s.menuRepo.Update(ctx, m); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+
+	// Reload after possible parent updates.
+	all, err = s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	if !changed && !repaired {
-		return list, nil
+
+	siblingMap := make(map[uint][]*model.Menu)
+	var roots []*model.Menu
+	for i := range all {
+		m := &all[i]
+		if m.ParentID == nil {
+			roots = append(roots, m)
+			continue
+		}
+		siblingMap[*m.ParentID] = append(siblingMap[*m.ParentID], m)
 	}
-	return s.menuRepo.Tree(ctx)
+
+	sortSibling := func(items []*model.Menu) {
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].Sort != items[j].Sort {
+				return items[i].Sort < items[j].Sort
+			}
+			return items[i].ID < items[j].ID
+		})
+	}
+
+	sortSibling(roots)
+	for idx, m := range roots {
+		target := idx + 1
+		if m.Sort != target {
+			m.Sort = target
+			if err := s.menuRepo.Update(ctx, m); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+
+	for _, items := range siblingMap {
+		sortSibling(items)
+		for idx, m := range items {
+			target := idx + 1
+			if m.Sort != target {
+				m.Sort = target
+				if err := s.menuRepo.Update(ctx, m); err != nil {
+					return false, err
+				}
+				changed = true
+			}
+		}
+	}
+	return changed, nil
 }
 
 // repairEventMenus 修正误配的 K8s Event 菜单（path/component 与 Webhook 告警事件混淆时）。
@@ -166,6 +308,163 @@ func (s *MenuService) ensureBuiltInMenus(ctx context.Context, tree []model.Menu)
 		changed = true
 	}
 
+	orgChanged, err := s.ensureOrgMenus(ctx)
+	if err != nil {
+		return false, err
+	}
+	if orgChanged {
+		changed = true
+	}
+
+	systemChanged, err := s.ensureSystemMenus(ctx)
+	if err != nil {
+		return false, err
+	}
+	if systemChanged {
+		changed = true
+	}
+
+	return changed, nil
+}
+
+func (s *MenuService) ensureOrgMenus(ctx context.Context) (bool, error) {
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return false, err
+	}
+	required := []model.Menu{
+		{Path: "/users", Name: "账号管理", Icon: "TeamOutlined", Sort: 4, Component: "users-page", Status: 1},
+	}
+	changed := false
+	for _, spec := range required {
+		var found *model.Menu
+		for i := range all {
+			if strings.TrimSpace(all[i].Path) == spec.Path {
+				found = &all[i]
+				break
+			}
+		}
+		if found == nil {
+			m := spec
+			if err := s.menuRepo.Create(ctx, &m); err != nil {
+				return false, err
+			}
+			changed = true
+			continue
+		}
+		needSave := false
+		if strings.TrimSpace(found.Name) != spec.Name {
+			found.Name = spec.Name
+			needSave = true
+		}
+		if strings.TrimSpace(found.Icon) != spec.Icon {
+			found.Icon = spec.Icon
+			needSave = true
+		}
+		if found.Sort != spec.Sort {
+			found.Sort = spec.Sort
+			needSave = true
+		}
+		if strings.TrimSpace(found.Component) != spec.Component {
+			found.Component = spec.Component
+			needSave = true
+		}
+		if found.Status != spec.Status {
+			found.Status = spec.Status
+			needSave = true
+		}
+		if needSave {
+			if err := s.menuRepo.Update(ctx, found); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+	return changed, nil
+}
+
+func (s *MenuService) ensureSystemMenus(ctx context.Context) (bool, error) {
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return false, err
+	}
+	changed := false
+
+	const rootPath = "/system"
+	var root *model.Menu
+	for i := range all {
+		if strings.TrimSpace(all[i].Path) == rootPath {
+			root = &all[i]
+			break
+		}
+	}
+	if root == nil {
+		m := model.Menu{Name: "系统管理", Path: rootPath, Icon: "MenuOutlined", Sort: 6, Status: 1}
+		if err := s.menuRepo.Create(ctx, &m); err != nil {
+			return false, err
+		}
+		root = &m
+		changed = true
+	}
+
+	rootID := root.ID
+	requiredChildren := []model.Menu{
+		{Path: "/departments", Name: "组织架构", Icon: "ApartmentOutlined", Sort: 1, Component: "departments-page", Status: 1},
+		{Path: "/dict-entries", Name: "数据字典", Icon: "DatabaseOutlined", Sort: 2, Component: "dict-entries-page", Status: 1},
+		{Path: "/login-logs", Name: "登录日志", Icon: "LoginOutlined", Sort: 3, Component: "login-logs-page", Status: 1},
+		{Path: "/operation-logs", Name: "操作历史", Icon: "HistoryOutlined", Sort: 4, Component: "operation-logs-page", Status: 1},
+		{Path: "/banned-ips", Name: "封禁 IP 管理", Icon: "ApiOutlined", Sort: 5, Component: "banned-ips-page", Status: 1},
+	}
+	for _, spec := range requiredChildren {
+		var found *model.Menu
+		for i := range all {
+			if strings.TrimSpace(all[i].Path) == spec.Path {
+				found = &all[i]
+				break
+			}
+		}
+		if found == nil {
+			m := spec
+			m.ParentID = &rootID
+			if err := s.menuRepo.Create(ctx, &m); err != nil {
+				return false, err
+			}
+			changed = true
+			continue
+		}
+		needSave := false
+		if found.ParentID == nil || *found.ParentID != rootID {
+			pid := rootID
+			found.ParentID = &pid
+			needSave = true
+		}
+		if strings.TrimSpace(found.Name) != spec.Name {
+			found.Name = spec.Name
+			needSave = true
+		}
+		if strings.TrimSpace(found.Icon) != spec.Icon {
+			found.Icon = spec.Icon
+			needSave = true
+		}
+		if found.Sort != spec.Sort {
+			found.Sort = spec.Sort
+			needSave = true
+		}
+		if strings.TrimSpace(found.Component) != spec.Component {
+			found.Component = spec.Component
+			needSave = true
+		}
+		if found.Status != spec.Status {
+			found.Status = spec.Status
+			needSave = true
+		}
+		if needSave {
+			if err := s.menuRepo.Update(ctx, found); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
 	return changed, nil
 }
 
@@ -182,6 +481,7 @@ func (s *MenuService) ensureProjectMgmtMenus(ctx context.Context) (bool, error) 
 		{Path: "/project-services", Name: "服务配置", Icon: "SettingOutlined", Sort: 3, Component: "project-services-page", Status: 1},
 		{Path: "/project-log-sources", Name: "日志源配置", Icon: "FileSearchOutlined", Sort: 4, Component: "project-log-sources-page", Status: 1},
 		{Path: "/project-logs", Name: "日志平台", Icon: "FileTextOutlined", Sort: 5, Component: "project-logs-page", Status: 1},
+		{Path: "/agent-list", Name: "Agent 列表", Icon: "RobotOutlined", Sort: 6, Component: "agent-list-page", Status: 1},
 	}
 
 	var root *model.Menu
@@ -293,6 +593,7 @@ func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bo
 		{Path: "/storageclasses", Name: "StorageClass", Icon: "FolderOpenOutlined", Sort: 16, Component: "storageclasses-page", Status: 1},
 		{Path: "/ingresses", Name: "Ingress 管理", Icon: "GatewayOutlined", Sort: 17, Component: "ingresses-page", Status: 1},
 		{Path: "/ingress-classes", Name: "IngressClass 入口类", Icon: "GatewayOutlined", Sort: 18, Component: "ingress-classes-page", Status: 1},
+		{Path: "/network-policies", Name: "网络策略管理", Icon: "DeploymentUnitOutlined", Sort: 19, Component: "network-policies-page", Status: 1},
 		{Path: "/rbac/roles", Name: "RBAC - Role", Icon: "SafetyCertificateOutlined", Sort: 20, Component: "rbac-roles-page", Status: 1},
 		{Path: "/rbac/rolebindings", Name: "RBAC - RoleBinding", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "rbac-rolebindings-page", Status: 1},
 		{Path: "/rbac/clusterroles", Name: "RBAC - ClusterRole", Icon: "SafetyCertificateOutlined", Sort: 22, Component: "rbac-clusterroles-page", Status: 1},
@@ -316,7 +617,7 @@ func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bo
 	return changed, nil
 }
 
-// ensureAlertNotifyMenus 保证「告警通知」独立目录及 Webhook 子菜单存在，并从「系统管理」下移出（按 path 归位）。
+// ensureAlertNotifyMenus 保证「告警通知」独立目录及告警子菜单存在，并从「系统管理」下移出（按 path 归位）。
 func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) {
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
@@ -326,7 +627,8 @@ func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) 
 	const alertRootPath = "/alert-notify"
 	requiredChildren := []model.Menu{
 		{Path: "/alert-channels", Name: "Webhook 告警通道", Icon: "NotificationOutlined", Sort: 1, Component: "alert-channels-page", Status: 1},
-		{Path: "/alert-events", Name: "Webhook 告警事件", Icon: "AlertOutlined", Sort: 2, Component: "alert-events-page", Status: 1},
+		{Path: "/alert-monitor-platform", Name: "告警监控平台", Icon: "MonitorOutlined", Sort: 2, Component: "alert-monitor-platform-page", Status: 1},
+		{Path: "/alert-duty", Name: "值班总览", Icon: "ScheduleOutlined", Sort: 3, Component: "alert-duty-page", Status: 1},
 	}
 
 	var root *model.Menu
@@ -408,16 +710,74 @@ func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) 
 		}
 	}
 
+	// 「Webhook 告警事件」已合并到告警监控平台「策略与联调 → 历史」；隐藏旧菜单以免重复入口。
+	for i := range all {
+		m := &all[i]
+		if strings.TrimSpace(m.Path) != "/alert-events" {
+			continue
+		}
+		needSave := false
+		if !m.Hidden {
+			m.Hidden = true
+			needSave = true
+		}
+		wantEv := "/alert-monitor-platform?tab=config&cfg=history"
+		if strings.TrimSpace(m.Redirect) != wantEv {
+			m.Redirect = wantEv
+			needSave = true
+		}
+		if needSave {
+			if err := s.menuRepo.Update(ctx, m); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+
+	// 「告警配置中心」已并入告警监控平台「策略与联调」Tab；隐藏旧入口并跳转。
+	for i := range all {
+		m := &all[i]
+		if strings.TrimSpace(m.Path) != "/alert-config-center" {
+			continue
+		}
+		needSave := false
+		if !m.Hidden {
+			m.Hidden = true
+			needSave = true
+		}
+		wantCfg := "/alert-monitor-platform?tab=config&cfg=policies"
+		if strings.TrimSpace(m.Redirect) != wantCfg {
+			m.Redirect = wantCfg
+			needSave = true
+		}
+		if needSave {
+			if err := s.menuRepo.Update(ctx, m); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+
 	return changed, nil
 }
 
+// Create 创建相关的业务逻辑。
 func (s *MenuService) Create(ctx context.Context, payload MenuCreatePayload) (*model.Menu, error) {
-	sortVal, err := s.ensureUniqueSiblingSort(ctx, payload.ParentID, payload.Sort, 0)
+	parentID := payload.ParentID
+	if parentID == nil {
+		// For nested paths like /system/security, auto-create missing parent menus.
+		autoParentID, err := s.ensureMenuParentChainByPath(ctx, payload.Path)
+		if err != nil {
+			return nil, err
+		}
+		parentID = autoParentID
+	}
+	sortVal, err := s.ensureUniqueSiblingSort(ctx, parentID, payload.Sort, 0)
 	if err != nil {
 		return nil, err
 	}
 	menu := model.Menu{
-		ParentID:  payload.ParentID,
+		ParentID:  parentID,
 		Path:      payload.Path,
 		Name:      payload.Name,
 		Icon:      payload.Icon,
@@ -431,9 +791,68 @@ func (s *MenuService) Create(ctx context.Context, payload MenuCreatePayload) (*m
 	if err := s.menuRepo.Create(ctx, &menu); err != nil {
 		return nil, err
 	}
+	s.invalidateCache()
 	return &menu, nil
 }
 
+func (s *MenuService) ensureMenuParentChainByPath(ctx context.Context, fullPath string) (*uint, error) {
+	path := strings.TrimSpace(fullPath)
+	if path == "" || path == "/" {
+		return nil, nil
+	}
+	segs := strings.Split(strings.Trim(path, "/"), "/")
+	if len(segs) <= 1 {
+		return nil, nil
+	}
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pathMap := make(map[string]*model.Menu, len(all))
+	for i := range all {
+		p := strings.TrimSpace(all[i].Path)
+		if p == "" {
+			continue
+		}
+		pathMap[p] = &all[i]
+	}
+
+	var parentID *uint
+	currentPath := ""
+	for i := 0; i < len(segs)-1; i++ {
+		currentPath += "/" + segs[i]
+		if found, ok := pathMap[currentPath]; ok {
+			id := found.ID
+			parentID = &id
+			continue
+		}
+		name := segs[i]
+		sortVal, err := s.ensureUniqueSiblingSort(ctx, parentID, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		m := model.Menu{
+			ParentID:  parentID,
+			Path:      currentPath,
+			Name:      name,
+			Icon:      "",
+			AdminOnly: false,
+			Sort:      sortVal,
+			Hidden:    false,
+			Component: "",
+			Redirect:  "",
+			Status:    1,
+		}
+		if err := s.menuRepo.Create(ctx, &m); err != nil {
+			return nil, fmt.Errorf("create parent menu %s failed: %w", currentPath, err)
+		}
+		id := m.ID
+		parentID = &id
+	}
+	return parentID, nil
+}
+
+// Update 更新相关的业务逻辑。
 func (s *MenuService) Update(ctx context.Context, id uint, payload MenuUpdatePayload) (*model.Menu, error) {
 	menu, err := s.menuRepo.GetByID(ctx, id)
 	if err != nil {
@@ -468,16 +887,41 @@ func (s *MenuService) Update(ctx context.Context, id uint, payload MenuUpdatePay
 	if err := s.menuRepo.Update(ctx, menu); err != nil {
 		return nil, err
 	}
+	s.invalidateCache()
 	return menu, nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *MenuService) Delete(ctx context.Context, id uint) error {
 	count, err := s.menuRepo.CountChildren(ctx, id)
 	if err != nil {
 		return err
 	}
 	if count > 0 {
-		return errors.New("please delete child menus first")
+		return apperror.BadRequest("请先删除子菜单后再删除当前菜单")
 	}
-	return s.menuRepo.Delete(ctx, id)
+	if err := s.menuRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	s.invalidateCache()
+	return nil
+}
+
+// BatchSetStatus 批量启用/停用菜单。
+func (s *MenuService) BatchSetStatus(ctx context.Context, payload MenuBatchStatusPayload) error {
+	if len(payload.IDs) == 0 {
+		return apperror.BadRequest("请选择需要批量操作的菜单")
+	}
+	if err := s.menuRepo.BatchUpdateStatus(ctx, payload.IDs, payload.Status); err != nil {
+		return err
+	}
+	s.invalidateCache()
+	return nil
+}
+
+func (s *MenuService) invalidateCache() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.treeCache = nil
+	s.treeCacheExpireAt = time.Time{}
 }

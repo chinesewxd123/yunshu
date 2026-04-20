@@ -23,14 +23,17 @@ type LoginLogService struct {
 	repo *repository.LoginLogRepository
 }
 
+// NewLoginLogService 创建相关逻辑。
 func NewLoginLogService(repo *repository.LoginLogRepository) *LoginLogService {
 	return &LoginLogService{repo: repo}
 }
 
+// Record 执行对应的业务逻辑。
 func (s *LoginLogService) Record(ctx context.Context, entry model.LoginLog) error {
 	return s.repo.Create(ctx, &entry)
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *LoginLogService) List(ctx context.Context, query LoginLogListQuery) (*pagination.Result[model.LoginLog], error) {
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
 	list, total, err := s.repo.List(ctx, repository.LoginLogListParams{
@@ -51,10 +54,12 @@ func (s *LoginLogService) List(ctx context.Context, query LoginLogListQuery) (*p
 	}, nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *LoginLogService) Delete(ctx context.Context, id uint) error {
 	return s.repo.DeleteByID(ctx, id)
 }
 
+// DeleteBatch 删除相关的业务逻辑。
 func (s *LoginLogService) DeleteBatch(ctx context.Context, ids []uint) error {
 	return s.repo.DeleteByIDs(ctx, ids)
 }

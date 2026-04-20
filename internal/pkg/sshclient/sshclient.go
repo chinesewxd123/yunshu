@@ -83,7 +83,7 @@ func buildAuthMethods(cfg Config) ([]ssh.AuthMethod, error) {
 	switch cfg.AuthType {
 	case "", AuthPassword:
 		if strings.TrimSpace(cfg.Password) == "" {
-			return nil, errors.New("password is required")
+			return nil, errors.New("密码不能为空")
 		}
 		// Some SSH servers disable direct "password" but enable keyboard-interactive.
 		// Provide both to improve compatibility.
@@ -130,6 +130,11 @@ type ExecResult struct {
 	ExitCode  int
 	Duration  time.Duration
 	Truncated bool
+}
+
+type TerminalSize struct {
+	Cols uint16
+	Rows uint16
 }
 
 // Exec runs a command and returns stdout/stderr (with max bytes to avoid memory blow).
@@ -242,6 +247,53 @@ func (c *Client) StreamLines(ctx context.Context, cmd string, onLine func(line s
 			return nil
 		}
 		return e
+	}
+}
+
+// ShellStream opens an interactive shell with PTY.
+func (c *Client) ShellStream(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, sizes <-chan TerminalSize) error {
+	if c == nil || c.client == nil {
+		return errors.New("ssh client not connected")
+	}
+	session, err := c.client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          1,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
+	if err := session.RequestPty("xterm-256color", 40, 140, modes); err != nil {
+		return err
+	}
+	session.Stdin = stdin
+	session.Stdout = stdout
+	session.Stderr = stderr
+
+	if err := session.Shell(); err != nil {
+		return err
+	}
+
+	if sizes != nil {
+		go func() {
+			for s := range sizes {
+				_ = session.WindowChange(int(s.Rows), int(s.Cols))
+			}
+		}()
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- session.Wait() }()
+
+	select {
+	case <-ctx.Done():
+		_ = session.Signal(ssh.SIGKILL)
+		return ctx.Err()
+	case err := <-done:
+		return err
 	}
 }
 

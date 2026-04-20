@@ -1,5 +1,7 @@
 package main
 
+// permission-system 后端可执行入口：将 CLI 委托给 cmd 包（server / migrate / log-agent 等）。
+//
 // @title YunShu CMDB API
 // @version 1.0
 // @description YunShu CMDB is an operations CMDB console built with Gin, MySQL, Redis, SMTP mail delivery, Casbin, Cobra and slog.

@@ -14,12 +14,17 @@
 - 需要业务登录态（JWT）
 - 经过鉴权中间件：`authMiddleware + authorize + opAudit`
 
-### 1.2 Agent 侧接口（`/agents/*`）
+### 1.2 Agent 侧接口（HTTP 兼容 + gRPC 主链路）
 
-- `POST /api/v1/agents/public-register`：通过 `register_secret` 校验
-- `GET /api/v1/agents/runtime-config`：通过 query `token` 校验
-- `POST /api/v1/agents/discovery/report`：body `token` 校验
-- `GET /api/v1/agents/ws/ingest`：query `token` 校验并升级 WS
+- HTTP 兼容入口：
+  - `POST /api/v1/agents/public-register`
+  - `GET /api/v1/agents/runtime-config`
+  - `POST /api/v1/agents/discovery/report`
+- Agent 主链路：
+  - gRPC `AgentRuntimeService/PublicRegister`
+  - gRPC `AgentRuntimeService/GetRuntimeConfig`
+  - gRPC `AgentRuntimeService/ReportDiscovery`
+  - gRPC `AgentRuntimeService/IngestLogs`（双向流）
 
 > 说明：Agent token 为长效密钥，服务端保存其 hash（SHA-256）。
 
@@ -180,8 +185,7 @@ Base: `/api/v1/projects/:id`
 {
   "project_id": 1,
   "agent_id": 12,
-  "token": "xxxx",
-  "ws_ingest": "/api/v1/agents/ws/ingest?token=<token>"
+  "token": "xxxx"
 }
 ```
 
@@ -224,14 +228,14 @@ Base: `/api/v1/projects/:id`
 { "accepted": 123 }
 ```
 
-### 5.4 WS 日志上报
+### 5.4 gRPC 日志上报（主链路）
 
-- **GET** `/api/v1/agents/ws/ingest?token=<token>`（WebSocket）
-- Agent 发消息：见“2.3 Agent 上报事件”
+- **RPC** `AgentRuntimeService/IngestLogs`（bidirectional stream）
+- Agent 发消息：见“2.3 Agent 上报事件”（映射为 `IngestLogsRequest.entries`）
 - Server ACK：
 
 ```json
-{ "type": "ack", "seq": 101, "ts": 1713170000000 }
+{ "seq": 101, "ts_unix_ms": 1713170000000 }
 ```
 
 ---
@@ -306,7 +310,7 @@ SSE `log` 数据示例：
 2. 获取 token（bootstrap/rotate）
 3. 启动 agent 并确认：
    - runtime-config 成功
-   - ws ingest connected
+   - ingest stream connected
 4. 打开日志平台页面请求 SSE：
    - 参数带 `server_id + log_source_id`
 5. 验证：
@@ -326,7 +330,7 @@ SSE `log` 数据示例：
 
 ```bash
 ./log-agent \
-  --server-url "http://10.10.10.1:5173" \
+  --grpc-server "10.10.10.1:18080" \
   --project-id 1 \
   --server-id 1 \
   --token "xxxxxxxxxxxxxxxx"
@@ -338,7 +342,7 @@ SSE `log` 数据示例：
 
 ```bash
 ./log-agent \
-  --server-url "http://10.10.10.1:5173" \
+  --grpc-server "10.10.10.1:18080" \
   --project-id 1 \
   --server-id 1 \
   --token "xxxxxxxxxxxxxxxx" \
@@ -351,7 +355,7 @@ SSE `log` 数据示例：
 
 ```bash
 ./log-agent \
-  --server-url "http://10.10.10.1:5173" \
+  --grpc-server "10.10.10.1:18080" \
   --project-id 1 \
   --server-id 1 \
   --token "xxxxxxxxxxxxxxxx" \
@@ -368,6 +372,6 @@ SSE `log` 数据示例：
 ## 10. 版本兼容建议
 
 - Agent 上报优先使用 `entries[]`（推荐）
-- 服务端兼容旧字段 `line/lines/file_paths`
+- 服务端 ingest 主链路为 gRPC stream（HTTP 仅保留兼容入口）
 - 升级时建议平台与 agent 同步发布
 

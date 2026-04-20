@@ -23,14 +23,17 @@ type OperationLogService struct {
 	repo *repository.OperationLogRepository
 }
 
+// NewOperationLogService 创建相关逻辑。
 func NewOperationLogService(repo *repository.OperationLogRepository) *OperationLogService {
 	return &OperationLogService{repo: repo}
 }
 
+// Record 执行对应的业务逻辑。
 func (s *OperationLogService) Record(ctx context.Context, entry model.OperationLog) error {
 	return s.repo.Create(ctx, &entry)
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *OperationLogService) List(ctx context.Context, query OperationLogListQuery) (*pagination.Result[model.OperationLog], error) {
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
 	list, total, err := s.repo.List(ctx, repository.OperationLogListParams{
@@ -51,10 +54,12 @@ func (s *OperationLogService) List(ctx context.Context, query OperationLogListQu
 	}, nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *OperationLogService) Delete(ctx context.Context, id uint) error {
 	return s.repo.DeleteByID(ctx, id)
 }
 
+// DeleteBatch 删除相关的业务逻辑。
 func (s *OperationLogService) DeleteBatch(ctx context.Context, ids []uint) error {
 	return s.repo.DeleteByIDs(ctx, ids)
 }

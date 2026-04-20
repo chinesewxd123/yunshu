@@ -81,3 +81,10 @@ func (r *MenuRepository) CountChildren(ctx context.Context, parentID uint) (int6
 	err := r.db.WithContext(ctx).Model(&model.Menu{}).Where("parent_id = ?", parentID).Count(&count).Error
 	return count, err
 }
+
+func (r *MenuRepository) BatchUpdateStatus(ctx context.Context, ids []uint, status int) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&model.Menu{}).Where("id IN ?", ids).Update("status", status).Error
+}

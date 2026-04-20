@@ -18,6 +18,7 @@ type PermissionService struct {
 	enforcer       *casbin.SyncedEnforcer
 }
 
+// NewPermissionService 创建相关逻辑。
 func NewPermissionService(permissionRepo *repository.PermissionRepository, enforcer *casbin.SyncedEnforcer) *PermissionService {
 	return &PermissionService{
 		permissionRepo: permissionRepo,
@@ -25,6 +26,7 @@ func NewPermissionService(permissionRepo *repository.PermissionRepository, enfor
 	}
 }
 
+// Create 创建相关的业务逻辑。
 func (s *PermissionService) Create(ctx context.Context, req PermissionCreateRequest) (*PermissionItem, error) {
 	permission := model.Permission{
 		Name:            req.Name,
@@ -40,11 +42,12 @@ func (s *PermissionService) Create(ctx context.Context, req PermissionCreateRequ
 	return &response, nil
 }
 
+// Update 更新相关的业务逻辑。
 func (s *PermissionService) Update(ctx context.Context, id uint, req PermissionUpdateRequest) (*PermissionItem, error) {
 	permission, err := s.permissionRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("permission not found")
+			return nil, apperror.NotFound("权限不存在")
 		}
 		return nil, err
 	}
@@ -77,11 +80,12 @@ func (s *PermissionService) Update(ctx context.Context, id uint, req PermissionU
 	return &response, nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *PermissionService) Delete(ctx context.Context, id uint) error {
 	permission, err := s.permissionRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("permission not found")
+			return apperror.NotFound("权限不存在")
 		}
 		return err
 	}
@@ -92,11 +96,12 @@ func (s *PermissionService) Delete(ctx context.Context, id uint) error {
 	return RemovePermissionPolicies(s.enforcer, permission.Resource, permission.Action)
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *PermissionService) Detail(ctx context.Context, id uint) (*PermissionItem, error) {
 	permission, err := s.permissionRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("permission not found")
+			return nil, apperror.NotFound("权限不存在")
 		}
 		return nil, err
 	}
@@ -104,6 +109,7 @@ func (s *PermissionService) Detail(ctx context.Context, id uint) (*PermissionIte
 	return &response, nil
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *PermissionService) List(ctx context.Context, query PermissionListQuery) (*pagination.Result[PermissionItem], error) {
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
 	permissions, total, err := s.permissionRepo.List(ctx, repository.PermissionListParams{

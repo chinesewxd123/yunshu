@@ -50,12 +50,14 @@ type K8sServiceResourceService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sServiceResourceService 创建相关逻辑。
 func NewK8sServiceResourceService(runtime *K8sRuntimeService) *K8sServiceResourceService {
 	return &K8sServiceResourceService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
 
 var k8sServiceGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Service"}
 
+// List 查询列表相关的业务逻辑。
 func (s *K8sServiceResourceService) List(ctx context.Context, q K8sServiceListQuery) ([]K8sServiceItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -63,7 +65,7 @@ func (s *K8sServiceResourceService) List(ctx context.Context, q K8sServiceListQu
 	}
 	ns := strings.TrimSpace(q.Namespace)
 	if ns == "" {
-		return nil, apperror.BadRequest("namespace 不能为空")
+		return nil, apperror.BadRequest("命名空间不能为空")
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, k8sServiceGVK, ns)
 	if err != nil {
@@ -119,6 +121,7 @@ func (s *K8sServiceResourceService) List(ctx context.Context, q K8sServiceListQu
 	return out, nil
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *K8sServiceResourceService) Detail(ctx context.Context, q K8sServiceDetailQuery) (*K8sServiceDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -126,7 +129,7 @@ func (s *K8sServiceResourceService) Detail(ctx context.Context, q K8sServiceDeta
 	}
 	ns := strings.TrimSpace(q.Namespace)
 	if ns == "" {
-		return nil, apperror.BadRequest("namespace 不能为空")
+		return nil, apperror.BadRequest("命名空间不能为空")
 	}
 	u, err := s.dyn.GetByGVK(ctx, k, k8sServiceGVK, ns, strings.TrimSpace(q.Name))
 	if err != nil {
@@ -141,13 +144,14 @@ func (s *K8sServiceResourceService) Detail(ctx context.Context, q K8sServiceDeta
 	return &K8sServiceDetail{YAML: string(y)}, nil
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *K8sServiceResourceService) Apply(ctx context.Context, req K8sServiceApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
 		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
@@ -155,6 +159,7 @@ func (s *K8sServiceResourceService) Apply(ctx context.Context, req K8sServiceApp
 	return nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *K8sServiceResourceService) Delete(ctx context.Context, req K8sServiceDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -162,7 +167,7 @@ func (s *K8sServiceResourceService) Delete(ctx context.Context, req K8sServiceDe
 	}
 	ns := strings.TrimSpace(req.Namespace)
 	if ns == "" {
-		return apperror.BadRequest("namespace 不能为空")
+		return apperror.BadRequest("命名空间不能为空")
 	}
 	if err := s.dyn.DeleteByGVK(ctx, k, k8sServiceGVK, ns, strings.TrimSpace(req.Name)); err != nil {
 		if apierrors.IsNotFound(err) {

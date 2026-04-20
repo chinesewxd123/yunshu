@@ -83,17 +83,19 @@ type K8sRBACService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sRBACService 创建相关逻辑。
 func NewK8sRBACService(runtime *K8sRuntimeService) *K8sRBACService {
 	return &K8sRBACService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
 
 var (
-	roleGVK              = schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role"}
-	roleBindingGVK       = schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"}
-	clusterRoleGVK       = schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole"}
+	roleGVK               = schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role"}
+	roleBindingGVK        = schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"}
+	clusterRoleGVK        = schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole"}
 	clusterRoleBindingGVK = schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRoleBinding"}
 )
 
+// ListRoles 查询列表相关的业务逻辑。
 func (s *K8sRBACService) ListRoles(ctx context.Context, query RbacListQuery) ([]RoleListItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -101,7 +103,7 @@ func (s *K8sRBACService) ListRoles(ctx context.Context, query RbacListQuery) ([]
 	}
 	ns := strings.TrimSpace(query.Namespace)
 	if ns == "" {
-		return nil, apperror.BadRequest("namespace 不能为空")
+		return nil, apperror.BadRequest("命名空间不能为空")
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, roleGVK, ns)
 	if err != nil {
@@ -128,6 +130,7 @@ func (s *K8sRBACService) ListRoles(ctx context.Context, query RbacListQuery) ([]
 	return out, nil
 }
 
+// ListRoleBindings 查询列表相关的业务逻辑。
 func (s *K8sRBACService) ListRoleBindings(ctx context.Context, query RbacListQuery) ([]RoleBindingListItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -135,7 +138,7 @@ func (s *K8sRBACService) ListRoleBindings(ctx context.Context, query RbacListQue
 	}
 	ns := strings.TrimSpace(query.Namespace)
 	if ns == "" {
-		return nil, apperror.BadRequest("namespace 不能为空")
+		return nil, apperror.BadRequest("命名空间不能为空")
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, roleBindingGVK, ns)
 	if err != nil {
@@ -172,6 +175,7 @@ func (s *K8sRBACService) ListRoleBindings(ctx context.Context, query RbacListQue
 	return out, nil
 }
 
+// ListClusterRoles 查询列表相关的业务逻辑。
 func (s *K8sRBACService) ListClusterRoles(ctx context.Context, query RbacListQuery) ([]ClusterRoleListItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -201,6 +205,7 @@ func (s *K8sRBACService) ListClusterRoles(ctx context.Context, query RbacListQue
 	return out, nil
 }
 
+// ListClusterRoleBindings 查询列表相关的业务逻辑。
 func (s *K8sRBACService) ListClusterRoleBindings(ctx context.Context, query RbacListQuery) ([]ClusterRoleBindingListItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -240,6 +245,7 @@ func (s *K8sRBACService) ListClusterRoleBindings(ctx context.Context, query Rbac
 	return out, nil
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *K8sRBACService) Detail(ctx context.Context, kind string, query RbacNameQuery) (*RbacDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -266,10 +272,10 @@ func (s *K8sRBACService) Detail(ctx context.Context, kind string, query RbacName
 		gvk = clusterRoleBindingGVK
 		clusterScoped = true
 	default:
-		return nil, apperror.BadRequest("不支持的 RBAC kind")
+		return nil, apperror.BadRequest("不支持的 RBAC 类型")
 	}
 	if !clusterScoped && ns == "" {
-		return nil, apperror.BadRequest("namespace 不能为空")
+		return nil, apperror.BadRequest("命名空间不能为空")
 	}
 
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, ns, name)
@@ -286,13 +292,14 @@ func (s *K8sRBACService) Detail(ctx context.Context, kind string, query RbacName
 	return &RbacDetail{Kind: kind, Name: name, Namespace: ns, YAML: string(y)}, nil
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *K8sRBACService) Apply(ctx context.Context, req RbacApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 	// Apply 成功但返回 strings 的兼容逻辑已在 dyn.ApplyManifest 中处理
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -310,6 +317,7 @@ func (s *K8sRBACService) Apply(ctx context.Context, req RbacApplyRequest) error 
 	return nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *K8sRBACService) Delete(ctx context.Context, kind string, req RbacDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -332,10 +340,10 @@ func (s *K8sRBACService) Delete(ctx context.Context, kind string, req RbacDelete
 		gvk = clusterRoleBindingGVK
 		clusterScoped = true
 	default:
-		return apperror.BadRequest("不支持的 RBAC kind")
+		return apperror.BadRequest("不支持的 RBAC 类型")
 	}
 	if !clusterScoped && ns == "" {
-		return apperror.BadRequest("namespace 不能为空")
+		return apperror.BadRequest("命名空间不能为空")
 	}
 	if err := s.dyn.DeleteByGVK(ctx, k, gvk, ns, name); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -401,4 +409,3 @@ func extractRbacRefs(manifest string) []rbacRef {
 	}
 	return out
 }
-

@@ -75,6 +75,7 @@ type K8sStorageService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sStorageService 创建相关逻辑。
 func NewK8sStorageService(runtime *K8sRuntimeService) *K8sStorageService {
 	return &K8sStorageService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
@@ -85,6 +86,7 @@ var (
 	scGVK  = schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "StorageClass"}
 )
 
+// ListPVs 查询列表相关的业务逻辑。
 func (s *K8sStorageService) ListPVs(ctx context.Context, q StorageListQuery) ([]PersistentVolumeItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -127,6 +129,7 @@ func (s *K8sStorageService) ListPVs(ctx context.Context, q StorageListQuery) ([]
 	return out, nil
 }
 
+// ListPVCs 查询列表相关的业务逻辑。
 func (s *K8sStorageService) ListPVCs(ctx context.Context, q StorageListQuery) ([]PersistentVolumeClaimItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -134,7 +137,7 @@ func (s *K8sStorageService) ListPVCs(ctx context.Context, q StorageListQuery) ([
 	}
 	ns := strings.TrimSpace(q.Namespace)
 	if ns == "" {
-		return nil, apperror.BadRequest("namespace 不能为空")
+		return nil, apperror.BadRequest("命名空间不能为空")
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, pvcGVK, ns)
 	if err != nil {
@@ -173,6 +176,7 @@ func (s *K8sStorageService) ListPVCs(ctx context.Context, q StorageListQuery) ([
 	return out, nil
 }
 
+// ListStorageClasses 查询列表相关的业务逻辑。
 func (s *K8sStorageService) ListStorageClasses(ctx context.Context, q StorageListQuery) ([]StorageClassItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -213,6 +217,7 @@ func (s *K8sStorageService) ListStorageClasses(ctx context.Context, q StorageLis
 	return out, nil
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *K8sStorageService) Detail(ctx context.Context, kind string, q StorageDetailQuery) (*StorageDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -235,13 +240,14 @@ func (s *K8sStorageService) Detail(ctx context.Context, kind string, q StorageDe
 	return &StorageDetail{YAML: string(y)}, nil
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *K8sStorageService) Apply(ctx context.Context, req StorageApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
 		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
@@ -249,6 +255,7 @@ func (s *K8sStorageService) Apply(ctx context.Context, req StorageApplyRequest) 
 	return nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *K8sStorageService) Delete(ctx context.Context, kind string, req StorageDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -273,7 +280,7 @@ func resolveStorageGVKAndNS(kind, namespace string) (schema.GroupVersionKind, st
 		return pvGVK, "", nil
 	case "PersistentVolumeClaim":
 		if namespace == "" {
-			return schema.GroupVersionKind{}, "", apperror.BadRequest("namespace 不能为空")
+			return schema.GroupVersionKind{}, "", apperror.BadRequest("命名空间不能为空")
 		}
 		return pvcGVK, namespace, nil
 	case "StorageClass":

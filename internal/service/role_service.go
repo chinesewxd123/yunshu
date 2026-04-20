@@ -18,6 +18,7 @@ type RoleService struct {
 	enforcer *casbin.SyncedEnforcer
 }
 
+// NewRoleService 创建相关逻辑。
 func NewRoleService(roleRepo *repository.RoleRepository, enforcer *casbin.SyncedEnforcer) *RoleService {
 	return &RoleService{
 		roleRepo: roleRepo,
@@ -25,6 +26,7 @@ func NewRoleService(roleRepo *repository.RoleRepository, enforcer *casbin.Synced
 	}
 }
 
+// Create 创建相关的业务逻辑。
 func (s *RoleService) Create(ctx context.Context, req RoleCreateRequest) (*RoleItem, error) {
 	status := req.Status
 	if status != model.StatusDisabled {
@@ -44,11 +46,12 @@ func (s *RoleService) Create(ctx context.Context, req RoleCreateRequest) (*RoleI
 	return &response, nil
 }
 
+// Update 更新相关的业务逻辑。
 func (s *RoleService) Update(ctx context.Context, id uint, req RoleUpdateRequest) (*RoleItem, error) {
 	role, err := s.roleRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("role not found")
+			return nil, apperror.NotFound("角色不存在")
 		}
 		return nil, err
 	}
@@ -77,11 +80,12 @@ func (s *RoleService) Update(ctx context.Context, id uint, req RoleUpdateRequest
 	return &response, nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *RoleService) Delete(ctx context.Context, id uint) error {
 	role, err := s.roleRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("role not found")
+			return apperror.NotFound("角色不存在")
 		}
 		return err
 	}
@@ -92,11 +96,12 @@ func (s *RoleService) Delete(ctx context.Context, id uint) error {
 	return RemoveRolePolicies(s.enforcer, role.Code)
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *RoleService) Detail(ctx context.Context, id uint) (*RoleItem, error) {
 	role, err := s.roleRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("role not found")
+			return nil, apperror.NotFound("角色不存在")
 		}
 		return nil, err
 	}
@@ -104,6 +109,7 @@ func (s *RoleService) Detail(ctx context.Context, id uint) (*RoleItem, error) {
 	return &response, nil
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *RoleService) List(ctx context.Context, query RoleListQuery) (*pagination.Result[RoleItem], error) {
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
 	roles, total, err := s.roleRepo.List(ctx, repository.RoleListParams{

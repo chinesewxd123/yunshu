@@ -9,6 +9,7 @@ import { findMenuByPath, normalizeMenuPath } from "../utils/menu-path";
 const PATH_COMPONENT_FALLBACK: Record<string, string> = {
   "/clusters": "cluster-page",
   "/pods": "pod-page",
+  "/departments": "departments-page",
   "/namespaces": "namespaces-page",
   "/nodes": "nodes-page",
   "/component-status": "component-status-page",
@@ -35,6 +36,12 @@ const PATH_COMPONENT_FALLBACK: Record<string, string> = {
   "/k8s-scoped-policies": "k8s-scoped-policies-page",
   "/alert-channels": "alert-channels-page",
   "/alert-events": "alert-events-page",
+  "/alert-config-center": "alert-config-center-page",
+  "/alert-monitor-platform": "alert-monitor-platform-page",
+  "/alert-duty": "alert-duty-page",
+  "/agent-list": "agent-list-page",
+  "/dict-entries": "dict-entries-page",
+  "/runtime-config": "runtime-config-page",
 };
 
 function RouteFallback() {

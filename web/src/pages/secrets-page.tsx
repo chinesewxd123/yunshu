@@ -1,10 +1,14 @@
 import { Alert, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { useRef } from "react";
+import { SecretFormCreateDrawer } from "../components/k8s/k8s-resource-form-drawers";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { listNamespaces as listClusterNamespaces } from "../services/clusters";
 import { applySecret, deleteSecret, getSecretDetail, listSecrets, type ConfigDetail, type SecretItem } from "../services/configs";
 
 export function SecretsPage() {
+  const listReloadRef = useRef<() => void>(() => {});
+
   const columns: ColumnsType<SecretItem> = [
     { title: "名称", dataIndex: "name" },
     { title: "类型", dataIndex: "type", width: 180 },
@@ -13,6 +17,7 @@ export function SecretsPage() {
   ];
 
   return (
+    <>
     <YamlCrudPage<SecretItem, ConfigDetail>
       title="Secret 管理"
       needNamespace
@@ -21,6 +26,22 @@ export function SecretsPage() {
         return (res.list ?? []).map((n) => ({ label: n.name, value: n.name }));
       }}
       columns={columns}
+      onToolbarReady={(ctx) => {
+        listReloadRef.current = ctx.reload;
+      }}
+      renderCreateFormTab={(ctx) => (
+        <SecretFormCreateDrawer
+          embedded
+          open
+          clusterId={ctx.clusterId}
+          namespace={ctx.namespace ?? "default"}
+          onClose={ctx.closeCreateDrawer}
+          onSuccess={() => {
+            listReloadRef.current();
+            ctx.closeCreateDrawer();
+          }}
+        />
+      )}
       api={{
         list: async ({ clusterId, namespace, keyword }) => await listSecrets(clusterId, namespace ?? "default", keyword),
         detail: async ({ clusterId, namespace, name }) => await getSecretDetail(clusterId, namespace ?? "default", name),
@@ -60,6 +81,7 @@ stringData:
         </div>
       )}
     />
+    </>
   );
 }
 

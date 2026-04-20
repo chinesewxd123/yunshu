@@ -88,6 +88,7 @@ type K8sNodeService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sNodeService 创建相关逻辑。
 func NewK8sNodeService(runtime *K8sRuntimeService) *K8sNodeService {
 	return &K8sNodeService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
@@ -152,6 +153,7 @@ func quantityMapToStringMap(src map[corev1.ResourceName]resource.Quantity) map[s
 	return out
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *K8sNodeService) List(ctx context.Context, query NodeListQuery) ([]NodeListItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -275,6 +277,7 @@ func mapKeys(m map[string]string) []string {
 	return out
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *K8sNodeService) Detail(ctx context.Context, query NodeDetailQuery) (*NodeDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
@@ -283,7 +286,7 @@ func (s *K8sNodeService) Detail(ctx context.Context, query NodeDetailQuery) (*No
 	var n corev1.Node
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Name(query.Name).Get(&n).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Node 不存在")
+			return nil, apperror.BadRequest("节点不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 Node 详情失败: %v", err))
 	}
@@ -451,7 +454,7 @@ func (s *K8sNodeService) SetSchedulability(ctx context.Context, req NodeSchedula
 	var n corev1.Node
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Name(name).Get(&n).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("Node 不存在")
+			return apperror.BadRequest("节点不存在")
 		}
 		return apperror.Internal(fmt.Sprintf("获取 Node 失败: %v", err))
 	}
@@ -480,7 +483,7 @@ func (s *K8sNodeService) ReplaceTaints(ctx context.Context, req NodeTaintsReplac
 	var n corev1.Node
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Name(name).Get(&n).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("Node 不存在")
+			return apperror.BadRequest("节点不存在")
 		}
 		return apperror.Internal(fmt.Sprintf("获取 Node 失败: %v", err))
 	}

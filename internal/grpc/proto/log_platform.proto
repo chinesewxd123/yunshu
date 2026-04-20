@@ -1,0 +1,266 @@
+syntax = "proto3";
+
+package logplatform.v1;
+
+option go_package = "go-permission-system/internal/grpc/proto/pb;pb";
+
+message ErrorInfo {
+  int32 code = 1;
+  string message = 2;
+}
+
+message PageRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message PageResult {
+  int64 total = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message ServerItem {
+  uint64 id = 1;
+  uint64 project_id = 2;
+  string name = 3;
+  string host = 4;
+  int32 port = 5;
+  string os_type = 6;
+  string os_arch = 7;
+  string tags = 8;
+  string last_test_at = 9;
+  string last_test_error = 10;
+  string created_at = 11;
+  string last_seen_at = 12;
+  int32 status = 13;
+}
+
+message ListServersRequest {
+  uint64 project_id = 1;
+  string keyword = 2;
+  PageRequest page = 3;
+}
+
+message ListServersResponse {
+  repeated ServerItem list = 1;
+  PageResult page = 2;
+}
+
+message GetServerRequest {
+  uint64 id = 1;
+}
+
+message UpsertServerRequest {
+  uint64 id = 1;
+  uint64 project_id = 2;
+  string name = 3;
+  string host = 4;
+  int32 port = 5;
+  string os_type = 6;
+  string tags = 7;
+  int32 status = 8;
+  string auth_type = 9;
+  string username = 10;
+  string password = 11;
+  string private_key = 12;
+  string passphrase = 13;
+}
+
+message DeleteServerRequest {
+  uint64 id = 1;
+}
+
+message DeleteServerResponse {
+  bool deleted = 1;
+}
+
+service ProjectServerService {
+  rpc ListServers(ListServersRequest) returns (ListServersResponse);
+  rpc GetServer(GetServerRequest) returns (ServerItem);
+  rpc UpsertServer(UpsertServerRequest) returns (ServerItem);
+  rpc DeleteServer(DeleteServerRequest) returns (DeleteServerResponse);
+}
+
+message LogSourceItem {
+  uint64 id = 1;
+  uint64 service_id = 2;
+  string log_type = 3;
+  string path = 4;
+  string encoding = 5;
+  string timezone = 6;
+  string multiline_rule = 7;
+  string include_regex = 8;
+  string exclude_regex = 9;
+  int32 status = 10;
+  string created_at = 11;
+}
+
+message ListLogSourcesRequest {
+  uint64 project_id = 1;
+  uint64 service_id = 2;
+  bool has_service_id = 3;
+  PageRequest page = 4;
+}
+
+message ListLogSourcesResponse {
+  repeated LogSourceItem list = 1;
+  PageResult page = 2;
+}
+
+message UpsertLogSourceRequest {
+  uint64 id = 1;
+  uint64 service_id = 2;
+  string log_type = 3;
+  string path = 4;
+  string encoding = 5;
+  string timezone = 6;
+  string multiline_rule = 7;
+  string include_regex = 8;
+  string exclude_regex = 9;
+  int32 status = 10;
+}
+
+message DeleteLogSourceRequest {
+  uint64 id = 1;
+}
+
+message DeleteLogSourceResponse {
+  bool deleted = 1;
+}
+
+service LogSourceService {
+  rpc ListLogSources(ListLogSourcesRequest) returns (ListLogSourcesResponse);
+  rpc UpsertLogSource(UpsertLogSourceRequest) returns (LogSourceItem);
+  rpc DeleteLogSource(DeleteLogSourceRequest) returns (DeleteLogSourceResponse);
+}
+
+message AgentDiscoveryItem {
+  string kind = 1;
+  string value = 2;
+  map<string, string> extra = 3;
+  string last_seen_at = 4;
+}
+
+message RegisterRequest {
+  uint64 project_id = 1;
+  uint64 server_id = 2;
+  string name = 3;
+  string version = 4;
+}
+
+message PublicRegisterRequest {
+  uint64 server_id = 1;
+  string name = 2;
+  string version = 3;
+  string register_secret = 4;
+}
+
+message RegisterResponse {
+  uint64 project_id = 1;
+  uint64 agent_id = 2;
+  string token = 3;
+}
+
+message GetRuntimeConfigRequest {
+  string token = 1;
+}
+
+message RuntimeSource {
+  uint64 log_source_id = 1;
+  string log_type = 2;
+  string path = 3;
+}
+
+message GetRuntimeConfigResponse {
+  uint64 project_id = 1;
+  uint64 server_id = 2;
+  repeated RuntimeSource sources = 3;
+}
+
+message AgentStatusRequest {
+  uint64 project_id = 1;
+  uint64 server_id = 2;
+  uint64 log_source_id = 3;
+}
+
+message AgentStatusResponse {
+  uint64 server_id = 1;
+  uint64 log_source_id = 2;
+  uint64 agent_id = 3;
+  bool has_agent_id = 4;
+  string name = 5;
+  string version = 6;
+  string last_seen_at = 7;
+  bool online = 8;
+  bool recent_publishing = 9;
+  string mode_hint = 10;
+}
+
+message AgentBootstrapRequest {
+  uint64 project_id = 1;
+  uint64 server_id = 2;
+  uint64 log_source_id = 3;
+  string source_type = 4;
+  string path = 5;
+  string platform_url = 6;
+  string agent_name = 7;
+  string agent_ver = 8;
+}
+
+message AgentBootstrapResponse {
+  uint64 agent_id = 1;
+  string token = 2;
+  string run_command = 3;
+  string systemd_service = 4;
+}
+
+message ReportDiscoveryRequest {
+  string token = 1;
+  repeated AgentDiscoveryItem items = 2;
+}
+
+message ReportDiscoveryResponse {
+  int32 accepted = 1;
+}
+
+message ListDiscoveryRequest {
+  uint64 project_id = 1;
+  uint64 server_id = 2;
+  string kind = 3;
+  int32 limit = 4;
+}
+
+message ListDiscoveryResponse {
+  repeated AgentDiscoveryItem list = 1;
+}
+
+message IngestEntry {
+  string line = 1;
+  string file_path = 2;
+}
+
+message IngestLogsRequest {
+  uint64 project_id = 1;
+  uint64 server_id = 2;
+  uint64 log_source_id = 3;
+  uint64 seq = 4;
+  repeated IngestEntry entries = 5;
+}
+
+message IngestLogsResponse {
+  uint64 seq = 1;
+  int64 ts_unix_ms = 2;
+}
+
+service AgentRuntimeService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc PublicRegister(PublicRegisterRequest) returns (RegisterResponse);
+  rpc GetRuntimeConfig(GetRuntimeConfigRequest) returns (GetRuntimeConfigResponse);
+  rpc Status(AgentStatusRequest) returns (AgentStatusResponse);
+  rpc Bootstrap(AgentBootstrapRequest) returns (AgentBootstrapResponse);
+  rpc RotateToken(AgentBootstrapRequest) returns (AgentBootstrapResponse);
+  rpc ReportDiscovery(ReportDiscoveryRequest) returns (ReportDiscoveryResponse);
+  rpc ListDiscovery(ListDiscoveryRequest) returns (ListDiscoveryResponse);
+  rpc IngestLogs(stream IngestLogsRequest) returns (stream IngestLogsResponse);
+}

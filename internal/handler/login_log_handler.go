@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/response"
 	"go-permission-system/internal/service"
@@ -14,6 +15,7 @@ type LoginLogHandler struct {
 	svc *service.LoginLogService
 }
 
+// NewLoginLogHandler 创建相关逻辑。
 func NewLoginLogHandler(svc *service.LoginLogService) *LoginLogHandler {
 	return &LoginLogHandler{svc: svc}
 }
@@ -31,17 +33,7 @@ func NewLoginLogHandler(svc *service.LoginLogService) *LoginLogHandler {
 // @Success 200 {object} response.Body{data=pagination.Result[model.LoginLog]}
 // @Router /api/v1/login-logs [get]
 func (h *LoginLogHandler) List(c *gin.Context) {
-	var q service.LoginLogListQuery
-	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-	data, err := h.svc.List(c.Request.Context(), q)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleQuery(c, h.svc.List)
 }
 
 type idsRequest struct {
@@ -58,16 +50,9 @@ type idsRequest struct {
 // @Success 200 {object} response.Body{data=MessageData}
 // @Router /api/v1/login-logs/delete [post]
 func (h *LoginLogHandler) BatchDelete(c *gin.Context) {
-	var req idsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-	if err := h.svc.DeleteBatch(c.Request.Context(), req.IDs); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"message": "deleted"})
+	handleJSONOK(c, gin.H{"message": "deleted"}, func(ctx context.Context, req idsRequest) error {
+		return h.svc.DeleteBatch(ctx, req.IDs)
+	})
 }
 
 // Delete godoc

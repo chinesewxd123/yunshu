@@ -1,7 +1,7 @@
 import { DownOutlined, EditOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, TagsOutlined } from "@ant-design/icons";
-import { Button, Dropdown, Form, Progress, Space, Tag, Typography, message } from "antd";
+import { Button, Dropdown, Form, Input, InputNumber, Progress, Select, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { useRef } from "react";
 import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
 import { useRelatedPodsDrawer } from "../components/k8s/related-pods-drawer";
 import { useWorkloadFormActions } from "../components/k8s/workload-form-actions";
@@ -22,6 +22,8 @@ import {
   NameNamespaceItems,
   ContainerCommonItems,
   WorkloadAdvancedItems,
+  WorkloadPolicyItems,
+  DeploymentHealthAndImagePullSecretsItems,
   buildJobYaml,
   jobObjToForm,
   jobYamlToForm,
@@ -29,7 +31,66 @@ import {
   type JobFormValues,
 } from "../components/k8s/workload-forms";
 
+function JobDetailQuickEdit({
+  detail,
+  detailYaml,
+  setDetailYaml,
+}: {
+  detail: WorkloadDetail;
+  detailYaml: string;
+  setDetailYaml: (next: string) => void;
+}) {
+  const [detailForm] = Form.useForm<JobFormValues>();
+  const values = jobYamlToForm(detailYaml || "") ?? jobObjToForm(detail.object) ?? jobYamlToForm(detail.yaml ?? "");
+  return (
+    <Form
+      form={detailForm}
+      layout="vertical"
+      initialValues={values ?? undefined}
+      onValuesChange={(_, allValues) => {
+        try {
+          setDetailYaml(buildJobYaml(allValues as JobFormValues));
+        } catch {
+          // ignore partial invalid values during typing
+        }
+      }}
+    >
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="name" label="名称" rules={[{ required: true }]} style={{ flex: 1 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="namespace" label="命名空间" rules={[{ required: true }]} style={{ width: 220 }}>
+          <Input />
+        </Form.Item>
+      </Space>
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="restart_policy" label="RestartPolicy" style={{ width: 220 }}>
+          <Select options={[{ label: "Never", value: "Never" }, { label: "OnFailure", value: "OnFailure" }]} />
+        </Form.Item>
+        <Form.Item name="parallelism" label="并行数" style={{ width: 160 }}>
+          <InputNumber min={0} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item name="completions" label="完成数" style={{ width: 160 }}>
+          <InputNumber min={0} style={{ width: "100%" }} />
+        </Form.Item>
+      </Space>
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="container_name" label="容器名" style={{ width: 220 }}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="image" label="镜像" style={{ flex: 1 }}>
+          <Input />
+        </Form.Item>
+      </Space>
+      <Form.Item name="command" label="命令（可选，sh -c）">
+        <Input />
+      </Form.Item>
+    </Form>
+  );
+}
+
 export function JobsPage() {
+  const listReloadRef = useRef<() => void>(() => {});
   const [form] = Form.useForm<JobFormValues>();
   const formActions = useWorkloadFormActions<JobFormValues>({
     form,
@@ -103,7 +164,68 @@ export function JobsPage() {
           apply: async ({ clusterId, manifest }) => await applyJob(clusterId, manifest),
           remove: async ({ clusterId, namespace, name }) => await deleteJob(clusterId, namespace ?? "default", name),
         }}
-        renderToolbarExtraRight={undefined}
+        renderDetail={(d, { detailYaml, setDetailYaml }) => <JobDetailQuickEdit detail={d} detailYaml={detailYaml} setDetailYaml={setDetailYaml} />}
+        onToolbarReady={(ctx) => {
+          listReloadRef.current = ctx.reload;
+        }}
+        onCreateDrawerOpen={(ctx) => {
+          if (!ctx.clusterId) return;
+          const ns = ctx.namespace ?? "default";
+          formActions.prepareCreate(
+            { clusterId: ctx.clusterId, namespace: ns },
+            {
+              namespace: ns,
+              name: "",
+              restart_policy: "Never",
+              container_name: "",
+              image: "busybox:1.36",
+              env_pairs: [{ key: "", value: "" }],
+            } as Partial<JobFormValues>,
+          );
+        }}
+        renderCreateFormTab={(ctx) => (
+          <WorkloadFormModal<JobFormValues>
+            embedded
+            title="Job 表单创建"
+            open={false}
+            loading={formActions.loading}
+            form={form}
+            onCancel={ctx.closeCreateDrawer}
+            onSubmit={(values) => {
+              if (!formActions.ctx) return;
+              const fctx = formActions.ctx;
+              formActions.setLoading(true);
+              void (async () => {
+                try {
+                  const manifest = buildJobYaml(values);
+                  await applyJob(fctx.clusterId, manifest);
+                  message.success("已应用 Job");
+                  ctx.closeCreateDrawer();
+                  listReloadRef.current();
+                } finally {
+                  formActions.setLoading(false);
+                }
+              })();
+            }}
+          >
+            <NameNamespaceItems />
+            <ContainerCommonItems showRestartPolicy />
+            <WorkloadAdvancedItems />
+            <WorkloadPolicyItems showJobPolicy />
+            <DeploymentHealthAndImagePullSecretsItems />
+            <Form.Item noStyle shouldUpdate>
+              {() => {
+                const v = form.getFieldsValue();
+                const qos = qosFromResources(v);
+                return (
+                  <Typography.Text type="secondary">
+                    QoS 说明：Job 不能直接设置 QoS，QoS 由 resources 推导，当前预估为：{qos}
+                  </Typography.Text>
+                );
+              }}
+            </Form.Item>
+          </WorkloadFormModal>
+        )}
         createTemplate={({ namespace }) => `apiVersion: batch/v1
 kind: Job
 metadata:
@@ -163,21 +285,22 @@ spec:
       {podsViewer}
 
       <WorkloadFormModal<JobFormValues>
-        title={formActions.mode === "create" ? "Job 表单创建" : "Job 表单编辑"}
-        open={formActions.open}
+        title="Job 表单编辑"
+        open={formActions.open && formActions.mode === "edit"}
         loading={formActions.loading}
         form={form}
         onCancel={formActions.close}
         onSubmit={(values) => {
           if (!formActions.ctx) return;
-          const ctx = formActions.ctx;
+          const fctx = formActions.ctx;
           formActions.setLoading(true);
           void (async () => {
             try {
               const manifest = buildJobYaml(values);
-              await applyJob(ctx.clusterId, manifest);
+              await applyJob(fctx.clusterId, manifest);
               message.success("已应用 Job");
               formActions.close();
+              listReloadRef.current();
             } finally {
               formActions.setLoading(false);
             }
@@ -187,6 +310,8 @@ spec:
         <NameNamespaceItems />
         <ContainerCommonItems showRestartPolicy />
         <WorkloadAdvancedItems />
+        <WorkloadPolicyItems showJobPolicy />
+        <DeploymentHealthAndImagePullSecretsItems />
         <Form.Item noStyle shouldUpdate>
           {() => {
             const v = form.getFieldsValue();

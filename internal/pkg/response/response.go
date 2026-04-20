@@ -9,9 +9,10 @@ import (
 )
 
 type Body struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
+	Code      int    `json:"code"`
+	ErrorCode string `json:"error_code,omitempty"`
+	Message   string `json:"message"`
+	Data      any    `json:"data,omitempty"`
 }
 
 func Success(c *gin.Context, data any) {
@@ -32,15 +33,21 @@ func Created(c *gin.Context, data any) {
 
 func Error(c *gin.Context, err error) {
 	if appErr, ok := apperror.IsAppError(err); ok {
+		c.Set("error_code", appErr.ErrorCode)
+		c.Set("error_message", appErr.Message)
 		c.JSON(appErr.StatusCode, Body{
-			Code:    appErr.StatusCode,
-			Message: appErr.Message,
+			Code:      appErr.StatusCode,
+			ErrorCode: appErr.ErrorCode,
+			Message:   appErr.Message,
 		})
 		return
 	}
 
+	c.Set("error_code", "INTERNAL_ERROR")
+	c.Set("error_message", "服务器内部错误")
 	c.JSON(http.StatusInternalServerError, Body{
-		Code:    http.StatusInternalServerError,
-		Message: "internal server error",
+		Code:      http.StatusInternalServerError,
+		ErrorCode: "INTERNAL_ERROR",
+		Message:   "服务器内部错误",
 	})
 }

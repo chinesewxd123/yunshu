@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"context"
+
+	pb "go-permission-system/internal/grpc/proto"
 	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/response"
 	"go-permission-system/internal/service"
@@ -9,16 +12,41 @@ import (
 )
 
 type AgentDiscoveryHandler struct {
-	svc *service.AgentDiscoveryService
+	svc         *service.AgentDiscoveryService
+	agentClient pb.AgentRuntimeServiceClient
 }
 
-func NewAgentDiscoveryHandler(svc *service.AgentDiscoveryService) *AgentDiscoveryHandler {
-	return &AgentDiscoveryHandler{svc: svc}
+// NewAgentDiscoveryHandler 创建相关逻辑。
+func NewAgentDiscoveryHandler(svc *service.AgentDiscoveryService, agentClient pb.AgentRuntimeServiceClient) *AgentDiscoveryHandler {
+	return &AgentDiscoveryHandler{svc: svc, agentClient: agentClient}
 }
 
 // Report is called by log-agent (public; uses agent token inside payload).
 func (h *AgentDiscoveryHandler) Report(c *gin.Context) {
-	handleJSON(c, h.svc.Report)
+	handleJSON(c, func(ctx context.Context, req service.AgentDiscoveryReportRequest) (*service.AgentDiscoveryReportResult, error) {
+		items := make([]*pb.AgentDiscoveryItem, 0, len(req.Items))
+		for _, it := range req.Items {
+			extra := map[string]string{}
+			for k, v := range it.Extra {
+				if s, ok := v.(string); ok {
+					extra[k] = s
+				}
+			}
+			items = append(items, &pb.AgentDiscoveryItem{
+				Kind:  it.Kind,
+				Value: it.Value,
+				Extra: extra,
+			})
+		}
+		out, err := h.agentClient.ReportDiscovery(ctx, &pb.ReportDiscoveryRequest{
+			Token: req.Token,
+			Items: items,
+		})
+		if err != nil {
+			return nil, grpcToAppError(err)
+		}
+		return &service.AgentDiscoveryReportResult{Accepted: int(out.GetAccepted())}, nil
+	})
 }
 
 // List is used by UI (authz) to fetch discovery items for a project/server.
@@ -34,11 +62,26 @@ func (h *AgentDiscoveryHandler) List(c *gin.Context) {
 		return
 	}
 	q.ProjectID = projectID
-	list, err := h.svc.List(c.Request.Context(), q)
+	req := &pb.ListDiscoveryRequest{
+		ProjectId: uint64(q.ProjectID),
+		ServerId:  uint64(q.ServerID),
+		Limit:     int32(q.Limit),
+	}
+	if q.Kind != nil {
+		req.Kind = *q.Kind
+	}
+	listResp, err := h.agentClient.ListDiscovery(c.Request.Context(), req)
 	if err != nil {
-		response.Error(c, err)
+		response.Error(c, grpcToAppError(err))
 		return
+	}
+	list := make([]service.AgentDiscoveryListItem, 0, len(listResp.GetList()))
+	for _, it := range listResp.GetList() {
+		list = append(list, service.AgentDiscoveryListItem{
+			Kind:       it.GetKind(),
+			Value:      it.GetValue(),
+			LastSeenAt: it.GetLastSeenAt(),
+		})
 	}
 	response.Success(c, gin.H{"list": list})
 }
-

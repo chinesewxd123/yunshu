@@ -31,6 +31,14 @@ func (r *LogAgentRepository) GetByProjectAndServer(ctx context.Context, projectI
 	return &it, nil
 }
 
+func (r *LogAgentRepository) ListByProject(ctx context.Context, projectID uint) ([]model.LogAgent, error) {
+	var list []model.LogAgent
+	if err := r.db.WithContext(ctx).Where("project_id = ?", projectID).Order("id DESC").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *LogAgentRepository) GetByTokenHash(ctx context.Context, tokenHash string) (*model.LogAgent, error) {
 	var it model.LogAgent
 	if err := r.db.WithContext(ctx).Where("token_hash = ?", tokenHash).First(&it).Error; err != nil {

@@ -1,7 +1,7 @@
 import { ApartmentOutlined, FileTextOutlined, TagsOutlined } from "@ant-design/icons";
 import { Button, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
 import { WorkloadFormModal } from "../components/k8s/workload-forms";
 import { LabelsFormList, ServicePortsFormList, buildServiceYaml, serviceYamlToForm, type ServiceFormValues } from "../components/k8s/service-storage-forms";
@@ -18,11 +18,13 @@ import {
 } from "../services/k8s-services";
 
 export function K8sServicesPage() {
+  const listReloadRef = useRef<() => void>(() => {});
   const [formOpen, setFormOpen] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formCtx, setFormCtx] = useState<{ clusterId: number; namespace: string; name?: string } | null>(null);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [workloadOptions, setWorkloadOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [recommendedPortNames, setRecommendedPortNames] = useState<string[]>([]);
   const { renderKVIcon, viewer } = useKeyValueViewer({
     width: 760,
     compact: true,
@@ -46,6 +48,14 @@ export function K8sServicesPage() {
     setWorkloadOptions(opts);
   }
 
+  function extractRecommendedPortNamesFromWorkload(detailObj: any): string[] {
+    const containerPorts = detailObj?.spec?.template?.spec?.containers?.[0]?.ports;
+    if (!Array.isArray(containerPorts)) return [];
+    return containerPorts
+      .map((p: any) => String(p?.name ?? "").trim())
+      .filter((x: string) => !!x);
+  }
+
   async function backfillSelectorFromWorkload(clusterId: number, namespace: string, ref: string) {
     const [kind, name] = ref.split(":");
     if (!kind || !name) return;
@@ -59,8 +69,21 @@ export function K8sServicesPage() {
     }
     const matchLabels = detailObj?.spec?.selector?.matchLabels ?? detailObj?.spec?.template?.metadata?.labels ?? {};
     const pairs = Object.entries(matchLabels).map(([k, v]) => ({ key: k, value: String(v ?? "") }));
+    const recommended = extractRecommendedPortNamesFromWorkload(detailObj);
+    setRecommendedPortNames(recommended);
+    const fallbackTargetPort = recommended[0];
+    const currentPorts = (form.getFieldValue("ports") as ServiceFormValues["ports"]) ?? [];
+    const nextPorts =
+      fallbackTargetPort && currentPorts.length
+        ? currentPorts.map((p) => {
+            const current = String(p?.targetPort ?? "").trim();
+            if (current) return p;
+            return { ...p, targetPort: fallbackTargetPort };
+          })
+        : currentPorts;
     form.setFieldsValue({
       selector_pairs: pairs.length ? pairs : [{ key: "app", value: name }],
+      ports: nextPorts,
     });
   }
 
@@ -113,25 +136,126 @@ spec:
       protocol: TCP
   type: ClusterIP
 `}
-      renderToolbarExtraRight={(ctx) => (
-        <Button
-          onClick={() => {
-            if (!ctx.clusterId) return;
-            setFormMode("create");
-            setFormCtx({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default" });
-            void loadWorkloadsForSelector(ctx.clusterId, ctx.namespace ?? "default");
-            form.setFieldsValue({
-              name: "",
-              namespace: ctx.namespace ?? "default",
-              type: "ClusterIP",
-              selector_pairs: [{ key: "app", value: "" }],
-              ports: [{ protocol: "TCP", port: 80, targetPort: "80" }],
-            });
-            setFormOpen(true);
+      onToolbarReady={(ctx) => {
+        listReloadRef.current = ctx.reload;
+      }}
+      onCreateDrawerOpen={(ctx) => {
+        if (!ctx.clusterId) return;
+        setFormMode("create");
+        setFormCtx({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default" });
+        setRecommendedPortNames([]);
+        void loadWorkloadsForSelector(ctx.clusterId, ctx.namespace ?? "default");
+        form.setFieldsValue({
+          name: "",
+          namespace: ctx.namespace ?? "default",
+          type: "ClusterIP",
+          selector_pairs: [{ key: "app", value: "" }],
+          ports: [{ protocol: "TCP", port: 80, targetPort: "80" }],
+        });
+      }}
+      renderCreateFormTab={(drawerCtx) => (
+        <WorkloadFormModal<ServiceFormValues>
+          embedded
+          title="Service 表单创建"
+          open={false}
+          loading={formLoading}
+          form={form}
+          onCancel={drawerCtx.closeCreateDrawer}
+          onSubmit={(values) => {
+            const cid = drawerCtx.clusterId;
+            if (!cid) return;
+            setFormLoading(true);
+            void (async () => {
+              try {
+                await applyK8sService(cid, buildServiceYaml(values));
+                message.success("Service 已应用");
+                drawerCtx.closeCreateDrawer();
+                listReloadRef.current();
+              } finally {
+                setFormLoading(false);
+              }
+            })();
           }}
         >
-          表单创建
-        </Button>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]} style={{ flex: 1 }}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="namespace" label="命名空间" rules={[{ required: true, message: "请输入命名空间" }]} style={{ width: 220 }}>
+              <Input />
+            </Form.Item>
+          </Space>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item label="关联 Workload（自动回填 selector）" style={{ flex: 1 }}>
+              <Select
+                allowClear
+                options={workloadOptions}
+                placeholder="选择 Deployment/StatefulSet/DaemonSet"
+                onChange={(val) => {
+                  if (!val || !drawerCtx.clusterId) return;
+                  void backfillSelectorFromWorkload(
+                    drawerCtx.clusterId,
+                    form.getFieldValue("namespace") || drawerCtx.namespace || "default",
+                    String(val),
+                  );
+                }}
+              />
+            </Form.Item>
+          </Space>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item name="type" label="类型" style={{ width: 220 }}>
+              <Select
+                options={[
+                  { label: "ClusterIP", value: "ClusterIP" },
+                  { label: "NodePort", value: "NodePort" },
+                  { label: "LoadBalancer", value: "LoadBalancer" },
+                  { label: "ExternalName", value: "ExternalName" },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="externalName" label="ExternalName（可选）" style={{ flex: 1 }}>
+              <Input placeholder="example.com" />
+            </Form.Item>
+          </Space>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item name="sessionAffinity" label="会话亲和性" style={{ width: 220 }}>
+              <Select allowClear options={[{ label: "None", value: "None" }, { label: "ClientIP", value: "ClientIP" }]} />
+            </Form.Item>
+            <Form.Item name="externalTrafficPolicy" label="外部流量策略" style={{ width: 220 }}>
+              <Select allowClear options={[{ label: "Cluster", value: "Cluster" }, { label: "Local", value: "Local" }]} />
+            </Form.Item>
+            <Form.Item name="internalTrafficPolicy" label="内部流量策略" style={{ width: 220 }}>
+              <Select allowClear options={[{ label: "Cluster", value: "Cluster" }, { label: "Local", value: "Local" }]} />
+            </Form.Item>
+          </Space>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item name="ipFamilyPolicy" label="IP Family Policy" style={{ width: 220 }}>
+              <Select
+                allowClear
+                options={[
+                  { label: "SingleStack", value: "SingleStack" },
+                  { label: "PreferDualStack", value: "PreferDualStack" },
+                  { label: "RequireDualStack", value: "RequireDualStack" },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="ipFamilies" label="IP Families" style={{ width: 280 }}>
+              <Select mode="multiple" allowClear options={[{ label: "IPv4", value: "IPv4" }, { label: "IPv6", value: "IPv6" }]} />
+            </Form.Item>
+            <Form.Item name="healthCheckNodePort" label="HealthCheck NodePort" style={{ width: 220 }}>
+              <Input type="number" min={1} max={65535} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="loadBalancerSourceRanges" label="LoadBalancer Source Ranges">
+            <Select mode="tags" tokenSeparators={[",", " "]} placeholder="例如 10.0.0.0/24" />
+          </Form.Item>
+          <Form.Item label="Selector">
+            <LabelsFormList name="selector_pairs" addLabel="新增 Selector" />
+          </Form.Item>
+          <Form.Item label="Ports">
+            <ServicePortsFormList recommendedPortNames={recommendedPortNames} />
+          </Form.Item>
+        </WorkloadFormModal>
       )}
       extraRowActions={(record, ctx) => (
         <Button
@@ -141,6 +265,7 @@ spec:
             setFormCtx({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
             setFormOpen(true);
             setFormLoading(true);
+            setRecommendedPortNames([]);
             void (async () => {
               try {
                 await loadWorkloadsForSelector(ctx.clusterId, ctx.namespace ?? "default");
@@ -160,8 +285,8 @@ spec:
       )}
     />
     <WorkloadFormModal<ServiceFormValues>
-      title={formMode === "create" ? "Service 表单创建" : "Service 表单编辑"}
-      open={formOpen}
+      title="Service 表单编辑"
+      open={formOpen && formMode === "edit"}
       loading={formLoading}
       form={form}
       onCancel={() => setFormOpen(false)}
@@ -173,6 +298,7 @@ spec:
             await applyK8sService(formCtx.clusterId, buildServiceYaml(values));
             message.success("Service 已应用");
             setFormOpen(false);
+            listReloadRef.current();
           } finally {
             setFormLoading(false);
           }
@@ -215,11 +341,43 @@ spec:
           <Input placeholder="example.com" />
         </Form.Item>
       </Space>
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="sessionAffinity" label="会话亲和性" style={{ width: 220 }}>
+          <Select allowClear options={[{ label: "None", value: "None" }, { label: "ClientIP", value: "ClientIP" }]} />
+        </Form.Item>
+        <Form.Item name="externalTrafficPolicy" label="外部流量策略" style={{ width: 220 }}>
+          <Select allowClear options={[{ label: "Cluster", value: "Cluster" }, { label: "Local", value: "Local" }]} />
+        </Form.Item>
+        <Form.Item name="internalTrafficPolicy" label="内部流量策略" style={{ width: 220 }}>
+          <Select allowClear options={[{ label: "Cluster", value: "Cluster" }, { label: "Local", value: "Local" }]} />
+        </Form.Item>
+      </Space>
+      <Space style={{ width: "100%" }} align="start">
+        <Form.Item name="ipFamilyPolicy" label="IP Family Policy" style={{ width: 220 }}>
+          <Select
+            allowClear
+            options={[
+              { label: "SingleStack", value: "SingleStack" },
+              { label: "PreferDualStack", value: "PreferDualStack" },
+              { label: "RequireDualStack", value: "RequireDualStack" },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item name="ipFamilies" label="IP Families" style={{ width: 280 }}>
+          <Select mode="multiple" allowClear options={[{ label: "IPv4", value: "IPv4" }, { label: "IPv6", value: "IPv6" }]} />
+        </Form.Item>
+        <Form.Item name="healthCheckNodePort" label="HealthCheck NodePort" style={{ width: 220 }}>
+          <Input type="number" min={1} max={65535} />
+        </Form.Item>
+      </Space>
+      <Form.Item name="loadBalancerSourceRanges" label="LoadBalancer Source Ranges">
+        <Select mode="tags" tokenSeparators={[",", " "]} placeholder="例如 10.0.0.0/24" />
+      </Form.Item>
       <Form.Item label="Selector">
         <LabelsFormList name="selector_pairs" addLabel="新增 Selector" />
       </Form.Item>
       <Form.Item label="Ports">
-        <ServicePortsFormList />
+        <ServicePortsFormList recommendedPortNames={recommendedPortNames} />
       </Form.Item>
     </WorkloadFormModal>
     {viewer}

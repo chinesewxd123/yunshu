@@ -1,5 +1,5 @@
 import { CodeOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined, FolderOpenOutlined, PlusOutlined, ReloadOutlined, UndoOutlined, UploadOutlined } from "@ant-design/icons";
-import { Button, Card, Descriptions, Divider, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tabs, Typography, message } from "antd";
+import { Button, Card, Divider, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tabs, Typography, message } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
@@ -50,6 +50,17 @@ export function PodPage() {
   const [fileContent, setFileContent] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [detailSubmitting, setDetailSubmitting] = useState(false);
+  const [detailForm] = Form.useForm<{
+    image: string;
+    command?: string;
+    container_name?: string;
+    image_pull_policy?: "Always" | "IfNotPresent" | "Never";
+    restart_policy?: "Always" | "OnFailure" | "Never";
+    labels_text?: string;
+    node_selector_text?: string;
+    priority_class_name?: string;
+  }>();
   const [execCommand, setExecCommand] = useState("sh");
   const execTermHostRef = useRef<HTMLDivElement | null>(null);
   const execTermRef = useRef<Terminal | null>(null);
@@ -303,6 +314,70 @@ export function PodPage() {
     ]);
     setDetail(d);
     setEvents(e.list || []);
+    detailForm.setFieldsValue({
+      image: d.containers?.[0]?.image || "",
+      command: "",
+      container_name: d.containers?.[0]?.name || d.name,
+      image_pull_policy: "IfNotPresent",
+      restart_policy: "Always",
+      labels_text: d.labels && Object.keys(d.labels).length > 0 ? Object.entries(d.labels).map(([k, v]) => `${k}=${v}`).join("\n") : "",
+      node_selector_text: d.node_selector && Object.keys(d.node_selector).length > 0 ? Object.entries(d.node_selector).map(([k, v]) => `${k}=${v}`).join("\n") : "",
+      priority_class_name: d.priority_class_name || "",
+    });
+  }
+
+  function parseKVText(text?: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    const lines = String(text || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of lines) {
+      const idx = line.indexOf("=");
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim();
+      const value = line.slice(idx + 1).trim();
+      if (key) out[key] = value;
+    }
+    return out;
+  }
+
+  async function submitDetailEdit() {
+    if (!clusterId || !detail) return;
+    const values = await detailForm.validateFields();
+    setDetailSubmitting(true);
+    try {
+      const labels = parseKVText(values.labels_text);
+      const nodeSelector = parseKVText(values.node_selector_text);
+      await updatePodSimple({
+        cluster_id: clusterId,
+        namespace: detail.namespace,
+        name: detail.name,
+        image: values.image,
+        command: (values.command || "").trim() || undefined,
+        container_name: (values.container_name || "").trim() || detail.containers?.[0]?.name || detail.name,
+        image_pull_policy: values.image_pull_policy || "IfNotPresent",
+        restart_policy: values.restart_policy || "Always",
+        labels: Object.keys(labels).length > 0 ? labels : undefined,
+        node_selector: Object.keys(nodeSelector).length > 0 ? nodeSelector : undefined,
+        priority_class_name: (values.priority_class_name || "").trim() || undefined,
+        tolerations: (detail.tolerations || []).map((t) => ({
+          key: t.key,
+          operator: t.operator,
+          value: t.value,
+          effect: t.effect,
+          toleration_seconds: t.tolerationSeconds,
+        })),
+        affinity: detail.affinity,
+      });
+      message.success("Pod 详情已保存并重建");
+      if (selected) {
+        await loadDetail(selected);
+      }
+      await loadPods();
+    } finally {
+      setDetailSubmitting(false);
+    }
   }
 
   function closeExecSocket() {
@@ -760,6 +835,7 @@ export function PodPage() {
               setSimpleMode("create");
               setEditTarget(null);
               simpleForm.resetFields();
+              yamlForm.resetFields();
               setCreateOpen(true);
             }}
           >
@@ -796,7 +872,7 @@ export function PodPage() {
                       详情
                     </Button>
                     <Button type="link" icon={<FileTextOutlined />} onClick={() => void handleViewLogs(record)}>日志</Button>
-                    <Button type="link" icon={<EditOutlined />} onClick={() => void openEditPod(record)}>编辑</Button>
+                    <Button type="link" icon={<EditOutlined />} onClick={() => void openEditPod(record)}>高级编辑</Button>
                     <Button
                       type="link"
                       icon={<FolderOpenOutlined />}
@@ -1047,41 +1123,100 @@ export function PodPage() {
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         width={760}
+        className="detail-edit-drawer"
+        extra={
+          detail ? (
+            <Button type="primary" loading={detailSubmitting} onClick={() => void submitDetailEdit()}>
+              保存修改
+            </Button>
+          ) : null
+        }
       >
         {!detail ? (
           <Typography.Text type="secondary">加载详情中...</Typography.Text>
         ) : (
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
-            <Descriptions size="small" column={1} bordered>
-              <Descriptions.Item label="名称">{detail.namespace}/{detail.name}</Descriptions.Item>
-              <Descriptions.Item label="UID">{detail.uid || "-"}</Descriptions.Item>
-              <Descriptions.Item label="状态"><Tag color={phaseColor(detail.phase)}>{detail.phase}</Tag></Descriptions.Item>
-              <Descriptions.Item label="节点">{detail.node_name || "-"}</Descriptions.Item>
-              <Descriptions.Item label="IP">{detail.pod_ip || "-"}</Descriptions.Item>
-              <Descriptions.Item label="宿主机 IP">{detail.host_ip || "-"}</Descriptions.Item>
-              <Descriptions.Item label="QoS">{detail.qos_class || "-"}</Descriptions.Item>
-              <Descriptions.Item label="ServiceAccount">{detail.service_account || "-"}</Descriptions.Item>
-              <Descriptions.Item label="创建时间">{formatDateTime(detail.creation_time)}</Descriptions.Item>
-              <Descriptions.Item label="启动时间">{formatDateTime(detail.start_time)}</Descriptions.Item>
-              <Descriptions.Item label="标签">
-                {detail.labels && Object.keys(detail.labels).length > 0
-                  ? Object.entries(detail.labels).map(([k, v]) => (
-                      <Tag key={k} color="blue" style={{ marginBottom: 4 }}>
-                        {k}={v}
-                      </Tag>
-                    ))
-                  : "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="注解">
-                {detail.annotations && Object.keys(detail.annotations).length > 0
-                  ? Object.entries(detail.annotations).map(([k, v]) => (
-                      <Tag key={k} style={{ marginBottom: 4 }}>
-                        {k}={v}
-                      </Tag>
-                    ))
-                  : "-"}
-              </Descriptions.Item>
-            </Descriptions>
+            <Form form={detailForm} layout="vertical" className="detail-edit-form">
+              <Form.Item label="名称">
+                <Input value={`${detail.namespace}/${detail.name}`} readOnly />
+              </Form.Item>
+              <Form.Item label="UID">
+                <Input value={detail.uid || "-"} readOnly />
+              </Form.Item>
+              <Form.Item label="状态">
+                <Input value={detail.phase || "-"} readOnly />
+              </Form.Item>
+              <Form.Item label="节点">
+                <Input value={detail.node_name || "-"} readOnly />
+              </Form.Item>
+              <Form.Item label="IP">
+                <Input value={detail.pod_ip || "-"} readOnly />
+              </Form.Item>
+              <Form.Item label="宿主机 IP">
+                <Input value={detail.host_ip || "-"} readOnly />
+              </Form.Item>
+              <Form.Item label="QoS">
+                <Input value={detail.qos_class || "-"} readOnly />
+              </Form.Item>
+              <Form.Item label="ServiceAccount">
+                <Input value={detail.service_account || "-"} readOnly />
+              </Form.Item>
+              <Form.Item label="创建时间">
+                <Input value={formatDateTime(detail.creation_time)} readOnly />
+              </Form.Item>
+              <Form.Item label="启动时间">
+                <Input value={formatDateTime(detail.start_time)} readOnly />
+              </Form.Item>
+              <Form.Item label="镜像" name="image" rules={[{ required: true, message: "请输入镜像" }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item label="容器名" name="container_name">
+                <Input />
+              </Form.Item>
+              <Form.Item label="启动命令" name="command">
+                <Input placeholder="例如：sleep 3600" />
+              </Form.Item>
+              <Space style={{ width: "100%" }} size="middle">
+                <Form.Item label="镜像拉取策略" name="image_pull_policy" style={{ flex: 1 }}>
+                  <Select
+                    options={[
+                      { label: "IfNotPresent", value: "IfNotPresent" },
+                      { label: "Always", value: "Always" },
+                      { label: "Never", value: "Never" },
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item label="重启策略" name="restart_policy" style={{ flex: 1 }}>
+                  <Select
+                    options={[
+                      { label: "Always", value: "Always" },
+                      { label: "OnFailure", value: "OnFailure" },
+                      { label: "Never", value: "Never" },
+                    ]}
+                  />
+                </Form.Item>
+              </Space>
+              <Form.Item label="PriorityClassName" name="priority_class_name">
+                <Input placeholder="例如：system-cluster-critical" />
+              </Form.Item>
+              <Form.Item label="标签（每行 key=value）" name="labels_text">
+                <Input.TextArea rows={3} />
+              </Form.Item>
+              <Form.Item label="NodeSelector（每行 key=value）" name="node_selector_text">
+                <Input.TextArea rows={3} />
+              </Form.Item>
+              <Form.Item label="注解">
+                <Input.TextArea
+                  rows={3}
+                  value={
+                    detail.annotations && Object.keys(detail.annotations).length > 0
+                      ? Object.entries(detail.annotations).map(([k, v]) => `${k}=${v}`).join("\n")
+                      : "-"
+                  }
+                  readOnly
+                />
+              </Form.Item>
+            </Form>
             <Divider style={{ margin: "8px 0" }} />
             <Typography.Text strong>容器信息</Typography.Text>
             <Table
@@ -1157,27 +1292,53 @@ export function PodPage() {
           </Space>
         )}
       </Drawer>
-      <Modal
-        title={simpleMode === "edit" ? `编辑 Pod（重建） - ${editTarget?.namespace || namespace}/${editTarget?.name || ""}` : "创建 Pod"}
+      <Drawer
+        title={
+          <Space direction="vertical" size={0}>
+            <span>
+              {simpleMode === "edit"
+                ? `编辑 Pod（重建） - ${editTarget?.namespace || namespace}/${editTarget?.name || ""}`
+                : "创建 Pod"}
+            </span>
+            <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: "normal" }}>
+              目标命名空间：{namespace}
+            </Typography.Text>
+          </Space>
+        }
+        placement="right"
+        width={960}
         open={createOpen}
-        onCancel={() => {
+        onClose={() => {
           setCreateOpen(false);
           setSimpleMode("create");
           setEditTarget(null);
         }}
-        footer={null}
-        width={820}
         destroyOnClose
+        maskClosable={false}
+        styles={{ body: { paddingBottom: 24 } }}
+        extra={
+          <Button
+            onClick={() => {
+              setCreateOpen(false);
+              setSimpleMode("create");
+              setEditTarget(null);
+            }}
+          >
+            取消
+          </Button>
+        }
       >
         <Tabs
           items={[
             {
               key: "simple",
-              label: "快捷创建",
+              label: "表单创建",
               children: (
                 <Form
                   form={simpleForm}
                   layout="vertical"
+                  requiredMark="optional"
+                  scrollToFirstError
                   initialValues={{
                     name: "",
                     image: "nginx:latest",
@@ -1212,7 +1373,8 @@ export function PodPage() {
                   </Form.Item>
                   <Form.Item
                     name="container_name"
-                    label="容器名称（可选）"
+                    label="容器名称"
+                    extra="默认同 Pod 名称"
                     rules={[
                       {
                         validator: async (_, value) => {
@@ -1253,7 +1415,7 @@ export function PodPage() {
                       <InputNumber min={1} max={65535} style={{ width: "100%" }} />
                     </Form.Item>
                   </Space>
-                  <Form.Item name="command" label="启动命令（可选）">
+                  <Form.Item name="command" label="启动命令" extra="例如覆盖镜像默认 CMD；留空则使用镜像入口">
                     <Input placeholder="例如：sleep 3600" />
                   </Form.Item>
                   <Space style={{ width: "100%" }} size="middle">
@@ -1274,7 +1436,7 @@ export function PodPage() {
                   </Space>
                   <Form.List name="env_pairs">
                     {(fields, { add, remove }) => (
-                      <Form.Item label="环境变量（可选）" extra="按键值对添加，KEY 不可重复">
+                      <Form.Item label="环境变量" extra="按键值对添加，KEY 不可重复">
                         <Space direction="vertical" style={{ width: "100%" }}>
                           {fields.map((field) => (
                             <Space key={field.key} style={{ width: "100%" }} align="start">
@@ -1318,7 +1480,7 @@ export function PodPage() {
                   </Form.List>
                   <Form.List name="node_selector_pairs">
                     {(fields, { add, remove }) => (
-                      <Form.Item label="NodeSelector（可选）" extra="按键值对添加，用于节点选择">
+                      <Form.Item label="NodeSelector" extra="按键值对添加，用于节点选择">
                         <Space direction="vertical" style={{ width: "100%" }}>
                           {fields.map((field) => (
                             <Space key={field.key} style={{ width: "100%" }} align="start">
@@ -1341,11 +1503,11 @@ export function PodPage() {
                       </Form.Item>
                     )}
                   </Form.List>
-                  <Form.Item name="priority_class_name" label="PriorityClassName（可选）">
+                  <Form.Item name="priority_class_name" label="PriorityClassName">
                     <Input placeholder="例如：system-cluster-critical" />
                   </Form.Item>
                   <Divider style={{ margin: "8px 0" }} />
-                  <Typography.Text strong>Affinity（可选）</Typography.Text>
+                  <Typography.Text strong>Affinity</Typography.Text>
                   <Typography.Paragraph className="inline-muted" style={{ margin: "6px 0 0" }}>
                     以表单方式配置 NodeAffinity / PodAffinity / PodAntiAffinity；未填写的块不会下发到 PodSpec。
                   </Typography.Paragraph>
@@ -1669,7 +1831,7 @@ export function PodPage() {
                   </Card>
                   <Form.List name="label_pairs">
                     {(fields, { add, remove }) => (
-                      <Form.Item label="标签（可选）" extra="按键值对添加，key 不可重复">
+                      <Form.Item label="标签" extra="按键值对添加，key 不可重复">
                         <Space direction="vertical" style={{ width: "100%" }}>
                           {fields.map((field) => (
                             <Space key={field.key} style={{ width: "100%" }} align="start">
@@ -1713,7 +1875,7 @@ export function PodPage() {
                   </Form.List>
                   <Form.List name="tolerations">
                     {(fields, { add, remove }) => (
-                      <Form.Item label="容忍（Tolerations，可选）" extra="用于匹配节点污点；污点(Taints)是节点配置，不在 Pod 内创建">
+                      <Form.Item label="容忍（Tolerations）" extra="用于匹配节点污点；污点(Taints)是节点配置，不在 Pod 内创建">
                         <Space direction="vertical" style={{ width: "100%" }}>
                           {fields.map((field) => (
                             <Space key={field.key} style={{ width: "100%" }} align="start" wrap>
@@ -1790,21 +1952,27 @@ export function PodPage() {
                 </Form>
               ),
             },
-            {
-              key: "yaml",
-              label: "YAML 创建",
-              children: (
-                <Form form={yamlForm} layout="vertical" initialValues={{ manifest: "" }}>
-                  <Form.Item name="manifest" label="YAML 内容" rules={[{ required: true, message: "请输入 YAML" }]}>
-                    <Input.TextArea rows={12} placeholder="apiVersion: v1&#10;kind: Pod&#10;metadata:&#10;  name: demo-pod&#10;spec:&#10;  containers:&#10;  - name: main&#10;    image: nginx:latest" />
-                  </Form.Item>
-                  <Button type="primary" loading={creating} onClick={() => void submitCreateYAML()}>创建</Button>
-                </Form>
-              ),
-            },
+            ...(simpleMode === "create"
+              ? [
+                  {
+                    key: "yaml",
+                    label: "YAML 创建",
+                    children: (
+                      <Form form={yamlForm} layout="vertical" requiredMark="optional" scrollToFirstError initialValues={{ manifest: "" }}>
+                        <Form.Item name="manifest" label="YAML 内容" rules={[{ required: true, message: "请输入 YAML" }]}>
+                          <Input.TextArea rows={12} placeholder="apiVersion: v1&#10;kind: Pod&#10;metadata:&#10;  name: demo-pod&#10;spec:&#10;  containers:&#10;  - name: main&#10;    image: nginx:latest" />
+                        </Form.Item>
+                        <Button type="primary" loading={creating} onClick={() => void submitCreateYAML()}>
+                          创建
+                        </Button>
+                      </Form>
+                    ),
+                  },
+                ]
+              : []),
           ]}
         />
-      </Modal>
+      </Drawer>
     </div>
   );
 }

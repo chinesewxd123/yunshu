@@ -9,6 +9,7 @@ import (
 
 	"go-permission-system/internal/model"
 	"go-permission-system/internal/pkg/apperror"
+	"go-permission-system/internal/pkg/pagination"
 	"go-permission-system/internal/repository"
 
 	corev1 "k8s.io/api/core/v1"
@@ -35,11 +36,12 @@ type K8sClusterSetStatusRequest struct {
 }
 
 type K8sClusterItem struct {
-	ID        uint      `json:"id"`
-	Name      string    `json:"name"`
-	Status    int       `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         uint      `json:"id"`
+	Name       string    `json:"name"`
+	Kubeconfig string    `json:"kubeconfig,omitempty"`
+	Status     int       `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type K8sClusterListResponse struct {
@@ -64,11 +66,12 @@ type NamespaceItem struct {
 }
 
 type ComponentStatusItem struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"`
-	Healthy bool   `json:"healthy"`
-	Message string `json:"message,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	Healthy     bool   `json:"healthy"`
+	Message     string `json:"message,omitempty"`
+	Error       string `json:"error,omitempty"`
+	LastProbeAt string `json:"last_probe_at,omitempty"`
 }
 
 type K8sClusterService struct {
@@ -76,6 +79,7 @@ type K8sClusterService struct {
 	runtime *K8sRuntimeService
 }
 
+// NewK8sClusterService 创建相关逻辑。
 func NewK8sClusterService(repo *repository.K8sClusterRepository, runtime *K8sRuntimeService) *K8sClusterService {
 	return &K8sClusterService{
 		repo:    repo,
@@ -83,29 +87,17 @@ func NewK8sClusterService(repo *repository.K8sClusterRepository, runtime *K8sRun
 	}
 }
 
-func normalizePage(page, pageSize int) (int, int) {
-	if page <= 0 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 10
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
-	return page, pageSize
-}
-
+// List 查询列表相关的业务逻辑。
 func (s *K8sClusterService) List(ctx context.Context, query K8sClusterListQuery) (*K8sClusterListResponse, error) {
+	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
 	clusters, total, err := s.repo.List(ctx, repository.K8sClusterListParams{
 		Keyword:  query.Keyword,
-		Page:     query.Page,
-		PageSize: query.PageSize,
+		Page:     page,
+		PageSize: pageSize,
 	})
 	if err != nil {
 		return nil, err
 	}
-	page, pageSize := normalizePage(query.Page, query.PageSize)
 	items := make([]K8sClusterItem, 0, len(clusters))
 	for _, c := range clusters {
 		items = append(items, K8sClusterItem{
@@ -124,6 +116,7 @@ func (s *K8sClusterService) List(ctx context.Context, query K8sClusterListQuery)
 	}, nil
 }
 
+// Create 创建相关的业务逻辑。
 func (s *K8sClusterService) Create(ctx context.Context, req K8sClusterCreateRequest) (*K8sClusterItem, error) {
 	c := &model.K8sCluster{Name: req.Name, Kubeconfig: req.Kubeconfig, Status: 1}
 	if err := s.repo.Create(ctx, c); err != nil {
@@ -132,6 +125,23 @@ func (s *K8sClusterService) Create(ctx context.Context, req K8sClusterCreateRequ
 	return &K8sClusterItem{ID: c.ID, Name: c.Name, Status: c.Status, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt}, nil
 }
 
+// Detail 查询详情相关的业务逻辑。
+func (s *K8sClusterService) Detail(ctx context.Context, id uint) (*K8sClusterItem, error) {
+	cluster, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &K8sClusterItem{
+		ID:         cluster.ID,
+		Name:       cluster.Name,
+		Kubeconfig: cluster.Kubeconfig,
+		Status:     cluster.Status,
+		CreatedAt:  cluster.CreatedAt,
+		UpdatedAt:  cluster.UpdatedAt,
+	}, nil
+}
+
+// Update 更新相关的业务逻辑。
 func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterUpdateRequest) (*K8sClusterItem, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -150,11 +160,13 @@ func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterU
 	return &K8sClusterItem{ID: cluster.ID, Name: cluster.Name, Status: cluster.Status, CreatedAt: cluster.CreatedAt, UpdatedAt: cluster.UpdatedAt}, nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *K8sClusterService) Delete(ctx context.Context, id uint) error {
 	s.runtime.DeleteRegisterCache(id)
 	return s.repo.Delete(ctx, id)
 }
 
+// SetStatus 设置相关的业务逻辑。
 func (s *K8sClusterService) SetStatus(ctx context.Context, id uint, status int) (*K8sClusterItem, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -176,6 +188,7 @@ func (s *K8sClusterService) SetStatus(ctx context.Context, id uint, status int) 
 	return &K8sClusterItem{ID: cluster.ID, Name: cluster.Name, Status: cluster.Status, CreatedAt: cluster.CreatedAt, UpdatedAt: cluster.UpdatedAt}, nil
 }
 
+// Status 执行对应的业务逻辑。
 func (s *K8sClusterService) Status(ctx context.Context, id uint) (*K8sClusterStatusResponse, error) {
 	ver, state, err := s.runtime.CheckClusterHeartbeat(ctx, id)
 	if err != nil {
@@ -191,6 +204,7 @@ func (s *K8sClusterService) Status(ctx context.Context, id uint) (*K8sClusterSta
 	}, nil
 }
 
+// ListNamespaces 查询列表相关的业务逻辑。
 func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint) ([]NamespaceItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, id)
 	if err != nil {
@@ -207,11 +221,13 @@ func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint) ([]Name
 	return out, nil
 }
 
+// ListComponentStatuses 查询列表相关的业务逻辑。
 func (s *K8sClusterService) ListComponentStatuses(ctx context.Context, id uint) ([]ComponentStatusItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+	probedAt := time.Now().Format(time.RFC3339)
 	var list []corev1.ComponentStatus
 	if err := k.Resource(&corev1.ComponentStatus{}).List(&list).Error; err != nil {
 		return nil, apperror.Internal(fmt.Sprintf("获取组件状态失败: %v", err))
@@ -240,11 +256,12 @@ func (s *K8sClusterService) ListComponentStatuses(ctx context.Context, id uint) 
 			break
 		}
 		out = append(out, ComponentStatusItem{
-			Name:    item.Name,
-			Status:  state,
-			Healthy: healthy,
-			Message: message,
-			Error:   reason,
+			Name:        item.Name,
+			Status:      state,
+			Healthy:     healthy,
+			Message:     message,
+			Error:       reason,
+			LastProbeAt: probedAt,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

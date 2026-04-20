@@ -120,7 +120,13 @@ export function EventsPage() {
           />
         </Space>
       </div>
-      <Table rowKey={(r) => `${r.namespace}/${r.involved_kind}/${r.involved_name}/${r.last_time}/${r.reason}`} loading={loading} dataSource={data} columns={columns} pagination={{ pageSize: 10 }} />
+      <Table
+        rowKey={(r) => `${r.namespace}/${r.involved_kind}/${r.involved_name}/${r.last_time}/${r.reason}`}
+        loading={loading}
+        dataSource={data}
+        columns={columns}
+        pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showQuickJumper: true }}
+      />
     </Card>
   );
 }

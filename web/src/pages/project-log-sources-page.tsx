@@ -15,6 +15,8 @@ import {
   type ServiceItem,
   type LogSourceItem,
 } from "../services/projects";
+import { useDictOptions } from "../hooks/use-dict-options";
+import { DictFillSelect } from "../components/dict-fill-select";
 
 export function ProjectLogSourcesPage() {
   const [projects, setProjects] = useState<ProjectItem[]>([]);
@@ -37,6 +39,9 @@ export function ProjectLogSourcesPage() {
   const [bootstrapServerId, setBootstrapServerId] = useState<number | null>(null);
   const [form] = Form.useForm<{ id?: number; service_id: number; log_type: string; path: string; log_dir?: string; include_regex?: string; exclude_regex?: string; status: number }>();
   const [bootstrapForm] = Form.useForm<{ platform_url: string; agent_name?: string; agent_version?: string }>();
+  const platformURLDictOptions = useDictOptions("agent_platform_url");
+  const logTypeOptions = useDictOptions("log_source_type");
+  const logSourceStatusOptions = useDictOptions("common_status");
 
   const projectOptions = useMemo(() => projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` })), [projects]);
   const serverOptions = useMemo(() => servers.map((s) => ({ value: s.id, label: `${s.name} ${s.host}:${s.port} (${s.os_type}/${s.os_arch || "-"})` })), [servers]);
@@ -276,8 +281,8 @@ export function ProjectLogSourcesPage() {
           </Form.Item>
           <Row gutter={12}>
             <Col span={8}><Form.Item label="服务" name="service_id" rules={[{ required: true }]}><Select options={serviceOptions} /></Form.Item></Col>
-            <Col span={4}><Form.Item label="类型" name="log_type" rules={[{ required: true }]}><Select options={[{ value: "file", label: "file" }, { value: "journal", label: "journal" }]} /></Form.Item></Col>
-            <Col span={4}><Form.Item label="状态" name="status" rules={[{ required: true }]}><Select options={[{ value: 1, label: "启用" }, { value: 0, label: "停用" }]} /></Form.Item></Col>
+            <Col span={4}><Form.Item label="类型" name="log_type" rules={[{ required: true }]}><Select options={logTypeOptions} /></Form.Item></Col>
+            <Col span={4}><Form.Item label="状态" name="status" rules={[{ required: true }]}><Select options={logSourceStatusOptions} /></Form.Item></Col>
             <Col span={8}><Form.Item label="日志目录（file 类型）" name="log_dir"><Input placeholder="/var/log/app" /></Form.Item></Col>
           </Row>
           <Row gutter={12}>
@@ -319,6 +324,17 @@ export function ProjectLogSourcesPage() {
             <Col span={12}>
               <Form.Item label="平台地址" name="platform_url" rules={[{ required: true, message: "请输入平台地址" }]}>
                 <Input placeholder="例如：http://10.10.10.10:8080" />
+              </Form.Item>
+              <div style={{ color: "#999", marginTop: -8, marginBottom: 8 }}>
+                项目参数无需手填：系统会使用当前项目上下文自动关联到 Agent Token 与运行配置。
+              </div>
+              <Form.Item label="从字典填充平台地址">
+                <DictFillSelect
+                  form={bootstrapForm}
+                  fieldName="platform_url"
+                  options={platformURLDictOptions}
+                  placeholder="可选：选择后自动填入平台地址"
+                />
               </Form.Item>
             </Col>
             <Col span={6}>

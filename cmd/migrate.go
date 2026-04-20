@@ -18,6 +18,7 @@ var migrateCmd = &cobra.Command{
 			WithConfig(configPath).
 			WithLogger().
 			WithMySQL().
+			WithDictOverrides().
 			WithCasbin().
 			Build()
 		if err != nil {

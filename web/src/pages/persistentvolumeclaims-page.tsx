@@ -1,6 +1,6 @@
 import { Button, Form, Input, Select, Space, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { WorkloadFormModal } from "../components/k8s/workload-forms";
 import { buildPVCYaml, pvcYamlToForm, type PersistentVolumeClaimFormValues } from "../components/k8s/service-storage-forms";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
@@ -16,6 +16,7 @@ import {
 } from "../services/storage";
 
 export function PersistentVolumeClaimsPage() {
+  const listReloadRef = useRef<() => void>(() => {});
   const [formOpen, setFormOpen] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formCtx, setFormCtx] = useState<{ clusterId: number; namespace: string; name?: string } | null>(null);
@@ -66,24 +67,89 @@ spec:
     requests:
       storage: 1Gi
 `}
-      renderToolbarExtraRight={(ctx) => (
-        <Button
-          onClick={() => {
-            if (!ctx.clusterId) return;
-            setFormMode("create");
-            setFormCtx({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default" });
-            void loadStorageClassOptions(ctx.clusterId);
-            form.setFieldsValue({
-              name: "",
-              namespace: ctx.namespace ?? "default",
-              accessModes: ["ReadWriteOnce"],
-              requestStorage: "1Gi",
-            });
-            setFormOpen(true);
+      onToolbarReady={(ctx) => {
+        listReloadRef.current = ctx.reload;
+      }}
+      onCreateDrawerOpen={(ctx) => {
+        if (!ctx.clusterId) return;
+        setFormMode("create");
+        setFormCtx({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default" });
+        void loadStorageClassOptions(ctx.clusterId);
+        form.setFieldsValue({
+          name: "",
+          namespace: ctx.namespace ?? "default",
+          accessModes: ["ReadWriteOnce"],
+          requestStorage: "1Gi",
+          volumeMode: "Filesystem",
+        });
+      }}
+      renderCreateFormTab={(drawerCtx) => (
+        <WorkloadFormModal<PersistentVolumeClaimFormValues>
+          embedded
+          title="PVC 表单创建"
+          open={false}
+          loading={formLoading}
+          form={form}
+          onCancel={drawerCtx.closeCreateDrawer}
+          onSubmit={(values) => {
+            const cid = drawerCtx.clusterId;
+            if (!cid) return;
+            setFormLoading(true);
+            void (async () => {
+              try {
+                await applyPersistentVolumeClaim(cid, buildPVCYaml(values));
+                message.success("PVC 已应用");
+                drawerCtx.closeCreateDrawer();
+                listReloadRef.current();
+              } finally {
+                setFormLoading(false);
+              }
+            })();
           }}
         >
-          表单创建
-        </Button>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]} style={{ flex: 1 }}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="namespace" label="命名空间" rules={[{ required: true, message: "请输入命名空间" }]} style={{ width: 220 }}>
+              <Input />
+            </Form.Item>
+          </Space>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item name="storageClassName" label="StorageClass" style={{ flex: 1 }}>
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                options={storageClassOptions}
+                placeholder="选择 StorageClass"
+              />
+            </Form.Item>
+            <Form.Item name="requestStorage" label="请求容量" rules={[{ required: true, message: "请输入容量" }]} style={{ width: 220 }}>
+              <Input placeholder="1Gi" />
+            </Form.Item>
+            <Form.Item name="limitStorage" label="限制容量（可选）" style={{ width: 220 }}>
+              <Input placeholder="2Gi" />
+            </Form.Item>
+          </Space>
+          <Form.Item name="volumeMode" label="VolumeMode">
+            <Select allowClear options={[{ label: "Filesystem", value: "Filesystem" }, { label: "Block", value: "Block" }]} />
+          </Form.Item>
+          <Form.Item name="accessModes" label="访问模式">
+            <Select
+              mode="multiple"
+              options={[
+                { label: "ReadWriteOnce", value: "ReadWriteOnce" },
+                { label: "ReadOnlyMany", value: "ReadOnlyMany" },
+                { label: "ReadWriteMany", value: "ReadWriteMany" },
+                { label: "ReadWriteOncePod", value: "ReadWriteOncePod" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="volumeName" label="绑定 PV（可选）">
+            <Input />
+          </Form.Item>
+        </WorkloadFormModal>
       )}
       extraRowActions={(record, ctx) => (
         <Button
@@ -110,8 +176,8 @@ spec:
       )}
     />
     <WorkloadFormModal<PersistentVolumeClaimFormValues>
-      title={formMode === "create" ? "PVC 表单创建" : "PVC 表单编辑"}
-      open={formOpen}
+      title="PVC 表单编辑"
+      open={formOpen && formMode === "edit"}
       loading={formLoading}
       form={form}
       onCancel={() => setFormOpen(false)}
@@ -123,6 +189,7 @@ spec:
             await applyPersistentVolumeClaim(formCtx.clusterId, buildPVCYaml(values));
             message.success("PVC 已应用");
             setFormOpen(false);
+            listReloadRef.current();
           } finally {
             setFormLoading(false);
           }
@@ -150,7 +217,13 @@ spec:
         <Form.Item name="requestStorage" label="请求容量" rules={[{ required: true, message: "请输入容量" }]} style={{ width: 220 }}>
           <Input placeholder="1Gi" />
         </Form.Item>
+        <Form.Item name="limitStorage" label="限制容量（可选）" style={{ width: 220 }}>
+          <Input placeholder="2Gi" />
+        </Form.Item>
       </Space>
+      <Form.Item name="volumeMode" label="VolumeMode">
+        <Select allowClear options={[{ label: "Filesystem", value: "Filesystem" }, { label: "Block", value: "Block" }]} />
+      </Form.Item>
       <Form.Item name="accessModes" label="访问模式">
         <Select
           mode="multiple"

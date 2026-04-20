@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+
 	"go-permission-system/internal/model"
 	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/auth"
@@ -15,6 +17,7 @@ type AuthHandler struct {
 	loginLogs *service.LoginLogService
 }
 
+// NewAuthHandler 创建相关逻辑。
 func NewAuthHandler(service *service.AuthService, loginLogs *service.LoginLogService) *AuthHandler {
 	return &AuthHandler{service: service, loginLogs: loginLogs}
 }
@@ -55,28 +58,17 @@ func (h *AuthHandler) recordLogin(c *gin.Context, username, source string, succe
 // @Param request body service.SendEmailCodeRequest true "Send email code request"
 // @Success 200 {object} response.Body{data=service.SendEmailCodeResponse} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 404 {object} response.Body "user not found"
+// @Failure 404 {object} response.Body "用户不存在"
 // @Failure 409 {object} response.Body "email already registered"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/verification-code [post]
 func (h *AuthHandler) SendEmailCode(c *gin.Context) {
-	var req service.SendEmailCodeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	// include client IP for additional per-IP send limits
-	clientIP := c.ClientIP()
-	data, err := h.service.SendEmailCodeWithIP(c.Request.Context(), service.SendEmailCodeWithIPRequest{
-		SendEmailCodeRequest: req,
-		ClientIP:             clientIP,
+	handleJSON(c, func(ctx context.Context, req service.SendEmailCodeRequest) (*service.SendEmailCodeResponse, error) {
+		return h.service.SendEmailCodeWithIP(ctx, service.SendEmailCodeWithIPRequest{
+			SendEmailCodeRequest: req,
+			ClientIP:             c.ClientIP(),
+		})
 	})
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
 }
 
 // SendLoginCodeByUsername godoc
@@ -88,22 +80,11 @@ func (h *AuthHandler) SendEmailCode(c *gin.Context) {
 // @Param request body service.SendLoginCodeByUsernameRequest true "Send login code by username request"
 // @Success 200 {object} response.Body{data=service.SendEmailCodeResponse} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 404 {object} response.Body "user not found"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 404 {object} response.Body "用户不存在"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/login-code [post]
 func (h *AuthHandler) SendLoginCodeByUsername(c *gin.Context) {
-	var req service.SendLoginCodeByUsernameRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	data, err := h.service.SendLoginCodeByUsername(c.Request.Context(), req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleJSON(c, h.service.SendLoginCodeByUsername)
 }
 
 // SendPasswordLoginCode godoc
@@ -115,23 +96,14 @@ func (h *AuthHandler) SendLoginCodeByUsername(c *gin.Context) {
 // @Param request body service.SendPasswordLoginCodeRequest true "Send password login code request"
 // @Success 200 {object} response.Body{data=service.SendPasswordLoginCodeResponse} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 404 {object} response.Body "user not found"
+// @Failure 404 {object} response.Body "用户不存在"
 // @Failure 409 {object} response.Body "cooldown in effect"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/password-login-code [post]
 func (h *AuthHandler) SendPasswordLoginCode(c *gin.Context) {
-	var req service.SendPasswordLoginCodeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	data, err := h.service.SendPasswordLoginCode(c.Request.Context(), req.Username)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleJSON(c, func(ctx context.Context, req service.SendPasswordLoginCodeRequest) (*service.SendPasswordLoginCodeResponse, error) {
+		return h.service.SendPasswordLoginCode(ctx, req.Username)
+	})
 }
 
 // Login godoc
@@ -143,26 +115,21 @@ func (h *AuthHandler) SendPasswordLoginCode(c *gin.Context) {
 // @Param request body service.LoginRequest true "Password login request"
 // @Success 200 {object} response.Body{data=service.LoginResponse} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 403 {object} response.Body "forbidden"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
-	var req service.LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	data, err := h.service.Login(c.Request.Context(), req)
-	if err != nil {
-		h.recordLogin(c, req.Username, model.LoginSourcePassword, false, loginErrMessage(err), nil)
-		response.Error(c, err)
-		return
-	}
-	uid := data.User.ID
-	h.recordLogin(c, data.User.Username, model.LoginSourcePassword, true, "登录成功", &uid)
-	response.Success(c, data)
+	handleJSON(c, func(ctx context.Context, req service.LoginRequest) (*service.LoginResponse, error) {
+		data, err := h.service.Login(ctx, req)
+		if err != nil {
+			h.recordLogin(c, req.Username, model.LoginSourcePassword, false, loginErrMessage(err), nil)
+			return nil, err
+		}
+		uid := data.User.ID
+		h.recordLogin(c, data.User.Username, model.LoginSourcePassword, true, "登录成功", &uid)
+		return data, nil
+	})
 }
 
 // EmailLogin godoc
@@ -174,26 +141,21 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // @Param request body service.EmailLoginRequest true "Email verification login request"
 // @Success 200 {object} response.Body{data=service.LoginResponse} "success"
 // @Failure 400 {object} response.Body "bad request"
-// @Failure 403 {object} response.Body "forbidden"
-// @Failure 404 {object} response.Body "user not found"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 403 {object} response.Body "无访问权限"
+// @Failure 404 {object} response.Body "用户不存在"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/email-login [post]
 func (h *AuthHandler) EmailLogin(c *gin.Context) {
-	var req service.EmailLoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	data, err := h.service.EmailLogin(c.Request.Context(), req)
-	if err != nil {
-		h.recordLogin(c, req.Email, model.LoginSourceEmail, false, loginErrMessage(err), nil)
-		response.Error(c, err)
-		return
-	}
-	uid := data.User.ID
-	h.recordLogin(c, data.User.Username, model.LoginSourceEmail, true, "登录成功", &uid)
-	response.Success(c, data)
+	handleJSON(c, func(ctx context.Context, req service.EmailLoginRequest) (*service.LoginResponse, error) {
+		data, err := h.service.EmailLogin(ctx, req)
+		if err != nil {
+			h.recordLogin(c, req.Email, model.LoginSourceEmail, false, loginErrMessage(err), nil)
+			return nil, err
+		}
+		uid := data.User.ID
+		h.recordLogin(c, data.User.Username, model.LoginSourceEmail, true, "登录成功", &uid)
+		return data, nil
+	})
 }
 
 // Register godoc
@@ -206,21 +168,10 @@ func (h *AuthHandler) EmailLogin(c *gin.Context) {
 // @Success 201 {object} response.Body{data=service.RegisterResponse} "created"
 // @Failure 400 {object} response.Body "bad request"
 // @Failure 409 {object} response.Body "conflict"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
-	var req service.RegisterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	data, err := h.service.Register(c.Request.Context(), req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Created(c, data)
+	handleJSONCreated(c, h.service.Register)
 }
 
 // Logout godoc
@@ -230,13 +181,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} response.Body{data=MessageData} "success"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	claims, ok := auth.ClaimsFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("unauthorized"))
+		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
 		return
 	}
 
@@ -244,7 +195,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	response.Success(c, gin.H{"message": "logout success"})
+	response.Success(c, gin.H{"message": "退出登录成功"})
 }
 
 // Me godoc
@@ -254,14 +205,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} response.Body{data=service.UserDetailResponse} "success"
-// @Failure 401 {object} response.Body "unauthorized"
-// @Failure 404 {object} response.Body "user not found"
-// @Failure 500 {object} response.Body "internal server error"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 404 {object} response.Body "用户不存在"
+// @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/me [get]
 func (h *AuthHandler) Me(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("unauthorized"))
+		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
 		return
 	}
 
@@ -271,4 +222,53 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 	response.Success(c, data)
+}
+
+// UpdateProfile godoc
+// @Summary 更新当前用户资料
+// @Description 更新当前登录用户的昵称和邮箱。
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body service.UpdateProfileRequest true "更新资料请求"
+// @Success 200 {object} response.Body{data=service.UserDetailResponse} "success"
+// @Failure 400 {object} response.Body "bad request"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 409 {object} response.Body "邮箱已存在"
+// @Failure 500 {object} response.Body "服务器内部错误"
+// @Router /api/v1/auth/me [put]
+func (h *AuthHandler) UpdateProfile(c *gin.Context) {
+	user, ok := auth.CurrentUserFromContext(c)
+	if !ok {
+		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		return
+	}
+	handleJSON(c, func(ctx context.Context, req service.UpdateProfileRequest) (*service.UserDetailResponse, error) {
+		return h.service.UpdateProfile(ctx, user.ID, req)
+	})
+}
+
+// ChangePassword godoc
+// @Summary 修改当前用户密码
+// @Description 使用旧密码校验后修改当前登录用户密码。
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body service.ChangePasswordRequest true "修改密码请求"
+// @Success 200 {object} response.Body{data=MessageData} "success"
+// @Failure 400 {object} response.Body "bad request"
+// @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 500 {object} response.Body "服务器内部错误"
+// @Router /api/v1/auth/password [put]
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	user, ok := auth.CurrentUserFromContext(c)
+	if !ok {
+		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		return
+	}
+	handleJSONOK(c, gin.H{"message": "密码修改成功"}, func(ctx context.Context, req service.ChangePasswordRequest) error {
+		return h.service.ChangePassword(ctx, user.ID, req)
+	})
 }

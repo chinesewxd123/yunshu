@@ -50,6 +50,7 @@ type K8sConfigService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sConfigService 创建相关逻辑。
 func NewK8sConfigService(runtime *K8sRuntimeService) *K8sConfigService {
 	return &K8sConfigService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
@@ -59,6 +60,7 @@ var (
 	secretGVK    = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"}
 )
 
+// ListConfigMaps 查询列表相关的业务逻辑。
 func (s *K8sConfigService) ListConfigMaps(ctx context.Context, q ConfigListQuery) ([]ConfigMapItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -93,6 +95,7 @@ func (s *K8sConfigService) ListConfigMaps(ctx context.Context, q ConfigListQuery
 	return out, nil
 }
 
+// ConfigMapDetail 执行对应的业务逻辑。
 func (s *K8sConfigService) ConfigMapDetail(ctx context.Context, q ConfigDetailQuery) (*ConfigDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -101,7 +104,7 @@ func (s *K8sConfigService) ConfigMapDetail(ctx context.Context, q ConfigDetailQu
 	u, err := s.dyn.GetByGVK(ctx, k, configMapGVK, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("ConfigMap 不存在")
+			return nil, apperror.BadRequest("ConfigMap 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 ConfigMap 失败: %v", err))
 	}
@@ -115,6 +118,7 @@ func (s *K8sConfigService) ConfigMapDetail(ctx context.Context, q ConfigDetailQu
 	return &ConfigDetail{YAML: string(y)}, nil
 }
 
+// DeleteConfigMap 删除相关的业务逻辑。
 func (s *K8sConfigService) DeleteConfigMap(ctx context.Context, req ConfigDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -129,6 +133,7 @@ func (s *K8sConfigService) DeleteConfigMap(ctx context.Context, req ConfigDelete
 	return nil
 }
 
+// ListSecrets 查询列表相关的业务逻辑。
 func (s *K8sConfigService) ListSecrets(ctx context.Context, q ConfigListQuery) ([]SecretItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -164,6 +169,7 @@ func (s *K8sConfigService) ListSecrets(ctx context.Context, q ConfigListQuery) (
 	return out, nil
 }
 
+// SecretDetail 执行对应的业务逻辑。
 func (s *K8sConfigService) SecretDetail(ctx context.Context, q ConfigDetailQuery) (*ConfigDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -172,7 +178,7 @@ func (s *K8sConfigService) SecretDetail(ctx context.Context, q ConfigDetailQuery
 	u, err := s.dyn.GetByGVK(ctx, k, secretGVK, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Secret 不存在")
+			return nil, apperror.BadRequest("Secret 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 Secret 失败: %v", err))
 	}
@@ -206,6 +212,7 @@ func (s *K8sConfigService) SecretDetail(ctx context.Context, q ConfigDetailQuery
 	}, nil
 }
 
+// DeleteSecret 删除相关的业务逻辑。
 func (s *K8sConfigService) DeleteSecret(ctx context.Context, req ConfigDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -220,13 +227,14 @@ func (s *K8sConfigService) DeleteSecret(ctx context.Context, req ConfigDeleteReq
 	return nil
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *K8sConfigService) Apply(ctx context.Context, req ConfigApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 
 	cfgRefs := extractConfigRefs(req.Manifest)

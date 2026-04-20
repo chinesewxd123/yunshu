@@ -42,12 +42,14 @@ type K8sCRDService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sCRDService 创建相关逻辑。
 func NewK8sCRDService(runtime *K8sRuntimeService) *K8sCRDService {
 	return &K8sCRDService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
 
 var crdGVK = schema.GroupVersionKind{Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition"}
 
+// List 查询列表相关的业务逻辑。
 func (s *K8sCRDService) List(ctx context.Context, q CRDListQuery) ([]CRDItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -76,6 +78,7 @@ func (s *K8sCRDService) List(ctx context.Context, q CRDListQuery) ([]CRDItem, er
 	return out, nil
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *K8sCRDService) Detail(ctx context.Context, q CRDDetailQuery) (*CRDDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -84,7 +87,7 @@ func (s *K8sCRDService) Detail(ctx context.Context, q CRDDetailQuery) (*CRDDetai
 	u, err := s.dyn.GetByGVK(ctx, k, crdGVK, "", q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("CRD 不存在")
+			return nil, apperror.BadRequest("CRD 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 CRD 详情失败: %v", err))
 	}
@@ -102,13 +105,14 @@ func (s *K8sCRDService) Detail(ctx context.Context, q CRDDetailQuery) (*CRDDetai
 	}, nil
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *K8sCRDService) Apply(ctx context.Context, req CRDApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 	refs := extractCRDRefs(req.Manifest)
 	err = s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -129,6 +133,7 @@ func (s *K8sCRDService) Apply(ctx context.Context, req CRDApplyRequest) error {
 	return nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *K8sCRDService) Delete(ctx context.Context, req CRDDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {

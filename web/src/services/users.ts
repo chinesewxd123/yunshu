@@ -38,6 +38,10 @@ export async function exportUsers(params?: Record<string, any>): Promise<Blob> {
   return (await http.get(`/users/export`, { params, responseType: "blob" })) as unknown as Blob;
 }
 
+export async function downloadUsersImportTemplate(): Promise<Blob> {
+  return (await http.get(`/users/import-template`, { responseType: "blob" })) as unknown as Blob;
+}
+
 export function importUsers(file: File) {
   const fd = new FormData();
   fd.append("file", file);

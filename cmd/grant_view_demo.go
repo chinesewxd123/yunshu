@@ -36,6 +36,7 @@ var grantViewDemoCmd = &cobra.Command{
 			WithConfig(configPath).
 			WithLogger().
 			WithMySQL().
+			WithDictOverrides().
 			WithCasbin().
 			Build()
 		if err != nil {

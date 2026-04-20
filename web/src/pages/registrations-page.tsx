@@ -111,6 +111,8 @@ export function RegistrationsPage() {
             pageSize: query.page_size,
             total,
             showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showQuickJumper: true,
             onChange: (page, pageSize) =>
               setQuery((prev) => ({ ...prev, page, page_size: pageSize })),
           }}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	neturl "net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,7 +20,48 @@ import (
 
 type channelNotifyFunc func(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}, settings map[string]interface{}) (int, string, error)
 
+// webhookJSONAPIFailure 解析钉钉/企业微信等「HTTP 200 + JSON errcode」类响应。若存在 errcode 且非 0，返回具体错误文案；无 errcode 字段则视为非此类协议，不覆盖 HTTP 语义。
+func webhookJSONAPIFailure(respBody string) (checked bool, errMsg string) {
+	body := strings.TrimSpace(respBody)
+	if len(body) == 0 || body[0] != '{' {
+		return false, ""
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &m); err != nil {
+		return false, ""
+	}
+	raw, ok := m["errcode"]
+	if !ok {
+		return false, ""
+	}
+	code := 0
+	switch v := raw.(type) {
+	case float64:
+		code = int(v)
+	case int:
+		code = v
+	case int64:
+		code = int(v)
+	case string:
+		code, _ = strconv.Atoi(strings.TrimSpace(v))
+	default:
+		return false, ""
+	}
+	if code == 0 {
+		return true, ""
+	}
+	msg := strings.TrimSpace(fmt.Sprintf("%v", m["errmsg"]))
+	if msg == "" || msg == "<nil>" {
+		msg = "errmsg empty"
+	}
+	return true, fmt.Sprintf("API errcode=%d: %s", code, msg)
+}
+
 func (s *AlertService) sendToChannel(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}) (int, string, error) {
+	title = s.buildUnifiedNotifyTitle(ctx, title, severity, payload)
+	if payload != nil {
+		payload["title"] = title
+	}
 	settings, err := parseChannelSettings(channel.HeadersJSON)
 	if err != nil {
 		return 0, "", err
@@ -36,6 +78,157 @@ func (s *AlertService) sendToChannel(ctx context.Context, channel *model.AlertCh
 		notifyFn = s.notifyGenericWebhook
 	}
 	return notifyFn(ctx, channel, source, title, severity, status, payload, settings)
+}
+
+func (s *AlertService) buildUnifiedNotifyTitle(ctx context.Context, rawTitle, severity string, payload map[string]interface{}) string {
+	alarmLevel := strings.ToUpper(strings.TrimSpace(severity))
+	if alarmLevel == "" {
+		alarmLevel = "WARNING"
+	}
+	alertName := strings.TrimSpace(rawTitle)
+	if alertName == "" {
+		alertName = "未命名告警"
+	}
+	projectName := s.resolveNotifyProjectName(ctx, payload)
+	return fmt.Sprintf("[告警][%s][%s][%s]", alarmLevel, projectName, alertName)
+}
+
+func projectNameFromLabelMap(labelsAny interface{}) string {
+	switch labels := labelsAny.(type) {
+	case map[string]string:
+		return strings.TrimSpace(labels["project_name"])
+	case map[string]interface{}:
+		s := strings.TrimSpace(fmt.Sprintf("%v", labels["project_name"]))
+		if s == "" || s == "<nil>" {
+			return ""
+		}
+		return s
+	default:
+		return ""
+	}
+}
+
+func projectNameFromLabelsPayload(payload map[string]interface{}) string {
+	if payload == nil {
+		return ""
+	}
+	for _, key := range []string{"labels", "group_labels"} {
+		if labelsAny, ok := payload[key]; ok {
+			if n := projectNameFromLabelMap(labelsAny); n != "" {
+				return n
+			}
+		}
+	}
+	return ""
+}
+
+// projectIDFromPayload 从 payload 顶层、labels 或 group_labels 中解析 project_id（Alertmanager 有时只在 group 级别带标签）。
+func projectIDFromPayload(payload map[string]interface{}) uint {
+	if payload == nil {
+		return 0
+	}
+	if id := parseUintAny(payload["project_id"]); id > 0 {
+		return id
+	}
+	for _, key := range []string{"labels", "group_labels"} {
+		if labelsAny, ok := payload[key]; ok {
+			switch labels := labelsAny.(type) {
+			case map[string]string:
+				if id := parseUintAny(labels["project_id"]); id > 0 {
+					return id
+				}
+			case map[string]interface{}:
+				if id := parseUintAny(labels["project_id"]); id > 0 {
+					return id
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func (s *AlertService) lookupProjectNameByID(ctx context.Context, id uint) string {
+	if id == 0 || s.db == nil {
+		return ""
+	}
+	var p model.Project
+	if err := s.db.WithContext(ctx).Select("id", "name").First(&p, id).Error; err != nil {
+		return ""
+	}
+	return strings.TrimSpace(p.Name)
+}
+
+// enrichOutgoingProjectName 在发送前根据 project_id 写入 project_name，便于多渠道共用一次解析结果，并与告警历史 payload 一致。
+func (s *AlertService) enrichOutgoingProjectName(ctx context.Context, payload map[string]interface{}) {
+	if payload == nil {
+		return
+	}
+	if name := strings.TrimSpace(fmt.Sprintf("%v", payload["project_name"])); name != "" && name != "<nil>" {
+		return
+	}
+	if n := projectNameFromLabelsPayload(payload); n != "" {
+		payload["project_name"] = n
+		return
+	}
+	id := projectIDFromPayload(payload)
+	if id == 0 {
+		return
+	}
+	if n := s.lookupProjectNameByID(ctx, id); n != "" {
+		payload["project_name"] = n
+	}
+}
+
+func (s *AlertService) resolveNotifyProjectName(ctx context.Context, payload map[string]interface{}) string {
+	const fallback = "未绑定项目"
+	if payload == nil {
+		return fallback
+	}
+	if name := strings.TrimSpace(fmt.Sprintf("%v", payload["project_name"])); name != "" && name != "<nil>" {
+		return name
+	}
+	if name := projectNameFromLabelsPayload(payload); name != "" {
+		return name
+	}
+	if id := projectIDFromPayload(payload); id > 0 {
+		if n := s.lookupProjectNameByID(ctx, id); n != "" {
+			return n
+		}
+	}
+	return fallback
+}
+
+func parseUintAny(v interface{}) uint {
+	switch vv := v.(type) {
+	case uint:
+		return vv
+	case uint64:
+		return uint(vv)
+	case int:
+		if vv > 0 {
+			return uint(vv)
+		}
+		return 0
+	case int64:
+		if vv > 0 {
+			return uint(vv)
+		}
+		return 0
+	case float64:
+		if vv > 0 {
+			return uint(vv)
+		}
+		return 0
+	}
+	s := strings.TrimSpace(fmt.Sprintf("%v", v))
+	if s == "" || s == "<nil>" {
+		return 0
+	}
+	n, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return uint(n)
 }
 
 func (s *AlertService) buildNotifierRegistry() map[string]channelNotifyFunc {
@@ -243,10 +436,14 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 	}
 
 	cluster := alertnotify.StringFromPayload(alertPayload, "cluster")
+	monPipe := strings.TrimSpace(alertnotify.StringFromPayload(alertPayload, "monitor_pipeline"))
 	groupKey := alertnotify.StringFromPayload(alertPayload, "group_key")
 	labelsDigest := alertnotify.StringFromPayload(alertPayload, "labels_digest")
 	if cluster == "" {
 		cluster = alertnotify.StringFromPayload(body, "cluster")
+	}
+	if monPipe == "" {
+		monPipe = strings.TrimSpace(alertnotify.StringFromPayload(body, "monitor_pipeline"))
 	}
 	if groupKey == "" {
 		groupKey = alertnotify.StringFromPayload(body, "group_key")
@@ -254,25 +451,33 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 	if labelsDigest == "" {
 		labelsDigest = alertnotify.StringFromPayload(body, "labels_digest")
 	}
+	httpOK := reqErr == nil && code >= 200 && code < 300
+	apiChecked, apiErr := webhookJSONAPIFailure(respBody)
+	success := httpOK && (!apiChecked || apiErr == "")
 	event := model.AlertEvent{
-		Source:          source,
-		Title:           title,
-		Severity:        severity,
-		Status:          status,
-		Cluster:         cluster,
-		GroupKey:        groupKey,
-		LabelsDigest:    labelsDigest,
-		ChannelID:       channel.ID,
-		ChannelName:     channel.Name,
-		Success:         reqErr == nil && code >= 200 && code < 300,
-		HTTPStatusCode:  code,
-		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload: truncateText(respBody, s.cfg.MaxPayloadChars),
+		Source:             source,
+		Title:              title,
+		Severity:           severity,
+		Status:             status,
+		Cluster:            cluster,
+		MonitorPipeline:    monPipe,
+		GroupKey:           groupKey,
+		LabelsDigest:       labelsDigest,
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(alertPayload, "matched_policy_ids"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(alertPayload, "matched_policy_names"),
+		ChannelID:          channel.ID,
+		ChannelName:        channel.Name,
+		Success:            success,
+		HTTPStatusCode:     code,
+		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
+		ResponsePayload:    truncateText(respBody, s.cfg.MaxPayloadChars),
 	}
 	if reqErr != nil {
 		event.ErrorMessage = truncateText(reqErr.Error(), 1000)
 	} else if code < 200 || code >= 300 {
 		event.ErrorMessage = truncateText(fmt.Sprintf("unexpected status code: %d", code), 1000)
+	} else if apiChecked && apiErr != "" {
+		event.ErrorMessage = truncateText(apiErr, 1000)
 	}
 	_ = s.db.WithContext(ctx).Create(&event).Error
 	if reqErr != nil {
@@ -281,7 +486,37 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 	if code < 200 || code >= 300 {
 		return code, respBody, apperror.Internal(fmt.Sprintf("webhook 返回异常状态码: %d", code))
 	}
+	if apiChecked && apiErr != "" {
+		return code, respBody, apperror.Internal(apiErr)
+	}
 	return code, respBody, nil
+}
+
+func mergeAssigneeEmails(recipients []string, payload map[string]interface{}) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(e string) {
+		e = strings.TrimSpace(strings.ToLower(e))
+		if e == "" {
+			return
+		}
+		if _, ok := seen[e]; ok {
+			return
+		}
+		seen[e] = struct{}{}
+		out = append(out, e)
+	}
+	for _, r := range recipients {
+		add(r)
+	}
+	if payload != nil {
+		if raw, ok := payload["assignee_emails"]; ok {
+			for _, e := range normalizeRecipientList(raw) {
+				add(e)
+			}
+		}
+	}
+	return out
 }
 
 func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}) (int, string, error) {
@@ -289,45 +524,63 @@ func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.Aler
 	if err != nil {
 		return 0, "", err
 	}
+	recipients = mergeAssigneeEmails(recipients, payload)
 	if len(recipients) == 0 {
-		return 0, "", apperror.BadRequest("email 通道未配置收件人：请在「邮件接收人」或配置 JSON 中填写 to / recipients / emails")
+		return 0, "", apperror.BadRequest("邮件通道未配置收件人：请在邮件接收人或配置 JSON 中填写 to/recipients/emails；或由监控规则处理人 assignee_emails 提供")
 	}
 	if s.mailer == nil || !s.mailer.Enabled() {
 		return 0, "", apperror.Internal("邮件通道未配置：请检查全局 SMTP（mail 相关配置）是否启用")
 	}
-	subject := fmt.Sprintf("[告警][%s][%s] %s", strings.ToUpper(status), strings.ToUpper(severity), title)
+	subject := strings.TrimSpace(title)
 	mdBody := alertnotify.RenderMarkdownCard(title, payload)
 	htmlBody := alertnotify.MarkdownToHTML(mdBody)
-	sendErr := error(nil)
+	var failMsgs []string
+	okCount := 0
 	for _, to := range recipients {
 		if err := s.mailer.SendMultipart(ctx, to, subject, mdBody, htmlBody); err != nil {
-			sendErr = err
+			failMsgs = append(failMsgs, fmt.Sprintf("%s: %v", to, err))
+		} else {
+			okCount++
 		}
 	}
-	reqBytes, _ := json.Marshal(payload)
-	event := model.AlertEvent{
-		Source:          source,
-		Title:           title,
-		Severity:        severity,
-		Status:          status,
-		Cluster:         alertnotify.StringFromPayload(payload, "cluster"),
-		GroupKey:        alertnotify.StringFromPayload(payload, "group_key"),
-		LabelsDigest:    alertnotify.StringFromPayload(payload, "labels_digest"),
-		ChannelID:       channel.ID,
-		ChannelName:     channel.Name,
-		Success:         sendErr == nil,
-		HTTPStatusCode:  200,
-		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload: truncateText("email sent", s.cfg.MaxPayloadChars),
+	var sendErr error
+	if okCount == 0 && len(recipients) > 0 {
+		sendErr = fmt.Errorf("%s", strings.Join(failMsgs, "; "))
+	} else if len(failMsgs) > 0 {
+		sendErr = fmt.Errorf("partial failure: %s", strings.Join(failMsgs, "; "))
 	}
-	if sendErr != nil {
+	reqBytes, _ := json.Marshal(payload)
+	respNote := "email sent"
+	if okCount > 0 && len(failMsgs) > 0 {
+		respNote = fmt.Sprintf("email sent: %d ok, %d failed", okCount, len(failMsgs))
+	}
+	event := model.AlertEvent{
+		Source:             source,
+		Title:              title,
+		Severity:           severity,
+		Status:             status,
+		Cluster:            alertnotify.StringFromPayload(payload, "cluster"),
+		MonitorPipeline:    strings.TrimSpace(alertnotify.StringFromPayload(payload, "monitor_pipeline")),
+		GroupKey:           alertnotify.StringFromPayload(payload, "group_key"),
+		LabelsDigest:       alertnotify.StringFromPayload(payload, "labels_digest"),
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matched_policy_ids"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matched_policy_names"),
+		ChannelID:          channel.ID,
+		ChannelName:        channel.Name,
+		Success:            okCount > 0,
+		HTTPStatusCode:     200,
+		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
+		ResponsePayload:    truncateText(respNote, s.cfg.MaxPayloadChars),
+	}
+	if sendErr != nil && okCount == 0 {
 		event.HTTPStatusCode = 500
+		event.Success = false
 		event.ErrorMessage = truncateText(sendErr.Error(), 1000)
 		event.ResponsePayload = ""
 	}
 	_ = s.db.WithContext(ctx).Create(&event).Error
-	if sendErr != nil {
+	if okCount == 0 && sendErr != nil {
 		return 500, "", sendErr
 	}
-	return 200, "email sent", nil
+	return 200, respNote, nil
 }

@@ -20,8 +20,12 @@ export interface AlertEventItem {
   severity: string;
   status: string;
   cluster?: string;
+  /** prometheus = Prometheus 规则+Alertmanager Webhook；platform = 平台内监控规则 */
+  monitor_pipeline?: string;
   group_key?: string;
   labels_digest?: string;
+  matched_policy_ids?: string;
+  matched_policy_names?: string;
   channel_id: number;
   channel_name: string;
   success: boolean;
@@ -30,6 +34,22 @@ export interface AlertEventItem {
   request_payload?: string;
   response_payload?: string;
   created_at: string;
+}
+
+export interface AlertPolicyItem {
+  id: number;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  priority: number;
+  match_labels_json?: string;
+  match_regex_json?: string;
+  channels_json?: string;
+  template_id?: number;
+  notify_resolved: boolean;
+  silence_seconds: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export function listAlertChannels(params?: { keyword?: string }) {
@@ -74,9 +94,54 @@ export function testAlertChannel(
   return getData<void>(http.post(`/alerts/channels/${id}/test`, payload ?? {}));
 }
 
-export function listAlertEvents(params: { page: number; page_size: number; keyword?: string; cluster?: string; group_key?: string }) {
+export function listAlertEvents(params: {
+  page: number;
+  page_size: number;
+  keyword?: string;
+  cluster?: string;
+  monitor_pipeline?: string;
+  group_key?: string;
+}) {
   return getData<{ list: AlertEventItem[]; total: number; page: number; page_size: number }>(
     http.get("/alerts/events", { params }),
   );
 }
 
+export function getAlertHistoryStats() {
+  return getData<{
+    total: number;
+    firing: number;
+    resolved: number;
+    success: number;
+    failed: number;
+    today_created: number;
+    /** K8s / Prometheus external_labels.cluster 等（历史记录中去重） */
+    cluster_values?: string[];
+    /** prometheus、platform（历史记录中去重） */
+    monitor_pipeline_values?: string[];
+  }>(http.get("/alerts/history/stats"));
+}
+
+export function sendAlertmanagerWebhook(payload: Record<string, unknown>, token?: string) {
+  const headers: Record<string, string> = {};
+  if ((token || "").trim()) {
+    headers["X-Webhook-Token"] = String(token).trim();
+  }
+  return getData<{ message: string }>(http.post("/alerts/webhook/alertmanager", payload, { headers }));
+}
+
+export function listAlertPolicies(params: { page: number; page_size: number; keyword?: string; enabled?: boolean }) {
+  return getData<{ list: AlertPolicyItem[]; total: number; page: number; page_size: number }>(http.get("/alerts/policies", { params }));
+}
+
+export function createAlertPolicy(payload: Partial<AlertPolicyItem> & { name: string }) {
+  return getData<AlertPolicyItem>(http.post("/alerts/policies", payload));
+}
+
+export function updateAlertPolicy(id: number, payload: Partial<AlertPolicyItem> & { name: string }) {
+  return getData<AlertPolicyItem>(http.put(`/alerts/policies/${id}`, payload));
+}
+
+export function deleteAlertPolicy(id: number) {
+  return getData<void>(http.delete(`/alerts/policies/${id}`));
+}

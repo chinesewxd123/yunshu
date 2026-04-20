@@ -1,9 +1,9 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
-	"go-permission-system/internal/pkg/apperror"
 	"go-permission-system/internal/pkg/response"
 	"go-permission-system/internal/service"
 
@@ -14,18 +14,29 @@ type ClusterHandler struct {
 	svc *service.K8sClusterService
 }
 
+// NewClusterHandler 创建相关逻辑。
 func NewClusterHandler(svc *service.K8sClusterService) *ClusterHandler {
 	return &ClusterHandler{svc: svc}
 }
 
+// List 查询列表对应的 HTTP 接口处理逻辑。
 func (h *ClusterHandler) List(c *gin.Context) {
-	var query service.K8sClusterListQuery
-	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+	handleQuery(c, h.svc.List)
+}
+
+// Create 创建对应的 HTTP 接口处理逻辑。
+func (h *ClusterHandler) Create(c *gin.Context) {
+	handleJSONCreated(c, h.svc.Create)
+}
+
+// Detail 查询详情对应的 HTTP 接口处理逻辑。
+func (h *ClusterHandler) Detail(c *gin.Context) {
+	id, err := parseUintParam(c, "id")
+	if err != nil {
+		response.Error(c, err)
 		return
 	}
-
-	data, err := h.svc.List(c.Request.Context(), query)
+	data, err := h.svc.Detail(c.Request.Context(), id)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -33,21 +44,7 @@ func (h *ClusterHandler) List(c *gin.Context) {
 	response.Success(c, data)
 }
 
-func (h *ClusterHandler) Create(c *gin.Context) {
-	var req service.K8sClusterCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	data, err := h.svc.Create(c.Request.Context(), req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Created(c, data)
-}
-
+// Update 更新对应的 HTTP 接口处理逻辑。
 func (h *ClusterHandler) Update(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {
@@ -55,20 +52,12 @@ func (h *ClusterHandler) Update(c *gin.Context) {
 		return
 	}
 
-	var req service.K8sClusterUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	data, err := h.svc.Update(c.Request.Context(), id, req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleJSON(c, func(ctx context.Context, req service.K8sClusterUpdateRequest) (*service.K8sClusterItem, error) {
+		return h.svc.Update(ctx, id, req)
+	})
 }
 
+// Delete 删除对应的 HTTP 接口处理逻辑。
 func (h *ClusterHandler) Delete(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {
@@ -83,6 +72,7 @@ func (h *ClusterHandler) Delete(c *gin.Context) {
 	response.Success(c, gin.H{"message": "deleted"})
 }
 
+// Status 处理对应的 HTTP 请求并返回统一响应。
 func (h *ClusterHandler) Status(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {
@@ -98,6 +88,7 @@ func (h *ClusterHandler) Status(c *gin.Context) {
 	response.Success(c, data)
 }
 
+// Namespaces 处理对应的 HTTP 请求并返回统一响应。
 func (h *ClusterHandler) Namespaces(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {
@@ -113,6 +104,7 @@ func (h *ClusterHandler) Namespaces(c *gin.Context) {
 	response.Success(c, gin.H{"list": list})
 }
 
+// ComponentStatuses 处理对应的 HTTP 请求并返回统一响应。
 func (h *ClusterHandler) ComponentStatuses(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {
@@ -127,6 +119,7 @@ func (h *ClusterHandler) ComponentStatuses(c *gin.Context) {
 	response.Success(c, gin.H{"list": list})
 }
 
+// SetStatus 设置对应的 HTTP 接口处理逻辑。
 func (h *ClusterHandler) SetStatus(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {
@@ -134,18 +127,9 @@ func (h *ClusterHandler) SetStatus(c *gin.Context) {
 		return
 	}
 
-	var req service.K8sClusterSetStatusRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
-		return
-	}
-
-	data, err := h.svc.SetStatus(c.Request.Context(), id, req.Status)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, data)
+	handleJSON(c, func(ctx context.Context, req service.K8sClusterSetStatusRequest) (*service.K8sClusterItem, error) {
+		return h.svc.SetStatus(ctx, id, req.Status)
+	})
 }
 
 // Not used now, left for swagger generation.

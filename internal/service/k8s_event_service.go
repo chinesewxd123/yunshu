@@ -38,10 +38,12 @@ type K8sEventService struct {
 	runtime *K8sRuntimeService
 }
 
+// NewK8sEventService 创建相关逻辑。
 func NewK8sEventService(runtime *K8sRuntimeService) *K8sEventService {
 	return &K8sEventService{runtime: runtime}
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *K8sEventService) List(ctx context.Context, q EventListQuery) ([]EventItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {

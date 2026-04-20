@@ -1,5 +1,7 @@
 import { Space, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { useRef } from "react";
+import { RbacClusterRoleBindingFormCreateDrawer } from "../components/k8s/k8s-resource-form-drawers";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { applyRbac, deleteRbac, getRbacDetail, listClusterRoleBindings, type RbacClusterRoleBindingItem, type RbacDetail } from "../services/rbac";
 
@@ -7,6 +9,8 @@ type Item = RbacClusterRoleBindingItem;
 type Detail = RbacDetail;
 
 export function RbacClusterRoleBindingsPage() {
+  const listReloadRef = useRef<() => void>(() => {});
+
   const columns: ColumnsType<Item> = [
     { title: "名称", dataIndex: "name", width: 280 },
     { title: "RoleRef", dataIndex: "role_ref", width: 240, render: (v: string) => <Tag>{v || "-"}</Tag> },
@@ -29,10 +33,26 @@ export function RbacClusterRoleBindingsPage() {
   ];
 
   return (
+    <>
     <YamlCrudPage<Item, Detail>
       title="RBAC - ClusterRoleBinding"
       needNamespace={false}
       columns={columns}
+      onToolbarReady={(ctx) => {
+        listReloadRef.current = ctx.reload;
+      }}
+      renderCreateFormTab={(ctx) => (
+        <RbacClusterRoleBindingFormCreateDrawer
+          embedded
+          open
+          clusterId={ctx.clusterId}
+          onClose={ctx.closeCreateDrawer}
+          onSuccess={() => {
+            listReloadRef.current();
+            ctx.closeCreateDrawer();
+          }}
+        />
+      )}
       api={{
         list: async ({ clusterId, keyword }) => (await listClusterRoleBindings(clusterId, keyword)).list,
         detail: async ({ clusterId, name }) => await getRbacDetail({ cluster_id: clusterId, kind: "ClusterRoleBinding", name }),
@@ -53,6 +73,7 @@ roleRef:
   name: demo-clusterrole
 `}
     />
+    </>
   );
 }
 

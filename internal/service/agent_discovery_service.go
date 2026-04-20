@@ -17,6 +17,7 @@ type AgentDiscoveryService struct {
 	serverRepo *repository.ServerRepository
 }
 
+// NewAgentDiscoveryService 创建相关逻辑。
 func NewAgentDiscoveryService(repo *repository.AgentDiscoveryRepository, agentRepo *repository.LogAgentRepository, serverRepo *repository.ServerRepository) *AgentDiscoveryService {
 	return &AgentDiscoveryService{repo: repo, agentRepo: agentRepo, serverRepo: serverRepo}
 }
@@ -36,10 +37,11 @@ type AgentDiscoveryReportResult struct {
 	Accepted int `json:"accepted"`
 }
 
+// Report 执行对应的业务逻辑。
 func (s *AgentDiscoveryService) Report(ctx context.Context, req AgentDiscoveryReportRequest) (*AgentDiscoveryReportResult, error) {
 	token := strings.TrimSpace(req.Token)
 	if token == "" {
-		return nil, apperror.BadRequest("token is required")
+		return nil, apperror.BadRequest("令牌不能为空")
 	}
 	agentSvc := NewLogAgentService(s.agentRepo, s.serverRepo, nil, "")
 	agent, err := agentSvc.AuthenticateByToken(ctx, token)
@@ -95,6 +97,7 @@ type AgentDiscoveryListItem struct {
 	LastSeenAt string  `json:"last_seen_at"`
 }
 
+// List 查询列表相关的业务逻辑。
 func (s *AgentDiscoveryService) List(ctx context.Context, q AgentDiscoveryListQuery) ([]AgentDiscoveryListItem, error) {
 	// Validate server belongs to project.
 	sv, err := s.serverRepo.GetByID(ctx, q.ServerID)
@@ -102,7 +105,7 @@ func (s *AgentDiscoveryService) List(ctx context.Context, q AgentDiscoveryListQu
 		return nil, err
 	}
 	if sv.ProjectID != q.ProjectID {
-		return nil, apperror.Forbidden("server not in project")
+		return nil, apperror.Forbidden("服务器不在当前项目中")
 	}
 	list, err := s.repo.List(ctx, q.ProjectID, q.ServerID, q.Kind, q.Limit)
 	if err != nil {

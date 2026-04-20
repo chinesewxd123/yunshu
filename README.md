@@ -15,6 +15,13 @@
 
 ---
 
+## 产品手册与部署文档
+
+- **产品手册（需求 / 数据库 / 接口 / 权限）**：[docs/handbook/README.md](docs/handbook/README.md)  
+- **麒麟 Kylin V10（x86_64）部署**：[docs/deployment/KYLIN_V10_X86_64.md](docs/deployment/KYLIN_V10_X86_64.md)
+
+---
+
 ## 目录
 
 - [1. 功能清单（Implemented Features）](#1-功能清单implemented-features)
@@ -198,10 +205,10 @@ sequenceDiagram
   participant B as Broker
   participant W as Web UI
 
-  A->>S: POST /api/v1/agents/public-register (optional)
-  A->>S: GET /api/v1/agents/runtime-config?token=...
+  A->>S: gRPC PublicRegister (optional)
+  A->>S: gRPC GetRuntimeConfig(token)
   A->>A: Start collectors (file/journal)
-  A->>S: GET /api/v1/agents/ws/ingest?token=... (WebSocket)
+  A->>S: gRPC IngestLogs(stream)
   A->>S: ingest entries (line + file_path + seq)
   S->>B: Publish by stream key (project:server:logSource)
   W->>S: GET /api/v1/projects/:id/logs/stream (SSE)
@@ -214,7 +221,7 @@ sequenceDiagram
 
 - **配置层**：`Project -> Server -> Service -> LogSource`
 - **采集层**：`internal/agent`
-  - `runtime.go`: 注册/拉配置/WS 上报/ACK重发
+  - `runtime.go`: 注册/拉配置/gRPC stream 上报/ACK重发
   - `file_collector.go`: Go 原生文件采集（支持 glob + 多文件合并）
 - **汇聚层**：`internal/service/log_agent_service.go`
   - `AgentLogBroker` 按 `project:server:logSource` 组织流
@@ -269,10 +276,10 @@ sequenceDiagram
 
 | Method | Path | 说明 |
 |---|---|---|
-| POST | `/agents/public-register` | 公共注册（agent-first，可选） |
-| GET | `/agents/runtime-config?token=...` | 拉取当前 token 对应运行配置 |
-| GET | `/agents/ws/ingest?token=...` | 建立日志上报 WebSocket |
-| POST | `/agents/discovery/report` | 上报可发现文件/目录/unit |
+| POST | `/agents/public-register` | 兼容 HTTP 公共注册（内部转调 gRPC） |
+| GET | `/agents/runtime-config?token=...` | 兼容 HTTP 拉取配置（内部转调 gRPC） |
+| POST | `/agents/discovery/report` | 兼容 HTTP discovery 上报（内部转调 gRPC） |
+| gRPC | `AgentRuntimeService/IngestLogs` | Agent 双向流日志上报 |
 
 项目侧运维接口：
 
@@ -331,7 +338,7 @@ cd web && npm run dev
 
 ```bash
 ./log-agent \
-  --server-url "http://<platform-host>:8080" \
+  --grpc-server "<platform-host>:18080" \
   --project-id 1 \
   --server-id 1 \
   --token "<agent-token>" \
@@ -342,7 +349,7 @@ cd web && npm run dev
 
 - `[agent][info] starting agent ...`
 - `[agent][info] runtime-config loaded project=... sources=...`
-- `[agent][info] ingest websocket connected`
+- `[agent][info] ingest stream connected`
 - `[agent][info] running sources=... received=... sent=... pending=...`
 
 ### 6.4 页面验证点
@@ -375,7 +382,7 @@ cd web && npm run dev
 
 ```bash
 ./log-agent \
-  --server-url "http://10.10.10.1:5173" \
+  --grpc-server "10.10.10.1:18080" \
   --project-id 1 \
   --server-id 1 \
   --token "xxxxxxxxxxxxxxxx"
@@ -385,7 +392,7 @@ cd web && npm run dev
 
 ```bash
 ./log-agent \
-  --server-url "http://10.10.10.1:5173" \
+  --grpc-server "10.10.10.1:18080" \
   --project-id 1 \
   --server-id 1 \
   --token "xxxxxxxxxxxxxxxx" \
@@ -396,7 +403,7 @@ cd web && npm run dev
 
 ```bash
 ./log-agent \
-  --server-url "http://10.10.10.1:5173" \
+  --grpc-server "10.10.10.1:18080" \
   --project-id 1 \
   --server-id 1 \
   --token "xxxxxxxxxxxxxxxx" \
@@ -414,7 +421,7 @@ cd web && npm run dev
 
 - 使用最新版二进制（已包含默认 info 日志）
 - 如需细节，加 `--debug`
-- 检查 `server-url`、`token`、网络连通性
+- 检查 `grpc-server`、`token`、网络连通性
 
 ### 7.2 页面无日志
 

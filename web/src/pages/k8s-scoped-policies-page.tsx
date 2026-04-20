@@ -221,7 +221,7 @@ export function K8sScopedPoliciesPage() {
               <Table
                 rowKey={(record) => `${record.resource}::${record.action}`}
                 dataSource={k8sPolicies}
-                pagination={{ pageSize: 10 }}
+                pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showQuickJumper: true }}
                 size="small"
                 scroll={{ x: "max-content" }}
                 columns={[

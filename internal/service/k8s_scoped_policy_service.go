@@ -46,6 +46,7 @@ type K8sScopedPolicyService struct {
 	enforcer *casbin.SyncedEnforcer
 }
 
+// NewK8sScopedPolicyService 创建相关逻辑。
 func NewK8sScopedPolicyService(
 	roleRepo *repository.RoleRepository,
 	permRepo *repository.PermissionRepository,
@@ -58,6 +59,7 @@ func NewK8sScopedPolicyService(
 	}
 }
 
+// ActionCatalog 执行对应的业务逻辑。
 func (s *K8sScopedPolicyService) ActionCatalog() []K8sActionItem {
 	if s.permRepo == nil {
 		return []K8sActionItem{}
@@ -70,6 +72,7 @@ func (s *K8sScopedPolicyService) ActionCatalog() []K8sActionItem {
 	return actions
 }
 
+// PathCatalog 执行对应的业务逻辑。
 func (s *K8sScopedPolicyService) PathCatalog() []string {
 	if s.permRepo == nil {
 		return []string{}
@@ -82,6 +85,7 @@ func (s *K8sScopedPolicyService) PathCatalog() []string {
 	return paths
 }
 
+// Grant 执行对应的业务逻辑。
 func (s *K8sScopedPolicyService) Grant(ctx context.Context, req K8sScopedPolicyGrantRequest) (*K8sScopedPolicyGrantResponse, error) {
 	role, err := s.roleRepo.GetByID(ctx, req.RoleID)
 	if err != nil {
@@ -157,6 +161,7 @@ func (s *K8sScopedPolicyService) Grant(ctx context.Context, req K8sScopedPolicyG
 	}, nil
 }
 
+// ListByRole 查询列表相关的业务逻辑。
 func (s *K8sScopedPolicyService) ListByRole(ctx context.Context, roleID uint) ([]K8sScopedPolicyItem, error) {
 	role, err := s.roleRepo.GetByID(ctx, roleID)
 	if err != nil {

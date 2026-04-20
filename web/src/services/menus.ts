@@ -40,6 +40,11 @@ export interface MenuUpdatePayload {
   status?: number;
 }
 
+export interface MenuBatchStatusPayload {
+  ids: number[];
+  status: number;
+}
+
 export function getMenuTree() {
   return getData<MenuItem[]>(http.get("/menus/tree"));
 }
@@ -54,4 +59,8 @@ export function updateMenu(id: number, payload: MenuUpdatePayload) {
 
 export function deleteMenu(id: number) {
   return getData<void>(http.delete(`/menus/${id}`));
+}
+
+export function batchUpdateMenuStatus(payload: MenuBatchStatusPayload) {
+  return getData<void>(http.put("/menus/status", payload));
 }

@@ -1,752 +1,5839 @@
-﻿openapi: 3.0.3
+openapi: 3.0.3
 info:
-  title: Permission System API
-  version: 1.0.0
+  title: YunShu CMDB / Permission System API
+  version: "1.0.0"
   description: |
-    OpenAPI document for the current Gin + MySQL + Redis + Casbin permission system.
-    Import this file into APIpost for debugging.
+    由 tools/genopenapi 从 internal/router/router.go 自动生成，请勿手工编辑本文件。
+    重新生成：go run ./tools/genopenapi -out docs/apipost/permission-system.openapi.yaml
 servers:
   - url: http://127.0.0.1:8080
-    description: Local development server
-tags:
-  - name: System
-  - name: Auth
-  - name: User
-  - name: Role
-  - name: Permission
-  - name: Policy
+    description: Local
+  - url: /
+    description: Relative (behind reverse proxy)
+tags: []
 paths:
-  /api/v1/health:
-    get:
-      tags: [System]
-      summary: Health check
-      operationId: healthCheck
+  /api/v1/agents/discovery/report:
+    post:
+      tags: ["Agents"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_agents_discovery_report
       responses:
-        '200':
-          description: OK
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
-              example:
-                code: 200
-                message: success
-                data:
-                  name: permission-system
-                  env: dev
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/agents/health/report:
+    post:
+      tags: ["Agents"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_agents_health_report
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/agents/public-register:
+    post:
+      tags: ["Agents"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_agents_public-register
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/agents/register:
+    post:
+      tags: ["Agents"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_agents_register
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/agents/runtime-config:
+    get:
+      tags: ["Agents"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_agents_runtime-config
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/channels:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_channels
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_channels
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/channels/{id}:
+    delete:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_alerts_channels_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_alerts_channels_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/channels/{id}/test:
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_channels_id__test
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/datasources:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_datasources
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_datasources
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/datasources/{id}:
+    delete:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_alerts_datasources_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_alerts_datasources_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/datasources/{id}/prometheus-alerts:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_datasources_id__prometheus-alerts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/datasources/{id}/query:
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_datasources_id__query
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/datasources/{id}/query_range:
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_datasources_id__query_range
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/duty-blocks:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_duty-blocks
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_duty-blocks
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/duty-blocks/{id}:
+    delete:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_alerts_duty-blocks_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_alerts_duty-blocks_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/events:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_events
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/history/stats:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_history_stats
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/monitor-rules:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_monitor-rules
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_monitor-rules
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/monitor-rules/{id}:
+    delete:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_alerts_monitor-rules_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_alerts_monitor-rules_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/monitor-rules/{id}/assignees:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_monitor-rules_id__assignees
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_alerts_monitor-rules_id__assignees
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/policies:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_policies
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_policies
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/policies/{id}:
+    delete:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_alerts_policies_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_alerts_policies_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/silences:
+    get:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_alerts_silences
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_silences
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/silences/batch:
+    post:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_silences_batch
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/silences/{id}:
+    delete:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_alerts_silences_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Alerts"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_alerts_silences_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/alerts/webhook/alertmanager:
+    post:
+      tags: ["AlertsWebhook"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_alerts_webhook_alertmanager
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/auth/email-login:
+    post:
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_auth_email-login
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
   /api/v1/auth/login:
     post:
-      tags: [Auth]
-      summary: Login
-      description: Get bearer token by username and password.
-      operationId: login
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-            example:
-              username: admin
-              password: Admin@123
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_auth_login
       responses:
-        '200':
-          description: Login success
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/auth/login-code:
+    post:
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_auth_login-code
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
   /api/v1/auth/logout:
     post:
-      tags: [Auth]
-      summary: Logout
-      operationId: logout
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_auth_logout
       security:
         - bearerAuth: []
       responses:
-        '200':
-          description: Logout success
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageApiResponse'
-              example:
-                code: 200
-                message: success
-                data:
-                  message: logout success
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
   /api/v1/auth/me:
     get:
-      tags: [Auth]
-      summary: Get current user
-      operationId: currentUser
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_auth_me
       security:
         - bearerAuth: []
       responses:
-        '200':
-          description: Current user detail
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserDetailApiResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-  /api/v1/users:
-    get:
-      tags: [User]
-      summary: List users
-      operationId: listUsers
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_auth_me
       security:
         - bearerAuth: []
-      parameters:
-        - in: query
-          name: keyword
-          schema:
-            type: string
-          description: Search by username or nickname
-        - in: query
-          name: page
-          schema:
-            type: integer
-            default: 1
-        - in: query
-          name: page_size
-          schema:
-            type: integer
-            default: 10
       responses:
-        '200':
-          description: User list
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserPageApiResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/auth/password:
+    put:
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_auth_password
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/auth/password-login-code:
     post:
-      tags: [User]
-      summary: Create user
-      operationId: createUser
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserCreateRequest'
-            example:
-              username: test01
-              password: Test@123
-              nickname: Test User
-              status: 1
-              role_ids: [1]
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_auth_password-login-code
       responses:
-        '201':
-          description: User created
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserDetailCreatedApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/users/{id}:
-    get:
-      tags: [User]
-      summary: Get user detail
-      operationId: getUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
-      responses:
-        '200':
-          description: User detail
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserDetailApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    put:
-      tags: [User]
-      summary: Update user
-      operationId: updateUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserUpdateRequest'
-            example:
-              nickname: Updated User
-              password: NewPass@123
-              status: 1
-      responses:
-        '200':
-          description: User updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserDetailApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    delete:
-      tags: [User]
-      summary: Delete user
-      operationId: deleteUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
-      responses:
-        '200':
-          description: User deleted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageApiResponse'
-              example:
-                code: 200
-                message: success
-                data:
-                  message: deleted
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /api/v1/users/{id}/roles:
-    put:
-      tags: [User]
-      summary: Assign roles to user
-      operationId: assignUserRoles
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserAssignRolesRequest'
-            example:
-              role_ids: [1, 2]
-      responses:
-        '200':
-          description: Roles assigned
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserDetailApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /api/v1/roles:
-    get:
-      tags: [Role]
-      summary: List roles
-      operationId: listRoles
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: query
-          name: keyword
-          schema:
-            type: string
-        - in: query
-          name: page
-          schema:
-            type: integer
-            default: 1
-        - in: query
-          name: page_size
-          schema:
-            type: integer
-            default: 10
-      responses:
-        '200':
-          description: Role list
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RolePageApiResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/auth/register:
     post:
-      tags: [Role]
-      summary: Create role
-      operationId: createRole
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RoleCreateRequest'
-            example:
-              name: Operator
-              code: operator
-              description: Normal operator role
-              status: 1
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_auth_register
       responses:
-        '201':
-          description: Role created
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleCreatedApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /api/v1/roles/{id}:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/auth/verification-code:
+    post:
+      tags: ["Auth"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_auth_verification-code
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/clusters:
     get:
-      tags: [Role]
-      summary: Get role detail
-      operationId: getRole
+      tags: ["Clusters"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_clusters
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
       responses:
-        '200':
-          description: Role detail
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    put:
-      tags: [Role]
-      summary: Update role
-      operationId: updateRole
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Clusters"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_clusters
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RoleUpdateRequest'
-            example:
-              name: Senior Operator
-              code: senior-operator
-              description: Updated role
-              status: 1
       responses:
-        '200':
-          description: Role updated
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/clusters/{id}:
     delete:
-      tags: [Role]
-      summary: Delete role
-      operationId: deleteRole
+      tags: ["Clusters"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_clusters_id_
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
       responses:
-        '200':
-          description: Role deleted
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageApiResponse'
-              example:
-                code: 200
-                message: success
-                data:
-                  message: deleted
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Clusters"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_clusters_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Clusters"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_clusters_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/clusters/{id}/component-statuses:
+    get:
+      tags: ["Clusters"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_clusters_id__component-statuses
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/clusters/{id}/namespaces:
+    get:
+      tags: ["Clusters"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_clusters_id__namespaces
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/clusters/{id}/status:
+    get:
+      tags: ["Clusters"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_clusters_id__status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Clusters"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_clusters_id__status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/configmaps:
+    delete:
+      tags: ["Configmaps"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_configmaps
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Configmaps"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_configmaps
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/configmaps/apply:
+    post:
+      tags: ["Configmaps"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_configmaps_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/configmaps/detail:
+    get:
+      tags: ["Configmaps"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_configmaps_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/crds:
+    delete:
+      tags: ["Crds"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_crds
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Crds"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_crds
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/crds/apply:
+    post:
+      tags: ["Crds"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_crds_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/crds/detail:
+    get:
+      tags: ["Crds"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_crds_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/cronjobs:
+    delete:
+      tags: ["Cronjobs"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_cronjobs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Cronjobs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_cronjobs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/cronjobs/apply:
+    post:
+      tags: ["Cronjobs"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_cronjobs_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/cronjobs/detail:
+    get:
+      tags: ["Cronjobs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_cronjobs_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/cronjobs/pods:
+    get:
+      tags: ["Cronjobs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_cronjobs_pods
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/cronjobs/suspend:
+    post:
+      tags: ["Cronjobs"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_cronjobs_suspend
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/cronjobs/trigger:
+    post:
+      tags: ["Cronjobs"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_cronjobs_trigger
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/cronjobs/v2:
+    get:
+      tags: ["Cronjobs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_cronjobs_v2
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/crs:
+    delete:
+      tags: ["Crs"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_crs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Crs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_crs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/crs/apply:
+    post:
+      tags: ["Crs"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_crs_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/crs/detail:
+    get:
+      tags: ["Crs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_crs_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/crs/resources:
+    get:
+      tags: ["Crs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_crs_resources
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/daemonsets:
+    delete:
+      tags: ["Daemonsets"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_daemonsets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Daemonsets"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_daemonsets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/daemonsets/apply:
+    post:
+      tags: ["Daemonsets"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_daemonsets_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/daemonsets/detail:
+    get:
+      tags: ["Daemonsets"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_daemonsets_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/daemonsets/pods:
+    get:
+      tags: ["Daemonsets"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_daemonsets_pods
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/daemonsets/restart:
+    post:
+      tags: ["Daemonsets"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_daemonsets_restart
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/departments:
+    post:
+      tags: ["Departments"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_departments
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/departments/tree:
+    get:
+      tags: ["Departments"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_departments_tree
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/departments/{id}:
+    delete:
+      tags: ["Departments"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_departments_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Departments"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_departments_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Departments"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_departments_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/deployments:
+    delete:
+      tags: ["Deployments"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_deployments
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Deployments"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_deployments
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/deployments/apply:
+    post:
+      tags: ["Deployments"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_deployments_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/deployments/detail:
+    get:
+      tags: ["Deployments"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_deployments_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/deployments/pods:
+    get:
+      tags: ["Deployments"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_deployments_pods
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/deployments/restart:
+    post:
+      tags: ["Deployments"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_deployments_restart
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/deployments/scale:
+    post:
+      tags: ["Deployments"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_deployments_scale
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/dict/entries:
+    get:
+      tags: ["Dict"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_dict_entries
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Dict"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_dict_entries
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/dict/entries/{id}:
+    delete:
+      tags: ["Dict"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_dict_entries_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Dict"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_dict_entries_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/dict/options/{dictType}:
+    get:
+      tags: ["Dict"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_dict_options_dictType_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/events:
+    get:
+      tags: ["Events"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_events
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/health:
+    get:
+      tags: ["System"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_health
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/ingresses:
+    delete:
+      tags: ["Ingresses"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_ingresses
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Ingresses"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_ingresses
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/ingresses/apply:
+    post:
+      tags: ["Ingresses"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_ingresses_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/ingresses/classes:
+    delete:
+      tags: ["Ingresses"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_ingresses_classes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Ingresses"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_ingresses_classes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/ingresses/classes/apply:
+    post:
+      tags: ["Ingresses"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_ingresses_classes_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/ingresses/classes/detail:
+    get:
+      tags: ["Ingresses"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_ingresses_classes_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/ingresses/detail:
+    get:
+      tags: ["Ingresses"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_ingresses_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/ingresses/nginx/restart:
+    post:
+      tags: ["Ingresses"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_ingresses_nginx_restart
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/jobs:
+    delete:
+      tags: ["Jobs"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_jobs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Jobs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_jobs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/jobs/apply:
+    post:
+      tags: ["Jobs"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_jobs_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/jobs/detail:
+    get:
+      tags: ["Jobs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_jobs_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/jobs/pods:
+    get:
+      tags: ["Jobs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_jobs_pods
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/jobs/rerun:
+    post:
+      tags: ["Jobs"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_jobs_rerun
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/k8s-policies:
+    get:
+      tags: ["K8sScopedPolicy"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_k8s-policies
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/k8s-policies/actions:
+    get:
+      tags: ["K8sScopedPolicy"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_k8s-policies_actions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/k8s-policies/grant:
+    post:
+      tags: ["K8sScopedPolicy"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_k8s-policies_grant
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/k8s-policies/paths:
+    get:
+      tags: ["K8sScopedPolicy"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_k8s-policies_paths
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/k8s-services:
+    delete:
+      tags: ["K8s-services"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_k8s-services
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["K8s-services"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_k8s-services
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/k8s-services/apply:
+    post:
+      tags: ["K8s-services"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_k8s-services_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/k8s-services/detail:
+    get:
+      tags: ["K8s-services"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_k8s-services_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/login-logs:
+    get:
+      tags: ["Login-logs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_login-logs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/login-logs/delete:
+    post:
+      tags: ["Login-logs"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_login-logs_delete
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/login-logs/export:
+    get:
+      tags: ["Login-logs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_login-logs_export
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/login-logs/{id}:
+    delete:
+      tags: ["Login-logs"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_login-logs_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/menus:
+    post:
+      tags: ["Menus"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_menus
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/menus/status:
+    put:
+      tags: ["Menus"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_menus_status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/menus/tree:
+    get:
+      tags: ["Menus"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_menus_tree
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/menus/{id}:
+    delete:
+      tags: ["Menus"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_menus_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Menus"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_menus_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/namespaces:
+    delete:
+      tags: ["Namespaces"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_namespaces
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Namespaces"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_namespaces
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/namespaces/apply:
+    post:
+      tags: ["Namespaces"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_namespaces_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/namespaces/detail:
+    get:
+      tags: ["Namespaces"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_namespaces_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/nodes:
+    get:
+      tags: ["Nodes"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_nodes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/nodes/detail:
+    get:
+      tags: ["Nodes"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_nodes_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/nodes/schedulability:
+    post:
+      tags: ["Nodes"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_nodes_schedulability
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/nodes/taints:
+    put:
+      tags: ["Nodes"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_nodes_taints
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/operation-logs:
+    get:
+      tags: ["Operation-logs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_operation-logs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/operation-logs/delete:
+    post:
+      tags: ["Operation-logs"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_operation-logs_delete
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/operation-logs/export:
+    get:
+      tags: ["Operation-logs"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_operation-logs_export
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/operation-logs/{id}:
+    delete:
+      tags: ["Operation-logs"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_operation-logs_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/overview:
+    get:
+      tags: ["Overview"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_overview
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/overview/trends:
+    get:
+      tags: ["Overview"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_overview_trends
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
   /api/v1/permissions:
     get:
-      tags: [Permission]
-      summary: List permissions
-      operationId: listPermissions
+      tags: ["Permissions"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_permissions
       security:
         - bearerAuth: []
-      parameters:
-        - in: query
-          name: keyword
-          schema:
-            type: string
-        - in: query
-          name: page
-          schema:
-            type: integer
-            default: 1
-        - in: query
-          name: page_size
-          schema:
-            type: integer
-            default: 10
       responses:
-        '200':
-          description: Permission list
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PermissionPageApiResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
     post:
-      tags: [Permission]
-      summary: Create permission
-      operationId: createPermission
+      tags: ["Permissions"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_permissions
       security:
         - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PermissionCreateRequest'
-            example:
-              name: List users
-              resource: /api/v1/users
-              action: GET
-              description: Allow reading user list
       responses:
-        '201':
-          description: Permission created
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PermissionCreatedApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
   /api/v1/permissions/{id}:
-    get:
-      tags: [Permission]
-      summary: Get permission detail
-      operationId: getPermission
+    delete:
+      tags: ["Permissions"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_permissions_id_
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
       responses:
-        '200':
-          description: Permission detail
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PermissionApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Permissions"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_permissions_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
     put:
-      tags: [Permission]
-      summary: Update permission
-      operationId: updatePermission
+      tags: ["Permissions"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_permissions_id_
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PermissionUpdateRequest'
-            example:
-              name: List users v2
-              resource: /api/v1/users
-              action: GET
-              description: Updated permission text
       responses:
-        '200':
-          description: Permission updated
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PermissionApiResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/persistentvolumeclaims:
     delete:
-      tags: [Permission]
-      summary: Delete permission
-      operationId: deletePermission
+      tags: ["Persistentvolumeclaims"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_persistentvolumeclaims
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdPath'
       responses:
-        '200':
-          description: Permission deleted
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageApiResponse'
-              example:
-                code: 200
-                message: success
-                data:
-                  message: deleted
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /api/v1/policies:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
     get:
-      tags: [Policy]
-      summary: List policy bindings
-      operationId: listPolicies
+      tags: ["Persistentvolumeclaims"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_persistentvolumeclaims
       security:
         - bearerAuth: []
       responses:
-        '200':
-          description: Policy list
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PolicyListApiResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/persistentvolumeclaims/apply:
     post:
-      tags: [Policy]
-      summary: Grant policy to role
-      operationId: grantPolicy
+      tags: ["Persistentvolumeclaims"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_persistentvolumeclaims_apply
       security:
         - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PolicyGrantRequest'
-            example:
-              role_id: 1
-              permission_id: 1
       responses:
-        '200':
-          description: Policy granted
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageApiResponse'
-              example:
-                code: 200
-                message: success
-                data:
-                  message: granted
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/persistentvolumeclaims/detail:
+    get:
+      tags: ["Persistentvolumeclaims"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_persistentvolumeclaims_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/persistentvolumes:
     delete:
-      tags: [Policy]
-      summary: Revoke policy from role
-      operationId: revokePolicy
+      tags: ["Persistentvolumes"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_persistentvolumes
       security:
         - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PolicyGrantRequest'
-            example:
-              role_id: 1
-              permission_id: 1
       responses:
-        '200':
-          description: Policy revoked
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageApiResponse'
-              example:
-                code: 200
-                message: success
-                data:
-                  message: revoked
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Persistentvolumes"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_persistentvolumes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/persistentvolumes/apply:
+    post:
+      tags: ["Persistentvolumes"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_persistentvolumes_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/persistentvolumes/detail:
+    get:
+      tags: ["Persistentvolumes"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_persistentvolumes_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods:
+    delete:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_pods
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/create/simple:
+    post:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_pods_create_simple
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/create/yaml:
+    post:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_pods_create_yaml
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/detail:
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/events:
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods_events
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/exec:
+    post:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_pods_exec
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/exec/ws:
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods_exec_ws
+      description: WebSocket 或需通过查询参数传递 Token，详见 WS 认证中间件。
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/file:
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods_file
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/file/delete:
+    post:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_pods_file_delete
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/file/download:
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods_file_download
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/file/upload:
+    post:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_pods_file_upload
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/files:
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods_files
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/logs:
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods_logs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/logs/download:
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods_logs_download
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/logs/stream:
+    get:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_pods_logs_stream
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/restart:
+    post:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_pods_restart
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/pods/update/simple:
+    post:
+      tags: ["Pods"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_pods_update_simple
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/policies:
+    delete:
+      tags: ["Policies"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_policies
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Policies"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_policies
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Policies"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_policies
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}:
+    delete:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_projects_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_projects_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/agents/bootstrap:
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__agents_bootstrap
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/agents/discovery:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__agents_discovery
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/agents/heartbeat-refresh:
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__agents_heartbeat-refresh
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/agents/list:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__agents_list
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/agents/rotate-token:
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__agents_rotate-token
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/agents/status:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__agents_status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/cloud-accounts:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__cloud-accounts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__cloud-accounts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/cloud-accounts/{accountId}:
+    put:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_projects_id__cloud-accounts_accountId_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/cloud-accounts/{accountId}/sync:
+    put:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_projects_id__cloud-accounts_accountId__sync
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/log-files:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__log-files
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/log-sources:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__log-sources
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__log-sources
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/log-sources/{logSourceId}:
+    delete:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_projects_id__log-sources_logSourceId_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/log-units:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__log-units
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/logs/export:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__logs_export
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/logs/stream:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__logs_stream
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/members:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__members
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__members
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/members/{memberId}:
+    delete:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_projects_id__members_memberId_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_projects_id__members_memberId_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/server-groups:
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__server-groups
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/server-groups/tree:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__server-groups_tree
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/server-groups/{groupId}:
+    delete:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_projects_id__server-groups_groupId_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_projects_id__server-groups_groupId_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__servers
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__servers
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers/export:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__servers_export
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers/import:
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__servers_import
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers/import-template:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__servers_import-template
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers/sync:
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__servers_sync
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers/test:
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__servers_test
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers/test/batch:
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__servers_test_batch
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers/{serverId}:
+    delete:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_projects_id__servers_serverId_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__servers_serverId_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers/{serverId}/exec:
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__servers_serverId__exec
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/servers/{serverId}/terminal/ws:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__servers_serverId__terminal_ws
+      description: WebSocket 或需通过查询参数传递 Token，详见 WS 认证中间件。
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/services:
+    get:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_projects_id__services
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_projects_id__services
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/projects/{id}/services/{serviceId}:
+    delete:
+      tags: ["Projects"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_projects_id__services_serviceId_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/rbac:
+    delete:
+      tags: ["Rbac"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_rbac
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/rbac/apply:
+    post:
+      tags: ["Rbac"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_rbac_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/rbac/clusterrolebindings:
+    get:
+      tags: ["Rbac"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_rbac_clusterrolebindings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/rbac/clusterroles:
+    get:
+      tags: ["Rbac"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_rbac_clusterroles
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/rbac/detail:
+    get:
+      tags: ["Rbac"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_rbac_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/rbac/rolebindings:
+    get:
+      tags: ["Rbac"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_rbac_rolebindings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/rbac/roles:
+    get:
+      tags: ["Rbac"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_rbac_roles
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/registrations:
+    get:
+      tags: ["Registrations"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_registrations
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/registrations/{id}/review:
+    post:
+      tags: ["Registrations"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_registrations_id__review
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/roles:
+    get:
+      tags: ["Roles"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_roles
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Roles"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_roles
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/roles/{id}:
+    delete:
+      tags: ["Roles"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_roles_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Roles"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_roles_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Roles"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_roles_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/secrets:
+    delete:
+      tags: ["Secrets"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_secrets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Secrets"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_secrets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/secrets/apply:
+    post:
+      tags: ["Secrets"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_secrets_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/secrets/detail:
+    get:
+      tags: ["Secrets"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_secrets_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/security/banned-ips:
+    get:
+      tags: ["Security"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_security_banned-ips
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/security/banned-ips/unban:
+    post:
+      tags: ["Security"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_security_banned-ips_unban
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/statefulsets:
+    delete:
+      tags: ["Statefulsets"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_statefulsets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Statefulsets"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_statefulsets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/statefulsets/apply:
+    post:
+      tags: ["Statefulsets"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_statefulsets_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/statefulsets/detail:
+    get:
+      tags: ["Statefulsets"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_statefulsets_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/statefulsets/pods:
+    get:
+      tags: ["Statefulsets"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_statefulsets_pods
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/statefulsets/restart:
+    post:
+      tags: ["Statefulsets"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_statefulsets_restart
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/statefulsets/scale:
+    post:
+      tags: ["Statefulsets"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_statefulsets_scale
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/storageclasses:
+    delete:
+      tags: ["Storageclasses"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_storageclasses
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Storageclasses"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_storageclasses
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/storageclasses/apply:
+    post:
+      tags: ["Storageclasses"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_storageclasses_apply
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/storageclasses/detail:
+    get:
+      tags: ["Storageclasses"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_storageclasses_detail
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/users:
+    get:
+      tags: ["Users"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    post:
+      tags: ["Users"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/users/export:
+    get:
+      tags: ["Users"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_users_export
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/users/import:
+    post:
+      tags: ["Users"]
+      summary: Auto-generated from router
+      operationId: post_api_v1_users_import
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/users/import-template:
+    get:
+      tags: ["Users"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_users_import-template
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/users/{id}:
+    delete:
+      tags: ["Users"]
+      summary: Auto-generated from router
+      operationId: delete_api_v1_users_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    get:
+      tags: ["Users"]
+      summary: Auto-generated from router
+      operationId: get_api_v1_users_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+    put:
+      tags: ["Users"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_users_id_
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
+  /api/v1/users/{id}/roles:
+    put:
+      tags: ["Users"]
+      summary: Auto-generated from router
+      operationId: put_api_v1_users_id__roles
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK（统一 JSON，见 StandardResponse.data）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardResponse"
+        "400":
+          description: 参数错误
+        "401":
+          description: 未授权
+        "403":
+          description: 禁止访问
+        "500":
+          description: 服务器错误
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-  parameters:
-    IdPath:
-      in: path
-      name: id
-      required: true
-      schema:
-        type: integer
-        minimum: 1
-      description: Resource ID
-  responses:
-    BadRequest:
-      description: Bad request
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            code: 400
-            message: bad request
-    Unauthorized:
-      description: Unauthorized
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            code: 401
-            message: unauthorized
-    Forbidden:
-      description: Forbidden
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            code: 403
-            message: forbidden
-    NotFound:
-      description: Not found
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            code: 404
-            message: resource not found
+      description: Authorization Bearer <access_token>
   schemas:
-    ErrorResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 400
-        message:
-          type: string
-          example: bad request
-      required: [code, message]
-    MessageData:
-      type: object
-      properties:
-        message:
-          type: string
-      required: [message]
-    HealthData:
-      type: object
-      properties:
-        name:
-          type: string
-          example: permission-system
-        env:
-          type: string
-          example: dev
-      required: [name, env]
-    HealthResponse:
+    StandardResponse:
       type: object
       properties:
         code:
@@ -755,434 +5842,8 @@ components:
         message:
           type: string
           example: success
+        error_code:
+          type: string
+          description: 业务错误码（失败时）
         data:
-          $ref: '#/components/schemas/HealthData'
-      required: [code, message, data]
-    LoginRequest:
-      type: object
-      properties:
-        username:
-          type: string
-          example: admin
-        password:
-          type: string
-          example: Admin@123
-      required: [username, password]
-    LoginResult:
-      type: object
-      properties:
-        token:
-          type: string
-          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxx.yyy
-        expires_at:
-          type: string
-          format: date-time
-          example: '2026-03-31T22:00:00+08:00'
-        user:
-          $ref: '#/components/schemas/UserDetail'
-      required: [token, expires_at, user]
-    LoginApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 200
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/LoginResult'
-      required: [code, message, data]
-    MessageApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 200
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/MessageData'
-      required: [code, message, data]
-    RoleItem:
-      type: object
-      properties:
-        id:
-          type: integer
-          example: 1
-        name:
-          type: string
-          example: Super Admin
-        code:
-          type: string
-          example: super-admin
-        description:
-          type: string
-          example: Built-in super admin role
-        status:
-          type: integer
-          example: 1
-      required: [id, name, code, description, status]
-    PermissionItem:
-      type: object
-      properties:
-        id:
-          type: integer
-          example: 1
-        name:
-          type: string
-          example: User list
-        resource:
-          type: string
-          example: /api/v1/users
-        action:
-          type: string
-          example: GET
-        description:
-          type: string
-          example: Allow reading user list
-      required: [id, name, resource, action, description]
-    UserDetail:
-      type: object
-      properties:
-        id:
-          type: integer
-          example: 1
-        username:
-          type: string
-          example: admin
-        nickname:
-          type: string
-          example: System Admin
-        status:
-          type: integer
-          example: 1
-        roles:
-          type: array
-          items:
-            $ref: '#/components/schemas/RoleItem'
-        created_at:
-          type: string
-          format: date-time
-          example: '2026-03-31T18:00:00+08:00'
-        updated_at:
-          type: string
-          format: date-time
-          example: '2026-03-31T18:00:00+08:00'
-      required: [id, username, nickname, status, roles, created_at, updated_at]
-    UserCreateRequest:
-      type: object
-      properties:
-        username:
-          type: string
-          minLength: 3
-          maxLength: 64
-        password:
-          type: string
-          minLength: 6
-          maxLength: 64
-        nickname:
-          type: string
-          maxLength: 128
-        status:
-          type: integer
-          enum: [0, 1]
-          default: 1
-        role_ids:
-          type: array
-          items:
-            type: integer
-      required: [username, password, nickname]
-    UserUpdateRequest:
-      type: object
-      properties:
-        nickname:
-          type: string
-          maxLength: 128
-        password:
-          type: string
-          minLength: 6
-          maxLength: 64
-        status:
-          type: integer
-          enum: [0, 1]
-    UserAssignRolesRequest:
-      type: object
-      properties:
-        role_ids:
-          type: array
-          items:
-            type: integer
-      required: [role_ids]
-    UserPage:
-      type: object
-      properties:
-        list:
-          type: array
-          items:
-            $ref: '#/components/schemas/UserDetail'
-        total:
-          type: integer
-          example: 1
-        page:
-          type: integer
-          example: 1
-        page_size:
-          type: integer
-          example: 10
-      required: [list, total, page, page_size]
-    UserDetailApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 200
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/UserDetail'
-      required: [code, message, data]
-    UserDetailCreatedApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 201
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/UserDetail'
-      required: [code, message, data]
-    UserPageApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 200
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/UserPage'
-      required: [code, message, data]
-    RoleCreateRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          maxLength: 64
-        code:
-          type: string
-          maxLength: 64
-        description:
-          type: string
-          maxLength: 255
-        status:
-          type: integer
-          enum: [0, 1]
-          default: 1
-      required: [name, code]
-    RoleUpdateRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          maxLength: 64
-        code:
-          type: string
-          maxLength: 64
-        description:
-          type: string
-          maxLength: 255
-        status:
-          type: integer
-          enum: [0, 1]
-    RolePage:
-      type: object
-      properties:
-        list:
-          type: array
-          items:
-            $ref: '#/components/schemas/RoleItem'
-        total:
-          type: integer
-          example: 1
-        page:
-          type: integer
-          example: 1
-        page_size:
-          type: integer
-          example: 10
-      required: [list, total, page, page_size]
-    RoleApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 200
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/RoleItem'
-      required: [code, message, data]
-    RoleCreatedApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 201
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/RoleItem'
-      required: [code, message, data]
-    RolePageApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 200
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/RolePage'
-      required: [code, message, data]
-    PermissionCreateRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          maxLength: 64
-        resource:
-          type: string
-          maxLength: 191
-        action:
-          type: string
-          maxLength: 32
-        description:
-          type: string
-          maxLength: 255
-      required: [name, resource, action]
-    PermissionUpdateRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          maxLength: 64
-        resource:
-          type: string
-          maxLength: 191
-        action:
-          type: string
-          maxLength: 32
-        description:
-          type: string
-          maxLength: 255
-    PermissionPage:
-      type: object
-      properties:
-        list:
-          type: array
-          items:
-            $ref: '#/components/schemas/PermissionItem'
-        total:
-          type: integer
-          example: 1
-        page:
-          type: integer
-          example: 1
-        page_size:
-          type: integer
-          example: 10
-      required: [list, total, page, page_size]
-    PermissionApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 200
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/PermissionItem'
-      required: [code, message, data]
-    PermissionCreatedApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 201
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/PermissionItem'
-      required: [code, message, data]
-    PermissionPageApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 200
-        message:
-          type: string
-          example: success
-        data:
-          $ref: '#/components/schemas/PermissionPage'
-      required: [code, message, data]
-    PolicyGrantRequest:
-      type: object
-      properties:
-        role_id:
-          type: integer
-          example: 1
-        permission_id:
-          type: integer
-          example: 1
-      required: [role_id, permission_id]
-    PolicyItem:
-      type: object
-      properties:
-        role_id:
-          type: integer
-          example: 1
-        role_name:
-          type: string
-          example: Super Admin
-        role_code:
-          type: string
-          example: super-admin
-        permission_id:
-          type: integer
-          example: 1
-        permission_name:
-          type: string
-          example: User list
-        resource:
-          type: string
-          example: /api/v1/users
-        action:
-          type: string
-          example: GET
-      required: [role_id, role_name, role_code, permission_id, permission_name, resource, action]
-    PolicyListApiResponse:
-      type: object
-      properties:
-        code:
-          type: integer
-          example: 200
-        message:
-          type: string
-          example: success
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/PolicyItem'
-      required: [code, message, data]
+          description: 成功时的载荷，结构因接口而异

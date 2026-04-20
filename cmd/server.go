@@ -11,7 +11,11 @@ import (
 	"time"
 
 	"go-permission-system/internal/bootstrap"
+	grpcclient "go-permission-system/internal/grpc/client"
+	grpcserver "go-permission-system/internal/grpc/server"
+	"go-permission-system/internal/repository"
 	"go-permission-system/internal/router"
+	"go-permission-system/internal/service"
 
 	"github.com/spf13/cobra"
 )
@@ -28,6 +32,7 @@ var serverCmd = &cobra.Command{
 			WithConfig(configPath).
 			WithLogger().
 			WithMySQL().
+			WithDictOverrides().
 			WithRedis().
 			WithMailer().
 			WithCasbin().
@@ -43,7 +48,47 @@ var serverCmd = &cobra.Command{
 		}
 		app.Logger.Info.Info("database schema migrated")
 
-		router.Register(app)
+		projectRepo := repository.NewProjectRepository(app.DB)
+		serverRepo := repository.NewServerRepository(app.DB)
+		serverGroupRepo := repository.NewServerGroupRepository(app.DB)
+		cloudAccountRepo := repository.NewCloudAccountRepository(app.DB)
+		serviceRepo := repository.NewServiceRepository(app.DB)
+		logRepo := repository.NewLogSourceRepository(app.DB)
+		logAgentRepo := repository.NewLogAgentRepository(app.DB)
+		agentDiscoveryRepo := repository.NewAgentDiscoveryRepository(app.DB)
+
+		userRepo := repository.NewUserRepository(app.DB)
+		projectMemberRepo := repository.NewProjectMemberRepository(app.DB)
+		projectSvc, err := service.NewProjectMgmtService(projectRepo, serverRepo, serverGroupRepo, cloudAccountRepo, serviceRepo, logRepo, projectMemberRepo, userRepo, app.Config.Security.EncryptionKey)
+		if err != nil {
+			return err
+		}
+		agentSvc := service.NewLogAgentService(logAgentRepo, serverRepo, logRepo, app.Config.Agent.RegisterSecret)
+		discoverySvc := service.NewAgentDiscoveryService(agentDiscoveryRepo, logAgentRepo, serverRepo)
+
+		grpcImpl := grpcserver.NewLogPlatformServer(projectSvc, agentSvc, discoverySvc)
+		grpcRuntime, err := grpcserver.Start(
+			app.Config.GRPC.ListenAddr,
+			grpcImpl,
+			app.Config.GRPC.MaxRecvMsgBytes,
+			app.Config.GRPC.MaxSendMsgBytes,
+		)
+		if err != nil {
+			return fmt.Errorf("start grpc server: %w", err)
+		}
+
+		runtimeClient, err := grpcclient.Dial(
+			app.Config.GRPC.TargetAddr,
+			5*time.Second,
+			app.Config.GRPC.MaxRecvMsgBytes,
+			app.Config.GRPC.MaxSendMsgBytes,
+		)
+		if err != nil {
+			return fmt.Errorf("dial grpc runtime: %w", err)
+		}
+		defer runtimeClient.Close()
+
+		router.Register(app, runtimeClient)
 
 		server := &http.Server{
 			Addr:              fmt.Sprintf(":%d", app.Config.App.Port),
@@ -74,6 +119,7 @@ var serverCmd = &cobra.Command{
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		grpcRuntime.Stop(ctx)
 		return server.Shutdown(ctx)
 	},
 }

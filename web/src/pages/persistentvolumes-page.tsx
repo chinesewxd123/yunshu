@@ -1,6 +1,6 @@
 import { Button, Form, Input, Select, Space, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { WorkloadFormModal } from "../components/k8s/workload-forms";
 import { buildPVYaml, pvYamlToForm, type PersistentVolumeFormValues } from "../components/k8s/service-storage-forms";
 import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
@@ -14,6 +14,7 @@ import {
 } from "../services/storage";
 
 export function PersistentVolumesPage() {
+  const listReloadRef = useRef<() => void>(() => {});
   const [formOpen, setFormOpen] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formCtx, setFormCtx] = useState<{ clusterId: number; name?: string } | null>(null);
@@ -57,26 +58,111 @@ spec:
   hostPath:
     path: /tmp/demo-pv
 `}
-      renderToolbarExtraRight={(ctx) => (
-        <Button
-          onClick={() => {
-            if (!ctx.clusterId) return;
-            setFormMode("create");
-            setFormCtx({ clusterId: ctx.clusterId });
-            form.setFieldsValue({
-              name: "",
-              capacityStorage: "1Gi",
-              accessModes: ["ReadWriteOnce"],
-              reclaimPolicy: "Delete",
-              storageClassName: "manual",
-              volumeSourceType: "hostPath",
-              hostPath: "/tmp/demo-pv",
-            });
-            setFormOpen(true);
+      onToolbarReady={(ctx) => {
+        listReloadRef.current = ctx.reload;
+      }}
+      onCreateDrawerOpen={(ctx) => {
+        if (!ctx.clusterId) return;
+        setFormMode("create");
+        setFormCtx({ clusterId: ctx.clusterId });
+        form.setFieldsValue({
+          name: "",
+          capacityStorage: "1Gi",
+          accessModes: ["ReadWriteOnce"],
+          reclaimPolicy: "Delete",
+          storageClassName: "manual",
+          volumeSourceType: "hostPath",
+          hostPath: "/tmp/demo-pv",
+        });
+      }}
+      renderCreateFormTab={(drawerCtx) => (
+        <WorkloadFormModal<PersistentVolumeFormValues>
+          embedded
+          title="PV 表单创建"
+          open={false}
+          loading={formLoading}
+          form={form}
+          onCancel={drawerCtx.closeCreateDrawer}
+          onSubmit={(values) => {
+            const cid = drawerCtx.clusterId;
+            if (!cid) return;
+            setFormLoading(true);
+            void (async () => {
+              try {
+                await applyPersistentVolume(cid, buildPVYaml(values));
+                message.success("PV 已应用");
+                drawerCtx.closeCreateDrawer();
+                listReloadRef.current();
+              } finally {
+                setFormLoading(false);
+              }
+            })();
           }}
         >
-          表单创建
-        </Button>
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
+            <Input />
+          </Form.Item>
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item name="capacityStorage" label="容量" rules={[{ required: true, message: "请输入容量" }]} style={{ width: 220 }}>
+              <Input placeholder="1Gi" />
+            </Form.Item>
+            <Form.Item name="storageClassName" label="StorageClass" style={{ flex: 1 }}>
+              <Input />
+            </Form.Item>
+          </Space>
+          <Form.Item name="accessModes" label="访问模式">
+            <Select
+              mode="multiple"
+              options={[
+                { label: "ReadWriteOnce", value: "ReadWriteOnce" },
+                { label: "ReadOnlyMany", value: "ReadOnlyMany" },
+                { label: "ReadWriteMany", value: "ReadWriteMany" },
+                { label: "ReadWriteOncePod", value: "ReadWriteOncePod" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="volumeSourceType" label="卷源类型" initialValue="hostPath">
+            <Select
+              options={[
+                { label: "hostPath", value: "hostPath" },
+                { label: "nfs", value: "nfs" },
+                { label: "local", value: "local" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate>
+            {() => {
+              const t = form.getFieldValue("volumeSourceType") || "hostPath";
+              if (t === "nfs") {
+                return (
+                  <Space style={{ width: "100%" }} align="start">
+                    <Form.Item name="nfsServer" label="NFS Server" rules={[{ required: true, message: "请输入 NFS server" }]} style={{ flex: 1 }}>
+                      <Input placeholder="10.0.0.10" />
+                    </Form.Item>
+                    <Form.Item name="nfsPath" label="NFS Path" rules={[{ required: true, message: "请输入 NFS path" }]} style={{ flex: 1 }}>
+                      <Input placeholder="/exports/data" />
+                    </Form.Item>
+                  </Space>
+                );
+              }
+              if (t === "local") {
+                return (
+                  <Form.Item name="localPath" label="Local Path" rules={[{ required: true, message: "请输入本地路径" }]}>
+                    <Input placeholder="/mnt/disks/vol1" />
+                  </Form.Item>
+                );
+              }
+              return (
+                <Form.Item name="hostPath" label="HostPath" rules={[{ required: true, message: "请输入 hostPath" }]}>
+                  <Input placeholder="/tmp/demo-pv" />
+                </Form.Item>
+              );
+            }}
+          </Form.Item>
+          <Form.Item name="reclaimPolicy" label="回收策略" style={{ width: 220 }}>
+            <Select options={[{ label: "Delete", value: "Delete" }, { label: "Retain", value: "Retain" }, { label: "Recycle", value: "Recycle" }]} />
+          </Form.Item>
+        </WorkloadFormModal>
       )}
       extraRowActions={(record, ctx) => (
         <Button
@@ -102,8 +188,8 @@ spec:
       )}
     />
     <WorkloadFormModal<PersistentVolumeFormValues>
-      title={formMode === "create" ? "PV 表单创建" : "PV 表单编辑"}
-      open={formOpen}
+      title="PV 表单编辑"
+      open={formOpen && formMode === "edit"}
       loading={formLoading}
       form={form}
       onCancel={() => setFormOpen(false)}
@@ -115,6 +201,7 @@ spec:
             await applyPersistentVolume(formCtx.clusterId, buildPVYaml(values));
             message.success("PV 已应用");
             setFormOpen(false);
+            listReloadRef.current();
           } finally {
             setFormLoading(false);
           }

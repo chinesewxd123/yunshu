@@ -21,11 +21,12 @@ type Claims struct {
 }
 
 type CurrentUser struct {
-	ID        uint     `json:"id"`
-	Username  string   `json:"username"`
-	Nickname  string   `json:"nickname"`
-	Status    int      `json:"status"`
-	RoleCodes []string `json:"role_codes"`
+	ID           uint     `json:"id"`
+	Username     string   `json:"username"`
+	Nickname     string   `json:"nickname"`
+	Status       int      `json:"status"`
+	DepartmentID *uint    `json:"department_id,omitempty"`
+	RoleCodes    []string `json:"role_codes"`
 }
 
 func GenerateToken(secret string, claims Claims) (string, error) {

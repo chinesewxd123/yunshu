@@ -1,5 +1,5 @@
 import { ReloadOutlined, SaveOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Empty, Row, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
+import { Button, Card, Empty, Input, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { getPermissionOptions } from "../services/permissions";
 import { getPolicies, grantPolicy, revokePolicy } from "../services/policies";
@@ -15,6 +15,9 @@ export function PoliciesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState<number>();
   const [checkedPermissionIds, setCheckedPermissionIds] = useState<number[]>([]);
+  const [roleKeyword, setRoleKeyword] = useState("");
+  const [permissionKeyword, setPermissionKeyword] = useState("");
+  const [roleStatus, setRoleStatus] = useState<number | undefined>();
 
   const permissionTreeData = useMemo(() => buildPermissionTreeData(permissions), [permissions]);
   const permissionIdSet = useMemo(() => new Set(permissions.map((permission) => permission.id)), [permissions]);
@@ -26,6 +29,30 @@ export function PoliciesPage() {
     () => (selectedRoleId ? list.filter((policy) => policy.role_id === selectedRoleId) : []),
     [list, selectedRoleId],
   );
+  const filteredRoles = useMemo(() => {
+    const key = roleKeyword.trim().toLowerCase();
+    return roles.filter((role) => {
+      const matchKeyword = !key || role.name.toLowerCase().includes(key) || role.code.toLowerCase().includes(key);
+      const matchStatus = roleStatus === undefined || role.status === roleStatus;
+      return matchKeyword && matchStatus;
+    });
+  }, [roles, roleKeyword, roleStatus]);
+  const filteredPermissionTree = useMemo(() => {
+    const key = permissionKeyword.trim().toLowerCase();
+    if (!key) return permissionTreeData;
+    const walk = (nodes: any[]): any[] => {
+      const next: any[] = [];
+      for (const node of nodes) {
+        const titleText = String(node.title ?? "").toLowerCase();
+        const children = Array.isArray(node.children) ? walk(node.children) : [];
+        if (titleText.includes(key) || children.length > 0) {
+          next.push({ ...node, children });
+        }
+      }
+      return next;
+    };
+    return walk(permissionTreeData as any[]);
+  }, [permissionTreeData, permissionKeyword]);
 
   useEffect(() => {
     void bootstrap();
@@ -90,85 +117,134 @@ export function PoliciesPage() {
 
   return (
     <div>
-      <Card
-        className="table-card"
-        loading={loading}
-        extra={
+      <Card className="table-card" loading={loading}>
+        <div className="toolbar auth-toolbar">
           <Space>
+            <Input
+              allowClear
+              value={roleKeyword}
+              onChange={(e) => setRoleKeyword(e.target.value)}
+              placeholder="分组名称/编码"
+              style={{ width: 180 }}
+            />
+            <Input
+              allowClear
+              value={permissionKeyword}
+              onChange={(e) => setPermissionKeyword(e.target.value)}
+              placeholder="权限名称/资源路径"
+              style={{ width: 220 }}
+            />
+            <Select
+              allowClear
+              placeholder="角色状态"
+              style={{ width: 130 }}
+              value={roleStatus}
+              onChange={(v) => setRoleStatus(v)}
+              options={[
+                { value: 1, label: "启用" },
+                { value: 0, label: "停用" },
+              ]}
+            />
+          </Space>
+          <div className="toolbar__actions">
+            <Button
+              onClick={() => {
+                setRoleKeyword("");
+                setPermissionKeyword("");
+                setRoleStatus(undefined);
+              }}
+            >
+              重置
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={() => void bootstrap(selectedRoleId)}>
               刷新
             </Button>
             <Button type="primary" icon={<SaveOutlined />} loading={submitting} onClick={() => void handleSave()}>
-              保存编排
+              同步权限
             </Button>
-          </Space>
-        }
-      >
-        <Row gutter={[16, 16]} align="stretch">
-          <Col xs={24} lg={8} style={{ display: "flex", minWidth: 0 }}>
-            <Card className="glass-card" title="角色模板" style={{ flex: 1 }} bodyStyle={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <Select
-                placeholder="请选择角色模板"
-                value={selectedRoleId}
-                onChange={handleRoleChange}
-                options={roles.map((role) => ({ label: `${role.name} (${role.code})`, value: role.id }))}
-              />
-              {selectedRole ? (
-                <Space direction="vertical" size={4}>
-                  <Typography.Text strong>{selectedRole.name}</Typography.Text>
-                  <Typography.Text className="inline-muted">模板编码：{selectedRole.code}</Typography.Text>
-                  <Typography.Text className="inline-muted">当前已绑定 {currentRolePolicies.length} 条能力策略</Typography.Text>
-                  <Typography.Text className="inline-muted">已勾选 {checkedPermissionIds.length} 项能力</Typography.Text>
-                </Space>
-              ) : (
-                <Empty description="暂无可配置角色模板" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              )}
-            </Card>
-          </Col>
+          </div>
+        </div>
 
-          <Col xs={24} lg={16} style={{ display: "flex", minWidth: 0 }}>
-            <Card className="glass-card" title="接口能力树" style={{ flex: 1, minWidth: 0 }}>
-              {selectedRole ? (
-                <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                  <Typography.Text className="inline-muted">
-                    以资源路径为层级组织能力项，勾选后点击右上角「保存编排」同步到后端。
-                  </Typography.Text>
-                  <div className="tree-shell tree-shell--tall" style={{ maxHeight: 520 }}>
+        <div className="auth-split">
+          <Card
+            className="glass-card auth-split__left"
+            title="权限分组"
+            extra={<Tag className="status-chip status-chip--ok">共 {filteredRoles.length} 项</Tag>}
+          >
+            <Table
+              rowKey="id"
+              dataSource={filteredRoles}
+              pagination={false}
+              size="small"
+              scroll={{ y: 560 }}
+              rowClassName={(record) => (record.id === selectedRoleId ? "is-selected-row" : "")}
+              onRow={(record) => ({
+                onClick: () => handleRoleChange(record.id),
+              })}
+              columns={[
+                { title: "分组名称", dataIndex: "name" },
+                { title: "业务标识", dataIndex: "code" },
+                {
+                  title: "状态",
+                  dataIndex: "status",
+                  width: 90,
+                  render: (status: number) =>
+                    status === 1 ? <Tag className="status-chip status-chip--ok">正常</Tag> : <Tag className="status-chip status-chip--off">停用</Tag>,
+                },
+              ]}
+            />
+          </Card>
+
+          <Card
+            className="glass-card auth-split__right"
+            title="授权管理"
+            extra={
+              selectedRole ? (
+                <Typography.Text className="inline-muted">
+                  当前角色：{selectedRole.name}（已选 {checkedPermissionIds.length} 项）
+                </Typography.Text>
+              ) : null
+            }
+          >
+            {selectedRole ? (
+              <div className="auth-right-stack">
+                <div className="auth-right-tree">
+                  <div className="auth-right-tree__head">权限配置树</div>
+                  <div className="tree-shell auth-tree-shell">
                     <Tree
                       checkable
                       defaultExpandAll
                       checkedKeys={checkedPermissionIds}
-                      treeData={permissionTreeData}
+                      treeData={filteredPermissionTree}
                       onCheck={(checkedKeys) => {
                         const nextIds = normalizeCheckedKeys(checkedKeys).filter((id) => permissionIdSet.has(id));
                         setCheckedPermissionIds(nextIds);
                       }}
                     />
                   </div>
-                </Space>
-              ) : (
-                <Empty description="请选择角色模板后配置能力树" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              )}
-            </Card>
-          </Col>
-        </Row>
-      </Card>
-
-      <Card className="table-card" title={selectedRole ? `${selectedRole.name} 的当前授权结果` : "当前授权结果"}>
-        <Table
-          rowKey={(record) => `${record.role_id}-${record.permission_id}`}
-          loading={loading}
-          dataSource={selectedRole ? currentRolePolicies : list}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: "max-content" }}
-          columns={[
-            { title: "角色模板", dataIndex: "role_name" },
-            { title: "模板编码", dataIndex: "role_code", render: (value: string) => <Tag color="blue">{value}</Tag> },
-            { title: "能力项", dataIndex: "permission_name" },
-            { title: "资源路径", dataIndex: "resource", render: (value: string) => <Tag>{value}</Tag> },
-            { title: "动作", dataIndex: "action", render: (value: string) => <Tag color="processing">{value}</Tag> },
-          ]}
-        />
+                </div>
+                <div className="auth-right-result">
+                  <div className="auth-right-result__head">已授权权限</div>
+                  <Table
+                    rowKey={(record) => `${record.role_id}-${record.permission_id}`}
+                    dataSource={currentRolePolicies}
+                    pagination={{ pageSize: 8 }}
+                    size="small"
+                    scroll={{ y: 260 }}
+                    columns={[
+                      { title: "权限名称", dataIndex: "permission_name" },
+                      { title: "权限编码", dataIndex: "resource", render: (value: string) => <Tag>{value}</Tag> },
+                      { title: "分组名称", dataIndex: "role_name" },
+                      { title: "状态", dataIndex: "action", width: 80, render: () => <Tag className="status-chip status-chip--ok">正常</Tag> },
+                    ]}
+                  />
+                </div>
+              </div>
+            ) : (
+              <Empty description="请选择左侧分组后进行授权" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
+          </Card>
+        </div>
       </Card>
     </div>
   );

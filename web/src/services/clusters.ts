@@ -3,6 +3,7 @@ import { getData, http } from "./http";
 export interface ClusterItem {
   id: number;
   name: string;
+  kubeconfig?: string;
   status: number;
   created_at: string;
   updated_at: string;
@@ -59,6 +60,10 @@ export interface ComponentStatusItem {
 
 export function getClusters(query: { keyword?: string; page?: number; page_size?: number }) {
   return getData<ClusterListResponse>(http.get("/clusters", { params: query }));
+}
+
+export function getClusterDetail(id: number) {
+  return getData<ClusterItem>(http.get(`/clusters/${id}`));
 }
 
 export function createCluster(payload: ClusterCreatePayload) {

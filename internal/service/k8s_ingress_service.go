@@ -77,6 +77,7 @@ type K8sIngressService struct {
 	dyn     *DynamicResourceService
 }
 
+// NewK8sIngressService 创建相关逻辑。
 func NewK8sIngressService(runtime *K8sRuntimeService) *K8sIngressService {
 	return &K8sIngressService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
@@ -84,6 +85,7 @@ func NewK8sIngressService(runtime *K8sRuntimeService) *K8sIngressService {
 var ingressGVK = schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}
 var ingressClassGVK = schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "IngressClass"}
 
+// List 查询列表相关的业务逻辑。
 func (s *K8sIngressService) List(ctx context.Context, q IngressListQuery) ([]IngressItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -113,6 +115,7 @@ func (s *K8sIngressService) List(ctx context.Context, q IngressListQuery) ([]Ing
 	return out, nil
 }
 
+// Detail 查询详情相关的业务逻辑。
 func (s *K8sIngressService) Detail(ctx context.Context, q IngressDetailQuery) (*IngressDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -121,7 +124,7 @@ func (s *K8sIngressService) Detail(ctx context.Context, q IngressDetailQuery) (*
 	u, err := s.dyn.GetByGVK(ctx, k, ingressGVK, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Ingress 不存在")
+			return nil, apperror.BadRequest("Ingress 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 Ingress 详情失败: %v", err))
 	}
@@ -135,13 +138,14 @@ func (s *K8sIngressService) Detail(ctx context.Context, q IngressDetailQuery) (*
 	return &IngressDetail{Item: ingressToItem(copyObj), YAML: string(y)}, nil
 }
 
+// Apply 提交申请相关的业务逻辑。
 func (s *K8sIngressService) Apply(ctx context.Context, req IngressApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 	refs := extractIngressRefs(req.Manifest)
 	err = s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -168,6 +172,7 @@ func (s *K8sIngressService) Apply(ctx context.Context, req IngressApplyRequest) 
 	return nil
 }
 
+// Delete 删除相关的业务逻辑。
 func (s *K8sIngressService) Delete(ctx context.Context, req IngressDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -182,6 +187,7 @@ func (s *K8sIngressService) Delete(ctx context.Context, req IngressDeleteRequest
 	return nil
 }
 
+// ListClasses 查询列表相关的业务逻辑。
 func (s *K8sIngressService) ListClasses(ctx context.Context, q IngressClassListQuery) ([]IngressClassItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -226,6 +232,7 @@ func (s *K8sIngressService) ListClasses(ctx context.Context, q IngressClassListQ
 	return out, nil
 }
 
+// DetailClass 查询详情相关的业务逻辑。
 func (s *K8sIngressService) DetailClass(ctx context.Context, q IngressClassDetailQuery) (*IngressClassDetail, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, q.ClusterID)
 	if err != nil {
@@ -234,7 +241,7 @@ func (s *K8sIngressService) DetailClass(ctx context.Context, q IngressClassDetai
 	u, err := s.dyn.GetByGVK(ctx, k, ingressClassGVK, "", q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("IngressClass 不存在")
+			return nil, apperror.BadRequest("IngressClass 资源不存在")
 		}
 		return nil, apperror.Internal(fmt.Sprintf("获取 IngressClass 详情失败: %v", err))
 	}
@@ -248,13 +255,14 @@ func (s *K8sIngressService) DetailClass(ctx context.Context, q IngressClassDetai
 	return &IngressClassDetail{Item: ingressClassToItem(copyObj, 0), YAML: string(y)}, nil
 }
 
+// ApplyClass 提交申请相关的业务逻辑。
 func (s *K8sIngressService) ApplyClass(ctx context.Context, req IngressClassApplyRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("manifest 不能为空")
+		return apperror.BadRequest("资源清单不能为空")
 	}
 	refs := extractIngressClassRefs(req.Manifest)
 	err = s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -277,6 +285,7 @@ func (s *K8sIngressService) ApplyClass(ctx context.Context, req IngressClassAppl
 	return nil
 }
 
+// DeleteClass 删除相关的业务逻辑。
 func (s *K8sIngressService) DeleteClass(ctx context.Context, req IngressClassDeleteRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {

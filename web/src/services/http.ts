@@ -3,6 +3,16 @@ import { message } from "antd";
 import type { ApiResponse } from "../types/api";
 import { clearAuthStorage, getToken } from "./storage";
 
+declare module "axios" {
+  interface AxiosRequestConfig<D = any> {
+    silentErrorToast?: boolean;
+  }
+
+  interface InternalAxiosRequestConfig<D = any> {
+    silentErrorToast?: boolean;
+  }
+}
+
 export const http = axios.create({
   baseURL: "/api/v1",
   timeout: 15000,
@@ -12,10 +22,22 @@ function toastOnce(key: string, content: string) {
   message.error({ content, key });
 }
 
+function nextRequestId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
 http.interceptors.request.use((config) => {
   const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // 与后端 RequestLogger 的 X-Request-ID 对齐，便于日志关联与排障
+  if (!config.headers["X-Request-ID"]) {
+    config.headers["X-Request-ID"] = nextRequestId();
   }
   return config;
 });
@@ -25,6 +47,11 @@ http.interceptors.response.use(
   (error) => {
     const status = error.response?.status;
     const errorMessage = error.response?.data?.message || error.message || "请求失败";
+    const silentErrorToast = Boolean(error.config?.silentErrorToast);
+
+    if (silentErrorToast) {
+      return Promise.reject(error);
+    }
 
     if (status === 401) {
       clearAuthStorage();

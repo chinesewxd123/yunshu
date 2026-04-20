@@ -68,20 +68,32 @@ type LoginResponse struct {
 	User      UserDetailResponse `json:"user"`
 }
 
-type UserCreateRequest struct {
-	Username string `json:"username" binding:"required,min=3,max=64"`
-	Email    string `json:"email" binding:"required,email,max=128"`
-	Password string `json:"password" binding:"required,min=6,max=64"`
+type UpdateProfileRequest struct {
 	Nickname string `json:"nickname" binding:"required,max=128"`
-	Status   int    `json:"status"`
-	RoleIDs  []uint `json:"role_ids"`
+	Email    string `json:"email" binding:"omitempty,email,max=128"`
+}
+
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password" binding:"required,min=6,max=64"`
+	NewPassword string `json:"new_password" binding:"required,min=6,max=64"`
+}
+
+type UserCreateRequest struct {
+	Username     string `json:"username" binding:"required,min=3,max=64"`
+	Email        string `json:"email" binding:"required,email,max=128"`
+	Password     string `json:"password" binding:"required,min=6,max=64"`
+	Nickname     string `json:"nickname" binding:"required,max=128"`
+	Status       int    `json:"status"`
+	DepartmentID *uint  `json:"department_id"`
+	RoleIDs      []uint `json:"role_ids"`
 }
 
 type UserUpdateRequest struct {
-	Email    *string `json:"email" binding:"omitempty,email,max=128"`
-	Nickname *string `json:"nickname" binding:"omitempty,max=128"`
-	Password *string `json:"password" binding:"omitempty,min=6,max=64"`
-	Status   *int    `json:"status"`
+	Email        *string `json:"email" binding:"omitempty,email,max=128"`
+	Nickname     *string `json:"nickname" binding:"omitempty,max=128"`
+	Password     *string `json:"password" binding:"omitempty,min=6,max=64"`
+	Status       *int    `json:"status"`
+	DepartmentID *uint   `json:"department_id"`
 }
 
 type UserAssignRolesRequest struct {
@@ -89,9 +101,10 @@ type UserAssignRolesRequest struct {
 }
 
 type UserListQuery struct {
-	Keyword  string `form:"keyword"`
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
+	Keyword      string `form:"keyword"`
+	DepartmentID *uint  `form:"department_id"`
+	Page         int    `form:"page"`
+	PageSize     int    `form:"page_size"`
 }
 
 type RoleCreateRequest struct {
@@ -161,14 +174,16 @@ type PermissionItem struct {
 }
 
 type UserDetailResponse struct {
-	ID        uint       `json:"id"`
-	Username  string     `json:"username"`
-	Email     string     `json:"email"`
-	Nickname  string     `json:"nickname"`
-	Status    int        `json:"status"`
-	Roles     []RoleItem `json:"roles"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	ID             uint       `json:"id"`
+	Username       string     `json:"username"`
+	Email          string     `json:"email"`
+	Nickname       string     `json:"nickname"`
+	Status         int        `json:"status"`
+	DepartmentID   *uint      `json:"department_id,omitempty"`
+	DepartmentName string     `json:"department_name"`
+	Roles          []RoleItem `json:"roles"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 type PolicyItemResponse struct {
@@ -216,11 +231,18 @@ func NewUserDetailResponse(user model.User) UserDetailResponse {
 	}
 
 	return UserDetailResponse{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     email,
-		Nickname:  user.Nickname,
-		Status:    user.Status,
+		ID:           user.ID,
+		Username:     user.Username,
+		Email:        email,
+		Nickname:     user.Nickname,
+		Status:       user.Status,
+		DepartmentID: user.DepartmentID,
+		DepartmentName: func() string {
+			if user.Department != nil {
+				return user.Department.Name
+			}
+			return ""
+		}(),
 		Roles:     roles,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
