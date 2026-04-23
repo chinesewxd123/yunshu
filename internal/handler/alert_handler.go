@@ -74,6 +74,11 @@ func (h *AlertHandler) TestChannel(c *gin.Context) {
 	})
 }
 
+// PreviewChannelTemplate 预览通道模板渲染结果。
+func (h *AlertHandler) PreviewChannelTemplate(c *gin.Context) {
+	handleJSON(c, h.svc.PreviewChannelTemplate)
+}
+
 // ListEvents 查询列表对应的 HTTP 接口处理逻辑。
 func (h *AlertHandler) ListEvents(c *gin.Context) {
 	var q service.AlertEventListQuery

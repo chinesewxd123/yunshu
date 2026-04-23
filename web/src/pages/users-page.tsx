@@ -331,12 +331,12 @@ export function UsersPage() {
         confirmLoading={submitting}
         destroyOnClose
       >
-        <Form form={form} layout="vertical" initialValues={{ status: 1, role_ids: [] }}>
+        <Form form={form} layout="vertical" initialValues={{ status: 1, role_ids: [] }} autoComplete="off">
           <Form.Item label="账号名" name="username" rules={[{ required: true, message: "请输入账号名" }]}>
-            <Input placeholder="例如：admin01" />
+            <Input placeholder="例如：admin01" autoComplete="off" />
           </Form.Item>
           <Form.Item label="邮箱" name="email" rules={[{ required: true, type: "email", message: "请输入正确的邮箱地址" }]}>
-            <Input placeholder="例如：admin@example.com" />
+            <Input placeholder="例如：admin@example.com" autoComplete="off" />
           </Form.Item>
           <Form.Item label="初始责任域" name="role_ids">
             <TreeSelect
@@ -360,7 +360,7 @@ export function UsersPage() {
             name="password"
             rules={[{ required: true, message: "请输入密码" }]}
           >
-            <Input.Password placeholder="请输入密码" />
+            <Input.Password placeholder="请输入密码" autoComplete="new-password" />
           </Form.Item>
           <Form.Item label="状态" name="status" rules={[{ required: true, message: "请选择状态" }]}>
             <Select options={statusOptions} />
@@ -414,7 +414,7 @@ export function UsersPage() {
         }
       >
         {detailRecord && (
-          <Form form={detailForm} layout="vertical" className="detail-edit-form">
+          <Form form={detailForm} layout="vertical" className="detail-edit-form" autoComplete="off">
             <Form.Item label="ID">
               <Input value={String(detailRecord.id)} readOnly />
             </Form.Item>
@@ -422,10 +422,10 @@ export function UsersPage() {
               <Input value={detailRecord.username} readOnly />
             </Form.Item>
             <Form.Item label="昵称" name="nickname" rules={[{ required: true, message: "请输入昵称" }]}>
-              <Input />
+              <Input autoComplete="off" />
             </Form.Item>
             <Form.Item label="邮箱" name="email" rules={[{ type: "email", message: "请输入正确邮箱" }]}>
-              <Input />
+              <Input autoComplete="off" />
             </Form.Item>
             <Form.Item label="状态" name="status" rules={[{ required: true, message: "请选择状态" }]}>
               <Select options={statusOptions} />
@@ -434,7 +434,7 @@ export function UsersPage() {
               <Select allowClear options={departmentOptions} />
             </Form.Item>
             <Form.Item label="新密码" name="password">
-              <Input.Password placeholder="留空则不修改密码" />
+              <Input.Password placeholder="留空则不修改密码" autoComplete="new-password" />
             </Form.Item>
             <Form.Item label="角色">
               <Input.TextArea

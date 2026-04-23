@@ -16,4 +16,3 @@ func parseUintParam(c *gin.Context, key string) (uint, error) {
 	}
 	return uint(id), nil
 }
-

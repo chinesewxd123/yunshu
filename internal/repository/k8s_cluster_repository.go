@@ -68,4 +68,3 @@ func (r *K8sClusterRepository) List(ctx context.Context, params K8sClusterListPa
 	}
 	return out, total, nil
 }
-

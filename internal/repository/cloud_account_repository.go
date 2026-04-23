@@ -12,7 +12,9 @@ type CloudAccountRepository struct {
 	db *gorm.DB
 }
 
-func NewCloudAccountRepository(db *gorm.DB) *CloudAccountRepository { return &CloudAccountRepository{db: db} }
+func NewCloudAccountRepository(db *gorm.DB) *CloudAccountRepository {
+	return &CloudAccountRepository{db: db}
+}
 
 func (r *CloudAccountRepository) Create(ctx context.Context, item *model.CloudAccount) error {
 	return r.db.WithContext(ctx).Create(item).Error
@@ -38,4 +40,8 @@ func (r *CloudAccountRepository) ListByProjectAndGroup(ctx context.Context, proj
 	var list []model.CloudAccount
 	err := q.Order("id DESC").Find(&list).Error
 	return list, err
+}
+
+func (r *CloudAccountRepository) DeleteByID(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Delete(&model.CloudAccount{}, id).Error
 }

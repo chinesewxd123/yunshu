@@ -22,7 +22,7 @@ type AlertDatasourceListQuery struct {
 }
 
 type AlertDatasourceUpsertRequest struct {
-	ProjectID         uint   `json:"project_id" binding:"required"`
+	ProjectID        uint   `json:"project_id" binding:"required"`
 	Name             string `json:"name" binding:"required,max=128"`
 	Type             string `json:"type" binding:"omitempty,max=32"`
 	BaseURL          string `json:"base_url" binding:"required,max=512"`

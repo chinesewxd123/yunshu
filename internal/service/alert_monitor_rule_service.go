@@ -19,16 +19,8 @@ type AlertMonitorRuleListQuery struct {
 	PageSize     int    `form:"page_size"`
 }
 
-type AlertMonitorRuleItem struct {
-	model.AlertMonitorRule
-	ProjectID     uint   `json:"project_id" gorm:"column:project_id"`
-	ProjectName   string `json:"project_name,omitempty" gorm:"column:project_name"`
-	DatasourceName string `json:"datasource_name,omitempty" gorm:"column:datasource_name"`
-}
-
 type AlertMonitorRuleUpsertRequest struct {
 	DatasourceID        uint   `json:"datasource_id" binding:"required"`
-	// ProjectID is deprecated: rule.project_id is derived from datasource.project_id.
 	ProjectID           *uint  `json:"project_id"`
 	Name                string `json:"name" binding:"required,max=128"`
 	Expr                string `json:"expr" binding:"required"`
@@ -49,42 +41,33 @@ func NewAlertMonitorRuleService(db *gorm.DB) *AlertMonitorRuleService {
 	return &AlertMonitorRuleService{db: db}
 }
 
-func (s *AlertMonitorRuleService) List(ctx context.Context, q AlertMonitorRuleListQuery) ([]AlertMonitorRuleItem, int64, int, int, error) {
+func (s *AlertMonitorRuleService) List(ctx context.Context, q AlertMonitorRuleListQuery) ([]model.AlertMonitorRule, int64, int, int, error) {
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
-	tx := s.db.WithContext(ctx).Table("alert_monitor_rules amr").
-		Select("amr.*, ad.project_id AS project_id, p.name AS project_name, ad.name AS datasource_name").
-		Joins("JOIN alert_datasources ad ON ad.id = amr.datasource_id AND ad.deleted_at IS NULL").
-		Joins("LEFT JOIN projects p ON p.id = ad.project_id AND p.deleted_at IS NULL")
+	tx := s.db.WithContext(ctx).Model(&model.AlertMonitorRule{})
 	if q.DatasourceID != nil && *q.DatasourceID > 0 {
-		tx = tx.Where("amr.datasource_id = ?", *q.DatasourceID)
+		tx = tx.Where("datasource_id = ?", *q.DatasourceID)
 	}
 	if q.ProjectID != nil {
-		tx = tx.Where("ad.project_id = ?", *q.ProjectID)
+		tx = tx.Where("project_id = ?", *q.ProjectID)
 	}
 	if kw := strings.TrimSpace(q.Keyword); kw != "" {
 		like := "%" + kw + "%"
-		tx = tx.Where("amr.name LIKE ? OR amr.expr LIKE ? OR ad.name LIKE ? OR p.name LIKE ?", like, like, like, like)
+		tx = tx.Where("name LIKE ? OR expr LIKE ?", like, like)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, page, pageSize, err
 	}
-	var list []AlertMonitorRuleItem
-	if err := tx.Order("amr.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
+	var list []model.AlertMonitorRule
+	if err := tx.Order("id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
 		return nil, 0, page, pageSize, err
 	}
 	return list, total, page, pageSize, nil
 }
 
-func (s *AlertMonitorRuleService) ListEnabled(ctx context.Context) ([]AlertMonitorRuleItem, error) {
-	var list []AlertMonitorRuleItem
-	err := s.db.WithContext(ctx).
-		Table("alert_monitor_rules amr").
-		Select("amr.*, ad.project_id AS project_id").
-		Joins("JOIN alert_datasources ad ON ad.id = amr.datasource_id AND ad.deleted_at IS NULL").
-		Where("amr.enabled = ?", true).
-		Order("amr.id ASC").
-		Find(&list).Error
+func (s *AlertMonitorRuleService) ListEnabled(ctx context.Context) ([]model.AlertMonitorRule, error) {
+	var list []model.AlertMonitorRule
+	err := s.db.WithContext(ctx).Where("enabled = ?", true).Order("id ASC").Find(&list).Error
 	return list, err
 }
 
@@ -106,9 +89,6 @@ func (s *AlertMonitorRuleService) Create(ctx context.Context, req AlertMonitorRu
 			return nil, apperror.BadRequest("数据源不存在")
 		}
 		return nil, err
-	}
-	if ds.ProjectID == 0 {
-		return nil, apperror.BadRequest("数据源未绑定项目")
 	}
 	ev := req.EvalIntervalSeconds
 	if ev <= 0 {
@@ -148,22 +128,14 @@ func (s *AlertMonitorRuleService) Update(ctx context.Context, id uint, req Alert
 	if err != nil {
 		return nil, err
 	}
-	// Always ensure datasource is valid. project_id is derived from datasource at read time.
-	dsID := req.DatasourceID
-	if dsID == 0 {
-		dsID = row.DatasourceID
-	}
-	var ds model.AlertDatasource
-	if err := s.db.WithContext(ctx).First(&ds, dsID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.BadRequest("数据源不存在")
-		}
-		return nil, err
-	}
-	if ds.ProjectID == 0 {
-		return nil, apperror.BadRequest("数据源未绑定项目")
-	}
 	if req.DatasourceID > 0 && req.DatasourceID != row.DatasourceID {
+		var ds model.AlertDatasource
+		if err := s.db.WithContext(ctx).First(&ds, req.DatasourceID).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, apperror.BadRequest("数据源不存在")
+			}
+			return nil, err
+		}
 		row.DatasourceID = req.DatasourceID
 	}
 	if strings.TrimSpace(req.Name) != "" {
@@ -194,13 +166,6 @@ func (s *AlertMonitorRuleService) Update(ctx context.Context, id uint, req Alert
 		return nil, err
 	}
 	return row, nil
-}
-
-func uintOrZero(v *uint) uint {
-	if v == nil {
-		return 0
-	}
-	return *v
 }
 
 func (s *AlertMonitorRuleService) Delete(ctx context.Context, id uint) error {

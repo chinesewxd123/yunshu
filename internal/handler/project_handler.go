@@ -264,6 +264,25 @@ func (h *ProjectHandler) UpdateCloudAccount(c *gin.Context) {
 	})
 }
 
+// DeleteCloudAccount 删除对应的 HTTP 接口处理逻辑。
+func (h *ProjectHandler) DeleteCloudAccount(c *gin.Context) {
+	projectID, err := parseUintParam(c, "id")
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	accountID, err := parseUintParam(c, "accountId")
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	if err := h.svc.DeleteCloudAccount(c.Request.Context(), projectID, accountID); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "deleted"})
+}
+
 // SyncCloudAccount 同步对应的 HTTP 接口处理逻辑。
 func (h *ProjectHandler) SyncCloudAccount(c *gin.Context) {
 	projectID, err := parseUintParam(c, "id")
@@ -302,6 +321,23 @@ func (h *ProjectHandler) BatchTestServers(c *gin.Context) {
 	handleJSON(c, func(ctx context.Context, req service.BatchServerTestRequest) (*service.BatchServerTestResult, error) {
 		req.ProjectID = projectID
 		return h.svc.BatchTestServerConnectivity(ctx, req)
+	})
+}
+
+// CloudServerAction 执行云服务器操作（改密/重启/关机）。
+func (h *ProjectHandler) CloudServerAction(c *gin.Context) {
+	projectID, err := parseUintParam(c, "id")
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	serverID, err := parseUintParam(c, "serverId")
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	handleJSON(c, func(ctx context.Context, req service.CloudServerActionRequest) (*service.CloudServerActionResult, error) {
+		return h.svc.RunCloudServerAction(ctx, projectID, serverID, req)
 	})
 }
 

@@ -12,7 +12,9 @@ type ServerGroupRepository struct {
 	db *gorm.DB
 }
 
-func NewServerGroupRepository(db *gorm.DB) *ServerGroupRepository { return &ServerGroupRepository{db: db} }
+func NewServerGroupRepository(db *gorm.DB) *ServerGroupRepository {
+	return &ServerGroupRepository{db: db}
+}
 
 func (r *ServerGroupRepository) Create(ctx context.Context, item *model.ServerGroup) error {
 	return r.db.WithContext(ctx).Create(item).Error

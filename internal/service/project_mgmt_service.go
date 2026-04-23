@@ -115,7 +115,7 @@ type ProjectCreateRequest struct {
 	Status      int     `json:"status"`
 }
 
-// CreateProject 创建项目；creatorUserID>0 时自动将创建人写入 project_members。
+// CreateProject 创建项目；creatorUserID>0 时自动将创建人写入 project_members 为 owner。
 func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID uint, req ProjectCreateRequest) (*ProjectItem, error) {
 	status := req.Status
 	if status != model.StatusDisabled {
@@ -126,7 +126,7 @@ func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID ui
 		return nil, err
 	}
 	if s.memberRepo != nil && creatorUserID > 0 {
-		m := model.ProjectMember{ProjectID: p.ID, UserID: creatorUserID, Role: "member"}
+		m := model.ProjectMember{ProjectID: p.ID, UserID: creatorUserID, Role: "owner"}
 		if err := s.memberRepo.Create(ctx, &m); err != nil {
 			_ = s.projectRepo.DeleteByID(ctx, p.ID)
 			return nil, fmt.Errorf("项目已创建但写入负责人失败，请重试或联系管理员: %w", err)
@@ -184,6 +184,21 @@ func (s *ProjectMgmtService) DeleteProject(ctx context.Context, id uint) error {
 
 // --- 项目成员（project_members）：与项目资源、监控规则 project_id 形成租户闭环；成员邮箱并入规则通知（见 AlertRuleAssigneeService）。---
 
+var allowedProjectMemberRoles = map[string]struct{}{
+	"owner": {}, "admin": {}, "member": {}, "readonly": {},
+}
+
+func normalizeProjectMemberRole(role string) string {
+	r := strings.ToLower(strings.TrimSpace(role))
+	if r == "" {
+		return "member"
+	}
+	if _, ok := allowedProjectMemberRoles[r]; ok {
+		return r
+	}
+	return "member"
+}
+
 // ProjectMemberItem 项目成员 API 展示。
 type ProjectMemberItem struct {
 	ID        uint    `json:"id"`
@@ -228,7 +243,8 @@ func (s *ProjectMgmtService) ListProjectMembers(ctx context.Context, projectID u
 
 // ProjectMemberAddRequest 添加成员。
 type ProjectMemberAddRequest struct {
-	UserID uint `json:"user_id" binding:"required"`
+	UserID uint   `json:"user_id" binding:"required"`
+	Role   string `json:"role" binding:"omitempty,max=32"`
 }
 
 // AddProjectMember 将用户加入项目。
@@ -256,7 +272,7 @@ func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uin
 	row := model.ProjectMember{
 		ProjectID: projectID,
 		UserID:    req.UserID,
-		Role:      "member",
+		Role:      normalizeProjectMemberRole(req.Role),
 	}
 	if err := s.memberRepo.Create(ctx, &row); err != nil {
 		return nil, err
@@ -276,10 +292,11 @@ func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uin
 
 // ProjectMemberUpdateRequest 更新成员角色。
 type ProjectMemberUpdateRequest struct {
+	Role string `json:"role" binding:"required,max=32"`
 }
 
 // UpdateProjectMember 更新项目内角色。
-func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID, memberID uint, _ ProjectMemberUpdateRequest) (*ProjectMemberItem, error) {
+func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID, memberID uint, req ProjectMemberUpdateRequest) (*ProjectMemberItem, error) {
 	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperror.NotFound("项目不存在")
@@ -296,7 +313,7 @@ func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID,
 	if m.ProjectID != projectID {
 		return nil, apperror.BadRequest("成员不属于该项目")
 	}
-	m.Role = "member"
+	m.Role = normalizeProjectMemberRole(req.Role)
 	if err := s.memberRepo.Save(ctx, m); err != nil {
 		return nil, err
 	}
@@ -335,24 +352,35 @@ func (s *ProjectMgmtService) RemoveProjectMember(ctx context.Context, projectID,
 }
 
 type ServerItem struct {
-	ID              uint    `json:"id"`
-	ProjectID       uint    `json:"project_id"`
-	GroupID         *uint   `json:"group_id,omitempty"`
-	Name            string  `json:"name"`
-	Host            string  `json:"host"`
-	Port            int     `json:"port"`
-	OSType          string  `json:"os_type"`
-	OSArch          string  `json:"os_arch"`
-	Tags            string  `json:"tags"`
-	SourceType      string  `json:"source_type"`
-	Provider        string  `json:"provider"`
-	CloudInstanceID string  `json:"cloud_instance_id"`
-	CloudRegion     string  `json:"cloud_region"`
-	LastTestAt      *string `json:"last_test_at"`
-	LastTestErr     *string `json:"last_test_error"`
-	CreatedAt       string  `json:"created_at"`
-	LastSeenAt      *string `json:"last_seen_at"`
-	Status          int     `json:"status"`
+	ID                     uint    `json:"id"`
+	ProjectID              uint    `json:"project_id"`
+	GroupID                *uint   `json:"group_id,omitempty"`
+	Name                   string  `json:"name"`
+	Host                   string  `json:"host"`
+	Port                   int     `json:"port"`
+	OSType                 string  `json:"os_type"`
+	OSArch                 string  `json:"os_arch"`
+	Tags                   string  `json:"tags"`
+	SourceType             string  `json:"source_type"`
+	Provider               string  `json:"provider"`
+	CloudInstanceID        string  `json:"cloud_instance_id"`
+	CloudRegion            string  `json:"cloud_region"`
+	CloudZone              string  `json:"cloud_zone"`
+	CloudSpec              string  `json:"cloud_spec"`
+	CloudConfigInfo        string  `json:"cloud_config_info"`
+	CloudOSName            string  `json:"cloud_os_name"`
+	CloudNetworkInfo       string  `json:"cloud_network_info"`
+	CloudChargeType        string  `json:"cloud_charge_type"`
+	CloudNetworkChargeType string  `json:"cloud_network_charge_type"`
+	CloudTagsJSON          string  `json:"cloud_tags_json"`
+	CloudPublicIP          string  `json:"cloud_public_ip"`
+	CloudPrivateIP         string  `json:"cloud_private_ip"`
+	CloudStatusText        string  `json:"cloud_status_text"`
+	LastTestAt             *string `json:"last_test_at"`
+	LastTestErr            *string `json:"last_test_error"`
+	CreatedAt              string  `json:"created_at"`
+	LastSeenAt             *string `json:"last_seen_at"`
+	Status                 int     `json:"status"`
 }
 
 func toServerItem(sv model.Server) ServerItem {
@@ -367,24 +395,35 @@ func toServerItem(sv model.Server) ServerItem {
 		lastSeenAt = &x
 	}
 	return ServerItem{
-		ID:              sv.ID,
-		ProjectID:       sv.ProjectID,
-		GroupID:         sv.GroupID,
-		Name:            sv.Name,
-		Host:            sv.Host,
-		Port:            sv.Port,
-		OSType:          sv.OSType,
-		OSArch:          sv.OSArch,
-		Tags:            sv.Tags,
-		SourceType:      sv.SourceType,
-		Provider:        sv.Provider,
-		CloudInstanceID: sv.CloudInstanceID,
-		CloudRegion:     sv.CloudRegion,
-		LastTestAt:      lastTestAt,
-		LastTestErr:     sv.LastTestError,
-		CreatedAt:       sv.CreatedAt.Format(time.RFC3339),
-		LastSeenAt:      lastSeenAt,
-		Status:          sv.Status,
+		ID:                     sv.ID,
+		ProjectID:              sv.ProjectID,
+		GroupID:                sv.GroupID,
+		Name:                   sv.Name,
+		Host:                   sv.Host,
+		Port:                   sv.Port,
+		OSType:                 sv.OSType,
+		OSArch:                 sv.OSArch,
+		Tags:                   sv.Tags,
+		SourceType:             sv.SourceType,
+		Provider:               sv.Provider,
+		CloudInstanceID:        sv.CloudInstanceID,
+		CloudRegion:            sv.CloudRegion,
+		CloudZone:              sv.CloudZone,
+		CloudSpec:              sv.CloudSpec,
+		CloudConfigInfo:        sv.CloudConfigInfo,
+		CloudOSName:            sv.CloudOSName,
+		CloudNetworkInfo:       sv.CloudNetworkInfo,
+		CloudChargeType:        sv.CloudChargeType,
+		CloudNetworkChargeType: sv.CloudNetworkChargeType,
+		CloudTagsJSON:          sv.CloudTagsJSON,
+		CloudPublicIP:          sv.CloudPublicIP,
+		CloudPrivateIP:         sv.CloudPrivateIP,
+		CloudStatusText:        sv.CloudStatusText,
+		LastTestAt:             lastTestAt,
+		LastTestErr:            sv.LastTestError,
+		CreatedAt:              sv.CreatedAt.Format(time.RFC3339),
+		LastSeenAt:             lastSeenAt,
+		Status:                 sv.Status,
 	}
 }
 
@@ -400,13 +439,14 @@ type ServerDetailItem struct {
 }
 
 type ServerListQuery struct {
-	ProjectID  uint   `form:"project_id" binding:"required"`
-	Keyword    string `form:"keyword"`
-	GroupID    *uint  `form:"group_id"`
-	SourceType string `form:"source_type"`
-	Provider   string `form:"provider"`
-	Page       int    `form:"page"`
-	PageSize   int    `form:"page_size"`
+	ProjectID      uint   `form:"project_id" binding:"required"`
+	Keyword        string `form:"keyword"`
+	GroupID        *uint  `form:"group_id"`
+	CloudAccountID *uint  `form:"cloud_account_id"`
+	SourceType     string `form:"source_type"`
+	Provider       string `form:"provider"`
+	Page           int    `form:"page"`
+	PageSize       int    `form:"page_size"`
 }
 
 // ListServers 查询列表相关的业务逻辑。
@@ -415,10 +455,24 @@ func (s *ProjectMgmtService) ListServers(ctx context.Context, q ServerListQuery)
 		return nil, err
 	}
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
+	// If cloud_account_id provided, resolve to its group_id for server filtering.
+	groupID := q.GroupID
+	if q.CloudAccountID != nil {
+		acc, err := s.cloudAccountRepo.GetByID(ctx, *q.CloudAccountID)
+		if err != nil {
+			return nil, err
+		}
+		if acc.ProjectID != q.ProjectID {
+			return nil, apperror.BadRequest("云账号不属于当前项目")
+		}
+		gid := acc.GroupID
+		groupID = &gid
+	}
+
 	list, total, err := s.serverRepo.List(ctx, repository.ServerListParams{
 		ProjectID:  q.ProjectID,
 		Keyword:    strings.TrimSpace(q.Keyword),
-		GroupID:    q.GroupID,
+		GroupID:    groupID,
 		SourceType: strings.TrimSpace(q.SourceType),
 		Provider:   strings.TrimSpace(q.Provider),
 		Page:       page,
@@ -958,6 +1012,29 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 	}
 	item.Status = status
 
+	// 校验同一项目下是否已有相同 AK 的云账号，避免重复添加
+	if strings.TrimSpace(req.AK) != "" {
+		accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, req.ProjectID, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, ex := range accounts {
+			if req.ID != nil && ex.ID == *req.ID {
+				continue
+			}
+			if ex.EncAK == nil {
+				continue
+			}
+			dec, derr := cryptox.DecryptString(s.aead, *ex.EncAK)
+			if derr != nil {
+				continue
+			}
+			if strings.TrimSpace(dec) == strings.TrimSpace(req.AK) {
+				return nil, apperror.BadRequest("相同 AK 的云账号已存在")
+			}
+		}
+	}
+
 	if strings.TrimSpace(req.AK) != "" {
 		encAK, err := cryptox.EncryptString(s.aead, req.AK)
 		if err != nil {
@@ -999,22 +1076,42 @@ type CloudSyncResult struct {
 }
 
 type CloudInstance struct {
-	InstanceID string
-	Name       string
-	Host       string
-	Region     string
-	OSType     string
-	Status     int
+	InstanceID        string
+	Name              string
+	Host              string
+	Region            string
+	Zone              string
+	Spec              string
+	ConfigInfo        string
+	OSName            string
+	NetworkInfo       string
+	ChargeType        string
+	NetworkChargeType string
+	TagsJSON          string
+	PublicIP          string
+	PrivateIP         string
+	StatusText        string
+	OSType            string
+	Status            int
 }
 
 type CloudProvider interface {
 	ListInstances(ctx context.Context, ak, sk, regionScope string) ([]CloudInstance, error)
+	QueryInstanceExpireAt(ctx context.Context, ak, sk, region, instanceID string) (*time.Time, error)
+	ResetInstancePassword(ctx context.Context, ak, sk, region, instanceID, newPassword string) error
+	RebootInstance(ctx context.Context, ak, sk, region, instanceID string) error
+	ShutdownInstance(ctx context.Context, ak, sk, region, instanceID string) error
+	SyncInstanceTags(ctx context.Context, ak, sk, region, instanceID string, oldTags, newTags map[string]string) error
 }
 
 func (s *ProjectMgmtService) providerFor(name string) (CloudProvider, error) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "alibaba":
+	case "alibaba", "aliyun":
 		return &AlibabaCloudProvider{}, nil
+	case "tencent", "qcloud":
+		return &TencentCloudProvider{}, nil
+	case "jd", "jingdong":
+		return &JdCloudProvider{}, nil
 	default:
 		return nil, apperror.BadRequest("不支持的云厂商")
 	}
@@ -1135,6 +1232,21 @@ func (s *ProjectMgmtService) SyncCloudAccount(ctx context.Context, req CloudSync
 	return &CloudSyncResult{
 		Total: len(instances), Added: added, Updated: updated, Disabled: disabled, Unchanged: unchanged, Message: "sync completed",
 	}, nil
+}
+
+// DeleteCloudAccount 删除云账号
+func (s *ProjectMgmtService) DeleteCloudAccount(ctx context.Context, projectID, accountID uint) error {
+	acc, err := s.cloudAccountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.NotFound("云账号不存在")
+		}
+		return err
+	}
+	if acc.ProjectID != projectID {
+		return apperror.BadRequest("云账号不属于当前项目")
+	}
+	return s.cloudAccountRepo.DeleteByID(ctx, accountID)
 }
 
 func (s *ProjectMgmtService) ensureDefaultServerGroups(ctx context.Context, projectID uint) error {
@@ -1471,12 +1583,6 @@ func (s *ProjectMgmtService) testCloudServerConnectivityBySDK(ctx context.Contex
 		_ = s.serverRepo.Save(ctx, sv)
 		return &ServerTestResult{ServerID: sv.ID, OK: false, Message: msg}, nil
 	}
-	if strings.TrimSpace(sv.CloudInstanceID) == "" {
-		msg := "[SDK] cloud server missing cloud_instance_id"
-		sv.LastTestError = &msg
-		_ = s.serverRepo.Save(ctx, sv)
-		return &ServerTestResult{ServerID: sv.ID, OK: false, Message: msg}, nil
-	}
 
 	groupID := *sv.GroupID
 	accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, sv.ProjectID, &groupID)
@@ -1533,6 +1639,34 @@ func (s *ProjectMgmtService) testCloudServerConnectivityBySDK(ctx context.Contex
 	}
 
 	instanceID := strings.TrimSpace(sv.CloudInstanceID)
+	if instanceID == "" {
+		// Best-effort: try to infer instance id by matching server host (public/private IP).
+		host := strings.TrimSpace(sv.Host)
+		for _, ins := range instances {
+			if host == "" {
+				break
+			}
+			if strings.EqualFold(strings.TrimSpace(ins.Host), host) ||
+				strings.EqualFold(strings.TrimSpace(ins.PublicIP), host) ||
+				strings.EqualFold(strings.TrimSpace(ins.PrivateIP), host) {
+				instanceID = strings.TrimSpace(ins.InstanceID)
+				if instanceID != "" {
+					sv.CloudInstanceID = instanceID
+					if strings.TrimSpace(sv.CloudRegion) == "" && strings.TrimSpace(ins.Region) != "" {
+						sv.CloudRegion = strings.TrimSpace(ins.Region)
+					}
+					_ = s.serverRepo.Save(ctx, sv)
+				}
+				break
+			}
+		}
+		if instanceID == "" {
+			msg := "[SDK] cloud_instance_id 为空：请先通过「同步云账号」导入云服务器，或在服务器编辑里补充实例ID"
+			sv.LastTestError = &msg
+			_ = s.serverRepo.Save(ctx, sv)
+			return &ServerTestResult{ServerID: sv.ID, OK: false, Message: msg}, nil
+		}
+	}
 	for _, ins := range instances {
 		if strings.TrimSpace(ins.InstanceID) != instanceID {
 			continue
@@ -1556,6 +1690,143 @@ func (s *ProjectMgmtService) testCloudServerConnectivityBySDK(ctx context.Contex
 	sv.LastTestError = &msg
 	_ = s.serverRepo.Save(ctx, sv)
 	return &ServerTestResult{ServerID: sv.ID, OK: false, Message: msg}, nil
+}
+
+type CloudServerActionRequest struct {
+	Action      string `json:"action" binding:"required,oneof=reset_password reboot shutdown"`
+	NewPassword string `json:"new_password"`
+}
+
+type CloudServerActionResult struct {
+	ServerID uint   `json:"server_id"`
+	Action   string `json:"action"`
+	Message  string `json:"message"`
+}
+
+func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID, serverID uint, req CloudServerActionRequest) (*CloudServerActionResult, error) {
+	if strings.TrimSpace(req.Action) == "" {
+		return nil, apperror.BadRequest("action 不能为空")
+	}
+	sv, err := s.serverRepo.GetByID(ctx, serverID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.NotFound("服务器不存在")
+		}
+		return nil, err
+	}
+	if sv.ProjectID != projectID {
+		return nil, apperror.BadRequest("服务器不属于当前项目")
+	}
+	if strings.TrimSpace(sv.SourceType) != model.ServerGroupCategoryCloud && strings.TrimSpace(sv.SourceType) != "cloud" {
+		return nil, apperror.BadRequest("仅支持云服务器操作")
+	}
+	if sv.GroupID == nil {
+		return nil, apperror.BadRequest("云服务器缺少 group_id")
+	}
+	groupID := *sv.GroupID
+	accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, sv.ProjectID, &groupID)
+	if err != nil {
+		return nil, err
+	}
+	providerName := strings.TrimSpace(sv.Provider)
+	var account *model.CloudAccount
+	for i := range accounts {
+		it := &accounts[i]
+		if it.Status != model.StatusEnabled {
+			continue
+		}
+		if providerName == "" || strings.EqualFold(strings.TrimSpace(it.Provider), providerName) {
+			account = it
+			break
+		}
+	}
+	if account == nil {
+		return nil, apperror.BadRequest("未找到可用云账号（请先配置并同步云账号）")
+	}
+	if account.EncAK == nil || account.EncSK == nil {
+		return nil, apperror.BadRequest("云账号 AK/SK 未配置")
+	}
+	ak, err := cryptox.DecryptString(s.aead, *account.EncAK)
+	if err != nil {
+		return nil, err
+	}
+	sk, err := cryptox.DecryptString(s.aead, *account.EncSK)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := s.providerFor(account.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	instances, err := provider.ListInstances(ctx, ak, sk, account.RegionScope)
+	if err != nil {
+		return nil, apperror.BadRequest("[SDK] " + err.Error())
+	}
+	// Ensure instance id and region present.
+	instanceID := strings.TrimSpace(sv.CloudInstanceID)
+	region := strings.TrimSpace(sv.CloudRegion)
+	if instanceID == "" || region == "" {
+		host := strings.TrimSpace(sv.Host)
+		for _, ins := range instances {
+			if instanceID != "" && strings.EqualFold(strings.TrimSpace(ins.InstanceID), instanceID) {
+				region = strings.TrimSpace(ins.Region)
+				break
+			}
+			if instanceID == "" && host != "" &&
+				(strings.EqualFold(strings.TrimSpace(ins.Host), host) ||
+					strings.EqualFold(strings.TrimSpace(ins.PublicIP), host) ||
+					strings.EqualFold(strings.TrimSpace(ins.PrivateIP), host)) {
+				instanceID = strings.TrimSpace(ins.InstanceID)
+				region = strings.TrimSpace(ins.Region)
+				break
+			}
+		}
+	}
+	if instanceID == "" {
+		return nil, apperror.BadRequest("cloud_instance_id 为空：请先通过「同步云账号」导入云服务器，或在服务器编辑里补充实例ID")
+	}
+	if region == "" {
+		return nil, apperror.BadRequest("cloud_region 为空：请先同步云账号或在服务器编辑里补充地域")
+	}
+	// Persist inferred fields for later operations.
+	changed := false
+	if strings.TrimSpace(sv.CloudInstanceID) == "" && instanceID != "" {
+		sv.CloudInstanceID = instanceID
+		changed = true
+	}
+	if strings.TrimSpace(sv.CloudRegion) == "" && region != "" {
+		sv.CloudRegion = region
+		changed = true
+	}
+	if changed {
+		_ = s.serverRepo.Save(ctx, sv)
+	}
+
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	switch action {
+	case "reset_password":
+		pw := strings.TrimSpace(req.NewPassword)
+		if pw == "" {
+			return nil, apperror.BadRequest("new_password 不能为空")
+		}
+		if err := provider.ResetInstancePassword(ctx, ak, sk, region, instanceID, pw); err != nil {
+			return nil, apperror.BadRequest("[SDK] " + err.Error())
+		}
+		return &CloudServerActionResult{ServerID: serverID, Action: action, Message: "密码重置请求已提交"}, nil
+	case "reboot":
+		if err := provider.RebootInstance(ctx, ak, sk, region, instanceID); err != nil {
+			return nil, apperror.BadRequest("[SDK] " + err.Error())
+		}
+		return &CloudServerActionResult{ServerID: serverID, Action: action, Message: "重启请求已提交"}, nil
+	case "shutdown":
+		if err := provider.ShutdownInstance(ctx, ak, sk, region, instanceID); err != nil {
+			return nil, apperror.BadRequest("[SDK] " + err.Error())
+		}
+		return &CloudServerActionResult{ServerID: serverID, Action: action, Message: "关机请求已提交"}, nil
+	default:
+		return nil, apperror.BadRequest("不支持的 action")
+	}
 }
 
 func (s *ProjectMgmtService) detectRemoteOSAndArch(ctx context.Context, cli *sshclient.Client) (string, string, string) {

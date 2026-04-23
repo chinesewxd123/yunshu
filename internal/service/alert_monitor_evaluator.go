@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ func (s *AlertService) runMonitorRuleEvaluator(ctx context.Context) {
 			return
 		case <-t.C:
 			_ = s.tickMonitorRules(ctx)
+			_ = s.tickCloudExpiryRules(ctx)
 		}
 	}
 }
@@ -112,10 +114,33 @@ func buildMonitorRuleLabels(rule *model.AlertMonitorRule, projectID uint) map[st
 	return labels
 }
 
-func buildMonitorRuleAnnotations(rule *model.AlertMonitorRule) map[string]string {
+func renderRuleAnnotationTemplate(tpl string, labels map[string]string, value string, rule *model.AlertMonitorRule) string {
+	out := strings.TrimSpace(tpl)
+	if out == "" {
+		return ""
+	}
+	re := regexp.MustCompile(`\{\{\s*\$labels\.([a-zA-Z0-9_]+)\s*\}\}`)
+	out = re.ReplaceAllStringFunc(out, func(match string) string {
+		sub := re.FindStringSubmatch(match)
+		if len(sub) != 2 {
+			return ""
+		}
+		return strings.TrimSpace(labels[sub[1]])
+	})
+	out = strings.ReplaceAll(out, "{{$value}}", strings.TrimSpace(value))
+	if rule != nil {
+		out = strings.ReplaceAll(out, "{{.RuleName}}", strings.TrimSpace(rule.Name))
+		out = strings.ReplaceAll(out, "{{.Expr}}", strings.TrimSpace(rule.Expr))
+	}
+	return out
+}
+
+func buildMonitorRuleAnnotations(rule *model.AlertMonitorRule, labels map[string]string, value string) map[string]string {
+	defaultSummary := fmt.Sprintf("监控规则 %s 触发", rule.Name)
+	defaultDescription := fmt.Sprintf("PromQL: %s", rule.Expr)
 	ann := map[string]string{
-		"summary":     fmt.Sprintf("监控规则 %s 触发", rule.Name),
-		"description": fmt.Sprintf("PromQL: %s", rule.Expr),
+		"summary":     defaultSummary,
+		"description": defaultDescription,
 	}
 	raw := strings.TrimSpace(rule.AnnotationsJSON)
 	if raw != "" && raw != "{}" {
@@ -126,7 +151,43 @@ func buildMonitorRuleAnnotations(rule *model.AlertMonitorRule) map[string]string
 			}
 		}
 	}
+	ann["summary"] = renderRuleAnnotationTemplate(ann["summary"], labels, value, rule)
+	ann["description"] = renderRuleAnnotationTemplate(ann["description"], labels, value, rule)
+	if strings.TrimSpace(ann["summary"]) == "" {
+		ann["summary"] = renderRuleAnnotationTemplate(defaultSummary, labels, value, rule)
+	}
+	if strings.TrimSpace(ann["description"]) == "" {
+		ann["description"] = renderRuleAnnotationTemplate(defaultDescription, labels, value, rule)
+	}
 	return ann
+}
+
+func parsePromFirstSample(body []byte) (map[string]string, string) {
+	var wrap struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []interface{}     `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &wrap); err != nil {
+		return map[string]string{}, ""
+	}
+	if wrap.Status != "success" || wrap.Data.ResultType != "vector" || len(wrap.Data.Result) == 0 {
+		return map[string]string{}, ""
+	}
+	first := wrap.Data.Result[0]
+	value := ""
+	if len(first.Value) >= 2 {
+		value = strings.TrimSpace(fmt.Sprintf("%v", first.Value[1]))
+	}
+	if first.Metric == nil {
+		return map[string]string{}, value
+	}
+	return first.Metric, value
 }
 
 func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.AlertMonitorRule, projectID uint) {
@@ -158,7 +219,18 @@ func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.A
 		projectID = ds.ProjectID
 	}
 	labels := buildMonitorRuleLabels(rule, projectID)
-	annotations := buildMonitorRuleAnnotations(rule)
+	sampleLabels, sampleValue := parsePromFirstSample(body)
+	for k, v := range sampleLabels {
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "" || v == "" {
+			continue
+		}
+		if _, exists := labels[k]; !exists {
+			labels[k] = v
+		}
+	}
+	annotations := buildMonitorRuleAnnotations(rule, labels, sampleValue)
 	fp := fmt.Sprintf("monitor_rule_%d", rule.ID)
 	now := time.Now()
 

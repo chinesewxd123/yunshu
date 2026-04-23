@@ -159,15 +159,15 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			{DictType: "server_port", Label: "RDP 默认端口 3389", Value: "3389", Sort: intRef(2), Status: 1, Remark: "服务器连接端口模板"},
 		}
 		singletonTypes := map[string]struct{}{
-			"mail_host":      {},
-			"mail_port":      {},
-			"mail_use_tls":   {},
-			"mail_username":  {},
-			"mail_password":  {},
-			"mail_from_email": {},
-			"mail_from_name": {},
-			"alert_webhook_token": {},
-			"alert_enrich_prometheus_url": {},
+			"mail_host":                     {},
+			"mail_port":                     {},
+			"mail_use_tls":                  {},
+			"mail_username":                 {},
+			"mail_password":                 {},
+			"mail_from_email":               {},
+			"mail_from_name":                {},
+			"alert_webhook_token":           {},
+			"alert_enrich_prometheus_url":   {},
 			"alert_enrich_prometheus_token": {},
 		}
 		for _, item := range seed {

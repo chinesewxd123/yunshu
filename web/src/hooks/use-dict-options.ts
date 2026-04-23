@@ -3,6 +3,18 @@ import { getDictOptions } from "../services/dict";
 
 type Option = { label: string; value: string | number };
 
+function shouldCastDictValueToNumber(dictType: string, value: string): boolean {
+  const rawType = String(dictType || "").trim();
+  const rawValue = String(value || "").trim();
+  if (!rawValue || !/^-?\d+$/.test(rawValue)) {
+    return false;
+  }
+  if (rawType === "common_status") {
+    return true;
+  }
+  return rawType === "server_port" || rawType.endsWith("_port");
+}
+
 const fallbackMap: Record<string, Option[]> = {
   common_status: [
     { label: "启用", value: 1 },
@@ -88,6 +100,8 @@ const fallbackMap: Record<string, Option[]> = {
     { label: "毫秒 (ms)", value: "ms" },
     { label: "计数 (count)", value: "count" },
   ],
+  /** 监控规则告警文案预设（value 建议存 JSON：{"summary":"...","description":"..."}） */
+  alert_rule_template_preset: [],
   alert_webhook_url: [],
   wecom_webhook_url: [],
   dingtalk_webhook_url: [],
@@ -105,6 +119,24 @@ const fallbackMap: Record<string, Option[]> = {
   server_ssh_username: [],
   /** 服务器 SSH 密码模板（值填入「密码」） */
   server_ssh_password: [],
+  cloud_alibaba_ak: [],
+  cloud_alibaba_sk: [],
+  cloud_tencent_ak: [],
+  cloud_tencent_sk: [],
+  cloud_jd_ak: [],
+  cloud_jd_sk: [],
+  server_cloud_alibaba_username: [],
+  server_cloud_alibaba_password: [],
+  server_cloud_alibaba_private_key: [],
+  server_cloud_alibaba_port: [],
+  server_cloud_tencent_username: [],
+  server_cloud_tencent_password: [],
+  server_cloud_tencent_private_key: [],
+  server_cloud_tencent_port: [],
+  server_cloud_jd_username: [],
+  server_cloud_jd_password: [],
+  server_cloud_jd_private_key: [],
+  server_cloud_jd_port: [],
 };
 
 export function useDictOptions(dictType: string) {
@@ -117,7 +149,7 @@ export function useDictOptions(dictType: string) {
         const list = await getDictOptions(dictType);
         if (cancelled) return;
         const next = list.map((item) => {
-          if (dictType === "common_status" && (item.value === "0" || item.value === "1")) {
+          if (shouldCastDictValueToNumber(dictType, item.value)) {
             return { label: item.label, value: Number(item.value) };
           }
           return { label: item.label, value: item.value };

@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"context"
-	"yunshu/internal/agent"
 	"time"
+	"yunshu/internal/agent"
 
 	"github.com/spf13/cobra"
 )
@@ -34,23 +34,23 @@ func init() {
 }
 
 var (
-	agentServerURL      string
-	agentPlatformURL    string
-	agentProjectID      uint
-	agentServerID       uint
-	agentLogSourceID    uint
-	agentToken          string
-	agentRegisterSecret string
-	agentName           string
-	agentVersion        string
-	agentSourceType     string
-	agentPath           string
-	agentTailLines      int
-	agentBatchSize      int
-	agentFlushInterval  time.Duration
-	agentResendAfter    time.Duration
-	agentDebug          bool
-	agentListenPort     int
+	agentServerURL         string
+	agentPlatformURL       string
+	agentProjectID         uint
+	agentServerID          uint
+	agentLogSourceID       uint
+	agentToken             string
+	agentRegisterSecret    string
+	agentName              string
+	agentVersion           string
+	agentSourceType        string
+	agentPath              string
+	agentTailLines         int
+	agentBatchSize         int
+	agentFlushInterval     time.Duration
+	agentResendAfter       time.Duration
+	agentDebug             bool
+	agentListenPort        int
 	agentEnableRuntimePull bool
 	agentEnableFallback    bool
 	agentEnableDiscovery   bool
@@ -62,23 +62,23 @@ var logAgentCmd = &cobra.Command{
 	Short: "Run lightweight local log collection agent",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return agent.Run(context.Background(), agent.Config{
-			GrpcServer:     agentServerURL,
-			PlatformURL:    agentPlatformURL,
-			ProjectID:      agentProjectID,
-			ServerID:       agentServerID,
-			LogSourceID:    agentLogSourceID,
-			Token:          agentToken,
-			RegisterSecret: agentRegisterSecret,
-			Name:           agentName,
-			Version:        agentVersion,
-			SourceType:     agentSourceType,
-			Path:           agentPath,
-			TailLines:      agentTailLines,
-			BatchSize:      agentBatchSize,
-			FlushInterval:  agentFlushInterval,
-			ResendAfter:    agentResendAfter,
-			Debug:          agentDebug,
-			ListenPort:     agentListenPort,
+			GrpcServer:        agentServerURL,
+			PlatformURL:       agentPlatformURL,
+			ProjectID:         agentProjectID,
+			ServerID:          agentServerID,
+			LogSourceID:       agentLogSourceID,
+			Token:             agentToken,
+			RegisterSecret:    agentRegisterSecret,
+			Name:              agentName,
+			Version:           agentVersion,
+			SourceType:        agentSourceType,
+			Path:              agentPath,
+			TailLines:         agentTailLines,
+			BatchSize:         agentBatchSize,
+			FlushInterval:     agentFlushInterval,
+			ResendAfter:       agentResendAfter,
+			Debug:             agentDebug,
+			ListenPort:        agentListenPort,
 			EnableRuntimePull: agentEnableRuntimePull,
 			EnableFallback:    agentEnableFallback,
 			EnableDiscovery:   agentEnableDiscovery,

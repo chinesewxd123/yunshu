@@ -3,8 +3,8 @@ package middleware
 import (
 	"runtime/debug"
 
-	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/apperror"
+	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"

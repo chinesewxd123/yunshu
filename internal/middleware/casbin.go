@@ -1,12 +1,12 @@
 package middleware
 
 import (
+	"strings"
 	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
-	"strings"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"

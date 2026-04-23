@@ -123,7 +123,12 @@ func (s *MenuService) Tree(ctx context.Context) ([]model.Menu, error) {
 		if err != nil {
 			return nil, err
 		}
+		hiddenAdjusted, err := s.ensureHiddenMenusDisabled(ctx)
+		if err != nil {
+			return nil, err
+		}
 		needRefresh = changed || repaired || normalized
+		needRefresh = needRefresh || hiddenAdjusted
 		s.mu.Lock()
 		s.maintenanceDone = true
 		s.mu.Unlock()
@@ -236,6 +241,27 @@ func (s *MenuService) normalizeMenuHierarchyAndSort(ctx context.Context) (bool, 
 				changed = true
 			}
 		}
+	}
+	return changed, nil
+}
+
+// ensureHiddenMenusDisabled keeps data consistent: hidden menu must be status=0.
+func (s *MenuService) ensureHiddenMenusDisabled(ctx context.Context) (bool, error) {
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return false, err
+	}
+	changed := false
+	for i := range all {
+		m := &all[i]
+		if !m.Hidden || m.Status == 0 {
+			continue
+		}
+		m.Status = 0
+		if err := s.menuRepo.Update(ctx, m); err != nil {
+			return false, err
+		}
+		changed = true
 	}
 	return changed, nil
 }
