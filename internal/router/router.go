@@ -46,6 +46,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 		AssigneeSvc: alertAssigneeSvc,
 		DutySvc:     alertDutySvc,
 	})
+	cloudExpiryRuleSvc := service.NewCloudExpiryRuleService(app.DB)
 	alertPolicyService := service.NewAlertPolicyService(app.DB)
 	alertDatasourceSvc := service.NewAlertDatasourceService(app.DB)
 	alertMonitorRuleSvc := service.NewAlertMonitorRuleService(app.DB)
@@ -96,6 +97,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	menuHandler := handler.NewMenuHandler(menuService)
 	dictEntryHandler := handler.NewDictEntryHandler(dictEntryService)
 	alertHandler := handler.NewAlertHandler(alertService)
+	cloudExpiryRuleHandler := handler.NewCloudExpiryRuleHandler(cloudExpiryRuleSvc, alertService)
 	alertPolicyHandler := handler.NewAlertPolicyHandler(alertPolicyService)
 	alertPlatformHandler := handler.NewAlertPlatformHandler(alertDatasourceSvc, alertSilenceSvc, alertMonitorRuleSvc, alertAssigneeSvc, alertDutySvc)
 	adminHandler := handler.NewAdminHandler(app.Redis)
@@ -271,6 +273,13 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	alerts.POST("/duty-blocks", alertPlatformHandler.CreateDutyBlock)
 	alerts.PUT("/duty-blocks/:id", alertPlatformHandler.UpdateDutyBlock)
 	alerts.DELETE("/duty-blocks/:id", alertPlatformHandler.DeleteDutyBlock)
+
+	// 云服务器到期规则（Cloud Expiry Rules）
+	alerts.GET("/cloud-expiry-rules", cloudExpiryRuleHandler.List)
+	alerts.POST("/cloud-expiry-rules", cloudExpiryRuleHandler.Create)
+	alerts.PUT("/cloud-expiry-rules/:id", cloudExpiryRuleHandler.Update)
+	alerts.DELETE("/cloud-expiry-rules/:id", cloudExpiryRuleHandler.Delete)
+	alerts.POST("/cloud-expiry-rules/evaluate-now", cloudExpiryRuleHandler.EvaluateNow)
 
 	loginLogs := api.Group("/login-logs")
 	loginLogs.Use(authMiddleware, authorize, opAudit)
@@ -501,12 +510,14 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	projects.GET("/:id/cloud-accounts", projectHandler.ListCloudAccounts)
 	projects.POST("/:id/cloud-accounts", projectHandler.UpsertCloudAccount)
 	projects.PUT("/:id/cloud-accounts/:accountId", projectHandler.UpdateCloudAccount)
+	projects.DELETE("/:id/cloud-accounts/:accountId", projectHandler.DeleteCloudAccount)
 	projects.PUT("/:id/cloud-accounts/:accountId/sync", projectHandler.SyncCloudAccount)
 	projects.POST("/:id/servers/import", projectHandler.ImportServers)
 	projects.GET("/:id/servers/import-template", projectHandler.ServersImportTemplate)
 	projects.GET("/:id/servers/export", projectHandler.ExportServers)
 	projects.POST("/:id/servers/test", projectHandler.TestServer)
 	projects.POST("/:id/servers/test/batch", projectHandler.BatchTestServers)
+	projects.POST("/:id/servers/:serverId/cloud-actions", projectHandler.CloudServerAction)
 	projects.POST("/:id/servers/sync", projectHandler.SyncServers)
 	projects.GET("/:id/services", projectHandler.ListServices)
 	projects.POST("/:id/services", projectHandler.UpsertService)

@@ -11,9 +11,9 @@ import (
 )
 
 type Logger struct {
-	Info *slog.Logger
+	Info  *slog.Logger
 	Error *slog.Logger
-	SQL *slog.Logger
+	SQL   *slog.Logger
 }
 
 func New(cfg config.LogConfig) *Logger {
@@ -31,9 +31,9 @@ func New(cfg config.LogConfig) *Logger {
 	sqlLogger := createLogger(cfg, "sql", logDir)
 
 	return &Logger{
-		Info: infoLogger,
+		Info:  infoLogger,
 		Error: errorLogger,
-		SQL: sqlLogger,
+		SQL:   sqlLogger,
 	}
 }
 
@@ -52,7 +52,7 @@ func createLogger(cfg config.LogConfig, logType string, logDir string) *slog.Log
 	multiWriter := io.MultiWriter(writers...)
 
 	opts := &slog.HandlerOptions{
-		Level: parseLevel(cfg.Level),
+		Level:     parseLevel(cfg.Level),
 		AddSource: true,
 	}
 

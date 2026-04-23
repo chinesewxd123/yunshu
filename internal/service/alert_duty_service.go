@@ -22,13 +22,13 @@ type AlertDutyBlockListQuery struct {
 
 type AlertDutyBlockUpsertRequest struct {
 	MonitorRuleID     uint      `json:"monitor_rule_id" binding:"required"`
-	StartsAt            time.Time `json:"starts_at" binding:"required"`
-	EndsAt              time.Time `json:"ends_at" binding:"required"`
-	Title               string    `json:"title" binding:"omitempty,max=128"`
-	UserIDsJSON         string    `json:"user_ids_json"`
-	DepartmentIDsJSON   string    `json:"department_ids_json"`
-	ExtraEmailsJSON     string    `json:"extra_emails_json"`
-	Remark              string    `json:"remark" binding:"omitempty,max=512"`
+	StartsAt          time.Time `json:"starts_at" binding:"required"`
+	EndsAt            time.Time `json:"ends_at" binding:"required"`
+	Title             string    `json:"title" binding:"omitempty,max=128"`
+	UserIDsJSON       string    `json:"user_ids_json"`
+	DepartmentIDsJSON string    `json:"department_ids_json"`
+	ExtraEmailsJSON   string    `json:"extra_emails_json"`
+	Remark            string    `json:"remark" binding:"omitempty,max=512"`
 }
 
 type AlertDutyService struct {

@@ -10,6 +10,7 @@ import (
 	neturl "net/url"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"yunshu/internal/model"
@@ -20,6 +21,34 @@ import (
 
 func validateHeadersJSON(v string) error {
 	return validateutil.ValidateJSONObjectString(v, "headers_json")
+}
+
+func validateChannelMessageTemplates(headersJSON string) error {
+	settings, err := parseChannelSettings(headersJSON)
+	if err != nil {
+		return err
+	}
+	validateOne := func(fieldKey, fieldLabel string) error {
+		raw, ok := settings[fieldKey]
+		if !ok {
+			return nil
+		}
+		tplRaw := strings.TrimSpace(fmt.Sprintf("%v", raw))
+		if tplRaw == "" || tplRaw == "<nil>" {
+			return nil
+		}
+		if _, parseErr := template.New(fieldKey).Option("missingkey=zero").Parse(tplRaw); parseErr != nil {
+			return apperror.BadRequest(fmt.Sprintf("%s 语法错误: %v", fieldLabel, parseErr))
+		}
+		return nil
+	}
+	if err = validateOne("messageTemplateFiring", "触发模板(messageTemplateFiring)"); err != nil {
+		return err
+	}
+	if err = validateOne("messageTemplateResolved", "恢复模板(messageTemplateResolved)"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func requiresWebhookURL(channelType, headersJSON string) bool {
@@ -60,7 +89,8 @@ func parseRequestHeaders(settings map[string]interface{}) map[string]string {
 		if strings.EqualFold(k, "to") || strings.EqualFold(k, "recipients") || strings.EqualFold(k, "emails") ||
 			strings.EqualFold(k, "atMobiles") || strings.EqualFold(k, "atUserIds") || strings.EqualFold(k, "isAtAll") || strings.EqualFold(k, "headers") ||
 			strings.EqualFold(k, "wecomMode") || strings.EqualFold(k, "corpID") || strings.EqualFold(k, "corpSecret") || strings.EqualFold(k, "agentId") ||
-			strings.EqualFold(k, "dingMode") || strings.EqualFold(k, "appKey") || strings.EqualFold(k, "appSecret") || strings.EqualFold(k, "chatId") || strings.EqualFold(k, "signSecret") {
+			strings.EqualFold(k, "dingMode") || strings.EqualFold(k, "appKey") || strings.EqualFold(k, "appSecret") || strings.EqualFold(k, "chatId") || strings.EqualFold(k, "signSecret") ||
+			strings.EqualFold(k, "messageTemplateFiring") || strings.EqualFold(k, "messageTemplateResolved") {
 			continue
 		}
 		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
@@ -165,12 +195,21 @@ func buildWebhookURL(channel *model.AlertChannel, settings map[string]interface{
 	toSign := ts + "\n" + signSecret
 	mac := hmac.New(sha256.New, []byte(signSecret))
 	_, _ = mac.Write([]byte(toSign))
-	sign := neturl.QueryEscape(base64.StdEncoding.EncodeToString(mac.Sum(nil)))
-	sep := "?"
-	if strings.Contains(base, "?") {
-		sep = "&"
+	sign := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	parsed, err := neturl.Parse(base)
+	if err != nil {
+		// fallback: keep previous behavior when url is malformed.
+		sep := "?"
+		if strings.Contains(base, "?") {
+			sep = "&"
+		}
+		return base + sep + "timestamp=" + ts + "&sign=" + neturl.QueryEscape(sign)
 	}
-	return base + sep + "timestamp=" + ts + "&sign=" + sign
+	q := parsed.Query()
+	q.Set("timestamp", ts)
+	q.Set("sign", sign)
+	parsed.RawQuery = q.Encode()
+	return parsed.String()
 }
 
 func parseStringList(v interface{}) []string {

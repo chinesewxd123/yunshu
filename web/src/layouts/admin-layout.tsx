@@ -1,5 +1,6 @@
 import {
   ApiOutlined,
+  CloudServerOutlined,
   ApartmentOutlined,
   AuditOutlined,
   BgColorsOutlined,
@@ -24,7 +25,7 @@ import type { MenuProps } from "antd";
 import { Avatar, Button, Drawer, Dropdown, Layout, Menu, Space, Spin, Switch, Tabs, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BRAND_DESCRIPTION, BRAND_EN_NAME, BRAND_NAME, BRAND_SHORT, BRAND_SUBTITLE } from "../constants/brand";
+import { BRAND_DESCRIPTION, BRAND_NAME, BRAND_SUBTITLE } from "../constants/brand";
 import { useAuth } from "../contexts/auth-context";
 import { getMenuTree } from "../services/menus";
 import type { MenuItem } from "../services/menus";
@@ -266,7 +267,9 @@ export function AdminLayout() {
     <Layout className={layoutClassName}>
       <Sider width={288} className="admin-sider" breakpoint="lg" collapsedWidth={0}>
         <div className="brand-block">
-          <div className="brand-block__mark">{BRAND_SHORT}</div>
+          <div className="brand-block__mark">
+            <CloudServerOutlined />
+          </div>
           <div>
             <Typography.Text className="brand-block__eyebrow">{BRAND_SUBTITLE}</Typography.Text>
             <Typography.Title level={4} className="brand-block__title">
@@ -274,13 +277,6 @@ export function AdminLayout() {
             </Typography.Title>
             <Typography.Text className="brand-block__subtitle">{BRAND_DESCRIPTION}</Typography.Text>
           </div>
-        </div>
-
-        <div className="brand-block__hint">
-          <Typography.Text>{BRAND_EN_NAME}</Typography.Text>
-          <Typography.Paragraph className="brand-block__hint-copy">
-            聚焦云原生运维治理，统一提供账号权限、Kubernetes 资源编排、三元授权策略与审计追踪能力。
-          </Typography.Paragraph>
         </div>
 
         <Menu

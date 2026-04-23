@@ -17,14 +17,13 @@ type dictConfigOverrides struct {
 	AlertPrometheusTokenType string
 
 	// Mail
-	MailHostType     string
-	MailPortType     string
-	MailUsernameType string
-	MailPasswordType string
+	MailHostType      string
+	MailPortType      string
+	MailUsernameType  string
+	MailPasswordType  string
 	MailFromEmailType string
 	MailFromNameType  string
 	MailUseTLSType    string
-
 }
 
 func defaultDictConfigOverrides() dictConfigOverrides {
@@ -174,4 +173,3 @@ func (b *Builder) applyDictConfigOverrides(ctx context.Context, ov dictConfigOve
 		}
 	}
 }
-

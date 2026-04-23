@@ -2,7 +2,7 @@ import { PlayCircleOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Form, Input, Space, Tabs, Tag, Typography, message } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { execProjectServerCommand, getProjectServerDetail, type ServerItem } from "../services/projects";
+import { execProjectServerCommand, getProjectServerDetail, type ServerDetailItem } from "../services/projects";
 import { useAuth } from "../contexts/auth-context";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
@@ -13,16 +13,32 @@ type ExecForm = {
   timeout_sec?: number;
 };
 
+type ExecResult = {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  duration_ms: number;
+  truncated: boolean;
+};
+
+type TerminalFrame = {
+  type?: string;
+  data?: string;
+};
+
 export function ServerConsolePage() {
   const { token } = useAuth();
   const [searchParams] = useSearchParams();
   const projectId = Number(searchParams.get("project_id") || 0);
   const serverId = Number(searchParams.get("server_id") || 0);
-  const [server, setServer] = useState<ServerItem | null>(null);
+
+  const [server, setServer] = useState<ServerDetailItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<{ stdout: string; stderr: string; exit_code: number; duration_ms: number; truncated: boolean } | null>(null);
+  const [result, setResult] = useState<ExecResult | null>(null);
   const [terminalConnected, setTerminalConnected] = useState(false);
+  const [terminalConnecting, setTerminalConnecting] = useState(false);
+
   const wsRef = useRef<WebSocket | null>(null);
   const termBoxRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -74,11 +90,12 @@ export function ServerConsolePage() {
   }
 
   function buildTerminalWSURL() {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const q = new URLSearchParams();
-    if (token) q.set("token", token);
-    return `${proto}//${host}/api/v1/projects/${projectId}/servers/${serverId}/terminal/ws?${q.toString()}`;
+    const url = new URL(`/api/v1/projects/${projectId}/servers/${serverId}/terminal/ws`, window.location.origin);
+    url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    if (token) {
+      url.searchParams.set("token", token);
+    }
+    return url.toString();
   }
 
   function openTerminal() {
@@ -87,20 +104,44 @@ export function ServerConsolePage() {
       message.error("未获取到登录 token，无法建立终端连接");
       return;
     }
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
-    const ws = new WebSocket(buildTerminalWSURL());
+    if (!xtermRef.current) {
+      message.warning("终端正在初始化，请稍后再试");
+      return;
+    }
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    appendTerminalText("\r\n[connecting]\r\n");
+    setTerminalConnecting(true);
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(buildTerminalWSURL());
+    } catch (error) {
+      setTerminalConnecting(false);
+      const reason = error instanceof Error ? error.message : "unknown error";
+      appendTerminalText(`\r\n[websocket init failed] ${reason}\r\n`);
+      message.error("终端连接初始化失败");
+      return;
+    }
+
     wsRef.current = ws;
+
     ws.onopen = () => {
+      setTerminalConnecting(false);
       setTerminalConnected(true);
       appendTerminalText("\r\n[connected]\r\n");
       fitAddonRef.current?.fit();
+      xtermRef.current?.focus();
       const cols = Math.max(80, xtermRef.current?.cols ?? 120);
       const rows = Math.max(24, xtermRef.current?.rows ?? 40);
       ws.send(JSON.stringify({ type: "resize", cols, rows }));
     };
+
     ws.onmessage = (ev) => {
       try {
-        const payload = JSON.parse(String(ev.data)) as { type?: string; data?: string };
+        const payload = JSON.parse(String(ev.data)) as TerminalFrame;
         if (payload.type === "stdout" && typeof payload.data === "string") {
           appendTerminalText(payload.data);
           return;
@@ -111,6 +152,7 @@ export function ServerConsolePage() {
         }
         if (payload.type === "exit") {
           appendTerminalText("\r\n[session exited]\r\n");
+          setTerminalConnecting(false);
           setTerminalConnected(false);
           return;
         }
@@ -118,10 +160,15 @@ export function ServerConsolePage() {
         appendTerminalText(String(ev.data));
       }
     };
+
     ws.onerror = () => {
+      setTerminalConnecting(false);
       appendTerminalText("\r\n[websocket error]\r\n");
+      message.error("终端 WebSocket 连接失败");
     };
+
     ws.onclose = (ev) => {
+      setTerminalConnecting(false);
       setTerminalConnected(false);
       wsRef.current = null;
       appendTerminalText(`\r\n[disconnected code=${ev.code}${ev.reason ? ` reason=${ev.reason}` : ""}]\r\n`);
@@ -138,6 +185,7 @@ export function ServerConsolePage() {
     }
     ws.close();
     wsRef.current = null;
+    setTerminalConnecting(false);
     setTerminalConnected(false);
   }
 
@@ -149,6 +197,7 @@ export function ServerConsolePage() {
 
   useEffect(() => {
     if (xtermRef.current || !termBoxRef.current) return;
+
     const term = new Terminal({
       cursorBlink: true,
       convertEol: true,
@@ -165,11 +214,13 @@ export function ServerConsolePage() {
     term.loadAddon(fitAddon);
     term.open(termBoxRef.current);
     fitAddon.fit();
+    term.focus();
     term.writeln("Ready. Click '连接终端' to start.");
 
     dataDisposableRef.current = term.onData((data) => {
       sendTerminalInput(data);
     });
+
     term.attachCustomKeyEventHandler((ev) => {
       if ((ev.ctrlKey || ev.metaKey) && ev.shiftKey && ev.type === "keydown") {
         const key = ev.key.toLowerCase();
@@ -214,7 +265,7 @@ export function ServerConsolePage() {
       xtermRef.current = null;
       fitAddonRef.current = null;
     };
-  });
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -225,7 +276,7 @@ export function ServerConsolePage() {
 
   if (!validParams) {
     return (
-      <Card className="table-card" title="服务器操作">
+      <Card className="table-card" title="服务器控制台">
         <Alert type="error" showIcon message="参数不完整" description="请从服务器管理页面点击“连接”进入。" />
       </Card>
     );
@@ -233,17 +284,13 @@ export function ServerConsolePage() {
 
   return (
     <Space direction="vertical" size={12} style={{ width: "100%" }}>
-      <Card
-        className="table-card"
-        loading={loading}
-        title="服务器操作台"
-        extra={<Link to="/project-servers">返回服务器管理</Link>}
-      >
+      <Card className="table-card" loading={loading} title="服务器控制台" extra={<Link to="/project-servers">返回服务器管理</Link>}>
         <Space wrap>
           <Tag color="blue">Project #{projectId}</Tag>
           <Tag>Server #{serverId}</Tag>
-          <Tag>{server?.source_type === "cloud" ? `云/${server?.provider || "-"}` : "自建"}</Tag>
+          <Tag>{server?.source_type === "cloud" ? `云 · ${server?.provider || "-"}` : "自建"}</Tag>
           <Tag>{server?.host || "-"}</Tag>
+          <Tag>{server?.auth_type || "-"}</Tag>
         </Space>
       </Card>
 
@@ -252,15 +299,23 @@ export function ServerConsolePage() {
           items={[
             {
               key: "terminal",
-              label: "交互终端（WebSocket）",
+              label: "交互式终端（WebSocket）",
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
                   <Space wrap>
-                    <Button type="primary" onClick={openTerminal} disabled={terminalConnected}>连接终端</Button>
-                    <Button onClick={closeTerminal} disabled={!terminalConnected}>断开</Button>
-                    <Button onClick={() => sendTerminalInput("\u0003")} disabled={!terminalConnected}>发送 Ctrl+C</Button>
+                    <Button type="primary" onClick={openTerminal} disabled={terminalConnected || terminalConnecting} loading={terminalConnecting}>
+                      连接终端
+                    </Button>
+                    <Button onClick={closeTerminal} disabled={!terminalConnected}>
+                      断开
+                    </Button>
+                    <Button onClick={() => sendTerminalInput("\u0003")} disabled={!terminalConnected}>
+                      发送 Ctrl+C
+                    </Button>
                     <Button onClick={() => xtermRef.current?.clear()}>清屏</Button>
-                    <Tag color={terminalConnected ? "success" : "default"}>{terminalConnected ? "已连接" : "未连接"}</Tag>
+                    <Tag color={terminalConnected ? "success" : terminalConnecting ? "processing" : "default"}>
+                      {terminalConnected ? "已连接" : terminalConnecting ? "连接中" : "未连接"}
+                    </Tag>
                     <Tag>快捷键: Ctrl+Shift+C 复制/中断, Ctrl+Shift+V 粘贴</Tag>
                   </Space>
                   <div
@@ -275,18 +330,9 @@ export function ServerConsolePage() {
               label: "单次命令执行",
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                  <Form
-                    form={form}
-                    layout="vertical"
-                    initialValues={{ command: "uname -a", timeout_sec: 20 }}
-                    onFinish={() => void runCommand()}
-                  >
-                    <Form.Item
-                      label="命令"
-                      name="command"
-                      rules={[{ required: true, message: "请输入要执行的命令" }]}
-                    >
-                      <Input.TextArea rows={4} placeholder="例如：uname -a && whoami" />
+                  <Form form={form} layout="vertical" initialValues={{ command: "uname -a", timeout_sec: 20 }} onFinish={() => void runCommand()}>
+                    <Form.Item label="命令" name="command" rules={[{ required: true, message: "请输入要执行的命令" }]}>
+                      <Input.TextArea rows={4} placeholder="例如: uname -a && whoami" />
                     </Form.Item>
                     <Form.Item label="超时时间（秒）" name="timeout_sec">
                       <Input type="number" min={1} max={120} style={{ width: 180 }} />

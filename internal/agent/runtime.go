@@ -25,23 +25,23 @@ import (
 )
 
 type Config struct {
-	GrpcServer     string
-	PlatformURL    string
-	ProjectID      uint
-	ServerID       uint
-	LogSourceID    uint
-	Token          string
-	RegisterSecret string
-	Name           string
-	Version        string
-	SourceType     string
-	Path           string
-	TailLines      int
-	BatchSize      int
-	FlushInterval  time.Duration
-	ResendAfter    time.Duration
-	Debug          bool
-	ListenPort     int
+	GrpcServer        string
+	PlatformURL       string
+	ProjectID         uint
+	ServerID          uint
+	LogSourceID       uint
+	Token             string
+	RegisterSecret    string
+	Name              string
+	Version           string
+	SourceType        string
+	Path              string
+	TailLines         int
+	BatchSize         int
+	FlushInterval     time.Duration
+	ResendAfter       time.Duration
+	Debug             bool
+	ListenPort        int
 	EnableRuntimePull bool
 	EnableFallback    bool
 	EnableDiscovery   bool

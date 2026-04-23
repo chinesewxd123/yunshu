@@ -15,8 +15,9 @@ type ServerCredential struct {
 	Username string `json:"username" gorm:"size:128;not null;comment:登录用户名"`
 
 	// 从数据字典选择模板时记录标签，便于编辑弹窗回显（非密钥本身）。
-	UsernameDictLabel *string `json:"username_dict_label,omitempty" gorm:"size:191;comment:字典用户名模板标签"`
-	PasswordDictLabel *string `json:"password_dict_label,omitempty" gorm:"size:191;comment:字典密码模板标签"`
+	UsernameDictLabel   *string `json:"username_dict_label,omitempty" gorm:"size:191;comment:字典用户名模板标签"`
+	PasswordDictLabel   *string `json:"password_dict_label,omitempty" gorm:"size:191;comment:字典密码模板标签"`
+	PrivateKeyDictLabel *string `json:"private_key_dict_label,omitempty" gorm:"size:191;comment:字典私钥模板标签"`
 
 	EncPassword    *string `json:"-" gorm:"type:longtext;comment:加密后的密码"`
 	EncPrivateKey  *string `json:"-" gorm:"type:longtext;comment:加密后的私钥"`

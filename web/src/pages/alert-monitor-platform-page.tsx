@@ -50,15 +50,19 @@ import {
   createAlertDatasource,
   createAlertMonitorRule,
   createAlertSilence,
+  createCloudExpiryRule,
   createDutyBlock,
   deleteAlertDatasource,
   deleteAlertMonitorRule,
   deleteAlertSilence,
+  deleteCloudExpiryRule,
   deleteDutyBlock,
+  evaluateCloudExpiryRulesNow,
   getMonitorRuleAssignees,
   listAlertDatasources,
   listAlertMonitorRules,
   listAlertSilences,
+  listCloudExpiryRules,
   listDutyBlocks,
   promActiveAlerts,
   promInstantQuery,
@@ -66,12 +70,14 @@ import {
   updateAlertDatasource,
   updateAlertMonitorRule,
   updateAlertSilence,
+  updateCloudExpiryRule,
   updateDutyBlock,
   upsertMonitorRuleAssignees,
   type AlertDatasourceItem,
   type AlertDutyBlockItem,
   type AlertMonitorRuleItem,
   type AlertSilenceItem,
+  type CloudExpiryRuleItem,
 } from "../services/alert-platform";
 import { useDictOptions } from "../hooks/use-dict-options";
 import type { UserUpdatePayload } from "../types/api";
@@ -81,7 +87,7 @@ import { AlertConfigCenterPanel, type AlertConfigTab } from "./alert-config-cent
 
 dayjs.locale("zh-cn");
 
-type TabKey = "datasources" | "config" | "silences" | "rules" | "promql";
+type TabKey = "datasources" | "config" | "silences" | "rules" | "cloud-expiry" | "promql";
 
 type SilenceMatcherForm = { name: string; value: string; is_regex: boolean };
 
@@ -350,7 +356,7 @@ export function AlertMonitorPlatformPage() {
   }, [searchParams]);
   const tab: TabKey = useMemo(() => {
     const t = searchParams.get("tab");
-    if (t === "config" || t === "silences" || t === "rules" || t === "promql") return t;
+    if (t === "config" || t === "silences" || t === "rules" || t === "cloud-expiry" || t === "promql") return t;
     return "datasources";
   }, [searchParams]);
 
@@ -401,6 +407,7 @@ export function AlertMonitorPlatformPage() {
   const [dsList, setDsList] = useState<AlertDatasourceItem[]>([]);
   const [silenceList, setSilenceList] = useState<AlertSilenceItem[]>([]);
   const [ruleList, setRuleList] = useState<AlertMonitorRuleItem[]>([]);
+  const [cloudExpiryList, setCloudExpiryList] = useState<CloudExpiryRuleItem[]>([]);
   const [blockList, setBlockList] = useState<AlertDutyBlockItem[]>([]);
   const [dutyRuleId, setDutyRuleId] = useState<number | null>(null);
   const [dutyModalOpen, setDutyModalOpen] = useState(false);
@@ -448,11 +455,20 @@ export function AlertMonitorPlatformPage() {
   const [dutyProfileOriginal, setDutyProfileOriginal] = useState<{ email: string; department_id?: number } | null>(null);
   const [dutyUsersHint, setDutyUsersHint] = useState<string>("");
 
+  const [cloudExpiryModalOpen, setCloudExpiryModalOpen] = useState(false);
+  const [cloudExpiryCurrent, setCloudExpiryCurrent] = useState<CloudExpiryRuleItem | null>(null);
+  const [cloudExpiryForm] = Form.useForm();
+  const [cloudExpirySubmitting, setCloudExpirySubmitting] = useState(false);
+  const [cloudExpiryEvaluating, setCloudExpiryEvaluating] = useState(false);
+  const [cloudExpiryProviderFilter, setCloudExpiryProviderFilter] = useState<string>("");
+  const [cloudExpiryKeyword, setCloudExpiryKeyword] = useState<string>("");
+
   const alertSeverityOpts = useDictOptions("alert_severity");
   const dsUrlDictOpts = useDictOptions("alert_datasource_base_url");
   const dsBasicUserDictOpts = useDictOptions("alert_datasource_basic_user");
   const promqlLabelKeyOpts = useDictOptions("alert_promql_label_key");
   const thresholdUnitDictOpts = useDictOptions("alert_threshold_unit");
+  const ruleTemplatePresetDictOpts = useDictOptions("alert_rule_template_preset");
   const dsUrlAutoOpts = useMemo(
     () => dsUrlDictOpts.map((o) => ({ label: o.label, value: String(o.value) })),
     [dsUrlDictOpts],
@@ -557,6 +573,25 @@ export function AlertMonitorPlatformPage() {
     return merged;
   }, [thresholdUnitDictOpts]);
   const thresholdUnit = Form.useWatch("threshold_unit", ruleForm) as string | undefined;
+  const ruleTemplatePresetOptions = useMemo(() => {
+    const base = [
+      { label: "智能推荐（按规则名/PromQL）", value: "smart" },
+      { label: "通用阈值告警", value: "generic" },
+      { label: "可用性/组件状态", value: "availability" },
+      { label: "错误率/失败率", value: "error_rate" },
+      { label: "延迟/响应时间", value: "latency" },
+      { label: "队列积压/消费延迟", value: "queue_lag" },
+      { label: "流量突增/突降", value: "traffic" },
+      { label: "证书到期", value: "certificate" },
+      { label: "CPU 资源", value: "cpu" },
+      { label: "内存资源", value: "memory" },
+      { label: "磁盘资源", value: "disk" },
+    ];
+    const custom = ruleTemplatePresetDictOpts
+      .map((o) => ({ label: `自定义 · ${String(o.label || "").trim() || String(o.value || "").trim()}`, value: `custom:${String(o.value || "")}` }))
+      .filter((o) => String(o.value).trim() !== "custom:");
+    return [...base, ...custom];
+  }, [ruleTemplatePresetDictOpts]);
   const promFunctionTemplates = useMemo(
     () => [
       { key: "none", label: "不使用函数", template: "__METRIC__", desc: "直接使用指标与标签过滤，不包裹 Prometheus 函数。" },
@@ -760,6 +795,16 @@ export function AlertMonitorPlatformPage() {
     const r = await listAlertMonitorRules({ project_id: projectID, page: 1, page_size: 200 });
     setRuleList(r.list ?? []);
   }, []);
+  const loadCloudExpiryRules = useCallback(async (projectID?: number, provider?: string, keyword?: string) => {
+    const r = await listCloudExpiryRules({
+      project_id: projectID,
+      provider: String(provider || "").trim() || undefined,
+      keyword: String(keyword || "").trim() || undefined,
+      page: 1,
+      page_size: 200,
+    });
+    setCloudExpiryList(r.list ?? []);
+  }, []);
   useEffect(() => {
     void (async () => {
       try {
@@ -789,6 +834,9 @@ export function AlertMonitorPlatformPage() {
         if (tab === "rules") {
           await Promise.all([loadDatasources(projectContextId), loadRules(projectContextId)]);
         }
+        if (tab === "cloud-expiry") {
+          await loadCloudExpiryRules(projectContextId, cloudExpiryProviderFilter, cloudExpiryKeyword);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -796,7 +844,7 @@ export function AlertMonitorPlatformPage() {
     return () => {
       cancelled = true;
     };
-  }, [tab, projectContextId, loadDatasources, loadSilences, loadRules]);
+  }, [tab, projectContextId, loadDatasources, loadSilences, loadRules, loadCloudExpiryRules, cloudExpiryProviderFilter, cloudExpiryKeyword]);
 
   useEffect(() => {
     if (tab !== "silences") return;
@@ -1247,6 +1295,9 @@ export function AlertMonitorPlatformPage() {
       eval_interval_seconds: 30,
       severity: "warning",
       threshold_unit: "percent",
+      summary_template: "{{$labels.instance}}: {{.RuleName}} 告警触发，当前值 {{$value}}",
+      description_template: "规则 {{.RuleName}} 触发，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      rule_template_preset: "generic",
       enabled: true,
     });
     setMetricKeyword("");
@@ -1258,8 +1309,176 @@ export function AlertMonitorPlatformPage() {
     setRuleModalOpen(true);
   }
 
+  function detectRulePresetByContext(): string {
+    const name = String(ruleForm.getFieldValue("name") || "").toLowerCase();
+    const expr = String(ruleForm.getFieldValue("expr") || "").toLowerCase();
+    const text = `${name} ${expr}`;
+    if (/cpu|load/.test(text)) return "cpu";
+    if (/mem|memory|oom/.test(text)) return "memory";
+    if (/disk|inode|filesystem|fs_/.test(text)) return "disk";
+    if (/latency|duration|response|p95|p99/.test(text)) return "latency";
+    if (/error|5xx|4xx|fail|exception/.test(text)) return "error_rate";
+    if (/queue|lag|backlog|consumer/.test(text)) return "queue_lag";
+    if (/traffic|qps|rps|throughput|request/.test(text)) return "traffic";
+    if (/cert|certificate|ssl|tls|x509/.test(text)) return "certificate";
+    if (/up\s*==\s*0|unavailable|down|health/.test(text)) return "availability";
+    return "generic";
+  }
+
+  function detectPresetKeyByTemplates(summary: string, description: string): string | undefined {
+    const s = String(summary || "").trim();
+    const d = String(description || "").trim();
+    if (!s || !d) return undefined;
+
+    // 1) match custom dict presets (value is JSON string)
+    for (const o of ruleTemplatePresetDictOpts) {
+      const raw = String(o.value || "");
+      try {
+        const parsed = JSON.parse(raw) as { summary?: string; description?: string };
+        if (String(parsed.summary || "").trim() === s && String(parsed.description || "").trim() === d) {
+          return `custom:${raw}`;
+        }
+      } catch {
+        // ignore invalid custom entries
+      }
+    }
+
+    // 2) match built-in presets (exact match)
+    const builtinMap: Record<string, { summary: string; description: string }> = {
+      cpu: {
+        summary: "{{$labels.instance}} CPU 使用率过高（{{$value}}）",
+        description: "实例 {{$labels.instance}} CPU 连续超过阈值，请检查负载。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      memory: {
+        summary: "{{$labels.instance}} 内存使用率过高（{{$value}}）",
+        description: "实例 {{$labels.instance}} 内存连续超过阈值，请检查进程占用。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      disk: {
+        summary: "{{$labels.instance}} 磁盘使用率过高（{{$value}}）",
+        description: "实例 {{$labels.instance}} 磁盘告警，建议检查挂载点 {{$labels.mountpoint}}。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      generic: {
+        summary: "{{$labels.instance}}: {{.RuleName}} 告警触发（{{$value}}）",
+        description: "规则 {{.RuleName}} 触发，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      },
+      availability: {
+        summary: "{{$labels.instance}} 可用性异常（{{$value}}）",
+        description: "组件/实例可用性异常，请检查健康状态。规则={{.RuleName}}，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      },
+      error_rate: {
+        summary: "{{$labels.instance}} 错误率异常（{{$value}}）",
+        description: "错误率超过阈值，建议检查日志与上游依赖。规则={{.RuleName}}，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      },
+      latency: {
+        summary: "{{$labels.instance}} 延迟异常（{{$value}}）",
+        description: "响应时间超过阈值，建议检查慢请求、下游依赖和资源瓶颈。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      queue_lag: {
+        summary: "{{$labels.instance}} 队列积压异常（{{$value}}）",
+        description: "消费延迟/积压升高，请检查消费者处理能力与上游流量。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      traffic: {
+        summary: "{{$labels.instance}} 流量波动异常（{{$value}}）",
+        description: "流量突增或突降，请结合发布与入口流量排查。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      certificate: {
+        summary: "{{$labels.instance}} 证书到期预警（{{$value}}）",
+        description: "证书有效期接近阈值，请及时续期。规则={{.RuleName}}，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      },
+    };
+    for (const [k, v] of Object.entries(builtinMap)) {
+      if (String(v.summary).trim() === s && String(v.description).trim() === d) return k;
+    }
+    return undefined;
+  }
+
+  function applyRuleAnnotationPreset(preset: string) {
+    if (preset.startsWith("custom:")) {
+      const raw = preset.slice("custom:".length);
+      try {
+        const parsed = JSON.parse(raw) as { summary?: string; description?: string };
+        const summary = String(parsed.summary || "").trim();
+        const description = String(parsed.description || "").trim();
+        if (!summary || !description) {
+          throw new Error("模板不完整");
+        }
+        ruleForm.setFieldsValue({
+          summary_template: summary,
+          description_template: description,
+          rule_template_preset: preset,
+        });
+        message.success("已应用自定义模板预设");
+        return;
+      } catch {
+        message.error('自定义模板预设格式错误：请在数据字典 value 中配置 JSON，如 {"summary":"...","description":"..."}');
+        return;
+      }
+    }
+    const selected = preset === "smart" ? detectRulePresetByContext() : preset;
+    const map: Record<string, { summary: string; description: string }> = {
+      cpu: {
+        summary: "{{$labels.instance}} CPU 使用率过高（{{$value}}）",
+        description: "实例 {{$labels.instance}} CPU 连续超过阈值，请检查负载。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      memory: {
+        summary: "{{$labels.instance}} 内存使用率过高（{{$value}}）",
+        description: "实例 {{$labels.instance}} 内存连续超过阈值，请检查进程占用。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      disk: {
+        summary: "{{$labels.instance}} 磁盘使用率过高（{{$value}}）",
+        description: "实例 {{$labels.instance}} 磁盘告警，建议检查挂载点 {{$labels.mountpoint}}。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      generic: {
+        summary: "{{$labels.instance}}: {{.RuleName}} 告警触发（{{$value}}）",
+        description: "规则 {{.RuleName}} 触发，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      },
+      availability: {
+        summary: "{{$labels.instance}} 可用性异常（{{$value}}）",
+        description: "组件/实例可用性异常，请检查健康状态。规则={{.RuleName}}，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      },
+      error_rate: {
+        summary: "{{$labels.instance}} 错误率异常（{{$value}}）",
+        description: "错误率超过阈值，建议检查日志与上游依赖。规则={{.RuleName}}，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      },
+      latency: {
+        summary: "{{$labels.instance}} 延迟异常（{{$value}}）",
+        description: "响应时间超过阈值，建议检查慢请求、下游依赖和资源瓶颈。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      queue_lag: {
+        summary: "{{$labels.instance}} 队列积压异常（{{$value}}）",
+        description: "消费延迟/积压升高，请检查消费者处理能力与上游流量。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      traffic: {
+        summary: "{{$labels.instance}} 流量波动异常（{{$value}}）",
+        description: "流量突增或突降，请结合发布与入口流量排查。规则={{.RuleName}}，PromQL={{.Expr}}，当前值={{$value}}",
+      },
+      certificate: {
+        summary: "{{$labels.instance}} 证书到期预警（{{$value}}）",
+        description: "证书有效期接近阈值，请及时续期。规则={{.RuleName}}，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      },
+    };
+    const next = map[selected] || map.generic;
+    ruleForm.setFieldsValue({
+      summary_template: next.summary,
+      description_template: next.description,
+      rule_template_preset: preset,
+    });
+    message.success(preset === "smart" ? `已按规则内容推荐预设：${selected}` : "已应用模板预设");
+  }
+
   function openRuleEdit(r: AlertMonitorRuleItem) {
+    let summaryTemplate = "";
+    let descriptionTemplate = "";
+    try {
+      const ann = JSON.parse(r.annotations_json || "{}");
+      summaryTemplate = typeof ann.summary === "string" ? ann.summary : "";
+      descriptionTemplate = typeof ann.description === "string" ? ann.description : "";
+    } catch {
+      summaryTemplate = "";
+      descriptionTemplate = "";
+    }
     setRuleCurrent(r);
+    const presetKey = detectPresetKeyByTemplates(summaryTemplate, descriptionTemplate);
     ruleForm.setFieldsValue({
       datasource_id: r.datasource_id,
       name: r.name,
@@ -1268,6 +1487,9 @@ export function AlertMonitorPlatformPage() {
       eval_interval_seconds: r.eval_interval_seconds,
       severity: r.severity,
       threshold_unit: r.threshold_unit || "raw",
+      summary_template: summaryTemplate || "{{$labels.instance}}: {{.RuleName}} 告警触发，当前值 {{$value}}",
+      description_template: descriptionTemplate || "规则 {{.RuleName}} 触发，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
+      rule_template_preset: presetKey,
       enabled: r.enabled,
     });
     tryFillRuleBuilderFromExpr(r.expr);
@@ -1427,7 +1649,10 @@ export function AlertMonitorPlatformPage() {
         ...v,
         threshold_unit: normalizedUnit,
         labels_json: ruleCurrent?.labels_json ?? "{}",
-        annotations_json: ruleCurrent?.annotations_json ?? "{}",
+        annotations_json: JSON.stringify({
+          summary: String(v.summary_template || "").trim(),
+          description: String(v.description_template || "").trim(),
+        }),
       };
       if (ruleCurrent) {
         await updateAlertMonitorRule(ruleCurrent.id, payload);
@@ -1447,6 +1672,133 @@ export function AlertMonitorPlatformPage() {
     await deleteAlertMonitorRule(id);
     message.success("已删除");
     await loadRules();
+  }
+
+  const cloudExpiryColumns: ColumnsType<CloudExpiryRuleItem> = [
+    { title: "ID", dataIndex: "id", width: 70 },
+    { title: "项目", dataIndex: "project_id", width: 90 },
+    { title: "规则名", dataIndex: "name", width: 180 },
+    {
+      title: "厂商",
+      dataIndex: "provider",
+      width: 110,
+      render: (v: string) => {
+        const p = String(v || "").trim();
+        if (!p) return "全部";
+        if (p === "alibaba") return "阿里云";
+        if (p === "tencent") return "腾讯云";
+        if (p === "jd") return "京东云";
+        return p;
+      },
+    },
+    { title: "地域范围", dataIndex: "region_scope", width: 180, render: (v: string) => String(v || "").trim() || "全部" },
+    { title: "提前天数", dataIndex: "advance_days", width: 100 },
+    { title: "级别", dataIndex: "severity", width: 90 },
+    { title: "间隔(s)", dataIndex: "eval_interval_seconds", width: 100 },
+    { title: "启用", dataIndex: "enabled", width: 80, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
+    { title: "创建时间", dataIndex: "created_at", width: 170, render: (v: string) => (v ? formatDateTime(v) : "-") },
+    { title: "更新时间", dataIndex: "updated_at", width: 170, render: (v: string) => (v ? formatDateTime(v) : "-") },
+    {
+      title: "操作",
+      width: 180,
+      fixed: "right",
+      render: (_: unknown, r: CloudExpiryRuleItem) => (
+        <Space>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openCloudExpiryEdit(r)}>
+            编辑
+          </Button>
+          <Popconfirm title="删除云到期规则？" onConfirm={() => void removeCloudExpiryRule(r.id)}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  function openCloudExpiryCreate() {
+    setCloudExpiryCurrent(null);
+    cloudExpiryForm.resetFields();
+    cloudExpiryForm.setFieldsValue({
+      project_id: projectContextId,
+      provider: "",
+      region_scope: "",
+      advance_days: 7,
+      severity: "warning",
+      eval_interval_seconds: 3600,
+      labels_json: "{}",
+      enabled: true,
+    });
+    setCloudExpiryModalOpen(true);
+  }
+
+  function openCloudExpiryEdit(row: CloudExpiryRuleItem) {
+    setCloudExpiryCurrent(row);
+    cloudExpiryForm.setFieldsValue({
+      project_id: row.project_id,
+      name: row.name,
+      provider: row.provider || "",
+      region_scope: row.region_scope || "",
+      advance_days: row.advance_days,
+      severity: row.severity || "warning",
+      eval_interval_seconds: row.eval_interval_seconds,
+      labels_json: row.labels_json || "{}",
+      enabled: row.enabled,
+    });
+    setCloudExpiryModalOpen(true);
+  }
+
+  async function submitCloudExpiryRule() {
+    setCloudExpirySubmitting(true);
+    try {
+      const v = await cloudExpiryForm.validateFields();
+      const payload = {
+        ...v,
+        provider: String(v.provider || "").trim(),
+        region_scope: String(v.region_scope || "").trim(),
+        labels_json: String(v.labels_json || "{}").trim() || "{}",
+      };
+      if (cloudExpiryCurrent) {
+        await updateCloudExpiryRule(cloudExpiryCurrent.id, payload);
+        message.success("已更新云到期规则");
+      } else {
+        await createCloudExpiryRule(payload);
+        message.success("已创建云到期规则");
+      }
+      setCloudExpiryModalOpen(false);
+      await loadCloudExpiryRules(projectContextId, cloudExpiryProviderFilter, cloudExpiryKeyword);
+    } finally {
+      setCloudExpirySubmitting(false);
+    }
+  }
+
+  async function removeCloudExpiryRule(id: number) {
+    await deleteCloudExpiryRule(id);
+    message.success("已删除");
+    await loadCloudExpiryRules(projectContextId, cloudExpiryProviderFilter, cloudExpiryKeyword);
+  }
+
+  async function runCloudExpiryEvalNow() {
+    setCloudExpiryEvaluating(true);
+    try {
+      await evaluateCloudExpiryRulesNow();
+      message.success("已触发一次云到期规则评估，请稍后到告警事件查看结果");
+    } finally {
+      setCloudExpiryEvaluating(false);
+    }
+  }
+
+  function normalizeCloudExpiryLabelsJSON(raw: string): string | null {
+    const s = String(raw || "").trim();
+    if (!s) return "{}";
+    try {
+      const parsed = JSON.parse(s) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      return JSON.stringify(parsed);
+    } catch {
+      return null;
+    }
   }
 
   async function openAssign(ruleId: number) {
@@ -1896,6 +2248,53 @@ export function AlertMonitorPlatformPage() {
             ),
           },
           {
+            key: "cloud-expiry",
+            label: "云到期规则",
+            children: (
+              <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                <Space>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={openCloudExpiryCreate}>
+                    新建云到期规则
+                  </Button>
+                  <Select
+                    style={{ width: 160 }}
+                    allowClear
+                    placeholder="厂商筛选"
+                    value={cloudExpiryProviderFilter || undefined}
+                    onChange={(v) => setCloudExpiryProviderFilter(String(v || ""))}
+                    options={[
+                      { label: "全部厂商", value: "" },
+                      { label: "阿里云", value: "alibaba" },
+                      { label: "腾讯云", value: "tencent" },
+                      { label: "京东云", value: "jd" },
+                    ]}
+                  />
+                  <Input.Search
+                    style={{ width: 240 }}
+                    allowClear
+                    placeholder="按规则名/地域搜索"
+                    value={cloudExpiryKeyword}
+                    onChange={(e) => setCloudExpiryKeyword(e.target.value)}
+                    onSearch={(v) => setCloudExpiryKeyword(String(v || "").trim())}
+                  />
+                  <Button icon={<ReloadOutlined />} onClick={() => void loadCloudExpiryRules(projectContextId, cloudExpiryProviderFilter, cloudExpiryKeyword)}>
+                    刷新
+                  </Button>
+                  <Button type="primary" loading={cloudExpiryEvaluating} onClick={() => void runCloudExpiryEvalNow()}>
+                    立即执行一次评估
+                  </Button>
+                </Space>
+                <Alert
+                  type="info"
+                  showIcon
+                  message="云到期规则说明"
+                  description="规则会按设定间隔巡检三家云实例到期时间，命中阈值触发 firing，恢复为 resolved，并复用已有告警通道派发。"
+                />
+                <Table rowKey="id" columns={cloudExpiryColumns} dataSource={cloudExpiryList} pagination={false} scroll={{ x: 1100 }} />
+              </Space>
+            ),
+          },
+          {
             key: "promql",
             label: "PromQL 查询",
             children: (
@@ -1999,7 +2398,7 @@ export function AlertMonitorPlatformPage() {
           </Space>
         }
       >
-        <Form form={dsForm} layout="vertical">
+        <Form form={dsForm} layout="vertical" autoComplete="off">
           <Form.Item name="project_id" label="所属项目" rules={[{ required: true, message: "请选择项目" }]}>
             <Select options={projectOptions} placeholder="请选择项目" />
           </Form.Item>
@@ -2031,7 +2430,7 @@ export function AlertMonitorPlatformPage() {
             />
           </Form.Item>
           <Form.Item name="bearer_token" label="Bearer Token">
-            <Input.Password placeholder="留空表示不改" />
+            <Input.Password placeholder="留空表示不改" autoComplete="new-password" />
           </Form.Item>
           <Form.Item
             name="basic_user"
@@ -2054,7 +2453,7 @@ export function AlertMonitorPlatformPage() {
             />
           </Form.Item>
           <Form.Item name="basic_password" label="Basic 密码">
-            <Input.Password placeholder="留空表示不改" />
+            <Input.Password placeholder="留空表示不改" autoComplete="new-password" />
           </Form.Item>
           <Form.Item name="skip_tls_verify" label="跳过 TLS 校验" valuePropName="checked">
             <Switch />
@@ -2223,6 +2622,97 @@ export function AlertMonitorPlatformPage() {
             },
           ]}
         />
+      </Drawer>
+
+      <Drawer
+        title={cloudExpiryCurrent ? "编辑云到期规则" : "新建云到期规则"}
+        placement="right"
+        width={700}
+        open={cloudExpiryModalOpen}
+        onClose={() => setCloudExpiryModalOpen(false)}
+        destroyOnClose
+        styles={{ body: { paddingBottom: 24 } }}
+        extra={
+          <Space>
+            <Button onClick={() => setCloudExpiryModalOpen(false)}>取消</Button>
+            <Button type="primary" loading={cloudExpirySubmitting} onClick={() => void submitCloudExpiryRule()}>
+              确定
+            </Button>
+          </Space>
+        }
+      >
+        <Form form={cloudExpiryForm} layout="vertical">
+          <Form.Item name="project_id" label="项目" rules={[{ required: true, message: "请选择项目" }]}>
+            <Select options={projectOptions} placeholder="选择项目" />
+          </Form.Item>
+          <Form.Item name="name" label="规则名称" rules={[{ required: true, message: "请输入规则名称" }]}>
+            <Input placeholder="例如：核心生产云资源到期提醒" />
+          </Form.Item>
+          <Form.Item name="provider" label="云厂商">
+            <Select
+              allowClear
+              placeholder="全部厂商"
+              options={[
+                { label: "全部", value: "" },
+                { label: "阿里云", value: "alibaba" },
+                { label: "腾讯云", value: "tencent" },
+                { label: "京东云", value: "jd" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="region_scope" label="地域范围">
+            <Input placeholder="多个地域用英文逗号分隔；留空表示全部" />
+          </Form.Item>
+          <Form.Item name="advance_days" label="提前告警天数" rules={[{ required: true, message: "请输入提前天数" }]}>
+            <InputNumber min={1} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="severity" label="告警级别" rules={[{ required: true, message: "请选择级别" }]}>
+            <Select options={alertSeverityOpts} />
+          </Form.Item>
+          <Form.Item name="eval_interval_seconds" label="评估间隔秒" rules={[{ required: true, message: "请输入评估间隔" }]}>
+            <InputNumber min={60} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            name="labels_json"
+            label="附加 Labels(JSON)"
+            rules={[
+              {
+                validator: async (_, value) => {
+                  const normalized = normalizeCloudExpiryLabelsJSON(String(value || ""));
+                  if (normalized === null) {
+                    throw new Error("labels_json 必须是合法 JSON 对象，例如 {\"biz\":\"payments\"}");
+                  }
+                },
+              },
+            ]}
+            extra="支持实时 JSON 语法校验；仅允许 JSON 对象。"
+          >
+            <Input.TextArea rows={4} placeholder='例如：{"biz":"payments","env":"prod"}' />
+          </Form.Item>
+          <Form.Item>
+            <Button
+              onClick={() => {
+                const raw = String(cloudExpiryForm.getFieldValue("labels_json") || "");
+                const normalized = normalizeCloudExpiryLabelsJSON(raw);
+                if (normalized === null) {
+                  message.error("JSON 格式错误，无法格式化");
+                  return;
+                }
+                try {
+                  cloudExpiryForm.setFieldValue("labels_json", JSON.stringify(JSON.parse(normalized), null, 2));
+                  message.success("已格式化 JSON");
+                } catch {
+                  message.error("JSON 格式错误，无法格式化");
+                }
+              }}
+            >
+              格式化 JSON
+            </Button>
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
       </Drawer>
 
       <Drawer
@@ -2425,6 +2915,33 @@ export function AlertMonitorPlatformPage() {
           </Form.Item>
           <Form.Item name="severity" label="级别" rules={[{ required: true, message: "请选择级别" }]}>
             <Select placeholder="选择级别" options={ruleSeverityOptions} />
+          </Form.Item>
+          <Form.Item
+            label="告警文案预设（新手推荐）"
+            name="rule_template_preset"
+            extra="选择后自动填充 summary/description 模板，可继续手工修改；编辑规则时会自动回显匹配到的预设。"
+          >
+            <Select
+              placeholder="选择一个预设模板"
+              options={ruleTemplatePresetOptions}
+              onChange={(v) => applyRuleAnnotationPreset(String(v || "generic"))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="summary_template"
+            label="告警摘要模板（summary）"
+            extra='支持占位符：{{$labels.xxx}}、{{$value}}、{{.RuleName}}、{{.Expr}}'
+            rules={[{ required: true, message: "请填写 summary 模板" }]}
+          >
+            <Input.TextArea rows={2} placeholder="{{$labels.instance}}: {{.RuleName}} 告警触发，当前值 {{$value}}" />
+          </Form.Item>
+          <Form.Item
+            name="description_template"
+            label="告警描述模板（description）"
+            extra='支持占位符：{{$labels.xxx}}、{{$value}}、{{.RuleName}}、{{.Expr}}'
+            rules={[{ required: true, message: "请填写 description 模板" }]}
+          >
+            <Input.TextArea rows={3} placeholder="规则 {{.RuleName}} 触发，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}" />
           </Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />

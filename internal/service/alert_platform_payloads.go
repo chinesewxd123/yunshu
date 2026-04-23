@@ -4,17 +4,16 @@ import (
 	"fmt"
 	"strings"
 
-	"yunshu/internal/pkg/alertnotify"
 	"yunshu/internal/pkg/parseutil"
 )
 
-func buildWechatPayload(title string, payload map[string]interface{}, settings map[string]interface{}, atMobiles []string, atUsers []string) map[string]interface{} {
+func buildWechatPayload(title string, message string, payload map[string]interface{}, settings map[string]interface{}, atMobiles []string, atUsers []string) map[string]interface{} {
 	mode := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", settings["wecomMode"])))
 	if mode == "" {
 		mode = "robot"
 	}
 
-	content := alertnotify.RenderMarkdownCard(title, payload)
+	content := message
 	atMobiles = parseutil.UniqueStrings(atMobiles)
 	atUsers = parseutil.UniqueStrings(atUsers)
 	isAtAll := parseutil.ParseBool(settings["isAtAll"])
@@ -38,8 +37,8 @@ func buildWechatPayload(title string, payload map[string]interface{}, settings m
 	}
 }
 
-func buildDingTalkPayload(title string, payload map[string]interface{}, settings map[string]interface{}, atMobiles []string, atUsers []string) map[string]interface{} {
-	text := alertnotify.RenderMarkdownCard(title, payload)
+func buildDingTalkPayload(title string, message string, payload map[string]interface{}, settings map[string]interface{}, atMobiles []string, atUsers []string) map[string]interface{} {
+	text := message
 	isAtAll := parseutil.ParseBool(settings["isAtAll"])
 	return map[string]interface{}{
 		"msgtype": "markdown",

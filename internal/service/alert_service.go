@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -34,12 +35,12 @@ type AlertChannelListQuery struct {
 }
 
 type AlertEventListQuery struct {
-	Page             int    `form:"page"`
-	PageSize         int    `form:"page_size"`
-	Keyword          string `form:"keyword"`
-	Cluster          string `form:"cluster"`
-	MonitorPipeline  string `form:"monitor_pipeline"`
-	GroupKey         string `form:"group_key"`
+	Page            int    `form:"page"`
+	PageSize        int    `form:"page_size"`
+	Keyword         string `form:"keyword"`
+	Cluster         string `form:"cluster"`
+	MonitorPipeline string `form:"monitor_pipeline"`
+	GroupKey        string `form:"group_key"`
 }
 
 type AlertChannelUpsertRequest struct {
@@ -95,6 +96,8 @@ type AlertService struct {
 	monitorEvalCancel context.CancelFunc
 	monitorEvalMu     sync.Mutex
 	monitorEvalState  map[uint]*monitorEvalRuleState
+	aead              cipher.AEAD
+	cloudExpiryState  map[string]bool
 }
 
 type monitorEvalRuleState struct {
@@ -157,6 +160,7 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 		cfg:              cfg,
 		policySvc:        NewAlertPolicyService(db),
 		monitorEvalState: make(map[uint]*monitorEvalRuleState),
+		cloudExpiryState: make(map[string]bool),
 	}
 	if opts != nil {
 		svc.silenceSvc = opts.SilenceSvc
@@ -224,6 +228,31 @@ func (s *AlertService) startPrometheusEnrichWorkers() {
 			}
 		}()
 	}
+}
+
+type AlertChannelPreviewRequest struct {
+	Settings map[string]interface{} `json:"settings"`
+	Payload  map[string]interface{} `json:"payload"`
+	Firing   bool                   `json:"firing"`
+}
+
+// PreviewChannelTemplate 渲染并返回通道模板预览文本。
+func (s *AlertService) PreviewChannelTemplate(ctx context.Context, req AlertChannelPreviewRequest) (map[string]string, error) {
+	settings := req.Settings
+	if settings == nil {
+		settings = map[string]interface{}{}
+	}
+	payload := req.Payload
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+	status := "resolved"
+	if req.Firing {
+		status = "firing"
+	}
+	// 使用统一渲染函数生成消息文本，title/severity 可从 payload 或设置中扩展。
+	msg := s.renderChannelMessage(ctx, "Preview", "", status, payload, settings)
+	return map[string]string{"message": msg}, nil
 }
 
 func (s *AlertService) enqueuePrometheusEnrich(task promEnrichTask) {
@@ -732,28 +761,28 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			})
 		}
 		outgoing := map[string]interface{}{
-			"source":            "alertmanager",
-			"title":             title,
-			"summary":           summary,
-			"severity":          severity,
-			"status":            status,
-			"receiver":          payload.Receiver,
-			"fingerprint":       alert.Fingerprint,
-			"count":             count,
-			"labels":            labels,
-			"annotations":       annotations,
-			"group_labels":      payload.GroupLabels,
-			"am_version":        payload.Version,
-			"starts_at":         alert.StartsAt,
-			"ends_at":           alert.EndsAt,
-			"generator_url":     alert.GeneratorURL,
-			"current":           currentValue,
-			"truncated":         payload.TruncatedAlerts,
-			"occurred_at":       time.Now().Format(time.RFC3339),
-			"cluster":           envLabel,
-			"monitor_pipeline":  monitorPipeline,
-			"group_key":         groupKey,
-			"labels_digest":     labelsDigest,
+			"source":           "alertmanager",
+			"title":            title,
+			"summary":          summary,
+			"severity":         severity,
+			"status":           status,
+			"receiver":         payload.Receiver,
+			"fingerprint":      alert.Fingerprint,
+			"count":            count,
+			"labels":           labels,
+			"annotations":      annotations,
+			"group_labels":     payload.GroupLabels,
+			"am_version":       payload.Version,
+			"starts_at":        alert.StartsAt,
+			"ends_at":          alert.EndsAt,
+			"generator_url":    alert.GeneratorURL,
+			"current":          currentValue,
+			"truncated":        payload.TruncatedAlerts,
+			"occurred_at":      time.Now().Format(time.RFC3339),
+			"cluster":          envLabel,
+			"monitor_pipeline": monitorPipeline,
+			"group_key":        groupKey,
+			"labels_digest":    labelsDigest,
 		}
 		// Prometheus/Alertmanager 规则可在 labels 中携带 project_id，此处查库写入 project_name，供统一标题与通道展示。
 		s.enrichOutgoingProjectName(ctx, outgoing)

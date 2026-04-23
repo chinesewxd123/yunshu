@@ -177,10 +177,10 @@ export function RuntimeConfigPage() {
             </Form.Item>
           </Space>
           <Form.Item name={[name, "value"]} label="值" style={{ marginBottom: 0 }}>
-            {password ? <Input.Password placeholder={placeholder} /> : <Input placeholder={placeholder} />}
+            {password ? <Input.Password placeholder={placeholder} autoComplete="new-password" /> : <Input placeholder={placeholder} autoComplete="off" />}
           </Form.Item>
           <Form.Item name={[name, "remark"]} label="说明" style={{ marginBottom: 0 }}>
-            <Input placeholder="可选" />
+            <Input placeholder="可选" autoComplete="off" />
           </Form.Item>
         </Space>
       </Card>
@@ -210,7 +210,7 @@ export function RuntimeConfigPage() {
             key: "alert",
             label: "告警配置",
             children: (
-              <Form form={alertForm} layout="vertical">
+              <Form form={alertForm} layout="vertical" autoComplete="off">
                 <Space direction="vertical" style={{ width: "100%" }} size="middle">
                   <DictItemEditor name="webhook" title="Webhook Token（alert.webhook_token）" placeholder="用于 /alerts/webhook/alertmanager 鉴权" password />
                   <DictItemEditor name="promURL" title="Prometheus URL（alert.prometheus_url）" placeholder="例如 http://prometheus:9090" />
@@ -226,7 +226,7 @@ export function RuntimeConfigPage() {
             key: "mail",
             label: "邮件配置",
             children: (
-              <Form form={mailForm} layout="vertical">
+              <Form form={mailForm} layout="vertical" autoComplete="off">
                 <Space direction="vertical" style={{ width: "100%" }} size="middle">
                   <DictItemEditor name="mailHost" title="SMTP Host（mail.host）" placeholder="例如 smtp.163.com" />
                   <Card size="small" title="SMTP Port（mail.port）">

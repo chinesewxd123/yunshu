@@ -13,7 +13,9 @@ type AgentDiscoveryRepository struct {
 	db *gorm.DB
 }
 
-func NewAgentDiscoveryRepository(db *gorm.DB) *AgentDiscoveryRepository { return &AgentDiscoveryRepository{db: db} }
+func NewAgentDiscoveryRepository(db *gorm.DB) *AgentDiscoveryRepository {
+	return &AgentDiscoveryRepository{db: db}
+}
 
 func (r *AgentDiscoveryRepository) UpsertMany(ctx context.Context, projectID, serverID uint, items []model.AgentDiscovery) error {
 	if len(items) == 0 {
@@ -73,4 +75,3 @@ func (r *AgentDiscoveryRepository) List(ctx context.Context, projectID, serverID
 	}
 	return out, nil
 }
-

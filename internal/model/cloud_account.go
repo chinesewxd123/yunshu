@@ -18,8 +18,10 @@ type CloudAccount struct {
 	AccountName string `json:"account_name" gorm:"size:128;not null;comment:云账号名称"`
 	RegionScope string `json:"region_scope" gorm:"size:256;not null;default:'';comment:同步地域范围"` // comma-separated regions
 
-	EncAK *string `json:"-" gorm:"type:longtext;comment:加密后的访问密钥AK"`
-	EncSK *string `json:"-" gorm:"type:longtext;comment:加密后的访问密钥SK"`
+	EncAK       *string `json:"-" gorm:"type:longtext;comment:加密后的访问密钥AK"`
+	EncSK       *string `json:"-" gorm:"type:longtext;comment:加密后的访问密钥SK"`
+	AKDictLabel *string `json:"ak_dict_label,omitempty" gorm:"size:191;comment:AK 字典标签（用于回显）"`
+	SKDictLabel *string `json:"sk_dict_label,omitempty" gorm:"size:191;comment:SK 字典标签（用于回显）"`
 
 	ExtraConfig datatypes.JSON `json:"extra_config" gorm:"type:json;comment:扩展配置"`
 	Status      int            `json:"status" gorm:"not null;default:1;comment:状态 1启用 0禁用"`

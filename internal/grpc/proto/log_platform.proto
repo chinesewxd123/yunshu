@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package logplatform.v1;
 
-option go_package = "go-permission-system/internal/grpc/proto/pb;pb";
+option go_package = "yunshu/internal/grpc/proto/pb;pb";
 
 message ErrorInfo {
   int32 code = 1;

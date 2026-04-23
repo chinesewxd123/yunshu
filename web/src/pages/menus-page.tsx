@@ -106,6 +106,12 @@ export function MenusPage() {
     }
   }
 
+  function onMenuFormValuesChange(changedValues: Partial<MenuCreatePayload>) {
+    if (changedValues.hidden === true) {
+      form.setFieldValue("status", 0);
+    }
+  }
+
   async function handleDelete(id: number) {
     await deleteMenu(id);
     message.success("菜单已删除");
@@ -185,7 +191,7 @@ export function MenusPage() {
               dataIndex: "status",
               width: 100,
               render: (s: number) =>
-                s === 1 ? <Tag className="status-chip status-chip--ok">正常</Tag> : <Tag className="status-chip status-chip--off">停用</Tag>,
+                s === 1 ? <Tag className="status-chip status-chip--ok">启用</Tag> : <Tag className="status-chip status-chip--off">停用</Tag>,
             },
             {
               title: "操作",
@@ -225,7 +231,7 @@ export function MenusPage() {
         destroyOnClose
         width={600}
       >
-        <Form form={form} layout="vertical" initialValues={{ status: 1, sort: 0 }}>
+        <Form form={form} layout="vertical" initialValues={{ status: 1, sort: 0 }} onValuesChange={onMenuFormValuesChange}>
           <Form.Item label="菜单名称" name="name" rules={[{ required: true, message: "请输入菜单名称" }]}>
             <Input placeholder="例如：系统管理" />
           </Form.Item>

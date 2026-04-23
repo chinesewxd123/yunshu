@@ -10,6 +10,7 @@ import (
 	neturl "net/url"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"yunshu/internal/model"
@@ -78,6 +79,80 @@ func (s *AlertService) sendToChannel(ctx context.Context, channel *model.AlertCh
 		notifyFn = s.notifyGenericWebhook
 	}
 	return notifyFn(ctx, channel, source, title, severity, status, payload, settings)
+}
+
+func payloadString(payload map[string]interface{}, key string) string {
+	return strings.TrimSpace(alertnotify.StringFromPayload(payload, key))
+}
+
+func payloadLabels(payload map[string]interface{}) map[string]string {
+	labels := alertnotify.PayloadLabels(payload)
+	if labels == nil {
+		return map[string]string{}
+	}
+	return labels
+}
+
+func (s *AlertService) renderChannelMessage(ctx context.Context, title, severity, status string, payload map[string]interface{}, settings map[string]interface{}) string {
+	defaultMsg := alertnotify.RenderMarkdownCard(title, payload)
+	if settings == nil {
+		return defaultMsg
+	}
+	isResolved := strings.EqualFold(strings.TrimSpace(status), "resolved")
+	tplRaw := strings.TrimSpace(fmt.Sprintf("%v", settings["messageTemplateFiring"]))
+	if isResolved {
+		tplRaw = strings.TrimSpace(fmt.Sprintf("%v", settings["messageTemplateResolved"]))
+	}
+	if tplRaw == "" || tplRaw == "<nil>" {
+		return defaultMsg
+	}
+	summary := payloadString(payload, "summary")
+	if summary == "" {
+		summary = strings.TrimSpace(alertnotify.PayloadAnnotation(payload, "summary"))
+	}
+	description := strings.TrimSpace(alertnotify.PayloadAnnotation(payload, "description"))
+	labels := payloadLabels(payload)
+	labelsText := "-"
+	if compact := alertnotify.FormatCompactLabels(labels, 24); strings.TrimSpace(compact) != "" {
+		labelsText = compact
+	}
+	occurredAt := payloadString(payload, "occurred_at")
+	if occurredAt == "" {
+		occurredAt = time.Now().In(time.Local).Format("2006-01-02 15:04:05 MST")
+	}
+	data := map[string]interface{}{
+		"Title":        title,
+		"Severity":     strings.TrimSpace(severity),
+		"Status":       strings.TrimSpace(status),
+		"StatusText":   map[bool]string{true: "告警恢复", false: "告警触发"}[isResolved],
+		"IsResolved":   isResolved,
+		"Summary":      summary,
+		"Description":  description,
+		"ProjectName":  s.resolveNotifyProjectName(ctx, payload),
+		"Cluster":      payloadString(payload, "cluster"),
+		"OccurredAt":   occurredAt,
+		"StartsAt":     alertnotify.FormatPayloadTime(payload["starts_at"]),
+		"EndsAt":       alertnotify.FormatPayloadTime(payload["ends_at"]),
+		"Current":      payloadString(payload, "current"),
+		"Count":        payloadString(payload, "count"),
+		"Fingerprint":  payloadString(payload, "fingerprint"),
+		"GeneratorURL": payloadString(payload, "generator_url"),
+		"Labels":       labels,
+		"LabelsText":   labelsText,
+	}
+	tpl, err := template.New("channel_message").Option("missingkey=zero").Parse(tplRaw)
+	if err != nil {
+		return defaultMsg
+	}
+	var out bytes.Buffer
+	if err = tpl.Execute(&out, data); err != nil {
+		return defaultMsg
+	}
+	rendered := strings.TrimSpace(out.String())
+	if rendered == "" {
+		return defaultMsg
+	}
+	return rendered
 }
 
 func (s *AlertService) buildUnifiedNotifyTitle(ctx context.Context, rawTitle, severity string, payload map[string]interface{}) string {
@@ -289,7 +364,8 @@ func (s *AlertService) notifyWeComWebhook(ctx context.Context, channel *model.Al
 	}
 	atMobiles = parseutil.UniqueStrings(atMobiles)
 	atUsers = parseutil.UniqueStrings(atUsers)
-	outBody := buildWechatPayload(title, payload, settings, atMobiles, atUsers)
+	message := s.renderChannelMessage(ctx, title, severity, status, payload, settings)
+	outBody := buildWechatPayload(title, message, payload, settings, atMobiles, atUsers)
 	bodies := splitWeComBody(outBody, s.cfg.PlatformLimits.WeComMaxChars)
 	return s.postWebhookWithPayloadMulti(ctx, channel, source, title, severity, status, bodies, settings, payload)
 }
@@ -305,7 +381,8 @@ func (s *AlertService) notifyDingTalkWebhook(ctx context.Context, channel *model
 	atMobiles := parseutil.UniqueStrings(parseutil.ParseStringList(settings["atMobiles"]))
 	atUsers := parseutil.UniqueStrings(parseutil.ParseStringList(settings["atUserIds"]))
 	isAtAll := parseutil.ParseBool(settings["isAtAll"])
-	outBody := buildDingTalkPayload(title, payload, settings, atMobiles, atUsers)
+	message := s.renderChannelMessage(ctx, title, severity, status, payload, settings)
+	outBody := buildDingTalkPayload(title, message, payload, settings, atMobiles, atUsers)
 	bodies := splitDingTalkBody(outBody, s.cfg.PlatformLimits.DingdingMaxChars)
 	if footer := atNotifyPlainMentionsFooter(atMobiles, atUsers, isAtAll); footer != "" && len(bodies) > 0 {
 		appendDingTalkMarkdownText(bodies[len(bodies)-1], footer)
@@ -377,7 +454,7 @@ func (s *AlertService) notifyDingTalkAppChat(ctx context.Context, channel *model
 			"msgtype": "markdown",
 			"markdown": map[string]string{
 				"title": title,
-				"text":  alertnotify.RenderMarkdownCard(title, payload),
+				"text":  s.renderChannelMessage(ctx, title, severity, status, payload, settings),
 			},
 		},
 		"at": map[string]interface{}{
@@ -454,6 +531,14 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 	httpOK := reqErr == nil && code >= 200 && code < 300
 	apiChecked, apiErr := webhookJSONAPIFailure(respBody)
 	success := httpOK && (!apiChecked || apiErr == "")
+	respPayload := truncateText(respBody, s.cfg.MaxPayloadChars)
+	if dbg := dingtalkRequestDebugNote(channel, req); dbg != "" {
+		if respPayload == "" {
+			respPayload = truncateText(dbg, s.cfg.MaxPayloadChars)
+		} else {
+			respPayload = truncateText(dbg+"\n"+respPayload, s.cfg.MaxPayloadChars)
+		}
+	}
 	event := model.AlertEvent{
 		Source:             source,
 		Title:              title,
@@ -470,7 +555,7 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 		Success:            success,
 		HTTPStatusCode:     code,
 		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload:    truncateText(respBody, s.cfg.MaxPayloadChars),
+		ResponsePayload:    respPayload,
 	}
 	if reqErr != nil {
 		event.ErrorMessage = truncateText(reqErr.Error(), 1000)
@@ -490,6 +575,43 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 		return code, respBody, apperror.Internal(apiErr)
 	}
 	return code, respBody, nil
+}
+
+func dingtalkRequestDebugNote(channel *model.AlertChannel, req *http.Request) string {
+	if channel == nil || req == nil {
+		return ""
+	}
+	if !strings.EqualFold(strings.TrimSpace(channel.Type), "dingding") {
+		return ""
+	}
+	rawURL := req.URL.String()
+	masked := maskWebhookURL(rawURL)
+	parsed, err := neturl.Parse(rawURL)
+	if err != nil {
+		return "dingtalk debug: url=" + masked + " timestamp="
+	}
+	ts := strings.TrimSpace(parsed.Query().Get("timestamp"))
+	return "dingtalk debug: url=" + masked + " timestamp=" + ts
+}
+
+func maskWebhookURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return raw
+	}
+	parsed, err := neturl.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	q := parsed.Query()
+	for key := range q {
+		lk := strings.ToLower(strings.TrimSpace(key))
+		if lk == "sign" || strings.Contains(lk, "token") || strings.Contains(lk, "secret") || strings.Contains(lk, "access_token") {
+			q.Set(key, "***")
+		}
+	}
+	parsed.RawQuery = q.Encode()
+	return parsed.String()
 }
 
 func mergeAssigneeEmails(recipients []string, payload map[string]interface{}) []string {
@@ -531,8 +653,12 @@ func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.Aler
 	if s.mailer == nil || !s.mailer.Enabled() {
 		return 0, "", apperror.Internal("邮件通道未配置：请检查全局 SMTP（mail 相关配置）是否启用")
 	}
+	settings, err := parseChannelSettings(channel.HeadersJSON)
+	if err != nil {
+		return 0, "", err
+	}
 	subject := strings.TrimSpace(title)
-	mdBody := alertnotify.RenderMarkdownCard(title, payload)
+	mdBody := s.renderChannelMessage(ctx, title, severity, status, payload, settings)
 	htmlBody := alertnotify.MarkdownToHTML(mdBody)
 	var failMsgs []string
 	okCount := 0

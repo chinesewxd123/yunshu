@@ -426,18 +426,18 @@ export function LoginPage() {
         width={520}
         className="login-registerModal"
       >
-        <Form<RegisterPayload> form={registerForm} layout="vertical" onFinish={handleRegister} size="large">
+        <Form<RegisterPayload> form={registerForm} layout="vertical" onFinish={handleRegister} size="large" autoComplete="off">
           <Form.Item label={isZh ? "用户名" : "Username"} name="username" rules={[{ required: true, min: 3, max: 64, message: isZh ? "用户名长度为3-64个字符" : "3-64 characters" }]}>
-            <Input prefix={<UserOutlined />} placeholder={isZh ? "请输入用户名" : "Please enter username"} />
+            <Input prefix={<UserOutlined />} placeholder={isZh ? "请输入用户名" : "Please enter username"} autoComplete="off" />
           </Form.Item>
           <Form.Item label={isZh ? "邮箱" : "Email"} name="email" rules={[{ required: true, type: "email", message: isZh ? "请输入正确的邮箱地址" : "Please enter valid email" }]}>
-            <Input prefix={<MailOutlined />} placeholder={isZh ? "请输入邮箱地址" : "Please enter email"} />
+            <Input prefix={<MailOutlined />} placeholder={isZh ? "请输入邮箱地址" : "Please enter email"} autoComplete="off" />
           </Form.Item>
           <Form.Item label={isZh ? "昵称" : "Nickname"} name="nickname" rules={[{ required: true, max: 128, message: isZh ? "请输入昵称" : "Please enter nickname" }]}>
-            <Input prefix={<UserOutlined />} placeholder={isZh ? "请输入昵称" : "Please enter nickname"} />
+            <Input prefix={<UserOutlined />} placeholder={isZh ? "请输入昵称" : "Please enter nickname"} autoComplete="off" />
           </Form.Item>
           <Form.Item label={isZh ? "密码" : "Password"} name="password" rules={[{ required: true, min: 6, max: 64, message: isZh ? "密码长度为6-64个字符" : "6-64 characters" }]}>
-            <Input.Password prefix={<LockOutlined />} placeholder={isZh ? "请输入密码" : "Please enter password"} />
+            <Input.Password prefix={<LockOutlined />} placeholder={isZh ? "请输入密码" : "Please enter password"} autoComplete="new-password" />
           </Form.Item>
 
           <Form.Item
@@ -453,6 +453,7 @@ export function LoginPage() {
               prefix={<SafetyCertificateOutlined />}
               placeholder={isZh ? "请输入验证码" : "Please enter code"}
               maxLength={6}
+              autoComplete="off"
             />
           </Form.Item>
           <Button

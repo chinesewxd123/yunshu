@@ -21,4 +21,3 @@ func ValidateJSONObjectString(v string, fieldName string) error {
 	}
 	return nil
 }
-

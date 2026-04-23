@@ -74,6 +74,21 @@ export interface AlertDutyBlockItem {
   updated_at: string;
 }
 
+export interface CloudExpiryRuleItem {
+  id: number;
+  project_id: number;
+  name: string;
+  provider: string;
+  region_scope: string;
+  advance_days: number;
+  severity: string;
+  labels_json?: string;
+  eval_interval_seconds: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type Paged<T> = { list: T[]; total: number; page: number; page_size: number };
 
 export function listAlertDatasources(params?: { project_id?: number; keyword?: string; page?: number; page_size?: number }) {
@@ -135,6 +150,26 @@ export function updateAlertMonitorRule(id: number, payload: Record<string, unkno
 
 export function deleteAlertMonitorRule(id: number) {
   return getData<void>(http.delete(`/alerts/monitor-rules/${id}`));
+}
+
+export function listCloudExpiryRules(params?: { project_id?: number; provider?: string; keyword?: string; page?: number; page_size?: number }) {
+  return getData<Paged<CloudExpiryRuleItem>>(http.get("/alerts/cloud-expiry-rules", { params }));
+}
+
+export function createCloudExpiryRule(payload: Record<string, unknown>) {
+  return getData<CloudExpiryRuleItem>(http.post("/alerts/cloud-expiry-rules", payload));
+}
+
+export function updateCloudExpiryRule(id: number, payload: Record<string, unknown>) {
+  return getData<CloudExpiryRuleItem>(http.put(`/alerts/cloud-expiry-rules/${id}`, payload));
+}
+
+export function deleteCloudExpiryRule(id: number) {
+  return getData<void>(http.delete(`/alerts/cloud-expiry-rules/${id}`));
+}
+
+export function evaluateCloudExpiryRulesNow() {
+  return getData<{ message: string }>(http.post("/alerts/cloud-expiry-rules/evaluate-now", {}));
 }
 
 export function getMonitorRuleAssignees(ruleId: number) {

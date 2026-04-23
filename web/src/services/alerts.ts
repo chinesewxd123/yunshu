@@ -89,9 +89,31 @@ export function deleteAlertChannel(id: number) {
 
 export function testAlertChannel(
   id: number,
-  payload?: { title?: string; content?: string; severity?: string },
+  payload?: { title?: string; content?: string; severity?: string; status?: "firing" | "resolved" },
 ) {
   return getData<void>(http.post(`/alerts/channels/${id}/test`, payload ?? {}));
+}
+
+export interface AlertTemplatePreviewResult {
+  rendered: string;
+  sample_payload: Record<string, unknown>;
+  available_fields: string[];
+  raw_payload_fields: string[];
+  combined_fields: string[];
+  suggested_label_keys: string[];
+}
+
+export function previewAlertChannelTemplate(payload: {
+  template_firing?: string;
+  template_resolved?: string;
+  status?: "firing" | "resolved";
+  title?: string;
+  content?: string;
+  severity?: string;
+  project_id?: number;
+  raw_payload_json?: string;
+}) {
+  return getData<AlertTemplatePreviewResult>(http.post("/alerts/channels/preview-template", payload));
 }
 
 export function listAlertEvents(params: {

@@ -80,15 +80,16 @@ export function PersonalSettingsPage() {
                 layout="vertical"
                 initialValues={{ nickname: user?.nickname ?? "", email: user?.email ?? "" }}
                 className="personal-settings__form"
+                autoComplete="off"
               >
                 <Form.Item label="昵称" name="nickname" rules={[{ required: true, message: "请输入昵称" }]}>
-                  <Input placeholder="请输入昵称" />
+                  <Input placeholder="请输入昵称" autoComplete="off" />
                 </Form.Item>
                 <Form.Item label="账号">
                   <Input value={user?.username ?? ""} disabled />
                 </Form.Item>
                 <Form.Item label="邮箱" name="email" rules={[{ type: "email", message: "请输入正确邮箱地址" }]}>
-                  <Input placeholder="请输入邮箱地址" />
+                  <Input placeholder="请输入邮箱地址" autoComplete="off" />
                 </Form.Item>
                 <Button type="primary" loading={profileLoading} onClick={() => void submitProfile()}>
                   更新基本信息
@@ -98,16 +99,16 @@ export function PersonalSettingsPage() {
           ) : (
             <div>
               <h3 className="personal-settings__title">修改密码</h3>
-              <Form form={passwordForm} layout="vertical" className="personal-settings__form">
+              <Form form={passwordForm} layout="vertical" className="personal-settings__form" autoComplete="off">
                 <Form.Item label="旧密码" name="old_password" rules={[{ required: true, message: "请输入旧密码" }]}>
-                  <Input.Password placeholder="请输入旧密码" />
+                  <Input.Password placeholder="请输入旧密码" autoComplete="current-password" />
                 </Form.Item>
                 <Form.Item
                   label="新密码"
                   name="new_password"
                   rules={[{ required: true, message: "请输入新密码" }, { min: 6, message: "新密码至少 6 位" }]}
                 >
-                  <Input.Password placeholder="请输入新密码" />
+                  <Input.Password placeholder="请输入新密码" autoComplete="new-password" />
                 </Form.Item>
                 <Form.Item
                   label="确认密码"
@@ -125,7 +126,7 @@ export function PersonalSettingsPage() {
                     }),
                   ]}
                 >
-                  <Input.Password placeholder="请再次输入新密码" />
+                  <Input.Password placeholder="请再次输入新密码" autoComplete="new-password" />
                 </Form.Item>
                 <Button type="primary" loading={passwordLoading} onClick={() => void submitPassword()}>
                   更新密码

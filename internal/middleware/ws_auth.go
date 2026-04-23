@@ -3,10 +3,10 @@ package middleware
 import (
 	"strings"
 
-	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
+	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/repository"
 	"yunshu/internal/store"
@@ -73,4 +73,3 @@ func WSAuth(secret string, redisClient *redis.Client, userRepo *repository.UserR
 		c.Next()
 	}
 }
-

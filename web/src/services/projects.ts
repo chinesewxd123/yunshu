@@ -80,6 +80,17 @@ export interface ServerItem {
   provider: string;
   cloud_instance_id: string;
   cloud_region: string;
+  cloud_zone: string;
+  cloud_spec: string;
+  cloud_config_info: string;
+  cloud_os_name: string;
+  cloud_network_info: string;
+  cloud_charge_type: string;
+  cloud_network_charge_type: string;
+  cloud_tags_json: string;
+  cloud_public_ip: string;
+  cloud_private_ip: string;
+  cloud_status_text: string;
   status: number;
   created_at: string;
   last_seen_at?: string | null;
@@ -101,6 +112,17 @@ export interface ServerUpsertPayload {
   provider?: string;
   cloud_instance_id?: string;
   cloud_region?: string;
+  cloud_zone?: string;
+  cloud_spec?: string;
+  cloud_config_info?: string;
+  cloud_os_name?: string;
+  cloud_network_info?: string;
+  cloud_charge_type?: string;
+  cloud_network_charge_type?: string;
+  cloud_tags_json?: string;
+  cloud_public_ip?: string;
+  cloud_private_ip?: string;
+  cloud_status_text?: string;
 
   auth_type?: "password" | "key";
   username?: string;
@@ -110,6 +132,7 @@ export interface ServerUpsertPayload {
   /** 数据字典模板标签，便于编辑回显；与 username 可同时存在 */
   username_dict_label?: string;
   password_dict_label?: string;
+  private_key_dict_label?: string;
 }
 
 /** GET 单台服务器详情（含 SSH 凭据元数据，不含密钥明文） */
@@ -120,11 +143,12 @@ export interface ServerDetailItem extends ServerItem {
   private_key_set?: boolean;
   username_dict_label?: string | null;
   password_dict_label?: string | null;
+  private_key_dict_label?: string | null;
 }
 
 export async function getProjectServers(
   projectId: number,
-  params: { keyword?: string; page?: number; page_size?: number; group_id?: number; source_type?: string; provider?: string },
+  params: { keyword?: string; page?: number; page_size?: number; group_id?: number; source_type?: string; provider?: string; cloud_account_id?: number },
 ) {
   return await getData(
     http.get<any, ApiResponse<PageData<ServerItem>>>(`/projects/${projectId}/servers`, { params: { ...params, project_id: projectId } }),
@@ -164,6 +188,21 @@ export async function execProjectServerCommand(projectId: number, serverId: numb
 
 export async function testProjectServer(projectId: number, serverId: number) {
   return await getData(http.post<any, ApiResponse<{ ok: boolean; message: string }>>(`/projects/${projectId}/servers/test`, { server_id: serverId }));
+}
+
+export interface CloudServerActionPayload {
+  action: "reset_password" | "reboot" | "shutdown";
+  new_password?: string;
+}
+
+export interface CloudServerActionResult {
+  server_id: number;
+  action: string;
+  message: string;
+}
+
+export async function runProjectCloudServerAction(projectId: number, serverId: number, payload: CloudServerActionPayload) {
+  return await getData<CloudServerActionResult>(http.post(`/projects/${projectId}/servers/${serverId}/cloud-actions`, payload));
 }
 
 export interface BatchServerTestResult {
@@ -245,6 +284,8 @@ export interface CloudAccountItem {
   provider: string;
   account_name: string;
   region_scope: string;
+  ak_dict_label?: string | null;
+  sk_dict_label?: string | null;
   status: number;
   last_sync_at?: string | null;
   last_sync_error?: string | null;
@@ -259,6 +300,8 @@ export interface CloudAccountUpsertPayload {
   region_scope?: string;
   ak?: string;
   sk?: string;
+  ak_dict_label?: string;
+  sk_dict_label?: string;
   status?: number;
 }
 
@@ -283,6 +326,10 @@ export interface CloudSyncResult {
 
 export async function syncProjectCloudAccount(projectId: number, accountId: number) {
   return await getData<CloudSyncResult>(http.put(`/projects/${projectId}/cloud-accounts/${accountId}/sync`, {}));
+}
+
+export async function deleteProjectCloudAccount(projectId: number, accountId: number) {
+  return await getData(http.delete<any, ApiResponse<{ message: string }>>(`/projects/${projectId}/cloud-accounts/${accountId}`));
 }
 
 export interface ServiceItem {

@@ -25,7 +25,9 @@ import {
   getProjectServers,
   getProjects,
   importProjectServers,
+  runProjectCloudServerAction,
   syncProjectCloudAccount,
+  deleteProjectCloudAccount,
   testProjectServer,
   upsertProjectCloudAccount,
   upsertProjectServer,
@@ -41,6 +43,140 @@ import { DictLabelFillSelect } from "../components/dict-fill-select";
 import { formatDateTime } from "../utils/format";
 
 const defaultQuery = { keyword: "", page: 1, page_size: 10 };
+const CLOUD_PROVIDER_LABEL: Record<string, string> = {
+  alibaba: "阿里云",
+  tencent: "腾讯云",
+  jd: "京东云",
+  custom: "自定义",
+};
+const CLOUD_REGION_OPTIONS: Record<string, Array<{ label: string; value: string }>> = {
+  alibaba: [
+    { label: "华东 1（杭州）cn-hangzhou", value: "cn-hangzhou" },
+    { label: "华东 2（上海）cn-shanghai", value: "cn-shanghai" },
+    { label: "华北 2（北京）cn-beijing", value: "cn-beijing" },
+    { label: "华南 1（深圳）cn-shenzhen", value: "cn-shenzhen" },
+    { label: "中国香港 cn-hongkong", value: "cn-hongkong" },
+  ],
+  tencent: [
+    { label: "广州 ap-guangzhou", value: "ap-guangzhou" },
+    { label: "上海 ap-shanghai", value: "ap-shanghai" },
+    { label: "北京 ap-beijing", value: "ap-beijing" },
+    { label: "成都 ap-chengdu", value: "ap-chengdu" },
+    { label: "中国香港 ap-hongkong", value: "ap-hongkong" },
+  ],
+  jd: [
+    { label: "华北-北京 cn-north-1", value: "cn-north-1" },
+    { label: "华东-上海 cn-east-2", value: "cn-east-2" },
+    { label: "华南-广州 cn-south-1", value: "cn-south-1" },
+  ],
+};
+const CLOUD_DICT_BY_PROVIDER: Record<
+  string,
+  { ak: string; sk: string; username: string; password: string; privateKey: string; port: string }
+> = {
+  alibaba: {
+    ak: "cloud_alibaba_ak",
+    sk: "cloud_alibaba_sk",
+    username: "server_cloud_alibaba_username",
+    password: "server_cloud_alibaba_password",
+    privateKey: "server_cloud_alibaba_private_key",
+    port: "server_cloud_alibaba_port",
+  },
+  tencent: {
+    ak: "cloud_tencent_ak",
+    sk: "cloud_tencent_sk",
+    username: "server_cloud_tencent_username",
+    password: "server_cloud_tencent_password",
+    privateKey: "server_cloud_tencent_private_key",
+    port: "server_cloud_tencent_port",
+  },
+  jd: {
+    ak: "cloud_jd_ak",
+    sk: "cloud_jd_sk",
+    username: "server_cloud_jd_username",
+    password: "server_cloud_jd_password",
+    privateKey: "server_cloud_jd_private_key",
+    port: "server_cloud_jd_port",
+  },
+};
+
+function mapChargeTypeZh(v: string): string {
+  const x = String(v || "").trim().toUpperCase();
+  if (!x) return "-";
+  const m: Record<string, string> = {
+    PREPAID: "包年包月",
+    PREPAID_BY_DURATION: "包年包月",
+    POSTPAID: "按量付费",
+    POSTPAID_BY_USAGE: "按量付费",
+    POSTPAID_BY_HOUR: "按小时后付费",
+    POSTPAID_BY_DURATION: "按配置后付费",
+    CDHPAID: "专有宿主机付费",
+  };
+  return m[x] || v;
+}
+
+function mapNetworkChargeTypeZh(v: string): string {
+  const x = String(v || "").trim().toUpperCase();
+  if (!x) return "-";
+  const m: Record<string, string> = {
+    PAYBYTRAFFIC: "按流量计费",
+    PAYBYBANDWIDTH: "按带宽计费",
+    TRAFFIC_POSTPAID_BY_HOUR: "按流量后付费",
+    BANDWIDTH_POSTPAID_BY_HOUR: "按带宽后付费",
+    BANDWIDTH_PREPAID: "带宽预付费",
+    BANDWIDTH_PACKAGE: "带宽包计费",
+    NORMAL: "正常计费",
+    OVERDUE: "已到期",
+    ARREAR: "欠费",
+  };
+  return m[x] || v;
+}
+
+function renderCloudTags(tagsJSON?: string) {
+  const raw = String(tagsJSON || "").trim();
+  if (!raw) return "-";
+  try {
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    const entries = Object.entries(obj).filter(([k]) => String(k).trim() !== "");
+    if (!entries.length) return "-";
+    return (
+      <Space size={[4, 4]} wrap>
+        {entries.map(([k, v]) => (
+          <Tag key={k} color="blue">{`${k}:${String(v ?? "")}`}</Tag>
+        ))}
+      </Space>
+    );
+  } catch {
+    return raw;
+  }
+}
+
+type CloudTagKV = { key: string; value: string };
+
+function parseCloudTagRows(raw?: string): CloudTagKV[] {
+  const text = String(raw || "").trim();
+  if (!text) return [];
+  try {
+    const obj = JSON.parse(text) as Record<string, unknown>;
+    return Object.entries(obj)
+      .map(([key, value]) => ({ key: String(key || "").trim(), value: String(value ?? "").trim() }))
+      .filter((it) => it.key);
+  } catch {
+    return [];
+  }
+}
+
+function buildCloudTagsJSON(rows: CloudTagKV[]): string {
+  const obj: Record<string, string> = {};
+  rows.forEach((it) => {
+    const key = String(it.key || "").trim();
+    if (!key) return;
+    obj[key] = String(it.value ?? "").trim();
+  });
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return "";
+  return JSON.stringify(obj);
+}
 
 export function ProjectServersPage() {
   const navigate = useNavigate();
@@ -64,12 +200,48 @@ export function ProjectServersPage() {
   const [cloudAccounts, setCloudAccounts] = useState<CloudAccountItem[]>([]);
   const [syncResultByAccount, setSyncResultByAccount] = useState<Record<number, { added: number; updated: number; disabled: number; unchanged: number }>>({});
   const [cloudSubmitting, setCloudSubmitting] = useState(false);
-  const [cloudForm] = Form.useForm<{ account_name: string; region_scope: string; ak: string; sk: string }>();
+  const [cloudForm] = Form.useForm<{ id?: number; account_name: string; region_scope: string[]; ak: string; sk: string; ak_dict_label?: string; sk_dict_label?: string }>();
+  const [editingCloudAccount, setEditingCloudAccount] = useState<CloudAccountItem | null>(null);
+  const [cloudAccountEditorOpen, setCloudAccountEditorOpen] = useState(false);
+  const [cloudAccountFilter, setCloudAccountFilter] = useState("");
+  const [selectedCloudAccountId, setSelectedCloudAccountId] = useState<number | undefined>(undefined);
+
+  const filteredCloudAccounts = useMemo(() => {
+    const q = (cloudAccountFilter || "").trim().toLowerCase();
+    if (!q) return cloudAccounts;
+    return cloudAccounts.filter((a) => {
+      return (a.account_name || "").toLowerCase().includes(q) || (a.region_scope || "").toLowerCase().includes(q);
+    });
+  }, [cloudAccounts, cloudAccountFilter]);
+
+  const filteredServers = useMemo(() => {
+    if (!selectedCloudAccountId) return list;
+    const acc = cloudAccounts.find((a) => a.id === selectedCloudAccountId);
+    if (!acc) return list;
+    const regions = new Set(String(acc.region_scope || "").split(",").map((x) => x.trim()).filter(Boolean));
+    if (regions.size === 0) {
+      return list.filter((s) => (s.provider || "") === acc.provider);
+    }
+    return list.filter((s) => regions.has((s.cloud_region || "").trim()));
+  }, [list, selectedCloudAccountId, cloudAccounts]);
+
+  function findAccountForServer(s: ServerItem) {
+    for (const acc of cloudAccounts) {
+      const regions = String(acc.region_scope || "").split(",").map((x) => x.trim()).filter(Boolean);
+      if (regions.length && regions.includes((s.cloud_region || "").trim())) return acc;
+      if ((s.name || "").toLowerCase().includes((acc.account_name || "").toLowerCase())) return acc;
+    }
+    return undefined;
+  }
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [current, setCurrent] = useState<ServerItem | null>(null);
-  const [form] = Form.useForm<ServerUpsertPayload & { port_dict_label?: string }>();
+  const [cloudActionSubmitting, setCloudActionSubmitting] = useState(false);
+  const [resetPasswordTarget, setResetPasswordTarget] = useState<ServerItem | null>(null);
+  const [resetPasswordForm] = Form.useForm<{ new_password: string }>();
+  const [form] = Form.useForm<ServerUpsertPayload & { port_dict_label?: string; private_key_dict_label?: string }>();
+  const [cloudTagRows, setCloudTagRows] = useState<CloudTagKV[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [tableScrollY, setTableScrollY] = useState(360);
 
@@ -80,7 +252,72 @@ export function ProjectServersPage() {
   const serverPortDict = useDictOptions("server_port");
   const sshUserDict = useDictOptions("server_ssh_username");
   const sshPwdDict = useDictOptions("server_ssh_password");
-  const isCloudNode = selectedGroup?.category === "cloud" && selectedGroup?.provider !== "custom";
+  const cloudAlibabaAKDict = useDictOptions("cloud_alibaba_ak");
+  const cloudAlibabaSKDict = useDictOptions("cloud_alibaba_sk");
+  const cloudTencentAKDict = useDictOptions("cloud_tencent_ak");
+  const cloudTencentSKDict = useDictOptions("cloud_tencent_sk");
+  const cloudJdAKDict = useDictOptions("cloud_jd_ak");
+  const cloudJdSKDict = useDictOptions("cloud_jd_sk");
+  const cloudAlibabaUserDict = useDictOptions("server_cloud_alibaba_username");
+  const cloudAlibabaPwdDict = useDictOptions("server_cloud_alibaba_password");
+  const cloudAlibabaKeyDict = useDictOptions("server_cloud_alibaba_private_key");
+  const cloudAlibabaPortDict = useDictOptions("server_cloud_alibaba_port");
+  const cloudTencentUserDict = useDictOptions("server_cloud_tencent_username");
+  const cloudTencentPwdDict = useDictOptions("server_cloud_tencent_password");
+  const cloudTencentKeyDict = useDictOptions("server_cloud_tencent_private_key");
+  const cloudTencentPortDict = useDictOptions("server_cloud_tencent_port");
+  const cloudJdUserDict = useDictOptions("server_cloud_jd_username");
+  const cloudJdPwdDict = useDictOptions("server_cloud_jd_password");
+  const cloudJdKeyDict = useDictOptions("server_cloud_jd_private_key");
+  const cloudJdPortDict = useDictOptions("server_cloud_jd_port");
+  const isCloudCategory = selectedGroup?.category === "cloud";
+  const isCloudProviderNode = isCloudCategory && selectedGroup?.provider !== "custom";
+  const cloudProviderLabel = CLOUD_PROVIDER_LABEL[(selectedGroup?.provider || "").trim()] || (selectedGroup?.provider || "-");
+  const regionOptions = CLOUD_REGION_OPTIONS[(selectedGroup?.provider || "").trim()] || [];
+  const formProvider = (Form.useWatch("provider", form) as string | undefined) || current?.provider || selectedGroup?.provider || "";
+  const currentCloudDictKey = CLOUD_DICT_BY_PROVIDER[(formProvider || "").trim()];
+  const cloudAKDictOptions = useMemo(() => {
+    const p = (selectedGroup?.provider || "").trim();
+    if (p === "alibaba") return cloudAlibabaAKDict;
+    if (p === "tencent") return cloudTencentAKDict;
+    if (p === "jd") return cloudJdAKDict;
+    return [];
+  }, [selectedGroup?.provider, cloudAlibabaAKDict, cloudTencentAKDict, cloudJdAKDict]);
+  const cloudSKDictOptions = useMemo(() => {
+    const p = (selectedGroup?.provider || "").trim();
+    if (p === "alibaba") return cloudAlibabaSKDict;
+    if (p === "tencent") return cloudTencentSKDict;
+    if (p === "jd") return cloudJdSKDict;
+    return [];
+  }, [selectedGroup?.provider, cloudAlibabaSKDict, cloudTencentSKDict, cloudJdSKDict]);
+  const activeUserDict = useMemo(() => {
+    const p = (currentCloudDictKey?.username || "").trim();
+    if (p === "server_cloud_alibaba_username") return cloudAlibabaUserDict;
+    if (p === "server_cloud_tencent_username") return cloudTencentUserDict;
+    if (p === "server_cloud_jd_username") return cloudJdUserDict;
+    return sshUserDict;
+  }, [currentCloudDictKey?.username, cloudAlibabaUserDict, cloudTencentUserDict, cloudJdUserDict, sshUserDict]);
+  const activePwdDict = useMemo(() => {
+    const p = (currentCloudDictKey?.password || "").trim();
+    if (p === "server_cloud_alibaba_password") return cloudAlibabaPwdDict;
+    if (p === "server_cloud_tencent_password") return cloudTencentPwdDict;
+    if (p === "server_cloud_jd_password") return cloudJdPwdDict;
+    return sshPwdDict;
+  }, [currentCloudDictKey?.password, cloudAlibabaPwdDict, cloudTencentPwdDict, cloudJdPwdDict, sshPwdDict]);
+  const activeKeyDict = useMemo(() => {
+    const p = (currentCloudDictKey?.privateKey || "").trim();
+    if (p === "server_cloud_alibaba_private_key") return cloudAlibabaKeyDict;
+    if (p === "server_cloud_tencent_private_key") return cloudTencentKeyDict;
+    if (p === "server_cloud_jd_private_key") return cloudJdKeyDict;
+    return [];
+  }, [currentCloudDictKey?.privateKey, cloudAlibabaKeyDict, cloudTencentKeyDict, cloudJdKeyDict]);
+  const activePortDict = useMemo(() => {
+    const p = (currentCloudDictKey?.port || "").trim();
+    if (p === "server_cloud_alibaba_port") return cloudAlibabaPortDict;
+    if (p === "server_cloud_tencent_port") return cloudTencentPortDict;
+    if (p === "server_cloud_jd_port") return cloudJdPortDict;
+    return serverPortDict;
+  }, [currentCloudDictKey?.port, cloudAlibabaPortDict, cloudTencentPortDict, cloudJdPortDict, serverPortDict]);
 
   useEffect(() => {
     void (async () => {
@@ -98,8 +335,8 @@ export function ProjectServersPage() {
   useEffect(() => {
     if (!projectId || !selectedGroupId) return;
     void loadServers();
-    if (isCloudNode) void loadCloudAccounts();
-  }, [projectId, selectedGroupId, query.keyword, query.page, query.page_size, isCloudNode]);
+    if (isCloudProviderNode) void loadCloudAccounts();
+  }, [projectId, selectedGroupId, query.keyword, query.page, query.page_size, isCloudProviderNode]);
 
   useEffect(() => {
     const recalc = () => {
@@ -142,9 +379,10 @@ export function ProjectServersPage() {
     try {
       const data = await getProjectServers(projectId, {
         ...query,
-        group_id: selectedGroupId,
-        source_type: selectedGroup?.category === "cloud" ? "cloud" : "self_hosted",
-        provider: selectedGroup?.category === "cloud" ? (selectedGroup?.provider || undefined) : undefined,
+        group_id: isCloudCategory && selectedGroup?.provider === "custom" ? undefined : selectedGroupId,
+        source_type: isCloudCategory ? "cloud" : "self_hosted",
+        provider: isCloudCategory && selectedGroup?.provider !== "custom" ? (selectedGroup?.provider || undefined) : undefined,
+        cloud_account_id: selectedCloudAccountId,
       });
       setList(data.list || []);
       setTotal(data.total || 0);
@@ -249,16 +487,19 @@ export function ProjectServersPage() {
       provider: selectedGroup?.provider || "",
       username_dict_label: undefined,
       password_dict_label: undefined,
+      private_key_dict_label: undefined,
+      cloud_tags_json: "",
     });
+    setCloudTagRows([]);
     setEditorOpen(true);
   }
 
   async function openEdit(record: ServerItem) {
-    if (!projectId) return;
+    const pid = projectId || record.project_id;
     setCurrent(record);
     form.resetFields();
     try {
-      const detail = await getProjectServerDetail(projectId, record.id);
+      const detail = await getProjectServerDetail(pid as number, record.id);
       form.setFieldsValue({
         ...detail,
         id: detail.id,
@@ -272,7 +513,9 @@ export function ProjectServersPage() {
         port_dict_label: undefined,
         username_dict_label: detail.username_dict_label ?? undefined,
         password_dict_label: detail.password_dict_label ?? undefined,
+        private_key_dict_label: detail.private_key_dict_label ?? undefined,
       });
+      setCloudTagRows(parseCloudTagRows(detail.cloud_tags_json));
     } catch {
       form.setFieldsValue({
         ...record,
@@ -283,7 +526,9 @@ export function ProjectServersPage() {
         port_dict_label: undefined,
         username_dict_label: undefined,
         password_dict_label: undefined,
+        private_key_dict_label: undefined,
       });
+      setCloudTagRows(parseCloudTagRows(record.cloud_tags_json));
     }
     setEditorOpen(true);
   }
@@ -291,6 +536,13 @@ export function ProjectServersPage() {
   async function onSubmit() {
     if (!projectId) return;
     const values = await form.validateFields();
+    const portText = String(values.port ?? "").trim();
+    const normalizedPort =
+      typeof values.port === "number"
+        ? values.port
+        : portText !== "" && Number.isFinite(Number(portText))
+          ? Number(portText)
+          : undefined;
     setSubmitting(true);
     try {
       const status = typeof values.status === "number" ? values.status : (current?.status ?? 1);
@@ -300,7 +552,7 @@ export function ProjectServersPage() {
         group_id: values.group_id,
         name: values.name,
         host: values.host,
-        port: values.port,
+        port: normalizedPort,
         os_type: values.os_type,
         tags: values.tags,
         status,
@@ -308,10 +560,12 @@ export function ProjectServersPage() {
         provider: values.provider,
         cloud_instance_id: values.cloud_instance_id,
         cloud_region: values.cloud_region,
+        cloud_tags_json: buildCloudTagsJSON(cloudTagRows) || undefined,
         auth_type: values.auth_type,
         username: (values.username || "").trim(),
         username_dict_label: (values.username_dict_label || "").trim() || undefined,
         password_dict_label: (values.password_dict_label || "").trim() || undefined,
+        private_key_dict_label: (values.private_key_dict_label || "").trim() || undefined,
       };
       const pw = (values.password || "").trim();
       if (pw) payload.password = pw;
@@ -388,16 +642,21 @@ export function ProjectServersPage() {
     setCloudSubmitting(true);
     try {
       await upsertProjectCloudAccount(projectId, {
+        id: values.id,
         group_id: selectedGroupId,
         provider: selectedGroup.provider || "alibaba",
         account_name: values.account_name,
-        region_scope: values.region_scope,
+        region_scope: (values.region_scope || []).join(","),
         ak: values.ak,
         sk: values.sk,
+        ak_dict_label: (values.ak_dict_label || "").trim() || undefined,
+        sk_dict_label: (values.sk_dict_label || "").trim() || undefined,
         status: 1,
       });
-      message.success("云账号已保存");
-      cloudForm.resetFields(["ak", "sk"]);
+      message.success(editingCloudAccount ? "云账号已更新" : "云账号已保存");
+      setEditingCloudAccount(null);
+      cloudForm.resetFields();
+      setCloudAccountEditorOpen(false);
       await loadCloudAccounts();
     } finally {
       setCloudSubmitting(false);
@@ -413,6 +672,100 @@ export function ProjectServersPage() {
     }));
     message.success(`同步完成：发现 ${res.total}，新增 ${res.added}，更新 ${res.updated}，停用 ${res.disabled}，不变 ${res.unchanged}`);
     await Promise.all([loadCloudAccounts(), loadServers()]);
+  }
+
+  async function onDeleteCloudAccount(accountId: number) {
+    if (!projectId) return;
+    try {
+      await deleteProjectCloudAccount(projectId, accountId);
+      message.success("云账号已删除");
+      await Promise.all([loadCloudAccounts(), loadServers()]);
+    } catch (err: any) {
+      message.error(err?.message || "删除失败");
+    }
+  }
+
+  function editCloudAccount(item: CloudAccountItem) {
+    setEditingCloudAccount(item);
+    cloudForm.setFieldsValue({
+      id: item.id,
+      account_name: item.account_name,
+      region_scope: String(item.region_scope || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      ak: "",
+      sk: "",
+      ak_dict_label: item.ak_dict_label ?? undefined,
+      sk_dict_label: item.sk_dict_label ?? undefined,
+    });
+    setCloudAccountEditorOpen(true);
+  }
+
+  function openNewCloudAccount() {
+    setEditingCloudAccount(null);
+    cloudForm.resetFields();
+    setCloudAccountEditorOpen(true);
+  }
+
+  async function rebootCloudServer(row: ServerItem) {
+    if (!projectId) return;
+    setCloudActionSubmitting(true);
+    try {
+      const res = await runProjectCloudServerAction(projectId, row.id, { action: "reboot" });
+      message.success(res.message || "重启请求已提交");
+      await loadServers();
+    } finally {
+      setCloudActionSubmitting(false);
+    }
+  }
+
+  async function shutdownCloudServer(row: ServerItem) {
+    if (!projectId) return;
+    setCloudActionSubmitting(true);
+    try {
+      const res = await runProjectCloudServerAction(projectId, row.id, { action: "shutdown" });
+      message.success(res.message || "关机请求已提交");
+      await loadServers();
+    } finally {
+      setCloudActionSubmitting(false);
+    }
+  }
+
+  function confirmRebootCloudServer(row: ServerItem) {
+    Modal.confirm({
+      title: "确认重启云服务器？",
+      content: `${row.name || row.cloud_instance_id || row.host || row.id} 将执行重启操作。`,
+      okText: "确认重启",
+      cancelText: "取消",
+      onOk: () => rebootCloudServer(row),
+    });
+  }
+
+  function confirmShutdownCloudServer(row: ServerItem) {
+    Modal.confirm({
+      title: "确认关机云服务器？",
+      content: `${row.name || row.cloud_instance_id || row.host || row.id} 将执行关机操作。`,
+      okText: "确认关机",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: () => shutdownCloudServer(row),
+    });
+  }
+
+  async function submitResetCloudPassword() {
+    if (!projectId || !resetPasswordTarget) return;
+    const values = await resetPasswordForm.validateFields();
+    setCloudActionSubmitting(true);
+    try {
+      const res = await runProjectCloudServerAction(projectId, resetPasswordTarget.id, { action: "reset_password", new_password: values.new_password });
+      message.success(res.message || "密码重置请求已提交");
+      setResetPasswordTarget(null);
+      resetPasswordForm.resetFields();
+      await loadServers();
+    } finally {
+      setCloudActionSubmitting(false);
+    }
   }
 
   return (
@@ -490,30 +843,18 @@ export function ProjectServersPage() {
         </Col>
         <Col span={18} style={{ height: "100%", display: "flex" }}>
           <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
-            {isCloudNode ? (
-              <Card size="small" title="云账号与同步">
-                <Form form={cloudForm} layout="inline" onFinish={() => void onSaveCloudAccount()}>
-                  <Form.Item name="account_name" rules={[{ required: true, message: "请输入账号名称" }]}>
-                    <Input placeholder="账号名称" />
-                  </Form.Item>
-                  <Form.Item name="region_scope">
-                    <Input placeholder="region，逗号分隔（如 cn-hangzhou,cn-beijing）" style={{ width: 260 }} />
-                  </Form.Item>
-                  <Form.Item name="ak" rules={[{ required: true, message: "请输入 AK" }]}>
-                    <Input placeholder="AccessKey ID" style={{ width: 220 }} />
-                  </Form.Item>
-                  <Form.Item name="sk" rules={[{ required: true, message: "请输入 SK" }]}>
-                    <Input.Password placeholder="AccessKey Secret" style={{ width: 220 }} />
-                  </Form.Item>
-                  <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={cloudSubmitting}>保存云账号</Button>
-                  </Form.Item>
-                </Form>
+            {isCloudProviderNode ? (
+              <Card size="small" title={`云账号与同步（${cloudProviderLabel}）`} extra={<Button type="primary" size="small" onClick={() => void openNewCloudAccount()}>新增云账号</Button>}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Input.Search allowClear placeholder="搜索云账号/区域" value={cloudAccountFilter} onChange={(e) => setCloudAccountFilter(e.target.value)} style={{ width: 260 }} />
+                </div>
+                <div style={{ overflowX: "auto" }}>
                 <Table
                   style={{ marginTop: 12 }}
                   rowKey="id"
                   pagination={false}
-                  dataSource={cloudAccounts}
+                  dataSource={filteredCloudAccounts}
+                  scroll={{ x: 900 }}
                   columns={[
                     { title: "账号", dataIndex: "account_name" },
                     { title: "厂商", dataIndex: "provider", width: 100 },
@@ -536,9 +877,28 @@ export function ProjectServersPage() {
                       },
                     },
                     { title: "同步错误", dataIndex: "last_sync_error", ellipsis: true, render: (v?: string | null) => v || "-" },
-                    { title: "操作", width: 120, render: (_: unknown, r: CloudAccountItem) => <Button icon={<SyncOutlined />} onClick={() => void onSync(r.id)}>同步</Button> },
+                    {
+                      title: "操作",
+                      width: 160,
+                      render: (_: unknown, r: CloudAccountItem) => (
+                        <Space size={6} wrap>
+                          <Button size="small" icon={<EditOutlined />} onClick={() => editCloudAccount(r)}>
+                            编辑
+                          </Button>
+                          <Button size="small" icon={<SyncOutlined />} onClick={() => void onSync(r.id)}>
+                            同步
+                          </Button>
+                          <Popconfirm title="确认删除该云账号？" onConfirm={() => void onDeleteCloudAccount(r.id)} okText="删除" cancelText="取消">
+                            <Button size="small" danger icon={<DeleteOutlined />}>
+                              删除
+                            </Button>
+                          </Popconfirm>
+                        </Space>
+                      ),
+                    },
                   ]}
                 />
+                </div>
               </Card>
             ) : null}
             <Card
@@ -548,10 +908,20 @@ export function ProjectServersPage() {
               title={selectedGroup ? `当前分组：${selectedGroup.name}` : "服务器列表"}
               extra={
                 <Space wrap>
+                  <Select
+                    allowClear
+                    showSearch
+                    placeholder="按云账号过滤"
+                    options={cloudAccounts.map((a) => ({ label: a.account_name || String(a.id), value: a.id }))}
+                    style={{ width: 220 }}
+                    value={selectedCloudAccountId}
+                    onChange={(v) => setSelectedCloudAccountId(v)}
+                    filterOption={(input, option) => (option?.label || "").toLowerCase().includes((input || "").toLowerCase())}
+                  />
                   <Input.Search allowClear placeholder="搜索 name/host/tags" onSearch={(keyword) => setQuery((q) => ({ ...q, keyword, page: 1 }))} style={{ width: 220 }} />
                   <Button icon={<ReloadOutlined />} onClick={() => void loadServers()} loading={loading}>刷新</Button>
                   <Button icon={<ApiOutlined />} onClick={() => void onBatchTest()} disabled={selectedRowKeys.length === 0} loading={batchTesting}>批量测试</Button>
-                  {!isCloudNode ? (
+                  {!isCloudCategory ? (
                     <>
                       <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>导入</Button>
                       <Button icon={<DownloadOutlined />} onClick={() => projectId && downloadProjectServersImportTemplate(projectId).then((blob) => { const u = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = u; a.download = "servers-import-template.xlsx"; a.click(); URL.revokeObjectURL(u); })}>模板</Button>
@@ -564,17 +934,18 @@ export function ProjectServersPage() {
             >
               <Select style={{ width: 280, marginBottom: 12, flexShrink: 0 }} placeholder="选择项目" value={projectId} onChange={setProjectId} options={projectOptions} />
               <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImport(f); e.target.value = ""; }} />
-              <Table
+              <div style={{ overflowX: "auto", flex: 1 }}>
+                <Table
                 style={{ flex: 1, minHeight: 0 }}
                 rowKey="id"
-                dataSource={list}
+                  dataSource={filteredServers}
                 loading={loading}
-                scroll={{ x: "max-content", y: tableScrollY }}
+                scroll={{ x: 2200, y: tableScrollY }}
                 rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys as number[]) }}
                 pagination={{
                   current: query.page,
                   pageSize: query.page_size,
-                  total,
+                  total: selectedCloudAccountId ? filteredServers.length : total,
                   showSizeChanger: true,
                   pageSizeOptions: [10, 20, 50, 100],
                   showQuickJumper: true,
@@ -582,10 +953,42 @@ export function ProjectServersPage() {
                 }}
                 columns={[
                   { title: "名称", dataIndex: "name", width: 150 },
+                  { title: "云厂商", dataIndex: "provider", width: 100, render: (v: string, r: ServerItem) => (r.source_type === "cloud" ? (CLOUD_PROVIDER_LABEL[v] || v || "-") : "-") },
                   { title: "Host", dataIndex: "host", width: 180 },
                   { title: "Port", dataIndex: "port", width: 80 },
-                  { title: "来源", width: 120, render: (_: unknown, r: ServerItem) => <Tag>{r.source_type === "cloud" ? `云/${r.provider || "-"}` : "自建"}</Tag> },
+                  {
+                    title: "来源",
+                    width: 120,
+                    render: (_: unknown, r: ServerItem) =>
+                      r.source_type === "cloud" ? (
+                        <Tag color="processing">{`云/${CLOUD_PROVIDER_LABEL[r.provider] || r.provider || "-"}`}</Tag>
+                      ) : (
+                        <Tag color="default">自建</Tag>
+                      ),
+                  },
                   { title: "区域", dataIndex: "cloud_region", width: 100, render: (v: string) => v || "-" },
+                  { title: "可用区", dataIndex: "cloud_zone", width: 120, render: (v: string) => v || "-" },
+                  { title: "规格", dataIndex: "cloud_spec", width: 140, render: (v: string) => v || "-" },
+                  { title: "实例配置", dataIndex: "cloud_config_info", width: 180, render: (v: string) => v || "-" },
+                  { title: "云OS", dataIndex: "cloud_os_name", width: 180, render: (v: string) => v || "-" },
+                  { title: "网络信息", dataIndex: "cloud_network_info", width: 180, render: (v: string) => v || "-" },
+                  { title: "实例计费", dataIndex: "cloud_charge_type", width: 140, render: (v: string) => mapChargeTypeZh(v) },
+                  { title: "网络计费", dataIndex: "cloud_network_charge_type", width: 140, render: (v: string) => mapNetworkChargeTypeZh(v) },
+                  { title: "标签", dataIndex: "cloud_tags_json", width: 220, render: (v: string) => renderCloudTags(v) },
+                  { title: "公网IP", dataIndex: "cloud_public_ip", width: 140, render: (v: string) => v || "-" },
+                  { title: "内网IP", dataIndex: "cloud_private_ip", width: 140, render: (v: string) => v || "-" },
+                  {
+                    title: "云状态",
+                    dataIndex: "cloud_status_text",
+                    width: 120,
+                    render: (v: string) => {
+                      const s = String(v || "").toUpperCase();
+                      if (!s) return "-";
+                      if (s.includes("RUNNING")) return <Tag color="success">{v}</Tag>;
+                      if (s.includes("STOP") || s.includes("STOPPED")) return <Tag color="warning">{v}</Tag>;
+                      return <Tag color="default">{v}</Tag>;
+                    },
+                  },
                   { title: "OS / 架构", width: 150, render: (_: unknown, r: ServerItem) => `${r.os_type || "-"} / ${r.os_arch || "-"}` },
                   { title: "启用状态", dataIndex: "status", width: 100, render: (v: number) => (v === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">停用</Tag>) },
                   {
@@ -600,10 +1003,11 @@ export function ProjectServersPage() {
                   { title: "测试错误", dataIndex: "last_test_error", ellipsis: true, render: (v?: string | null) => (v ? <span title={v}>{v}</span> : "-") },
                   {
                     title: "操作",
-                    width: 420,
+                    width: 260,
+                    fixed: "right",
                     render: (_: unknown, r: ServerItem) => (
-                      <Space wrap>
-                        <Button
+                      <Space size={6} wrap>
+                        <Button size="small"
                           icon={<LinkOutlined />}
                           onClick={() => {
                             if (!projectId) return;
@@ -612,14 +1016,33 @@ export function ProjectServersPage() {
                         >
                           连接
                         </Button>
-                        <Button icon={<ApiOutlined />} onClick={() => projectId && testProjectServer(projectId, r.id).then((x) => { x.ok ? message.success(x.message || "连通性 OK") : message.error(x.message || "连通性失败"); void loadServers(); })}>测试</Button>
-                        <Button icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
-                        <Popconfirm title="确定删除该服务器？" onConfirm={() => void onDelete(r)}><Button danger icon={<DeleteOutlined />}>删除</Button></Popconfirm>
+                        <Button size="small" icon={<ApiOutlined />} onClick={() => projectId && testProjectServer(projectId, r.id).then((x) => { x.ok ? message.success(x.message || "连通性 OK") : message.error(x.message || "连通性失败"); void loadServers(); })}>测试</Button>
+                        {r.source_type === "cloud" ? (
+                          <Button size="small" loading={cloudActionSubmitting} onClick={() => confirmRebootCloudServer(r)}>重启</Button>
+                        ) : null}
+                        {r.source_type === "cloud" ? (
+                          <Button size="small" loading={cloudActionSubmitting} onClick={() => confirmShutdownCloudServer(r)}>关机</Button>
+                        ) : null}
+                        {r.source_type === "cloud" ? (
+                          <Button
+                            size="small"
+                            loading={cloudActionSubmitting}
+                            onClick={() => {
+                              setResetPasswordTarget(r);
+                              resetPasswordForm.resetFields();
+                            }}
+                          >
+                            改密
+                          </Button>
+                        ) : null}
+                        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
+                        <Popconfirm title="确定删除该服务器？" onConfirm={() => void onDelete(r)}><Button size="small" danger icon={<DeleteOutlined />}>删除</Button></Popconfirm>
                       </Space>
                     ),
                   },
                 ]}
               />
+              </div>
             </Card>
           </div>
         </Col>
@@ -640,7 +1063,7 @@ export function ProjectServersPage() {
       </Modal>
 
       <Modal title={current ? "编辑服务器" : "新增服务器"} open={editorOpen} onCancel={() => setEditorOpen(false)} onOk={() => void onSubmit()} confirmLoading={submitting} destroyOnClose width={720}>
-        <Form layout="vertical" form={form}>
+        <Form layout="vertical" form={form} autoComplete="off">
           <Form.Item name="id" hidden><Input /></Form.Item>
           <Form.Item name="project_id" hidden><Input /></Form.Item>
           <Form.Item name="group_id" hidden><Input /></Form.Item>
@@ -664,12 +1087,50 @@ export function ProjectServersPage() {
               form={form}
               labelFieldName="port_dict_label"
               targetFieldName="port"
-              options={serverPortDict}
+              options={activePortDict}
               placeholder="选择字典中的端口模板"
             />
           </Form.Item>
           <Form.Item label="区域" name="cloud_region"><Input placeholder="例如：cn-hangzhou / 华东-1 / IDC-A" /></Form.Item>
           <Form.Item label="Tags（逗号分隔）" name="tags"><Input /></Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, next) => prev.source_type !== next.source_type || prev.provider !== next.provider}>
+            {({ getFieldValue }) => {
+              const sourceType = String(getFieldValue("source_type") || "");
+              const provider = String(getFieldValue("provider") || "");
+              if (sourceType !== "cloud" || !["tencent", "alibaba", "jd"].includes(provider)) return null;
+              return (
+                <Card size="small" title={`云厂商标签（${CLOUD_PROVIDER_LABEL[provider] || provider || "-"}）`}>
+                  <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                    {cloudTagRows.map((row, idx) => (
+                      <Space key={`${idx}-${row.key}`} style={{ width: "100%" }} size={8}>
+                        <Input
+                          placeholder="标签键（Tag Key）"
+                          value={row.key}
+                          onChange={(e) =>
+                            setCloudTagRows((prev) => prev.map((it, i) => (i === idx ? { ...it, key: e.target.value } : it)))
+                          }
+                        />
+                        <Input
+                          placeholder="标签值（Tag Value）"
+                          value={row.value}
+                          onChange={(e) =>
+                            setCloudTagRows((prev) => prev.map((it, i) => (i === idx ? { ...it, value: e.target.value } : it)))
+                          }
+                        />
+                        <Button danger onClick={() => setCloudTagRows((prev) => prev.filter((_, i) => i !== idx))}>
+                          删除
+                        </Button>
+                      </Space>
+                    ))}
+                    <Space>
+                      <Button onClick={() => setCloudTagRows((prev) => [...prev, { key: "", value: "" }])}>新增标签</Button>
+                      <Typography.Text type="secondary">保存后会回写腾讯云标签并同步到本地。</Typography.Text>
+                    </Space>
+                  </Space>
+                </Card>
+              );
+            }}
+          </Form.Item>
           <Card size="small" title="SSH 凭据（可选）">
             <Space style={{ width: "100%" }} size={16} align="start">
               <Form.Item label="认证方式" name="auth_type" style={{ width: 180 }}><Select options={serverAuthOptions} /></Form.Item>
@@ -683,17 +1144,30 @@ export function ProjectServersPage() {
                 form={form}
                 labelFieldName="username_dict_label"
                 targetFieldName="username"
-                options={sshUserDict}
+                options={activeUserDict}
                 placeholder="选择字典中的用户名模板"
               />
             </Form.Item>
             <Form.Item label="用户名" name="username">
-              <Input />
+              <Input autoComplete="off" />
             </Form.Item>
             <Form.Item noStyle shouldUpdate={(a, b) => a.auth_type !== b.auth_type}>
               {({ getFieldValue }) =>
                 getFieldValue("auth_type") === "key" ? (
                   <>
+                    <Form.Item
+                      label="从数据字典填私钥"
+                      name="private_key_dict_label"
+                      extra="按标签选择；选后写入下方私钥框。手改私钥会清空此处。"
+                    >
+                      <DictLabelFillSelect
+                        form={form}
+                        labelFieldName="private_key_dict_label"
+                        targetFieldName="private_key"
+                        options={activeKeyDict}
+                        placeholder="选择字典中的私钥模板"
+                      />
+                    </Form.Item>
                     <Form.Item label="私钥（PEM）" name="private_key"><Input.TextArea rows={6} /></Form.Item>
                     <Form.Item label="私钥口令（可选）" name="passphrase"><Input.Password /></Form.Item>
                   </>
@@ -708,18 +1182,43 @@ export function ProjectServersPage() {
                         form={form}
                         labelFieldName="password_dict_label"
                         targetFieldName="password"
-                        options={sshPwdDict}
+                        options={activePwdDict}
                         placeholder="选择字典中的密码模板"
                       />
                     </Form.Item>
                     <Form.Item label="密码" name="password">
-                      <Input.Password placeholder={current ? "留空表示保留原密码" : undefined} />
+                      <Input.Password placeholder={current ? "留空表示保留原密码" : undefined} autoComplete="new-password" />
                     </Form.Item>
                   </>
                 )
               }
             </Form.Item>
           </Card>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={"重置云服务器密码"}
+        open={!!resetPasswordTarget}
+        onCancel={() => {
+          setResetPasswordTarget(null);
+          resetPasswordForm.resetFields();
+        }}
+        onOk={() => void submitResetCloudPassword()}
+        confirmLoading={cloudActionSubmitting}
+        destroyOnClose
+      >
+        <Form form={resetPasswordForm} layout="vertical" autoComplete="off">
+          <Form.Item
+            label="新密码"
+            name="new_password"
+            rules={[
+              { required: true, message: "请输入新密码" },
+              { min: 8, message: "密码至少 8 位" },
+            ]}
+          >
+            <Input.Password autoComplete="new-password" placeholder="请输入云厂商接口要求的新密码" />
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -738,7 +1237,50 @@ export function ProjectServersPage() {
           />
         ) : null}
       </Modal>
+
+      <Modal title={editingCloudAccount ? "编辑云账号" : "新增云账号"} open={cloudAccountEditorOpen} onCancel={() => { setCloudAccountEditorOpen(false); setEditingCloudAccount(null); cloudForm.resetFields(); }} onOk={() => void onSaveCloudAccount()} confirmLoading={cloudSubmitting} destroyOnClose width={720}>
+        <Form form={cloudForm} layout="vertical" autoComplete="off">
+          <Form.Item name="id" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item label="账号名称" name="account_name" rules={[{ required: true, message: "请输入账号名称" }]}>
+            <Input placeholder="账号名称" autoComplete="off" />
+          </Form.Item>
+          <Form.Item label="同步区域" name="region_scope">
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              placeholder={regionOptions.length > 0 ? "选择同步区域（可多选）" : "输入或选择区域"}
+              options={regionOptions}
+            />
+          </Form.Item>
+          <Form.Item label="从字典填 AK（可选）" name="ak_dict_label">
+            <DictLabelFillSelect
+              form={cloudForm}
+              labelFieldName="ak_dict_label"
+              targetFieldName="ak"
+              options={cloudAKDictOptions}
+              placeholder="从字典填 AK（可选）"
+            />
+          </Form.Item>
+          <Form.Item label="AccessKey ID" name="ak" rules={[{ required: true, message: "请输入 AK" }]}>
+            <Input placeholder="AccessKey ID" autoComplete="off" />
+          </Form.Item>
+          <Form.Item label="从字典填 SK（可选）" name="sk_dict_label">
+            <DictLabelFillSelect
+              form={cloudForm}
+              labelFieldName="sk_dict_label"
+              targetFieldName="sk"
+              options={cloudSKDictOptions}
+              placeholder="从字典填 SK（可选）"
+            />
+          </Form.Item>
+          <Form.Item label="AccessKey Secret" name="sk" rules={[{ required: true, message: "请输入 SK" }]}>
+            <Input.Password placeholder="AccessKey Secret" autoComplete="new-password" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Card>
   );
 }
-
