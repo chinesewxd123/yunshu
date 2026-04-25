@@ -1,0 +1,130 @@
+version: '3.3'
+
+services:
+  mysql:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/mysql:5.7.22
+    container_name: yunshu-mysql
+    restart: unless-stopped
+    mem_limit: 400m
+    cpus: 0.6
+    environment:
+      MYSQL_ROOT_PASSWORD: "YunshuDB@2026Secure!"
+      MYSQL_DATABASE: yunshu
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - /export/mysql_data:/var/lib/mysql
+      - ./configs/dump-permission_system-202604231146.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --max-connections=50
+      - --innodb-buffer-pool-size=128M
+      - --innodb-log-buffer-size=8M
+      - --key-buffer-size=8M
+      - --max-heap-table-size=16M
+      - --tmp-table-size=16M
+      - --performance-schema=OFF
+      - --skip-name-resolve
+      - --explicit_defaults_for_timestamp=1
+      - --default-time-zone=+08:00
+    networks:
+      - yunshu-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-Yunshu@2026!}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  redis:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/redis:7.4.2-alpine
+    container_name: yunshu-redis
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.3
+    command:
+      - redis-server
+      - --requirepass
+      - "YunshuRedis@2026Secure!"
+      - --maxmemory
+      - 96mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --tcp-backlog
+      - 511
+      - --databases
+      - "4"
+    ports:
+      - 6379:6379
+    volumes:
+      - /export/redis_data:/data
+    networks:
+      - yunshu-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-YunshuRedis@2026}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: yunshu-backend
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.6
+    ports:
+      - "127.0.0.1:8080:8080"      # 仅本地访问，通过 nginx 代理
+      - "127.0.0.1:18080:18080"    # 仅本地访问 gRPC
+    environment:
+      - GIN_MODE=release
+      - APP_ENV=prod
+      - TZ=UTC
+      - MYSQL_HOST=yunshu-mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD:-Yunshu@2026!}
+      - MYSQL_DB_NAME=yunshu
+      - REDIS_ADDR=yunshu-redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-YunshuRedis@2026}
+      - JWT_SECRET=${JWT_SECRET:-YunshuJWTSecretKey2026ChangeInProduction}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-32-byte-base64-encoded-key-here}
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - yunshu-network
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.frontend
+    container_name: yunshu-frontend
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.2
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - yunshu-network
+
+networks:
+  yunshu-network:
+    driver: bridge

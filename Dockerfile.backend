@@ -1,0 +1,28 @@
+# Dockerfile.backend
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/golang:1.25-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+
+# 国内 Go 代理（解决你之前下载超时）
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GOSUMDB=off
+
+RUN go mod download
+
+COPY . .
+
+# 编译二进制
+RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=1 go build -o /yunshu ./main.go
+
+# 运行镜像
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/shinsenter/scratch:latest
+
+COPY --from=builder /yunshu /app/
+COPY configs/ /app/configs/
+
+WORKDIR /app
+EXPOSE 8080 18080
+
+# 关键修改：加上 server 参数 ✅
+ENTRYPOINT ["/app/yunshu", "server"]

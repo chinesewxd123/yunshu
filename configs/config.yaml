@@ -22,24 +22,24 @@ log:
   file_path: ./logs  # log file directory path
 
 mysql:
-  host: 127.0.0.1
+  host: yunshu-mysql         # Docker 服务名，容器内部通信
   port: 3306
   user: root
-  password: "123456"
-  db_name: permission_system
+  password: "YunshuDB@2026Secure!"  # 生产环境务必修改
+  db_name: yunshu
   charset: utf8mb4
   loc: Asia%2FShanghai
-  max_idle_conns: 10
-  max_open_conns: 50
+  max_idle_conns: 5          # 降低以节省内存
+  max_open_conns: 20         # 降低以节省内存
   conn_max_lifetime_seconds: 3600
 
 redis:
-  addr: 127.0.0.1:6379
-  password: "1234"
+  addr: yunshu-redis:6379    # Docker 服务名，容器内部通信
+  password: "YunshuRedis@2026Secure!"  # 生产环境务必修改
   db: 0
-  pool_size: 20
+  pool_size: 10              # 降低以节省内存
 
-mail:
+  # mail:
   # 以下 mail.* 已收敛为“数据字典优先，YAML 兜底”：
   # - mail_host
   # - mail_port
@@ -60,7 +60,7 @@ mail:
   # use_tls: true
 
 auth:
-  jwt_secret: change-me-in-production
+  jwt_secret: "YunshuJWTSecretKey2026MustBeAtLeast32BytesLong!!"  # 生产环境务必修改，至少32字节
   access_token_ttl_minutes: 120
   email_code_ttl_seconds: 600
   email_code_cooldown_seconds: 60
@@ -78,7 +78,7 @@ security:
 
 agent:
   # log-agent 启动后用于自注册的共享密钥（建议生产环境改为强随机字符串）
-  register_secret: "change-me-agent-register-secret"
+  register_secret: "YunshuAgentRegisterSecret2026Secure!!"
 
 # 下列键的常见取值可在「系统 → 数据字典」中按类型选用，便于团队统一录入（如 config_yaml_mysql_host、alert_enrich_prometheus_url、k8s_kubeconfig_template 等）。
 alert:
