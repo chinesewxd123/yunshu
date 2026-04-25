@@ -1,17 +1,11 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 	"math/big"
-	mathrand "math/rand"
 	"strings"
 	"time"
 
@@ -25,6 +19,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/mojocn/base64Captcha"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -303,7 +298,7 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID uint, req Update
 	return &resp, nil
 }
 
-// ChangePassword updates current user's password.
+// ChangePassword updates current user's password and invalidates all user tokens.
 func (s *AuthService) ChangePassword(ctx context.Context, userID uint, req ChangePasswordRequest) error {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -325,7 +320,21 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, req Chang
 		return err
 	}
 	user.Password = hashed
-	return s.userRepo.Save(ctx, user)
+	if err = s.userRepo.Save(ctx, user); err != nil {
+		return err
+	}
+
+	// 使该用户的所有 token 失效（强制重新登录）
+	if s.redis != nil {
+		// 删除该用户的所有 token key
+		pattern := store.UserAccessTokenPattern(userID)
+		keys, _ := s.redis.Keys(ctx, pattern).Result()
+		if len(keys) > 0 {
+			_ = s.redis.Del(ctx, keys...).Err()
+		}
+	}
+
+	return nil
 }
 
 func (s *AuthService) issueLoginResponse(ctx context.Context, user *model.User) (*LoginResponse, error) {
@@ -361,7 +370,7 @@ func (s *AuthService) issueLoginResponse(ctx context.Context, user *model.User) 
 	}, nil
 }
 
-// SendPasswordLoginCode generates and stores a 4-digit verification code image in Redis for password login
+// SendPasswordLoginCode generates and stores a 4-digit verification code image using base64Captcha
 func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string) (*SendPasswordLoginCodeResponse, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
@@ -398,57 +407,22 @@ func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string
 		return nil, err
 	}
 
-	// Generate simple captcha image
-	width, height := 200, 80
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	// Fill background with white
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			img.Set(x, y, color.RGBA{255, 255, 255, 255})
-		}
-	}
-
-	// Draw random noise
-	r := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
-	for i := 0; i < 100; i++ {
-		x := r.Intn(width)
-		y := r.Intn(height)
-		img.Set(x, y, color.RGBA{uint8(150 + r.Intn(100)), uint8(150 + r.Intn(100)), uint8(150 + r.Intn(100)), 255})
-	}
-
-	// Draw random lines
-	for i := 0; i < 5; i++ {
-		x1 := r.Intn(width)
-		y1 := r.Intn(height)
-		x2 := r.Intn(width)
-		y2 := r.Intn(height)
-		drawLine(img, x1, y1, x2, y2, color.RGBA{uint8(100 + r.Intn(155)), uint8(100 + r.Intn(155)), uint8(100 + r.Intn(155)), 255})
-	}
-
-	// Draw code with random positions and colors
-	charWidth := 40
-	startX := 15
-	for i, ch := range code {
-		x := startX + i*charWidth
-		y := 10 + r.Intn(20)
-		textColor := color.RGBA{uint8(r.Intn(100)), uint8(r.Intn(100)), uint8(r.Intn(100)), 255}
-		drawChar(img, x, y, string(ch), textColor)
-	}
-
-	// Convert to PNG bytes
-	var buf bytes.Buffer
-	if err = png.Encode(&buf, img); err != nil {
+	// Use base64Captcha to generate image
+	driver := base64Captcha.NewDriverDigit(
+		80,  // height
+		240, // width
+		4,   // length
+		0.7, // maxSkew
+		80,  // dotCount
+	)
+	memStore := base64Captcha.DefaultMemStore
+	captcha := base64Captcha.NewCaptcha(driver, memStore)
+	captchaKey, imageBase64, err := captcha.Generate()
+	if err != nil {
 		return nil, apperror.Internal("验证码图片生成失败")
 	}
 
-	// Convert to base64
-	imageBase64 := base64.StdEncoding.EncodeToString(buf.Bytes())
-
-	// Generate UUID as key
-	captchaKey := uuid.New().String()
-
-	// Store in Redis with TTL
+	// Override with our numeric code in Redis
 	codeTTL := s.emailCodeTTL()
 	cooldownTTL := s.emailCodeCooldown()
 	codeKey := store.PasswordLoginCodeKey(captchaKey)
@@ -647,156 +621,156 @@ func generateNumericCode(length int) (string, error) {
 }
 
 // drawLine draws a line on the image
-func drawLine(img *image.RGBA, x1, y1, x2, y2 int, c color.RGBA) {
-	dx := abs(x2 - x1)
-	dy := abs(y2 - y1)
-	sx, sy := 1, 1
-	if x1 > x2 {
-		sx = -1
-	}
-	if y1 > y2 {
-		sy = -1
-	}
-	err := dx - dy
+// func drawLine(img *image.RGBA, x1, y1, x2, y2 int, c color.RGBA) {
+// 	dx := abs(x2 - x1)
+// 	dy := abs(y2 - y1)
+// 	sx, sy := 1, 1
+// 	if x1 > x2 {
+// 		sx = -1
+// 	}
+// 	if y1 > y2 {
+// 		sy = -1
+// 	}
+// 	err := dx - dy
 
-	for {
-		if x1 >= 0 && x1 < img.Bounds().Dx() && y1 >= 0 && y1 < img.Bounds().Dy() {
-			img.Set(x1, y1, c)
-		}
-		if x1 == x2 && y1 == y2 {
-			break
-		}
-		e2 := 2 * err
-		if e2 > -dy {
-			err -= dy
-			x1 += sx
-		}
-		if e2 < dx {
-			err += dx
-			y1 += sy
-		}
-	}
-}
+// 	for {
+// 		if x1 >= 0 && x1 < img.Bounds().Dx() && y1 >= 0 && y1 < img.Bounds().Dy() {
+// 			img.Set(x1, y1, c)
+// 		}
+// 		if x1 == x2 && y1 == y2 {
+// 			break
+// 		}
+// 		e2 := 2 * err
+// 		if e2 > -dy {
+// 			err -= dy
+// 			x1 += sx
+// 		}
+// 		if e2 < dx {
+// 			err += dx
+// 			y1 += sy
+// 		}
+// 	}
+// }
 
-// drawChar draws a character on the image with larger pixels for better visibility
-func drawChar(img *image.RGBA, x, y int, ch string, c color.RGBA) {
-	charMap := map[rune][][]bool{
-		'0': {
-			{true, true, true, true, true},
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, true, true, true, true},
-		},
-		'1': {
-			{false, false, true, false, false},
-			{false, true, true, false, false},
-			{true, true, true, false, false},
-			{false, true, true, false, false},
-			{false, true, true, false, false},
-			{false, true, true, false, false},
-			{true, true, true, true, true},
-		},
-		'2': {
-			{true, true, true, true, true},
-			{false, false, false, false, true},
-			{false, false, false, false, true},
-			{true, true, true, true, true},
-			{true, false, false, false, false},
-			{true, false, false, false, false},
-			{true, true, true, true, true},
-		},
-		'3': {
-			{true, true, true, true, true},
-			{false, false, false, false, true},
-			{false, false, false, false, true},
-			{true, true, true, true, true},
-			{false, false, false, false, true},
-			{false, false, false, false, true},
-			{true, true, true, true, true},
-		},
-		'4': {
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, true, true, true, true},
-			{false, false, false, false, true},
-			{false, false, false, false, true},
-			{false, false, false, false, true},
-		},
-		'5': {
-			{true, true, true, true, true},
-			{true, false, false, false, false},
-			{true, false, false, false, false},
-			{true, true, true, true, true},
-			{false, false, false, false, true},
-			{false, false, false, false, true},
-			{true, true, true, true, true},
-		},
-		'6': {
-			{true, true, true, true, true},
-			{true, false, false, false, false},
-			{true, false, false, false, false},
-			{true, true, true, true, true},
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, true, true, true, true},
-		},
-		'7': {
-			{true, true, true, true, true},
-			{false, false, false, false, true},
-			{false, false, false, true, false},
-			{false, false, true, false, false},
-			{false, true, false, false, false},
-			{false, true, false, false, false},
-			{false, true, false, false, false},
-		},
-		'8': {
-			{true, true, true, true, true},
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, true, true, true, true},
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, true, true, true, true},
-		},
-		'9': {
-			{true, true, true, true, true},
-			{true, false, false, false, true},
-			{true, false, false, false, true},
-			{true, true, true, true, true},
-			{false, false, false, false, true},
-			{false, false, false, false, true},
-			{true, true, true, true, true},
-		},
-	}
+// // drawChar draws a character on the image with larger pixels for better visibility
+// func drawChar(img *image.RGBA, x, y int, ch string, c color.RGBA) {
+// 	charMap := map[rune][][]bool{
+// 		'0': {
+// 			{true, true, true, true, true},
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, true, true, true, true},
+// 		},
+// 		'1': {
+// 			{false, false, true, false, false},
+// 			{false, true, true, false, false},
+// 			{true, true, true, false, false},
+// 			{false, true, true, false, false},
+// 			{false, true, true, false, false},
+// 			{false, true, true, false, false},
+// 			{true, true, true, true, true},
+// 		},
+// 		'2': {
+// 			{true, true, true, true, true},
+// 			{false, false, false, false, true},
+// 			{false, false, false, false, true},
+// 			{true, true, true, true, true},
+// 			{true, false, false, false, false},
+// 			{true, false, false, false, false},
+// 			{true, true, true, true, true},
+// 		},
+// 		'3': {
+// 			{true, true, true, true, true},
+// 			{false, false, false, false, true},
+// 			{false, false, false, false, true},
+// 			{true, true, true, true, true},
+// 			{false, false, false, false, true},
+// 			{false, false, false, false, true},
+// 			{true, true, true, true, true},
+// 		},
+// 		'4': {
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, true, true, true, true},
+// 			{false, false, false, false, true},
+// 			{false, false, false, false, true},
+// 			{false, false, false, false, true},
+// 		},
+// 		'5': {
+// 			{true, true, true, true, true},
+// 			{true, false, false, false, false},
+// 			{true, false, false, false, false},
+// 			{true, true, true, true, true},
+// 			{false, false, false, false, true},
+// 			{false, false, false, false, true},
+// 			{true, true, true, true, true},
+// 		},
+// 		'6': {
+// 			{true, true, true, true, true},
+// 			{true, false, false, false, false},
+// 			{true, false, false, false, false},
+// 			{true, true, true, true, true},
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, true, true, true, true},
+// 		},
+// 		'7': {
+// 			{true, true, true, true, true},
+// 			{false, false, false, false, true},
+// 			{false, false, false, true, false},
+// 			{false, false, true, false, false},
+// 			{false, true, false, false, false},
+// 			{false, true, false, false, false},
+// 			{false, true, false, false, false},
+// 		},
+// 		'8': {
+// 			{true, true, true, true, true},
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, true, true, true, true},
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, true, true, true, true},
+// 		},
+// 		'9': {
+// 			{true, true, true, true, true},
+// 			{true, false, false, false, true},
+// 			{true, false, false, false, true},
+// 			{true, true, true, true, true},
+// 			{false, false, false, false, true},
+// 			{false, false, false, false, true},
+// 			{true, true, true, true, true},
+// 		},
+// 	}
 
-	if bitmap, ok := charMap[rune(ch[0])]; ok {
-		pixelSize := 6
-		for i, row := range bitmap {
-			for j, pixel := range row {
-				if pixel {
-					for py := 0; py < pixelSize; py++ {
-						for px := 0; px < pixelSize; px++ {
-							tx := x + j*pixelSize + px
-							ty := y + i*pixelSize + py
-							if tx >= 0 && tx < img.Bounds().Dx() && ty >= 0 && ty < img.Bounds().Dy() {
-								img.Set(tx, ty, c)
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-}
+// 	if bitmap, ok := charMap[rune(ch[0])]; ok {
+// 		pixelSize := 6
+// 		for i, row := range bitmap {
+// 			for j, pixel := range row {
+// 				if pixel {
+// 					for py := 0; py < pixelSize; py++ {
+// 						for px := 0; px < pixelSize; px++ {
+// 							tx := x + j*pixelSize + px
+// 							ty := y + i*pixelSize + py
+// 							if tx >= 0 && tx < img.Bounds().Dx() && ty >= 0 && ty < img.Bounds().Dy() {
+// 								img.Set(tx, ty, c)
+// 							}
+// 						}
+// 					}
+// 				}
+// 			}
+// 		}
+// 	}
+// }
 
 // abs returns the absolute value of x
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
+// func abs(x int) int {
+// 	if x < 0 {
+// 		return -x
+// 	}
+// 	return x
+// }

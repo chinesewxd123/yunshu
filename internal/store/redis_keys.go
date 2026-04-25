@@ -7,6 +7,11 @@ func AccessTokenKey(tokenID string) string {
 	return "auth:access_token:" + tokenID
 }
 
+// UserAccessTokenPattern 获取用户所有访问令牌的 Redis key 模式
+func UserAccessTokenPattern(userID uint) string {
+	return "auth:access_token:*"
+}
+
 // EmailCodeKey 邮箱验证码缓存键
 func EmailCodeKey(scene, email string) string {
 	return "auth:email_code:" + strings.TrimSpace(scene) + ":" + normalizeEmailKey(email)

@@ -6,20 +6,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (!id.includes("node_modules")) {
-            return;
-          }
-          if (id.includes("react-router") || id.includes("react-dom") || id.includes("\\react\\") || id.includes("/react/")) {
-            return "react-vendor";
-          }
-          if (id.includes("antd") || id.includes("@ant-design")) {
-            return "antd-vendor";
-          }
-          if (id.includes("axios") || id.includes("dayjs")) {
-            return "shared-vendor";
-          }
-          return "vendor";
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "react-router-dom"],
+          "antd-vendor": ["antd", "@ant-design/icons"],
+          "shared-vendor": ["axios", "dayjs"],
         },
       },
     },

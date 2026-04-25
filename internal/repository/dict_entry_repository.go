@@ -177,3 +177,15 @@ func (r *DictEntryRepository) ListByTypeEnabled(ctx context.Context, dictType st
 		Find(&list).Error
 	return list, err
 }
+
+// GetByDictTypeAndValue 根据字典类型和值获取字典项
+func (r *DictEntryRepository) GetByDictTypeAndValue(ctx context.Context, dictType, value string) (*model.DictEntry, error) {
+	var item model.DictEntry
+	err := r.db.WithContext(ctx).
+		Where("dict_type = ? AND value = ?", strings.TrimSpace(dictType), strings.TrimSpace(value)).
+		First(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
