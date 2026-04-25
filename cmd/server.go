@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,7 +22,6 @@ import (
 
 	"github.com/casbin/casbin/v2"
 	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -54,8 +54,9 @@ var serverCmd = &cobra.Command{
 		app.Logger.Info.Info("database schema migrated")
 
 		// 初始化只读演示用户
+		ctx := context.Background()
 		if err := initReadonlyDemoUser(ctx, app.DB, app.Enforcer, app.Logger.Info); err != nil {
-			app.Logger.Info.Error("failed to init readonly demo user", "error", err)
+			app.Logger.Info.Error("failed to init readonly demo user", slog.Any("error", err))
 			// 非致命错误，继续启动
 		}
 
@@ -137,7 +138,7 @@ var serverCmd = &cobra.Command{
 
 // initReadonlyDemoUser 初始化只读演示用户
 // 用户名: viewer, 密码: viewer123, 角色: viewer (仅查看权限)
-func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Enforcer, logger *zap.Logger) error {
+func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.SyncedEnforcer, logger *slog.Logger) error {
 	userRepo := repository.NewUserRepository(db)
 	roleRepo := repository.NewRoleRepository(db)
 	permRepo := repository.NewPermissionRepository(db)
@@ -173,7 +174,7 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Enf
 	// 2. 配置角色权限：只读 GET 权限 + K8s 资源查看
 	// 先清除旧权限
 	if _, err := enforcer.RemoveFilteredPolicy(0, roleCode); err != nil {
-		logger.Warn("failed to remove old policies", "error", err)
+		logger.Warn("failed to remove old policies", slog.Any("error", err))
 	}
 
 	// 获取所有权限
@@ -193,7 +194,7 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Enf
 			continue
 		}
 		if _, err := enforcer.AddPolicy(roleCode, obj, "GET"); err != nil {
-			logger.Warn("failed to add policy", "resource", obj, "error", err)
+			logger.Warn("failed to add policy", slog.Any("resource", obj), slog.Any("error", err))
 			continue
 		}
 		added++
@@ -212,7 +213,7 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Enf
 	for _, path := range k8sPaths {
 		res := "k8s:cluster:*:ns:*:" + path
 		if _, err := enforcer.AddPolicy(roleCode, res, "GET"); err != nil {
-			logger.Warn("failed to add k8s policy", "path", path, "error", err)
+			logger.Warn("failed to add k8s policy", slog.Any("path", path), slog.Any("error", err))
 		}
 	}
 
@@ -236,9 +237,9 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Enf
 
 		user = &model.User{
 			Username: username,
-			Email:    email,
+			Email:    &email,
 			Password: hashedPassword,
-			Enabled:  true,
+			Status:   1,
 		}
 		if err := db.Create(user).Error; err != nil {
 			return fmt.Errorf("create user: %w", err)

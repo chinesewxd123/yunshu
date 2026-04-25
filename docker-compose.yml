@@ -50,7 +50,7 @@ services:
       - --requirepass
       - "YunshuRedis@2026Secure!"
       - --maxmemory
-      - 96mb
+      - "96mb"
       - --maxmemory-policy
       - allkeys-lru
       - --save
@@ -58,7 +58,7 @@ services:
       - --appendonly
       - "no"
       - --tcp-backlog
-      - 511
+      - "511"
       - --databases
       - "4"
     ports:
