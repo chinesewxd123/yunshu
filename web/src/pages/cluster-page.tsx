@@ -53,6 +53,7 @@ export function ClusterPage() {
     kubeconfig_dict_label?: string;
   }>();
   const connectionMode = Form.useWatch("connection_mode", form) || "kubeconfig";
+  const selectedDirectConfigKey = Form.useWatch(["direct_config", "dict_config_key"], form);
 
   const directConfigKeyOptions = useMemo(
     () =>
@@ -66,6 +67,23 @@ export function ClusterPage() {
       }),
     [directCfgDict],
   );
+
+  const directTemplateMap = useMemo(() => {
+    const map = new Map<string, Record<string, unknown>>();
+    for (const item of directCfgDict) {
+      const raw = String(item.value ?? "").trim();
+      if (!(raw.startsWith("{") || raw.startsWith("["))) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          map.set(String(item.label), parsed as Record<string, unknown>);
+        }
+      } catch {
+        // ignore invalid json template values
+      }
+    }
+    return map;
+  }, [directCfgDict]);
 
   useEffect(() => {
     void loadClusters();
@@ -193,6 +211,35 @@ export function ClusterPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalOpen, current]);
 
+  useEffect(() => {
+    if (connectionMode !== "direct") return;
+    const key = String(selectedDirectConfigKey || "").trim();
+    if (!key) return;
+    const template = directTemplateMap.get(key);
+    if (!template) return;
+    const patch: Record<string, unknown> = {};
+    const server = String(template.server || "").trim();
+    if (server) patch.server = server;
+    const token = String(template.token || "").trim();
+    if (token) patch.token = token;
+    const username = String(template.username || "").trim();
+    if (username) patch.username = username;
+    const password = String(template.password || "").trim();
+    if (password) patch.password = password;
+    const client_cert_data = String(template.client_cert_data || "").trim();
+    if (client_cert_data) patch.client_cert_data = client_cert_data;
+    const client_key_data = String(template.client_key_data || "").trim();
+    if (client_key_data) patch.client_key_data = client_key_data;
+    const ca_data = String(template.ca_data || "").trim();
+    if (ca_data) patch.ca_data = ca_data;
+    if (typeof template.insecure_skip_tls_verify === "boolean") {
+      patch.insecure_skip_tls_verify = template.insecure_skip_tls_verify;
+    }
+    if (Object.keys(patch).length === 0) return;
+    const prev = (form.getFieldValue(["direct_config"]) || {}) as Record<string, unknown>;
+    form.setFieldValue(["direct_config"], { ...prev, ...patch });
+  }, [connectionMode, directTemplateMap, form, selectedDirectConfigKey]);
+
   async function handleSubmit() {
     const values = await form.validateFields();
     const name = (values.name || "").trim();
@@ -218,13 +265,14 @@ export function ClusterPage() {
     } else {
       const direct = values.direct_config || {};
       const server = (direct.server || "").trim();
-      if (!server) {
-        message.error("直连模式下 API Server 地址必填");
+      const dictConfigKey = (direct.dict_config_key || "").trim();
+      if (!server && !dictConfigKey) {
+        message.error("请填写 API Server 地址或选择直连模板");
         return;
       }
       payload.direct_config = {
-        server,
-        dict_config_key: (direct.dict_config_key || "").trim() || undefined,
+        server: server || undefined,
+        dict_config_key: dictConfigKey || undefined,
         token: (direct.token || "").trim() || undefined,
         username: (direct.username || "").trim() || undefined,
         password: (direct.password || "").trim() || undefined,
@@ -520,8 +568,27 @@ export function ClusterPage() {
                 label="API Server 地址"
                 name={["direct_config", "server"]}
                 rules={[
-                  { required: true, message: "请输入 API Server 地址" },
-                  { type: "url", message: "请输入合法 URL，例如 https://10.0.0.1:6443" },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      const server = String(value || "").trim();
+                      const dictKey = String(getFieldValue(["direct_config", "dict_config_key"]) || "").trim();
+                      if (!server && !dictKey) {
+                        return Promise.reject(new Error("请输入 API Server 地址或选择直连模板"));
+                      }
+                      if (!server) {
+                        return Promise.resolve();
+                      }
+                      try {
+                        const u = new URL(server);
+                        if (!u.protocol || !u.host) {
+                          return Promise.reject(new Error("请输入合法 URL，例如 https://10.0.0.1:6443"));
+                        }
+                        return Promise.resolve();
+                      } catch {
+                        return Promise.reject(new Error("请输入合法 URL，例如 https://10.0.0.1:6443"));
+                      }
+                    },
+                  }),
                 ]}
               >
                 <Input placeholder="https://x.x.x.x:6443" />

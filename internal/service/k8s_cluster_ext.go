@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"yunshu/internal/repository"
 
@@ -61,22 +62,29 @@ func mergeDirectConfig(base, override *DirectConfig) {
 
 // buildKubeconfigFromDirectConfig 从直连配置生成kubeconfig
 func buildKubeconfigFromDirectConfig(config *DirectConfig) (string, error) {
+	serverRaw := strings.TrimSpace(config.Server)
+	if serverRaw == "" {
+		return "", fmt.Errorf("API Server 地址不能为空")
+	}
 	// 解析服务器地址
-	serverURL, err := url.Parse(config.Server)
+	serverURL, err := url.Parse(serverRaw)
 	if err != nil {
 		return "", fmt.Errorf("无效的服务器地址: %w", err)
+	}
+	if serverURL.Scheme == "" || serverURL.Host == "" {
+		return "", fmt.Errorf("无效的服务器地址: 需要完整 URL（如 https://10.0.0.1:6443）")
 	}
 
 	// 构建REST配置
 	restConfig := &rest.Config{
-		Host: serverURL.String(),
+		Host: serverRaw,
 		TLSClientConfig: rest.TLSClientConfig{
 			Insecure: config.InsecureSkipTLSVerify,
 		},
 	}
 
-	// 设置CA证书
-	if config.CAData != "" {
+	// 设置CA证书。若已开启 insecure，client-go 不允许同时带 root CA。
+	if !config.InsecureSkipTLSVerify && config.CAData != "" {
 		caData, err := base64.StdEncoding.DecodeString(config.CAData)
 		if err != nil {
 			return "", fmt.Errorf("CA证书解码失败: %w", err)

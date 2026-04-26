@@ -30,7 +30,7 @@ type K8sClusterCreateRequest struct {
 }
 
 type DirectConfig struct {
-	Server                string `json:"server" binding:"required,url"`
+	Server                string `json:"server" binding:"omitempty,url"`
 	InsecureSkipTLSVerify bool   `json:"insecure_skip_tls_verify,omitempty"`
 	CAData                string `json:"ca_data,omitempty"`
 	Token                 string `json:"token,omitempty"`
@@ -54,12 +54,14 @@ type K8sClusterSetStatusRequest struct {
 }
 
 type K8sClusterItem struct {
-	ID         uint      `json:"id"`
-	Name       string    `json:"name"`
-	Kubeconfig string    `json:"kubeconfig,omitempty"`
-	Status     int       `json:"status"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID             uint          `json:"id"`
+	Name           string        `json:"name"`
+	ConnectionMode string        `json:"connection_mode,omitempty"`
+	Kubeconfig     string        `json:"kubeconfig,omitempty"`
+	DirectConfig   *DirectConfig `json:"direct_config,omitempty"`
+	Status         int           `json:"status"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 type K8sClusterListResponse struct {
@@ -120,13 +122,7 @@ func (s *K8sClusterService) List(ctx context.Context, query K8sClusterListQuery)
 	}
 	items := make([]K8sClusterItem, 0, len(clusters))
 	for _, c := range clusters {
-		items = append(items, K8sClusterItem{
-			ID:        c.ID,
-			Name:      c.Name,
-			Status:    c.Status,
-			CreatedAt: c.CreatedAt,
-			UpdatedAt: c.UpdatedAt,
-		})
+		items = append(items, buildClusterItem(c))
 	}
 	return &K8sClusterListResponse{
 		List:     items,
@@ -181,7 +177,14 @@ func (s *K8sClusterService) Create(ctx context.Context, req K8sClusterCreateRequ
 	if err := s.repo.Create(ctx, c); err != nil {
 		return nil, err
 	}
-	return &K8sClusterItem{ID: c.ID, Name: c.Name, Status: c.Status, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt}, nil
+	return &K8sClusterItem{
+		ID:             c.ID,
+		Name:           c.Name,
+		ConnectionMode: c.ConnectionMode,
+		Status:         c.Status,
+		CreatedAt:      c.CreatedAt,
+		UpdatedAt:      c.UpdatedAt,
+	}, nil
 }
 
 // Detail 查询详情相关的业务逻辑。
@@ -190,14 +193,9 @@ func (s *K8sClusterService) Detail(ctx context.Context, id uint) (*K8sClusterIte
 	if err != nil {
 		return nil, err
 	}
-	return &K8sClusterItem{
-		ID:         cluster.ID,
-		Name:       cluster.Name,
-		Kubeconfig: cluster.Kubeconfig,
-		Status:     cluster.Status,
-		CreatedAt:  cluster.CreatedAt,
-		UpdatedAt:  cluster.UpdatedAt,
-	}, nil
+	item := buildClusterItem(*cluster)
+	item.Kubeconfig = cluster.Kubeconfig
+	return &item, nil
 }
 
 // Update 更新相关的业务逻辑。
@@ -249,7 +247,14 @@ func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterU
 	if err := s.repo.Update(ctx, cluster); err != nil {
 		return nil, err
 	}
-	return &K8sClusterItem{ID: cluster.ID, Name: cluster.Name, Status: cluster.Status, CreatedAt: cluster.CreatedAt, UpdatedAt: cluster.UpdatedAt}, nil
+	return &K8sClusterItem{
+		ID:             cluster.ID,
+		Name:           cluster.Name,
+		ConnectionMode: cluster.ConnectionMode,
+		Status:         cluster.Status,
+		CreatedAt:      cluster.CreatedAt,
+		UpdatedAt:      cluster.UpdatedAt,
+	}, nil
 }
 
 // Delete 删除相关的业务逻辑。
@@ -277,7 +282,32 @@ func (s *K8sClusterService) SetStatus(ctx context.Context, id uint, status int) 
 			return nil, err
 		}
 	}
-	return &K8sClusterItem{ID: cluster.ID, Name: cluster.Name, Status: cluster.Status, CreatedAt: cluster.CreatedAt, UpdatedAt: cluster.UpdatedAt}, nil
+	return &K8sClusterItem{
+		ID:             cluster.ID,
+		Name:           cluster.Name,
+		ConnectionMode: cluster.ConnectionMode,
+		Status:         cluster.Status,
+		CreatedAt:      cluster.CreatedAt,
+		UpdatedAt:      cluster.UpdatedAt,
+	}, nil
+}
+
+func buildClusterItem(c model.K8sCluster) K8sClusterItem {
+	item := K8sClusterItem{
+		ID:             c.ID,
+		Name:           c.Name,
+		ConnectionMode: c.ConnectionMode,
+		Status:         c.Status,
+		CreatedAt:      c.CreatedAt,
+		UpdatedAt:      c.UpdatedAt,
+	}
+	if c.ConnectionMode == "direct" && strings.TrimSpace(c.DirectConfig) != "" {
+		var dc DirectConfig
+		if err := json.Unmarshal([]byte(c.DirectConfig), &dc); err == nil {
+			item.DirectConfig = &dc
+		}
+	}
+	return item
 }
 
 // Status 执行对应的业务逻辑。
