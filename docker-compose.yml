@@ -50,7 +50,7 @@ services:
       - --requirepass
       - "YunshuRedis@2026Secure!"
       - --maxmemory
-      - 96mb
+      - "96mb"
       - --maxmemory-policy
       - allkeys-lru
       - --save
@@ -58,7 +58,7 @@ services:
       - --appendonly
       - "no"
       - --tcp-backlog
-      - 511
+      - "511"
       - --databases
       - "4"
     ports:
@@ -83,8 +83,8 @@ services:
     mem_limit: 384m
     cpus: 0.6
     ports:
-      - "127.0.0.1:8080:8080"      # 仅本地访问，通过 nginx 代理
-      - "127.0.0.1:18080:18080"    # 仅本地访问 gRPC
+      - "8080:8080"      # 改为监听所有接口
+      - "127.0.0.1:18080:18080"    # gRPC 仍本地
     environment:
       - GIN_MODE=release
       - APP_ENV=prod

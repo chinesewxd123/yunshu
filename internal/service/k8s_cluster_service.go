@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -22,13 +23,30 @@ type K8sClusterListQuery struct {
 }
 
 type K8sClusterCreateRequest struct {
-	Name       string `json:"name" binding:"required,max=128"`
-	Kubeconfig string `json:"kubeconfig" binding:"required"`
+	Name           string        `json:"name" binding:"required,max=128"`
+	ConnectionMode string        `json:"connection_mode,omitempty" binding:"omitempty,oneof=kubeconfig direct"`
+	Kubeconfig     string        `json:"kubeconfig,omitempty"`
+	DirectConfig   *DirectConfig `json:"direct_config,omitempty"`
+}
+
+type DirectConfig struct {
+	Server                string `json:"server" binding:"required,url"`
+	InsecureSkipTLSVerify bool   `json:"insecure_skip_tls_verify,omitempty"`
+	CAData                string `json:"ca_data,omitempty"`
+	Token                 string `json:"token,omitempty"`
+	Username              string `json:"username,omitempty"`
+	Password              string `json:"password,omitempty"`
+	ClientCertData        string `json:"client_cert_data,omitempty"`
+	ClientKeyData         string `json:"client_key_data,omitempty"`
+	// DictConfigKey 从数据字典读取的配置键
+	DictConfigKey string `json:"dict_config_key,omitempty"`
 }
 
 type K8sClusterUpdateRequest struct {
-	Name       *string `json:"name,omitempty" binding:"omitempty,max=128"`
-	Kubeconfig *string `json:"kubeconfig,omitempty" binding:"omitempty"`
+	Name           *string       `json:"name,omitempty" binding:"omitempty,max=128"`
+	ConnectionMode *string       `json:"connection_mode,omitempty" binding:"omitempty,oneof=kubeconfig direct"`
+	Kubeconfig     *string       `json:"kubeconfig,omitempty"`
+	DirectConfig   *DirectConfig `json:"direct_config,omitempty"`
 }
 
 type K8sClusterSetStatusRequest struct {
@@ -75,15 +93,17 @@ type ComponentStatusItem struct {
 }
 
 type K8sClusterService struct {
-	repo    *repository.K8sClusterRepository
-	runtime *K8sRuntimeService
+	repo     *repository.K8sClusterRepository
+	dictRepo *repository.DictEntryRepository
+	runtime  *K8sRuntimeService
 }
 
 // NewK8sClusterService 创建相关逻辑。
-func NewK8sClusterService(repo *repository.K8sClusterRepository, runtime *K8sRuntimeService) *K8sClusterService {
+func NewK8sClusterService(repo *repository.K8sClusterRepository, dictRepo *repository.DictEntryRepository, runtime *K8sRuntimeService) *K8sClusterService {
 	return &K8sClusterService{
-		repo:    repo,
-		runtime: runtime,
+		repo:     repo,
+		dictRepo: dictRepo,
+		runtime:  runtime,
 	}
 }
 
@@ -118,7 +138,46 @@ func (s *K8sClusterService) List(ctx context.Context, query K8sClusterListQuery)
 
 // Create 创建相关的业务逻辑。
 func (s *K8sClusterService) Create(ctx context.Context, req K8sClusterCreateRequest) (*K8sClusterItem, error) {
-	c := &model.K8sCluster{Name: req.Name, Kubeconfig: req.Kubeconfig, Status: 1}
+	// 设置默认连接模式
+	connectionMode := req.ConnectionMode
+	if connectionMode == "" {
+		connectionMode = "kubeconfig"
+	}
+
+	c := &model.K8sCluster{
+		Name:           req.Name,
+		ConnectionMode: connectionMode,
+		Status:         1,
+	}
+
+	// 处理直连配置
+	if connectionMode == "direct" && req.DirectConfig != nil {
+		// 如果从字典读取配置
+		if req.DirectConfig.DictConfigKey != "" && s.dictRepo != nil {
+			dictConfig, err := getDirectConfigFromDict(ctx, s.dictRepo, req.DirectConfig.DictConfigKey)
+			if err != nil {
+				return nil, apperror.BadRequest(fmt.Sprintf("从数据字典读取配置失败: %v", err))
+			}
+			// 合并字典配置和用户配置（用户配置优先）
+			mergeDirectConfig(dictConfig, req.DirectConfig)
+			req.DirectConfig = dictConfig
+		}
+
+		directConfigJSON, err := json.Marshal(req.DirectConfig)
+		if err != nil {
+			return nil, apperror.Internal("序列化直连配置失败")
+		}
+		c.DirectConfig = string(directConfigJSON)
+		// 为直连模式生成兼容的kubeconfig
+		kubeconfig, err := buildKubeconfigFromDirectConfig(req.DirectConfig)
+		if err != nil {
+			return nil, apperror.BadRequest(fmt.Sprintf("生成kubeconfig失败: %v", err))
+		}
+		c.Kubeconfig = kubeconfig
+	} else {
+		c.Kubeconfig = req.Kubeconfig
+	}
+
 	if err := s.repo.Create(ctx, c); err != nil {
 		return nil, err
 	}
@@ -150,10 +209,43 @@ func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterU
 	if req.Name != nil {
 		cluster.Name = *req.Name
 	}
-	if req.Kubeconfig != nil {
+
+	// 处理连接模式变更
+	if req.ConnectionMode != nil {
+		cluster.ConnectionMode = *req.ConnectionMode
+	}
+
+	// 处理直连配置更新
+	if cluster.ConnectionMode == "direct" && req.DirectConfig != nil {
+		// 如果从字典读取配置
+		if req.DirectConfig.DictConfigKey != "" && s.dictRepo != nil {
+			dictConfig, err := getDirectConfigFromDict(ctx, s.dictRepo, req.DirectConfig.DictConfigKey)
+			if err != nil {
+				return nil, apperror.BadRequest(fmt.Sprintf("从数据字典读取配置失败: %v", err))
+			}
+			// 合并字典配置和用户配置（用户配置优先）
+			mergeDirectConfig(dictConfig, req.DirectConfig)
+			req.DirectConfig = dictConfig
+		}
+
+		directConfigJSON, err := json.Marshal(req.DirectConfig)
+		if err != nil {
+			return nil, apperror.Internal("序列化直连配置失败")
+		}
+		cluster.DirectConfig = string(directConfigJSON)
+
+		// 为直连模式生成兼容的kubeconfig
+		kubeconfig, err := buildKubeconfigFromDirectConfig(req.DirectConfig)
+		if err != nil {
+			return nil, apperror.BadRequest(fmt.Sprintf("生成kubeconfig失败: %v", err))
+		}
+		cluster.Kubeconfig = kubeconfig
+		s.runtime.DeleteRegisterCache(cluster.ID)
+	} else if req.Kubeconfig != nil {
 		cluster.Kubeconfig = *req.Kubeconfig
 		s.runtime.DeleteRegisterCache(cluster.ID)
 	}
+
 	if err := s.repo.Update(ctx, cluster); err != nil {
 		return nil, err
 	}

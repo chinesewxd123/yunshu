@@ -53,7 +53,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 
 	clusterRepo := repository.NewK8sClusterRepository(app.DB)
 	k8sRuntimeService := service.NewK8sRuntimeService(clusterRepo)
-	clusterService := service.NewK8sClusterService(clusterRepo, k8sRuntimeService)
+	clusterService := service.NewK8sClusterService(clusterRepo, dictEntryRepo, k8sRuntimeService)
 	podService := service.NewK8sPodService(k8sRuntimeService)
 	namespaceService := service.NewK8sNamespaceService(k8sRuntimeService)
 	nodeService := service.NewK8sNodeService(k8sRuntimeService)

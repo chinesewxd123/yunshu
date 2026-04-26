@@ -8,7 +8,7 @@ import {
   ReloadOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { DictLabelFillSelect } from "../components/dict-fill-select";
 import { useDictOptions } from "../hooks/use-dict-options";
@@ -34,6 +34,7 @@ function phaseColor(phase: string): string {
 
 export function ClusterPage() {
   const kubeTplDict = useDictOptions("k8s_kubeconfig_template");
+  const directCfgDict = useDictOptions("k8s_direct_config");
 
   const [query, setQuery] = useState<ClusterQuery>(defaultQuery);
   const [loading, setLoading] = useState(false);
@@ -47,7 +48,24 @@ export function ClusterPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [current, setCurrent] = useState<ClusterItem | null>(null);
-  const [form] = Form.useForm<ClusterCreatePayload & Partial<ClusterUpdatePayload> & { kubeconfig_dict_label?: string }>();
+  const [form] = Form.useForm<ClusterCreatePayload &
+  Partial<ClusterUpdatePayload> & {
+    kubeconfig_dict_label?: string;
+  }>();
+  const connectionMode = Form.useWatch("connection_mode", form) || "kubeconfig";
+
+  const directConfigKeyOptions = useMemo(
+    () =>
+      directCfgDict.map((it) => {
+        const rawValue = String(it.value ?? "").trim();
+        const usesJSONAsValue = rawValue.startsWith("{") || rawValue.startsWith("[");
+        return {
+          label: String(it.label),
+          value: usesJSONAsValue ? String(it.label) : rawValue,
+        };
+      }),
+    [directCfgDict],
+  );
 
   useEffect(() => {
     void loadClusters();
@@ -137,12 +155,40 @@ export function ClusterPage() {
       form.resetFields();
       form.setFieldsValue({
         name: current.name,
+        connection_mode: current.connection_mode || "kubeconfig",
         kubeconfig: current.kubeconfig || "",
         kubeconfig_dict_label: undefined,
+        direct_config: {
+          server: current.direct_config?.server || "",
+          dict_config_key: current.direct_config?.dict_config_key || undefined,
+          token: current.direct_config?.token || "",
+          username: current.direct_config?.username || "",
+          password: current.direct_config?.password || "",
+          client_cert_data: current.direct_config?.client_cert_data || "",
+          client_key_data: current.direct_config?.client_key_data || "",
+          ca_data: current.direct_config?.ca_data || "",
+          insecure_skip_tls_verify: current.direct_config?.insecure_skip_tls_verify || false,
+        },
       });
     } else {
       form.resetFields();
-      form.setFieldsValue({ name: "", kubeconfig: "", kubeconfig_dict_label: undefined });
+      form.setFieldsValue({
+        name: "",
+        connection_mode: "kubeconfig",
+        kubeconfig: "",
+        kubeconfig_dict_label: undefined,
+        direct_config: {
+          server: "",
+          dict_config_key: undefined,
+          token: "",
+          username: "",
+          password: "",
+          client_cert_data: "",
+          client_key_data: "",
+          ca_data: "",
+          insecure_skip_tls_verify: false,
+        },
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalOpen, current]);
@@ -151,21 +197,43 @@ export function ClusterPage() {
     const values = await form.validateFields();
     const name = (values.name || "").trim();
     if (!name) return;
+    const connection_mode = values.connection_mode || "kubeconfig";
 
-    const payload: ClusterCreatePayload & ClusterUpdatePayload = { name, kubeconfig: "" };
+    const payload: ClusterCreatePayload & ClusterUpdatePayload = { name, connection_mode };
     const kubeconfig = (values.kubeconfig || "").trim();
     const isCreate = !current;
 
-    if (isCreate && !kubeconfig) {
-      message.error("请填写 kubeconfig（创建集群必填）");
-      return;
-    }
+    if (connection_mode === "kubeconfig") {
+      if (isCreate && !kubeconfig) {
+        message.error("请填写 kubeconfig（创建集群必填）");
+        return;
+      }
 
-    if (kubeconfig) {
-      payload.kubeconfig = kubeconfig;
+      if (kubeconfig) {
+        payload.kubeconfig = kubeconfig;
+      } else {
+        // Update without kubeconfig
+        delete (payload as { kubeconfig?: string }).kubeconfig;
+      }
     } else {
-      // Update without kubeconfig
-      delete (payload as any).kubeconfig;
+      const direct = values.direct_config || {};
+      const server = (direct.server || "").trim();
+      if (!server) {
+        message.error("直连模式下 API Server 地址必填");
+        return;
+      }
+      payload.direct_config = {
+        server,
+        dict_config_key: (direct.dict_config_key || "").trim() || undefined,
+        token: (direct.token || "").trim() || undefined,
+        username: (direct.username || "").trim() || undefined,
+        password: (direct.password || "").trim() || undefined,
+        client_cert_data: (direct.client_cert_data || "").trim() || undefined,
+        client_key_data: (direct.client_key_data || "").trim() || undefined,
+        ca_data: (direct.ca_data || "").trim() || undefined,
+        insecure_skip_tls_verify: Boolean(direct.insecure_skip_tls_verify),
+      };
+      delete (payload as { kubeconfig?: string }).kubeconfig;
     }
 
     setSubmitting(true);
@@ -376,7 +444,7 @@ export function ClusterPage() {
         />
       </Space>
       <Modal
-        title={current ? `编辑集群 #${current.id}` : "新建集群"}
+        title={current ? "编辑集群" : "新建集群"}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={() => void handleSubmit()}
@@ -384,42 +452,107 @@ export function ClusterPage() {
         destroyOnClose
         width={720}
       >
-        <Form form={form} layout="vertical" initialValues={{ name: "", kubeconfig: "" }}>
+        <Form form={form} layout="vertical" initialValues={{ name: "", connection_mode: "kubeconfig", kubeconfig: "" }}>
           <Form.Item label="集群名称" name="name" rules={[{ required: true, message: "请输入集群名称" }]}>
             <Input placeholder="例如：prod-k8s" />
           </Form.Item>
 
-          <Form.Item
-            label="从数据字典插入 kubeconfig 模板"
-            name="kubeconfig_dict_label"
-            extra="与下方 kubeconfig 内容一致时会自动选中对应模板；修改 yaml 后若不一致会清空此处。"
-          >
-            <DictLabelFillSelect
-              form={form}
-              labelFieldName="kubeconfig_dict_label"
-              targetFieldName="kubeconfig"
-              options={kubeTplDict}
-              placeholder="选择模板后填入下方文本框（按标签选，避免下拉展示整段 yaml）"
-              style={{ maxWidth: 480 }}
+          <Form.Item label="连接模式" name="connection_mode" rules={[{ required: true, message: "请选择连接模式" }]}>
+            <Select
+              options={[
+                { label: "kubeconfig", value: "kubeconfig" },
+                { label: "direct（直连）", value: "direct" },
+              ]}
             />
           </Form.Item>
 
-          <Form.Item
-            label="kubeconfig"
-            name="kubeconfig"
-            rules={
-              current
-                ? []
-                : [{ required: true, message: "请填写 kubeconfig" }]
-            }
-            extra={current ? "已预填当前 kubeconfig，可直接修改后保存" : "用于 Kom SDK 注册并访问集群"}
-          >
-            <Input.TextArea
-              rows={8}
-              placeholder="粘贴 kubeconfig 内容（yaml）"
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace" }}
-            />
-          </Form.Item>
+          {connectionMode === "kubeconfig" ? (
+            <>
+              <Form.Item
+                label="从数据字典插入 kubeconfig 模板"
+                name="kubeconfig_dict_label"
+                extra="与下方 kubeconfig 内容一致时会自动选中对应模板；修改 yaml 后若不一致会清空此处。"
+              >
+                <DictLabelFillSelect
+                  form={form}
+                  labelFieldName="kubeconfig_dict_label"
+                  targetFieldName="kubeconfig"
+                  options={kubeTplDict}
+                  placeholder="选择模板后填入下方文本框（按标签选，避免下拉展示整段 yaml）"
+                  style={{ maxWidth: 480 }}
+                />
+              </Form.Item>
+
+              <Form.Item
+                label="kubeconfig"
+                name="kubeconfig"
+                rules={
+                  current
+                    ? []
+                    : [{ required: true, message: "请填写 kubeconfig" }]
+                }
+                extra={current ? "已预填当前 kubeconfig，可直接修改后保存" : "用于 Kom SDK 注册并访问集群"}
+              >
+                <Input.TextArea
+                  rows={8}
+                  placeholder="粘贴 kubeconfig 内容（yaml）"
+                  style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace" }}
+                />
+              </Form.Item>
+            </>
+          ) : (
+            <>
+              <Form.Item
+                label="直连配置模板（数据字典）"
+                name={["direct_config", "dict_config_key"]}
+                extra="字典类型为 k8s_direct_config，value 应为配置键。"
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={directConfigKeyOptions}
+                  placeholder="可选：先选择模板键，再按需覆盖下面字段"
+                />
+              </Form.Item>
+
+              <Form.Item
+                label="API Server 地址"
+                name={["direct_config", "server"]}
+                rules={[
+                  { required: true, message: "请输入 API Server 地址" },
+                  { type: "url", message: "请输入合法 URL，例如 https://10.0.0.1:6443" },
+                ]}
+              >
+                <Input placeholder="https://x.x.x.x:6443" />
+              </Form.Item>
+
+              <Form.Item label="Token" name={["direct_config", "token"]}>
+                <Input.Password placeholder="Service Account Token（可选）" autoComplete="off" />
+              </Form.Item>
+
+              <Form.Item label="用户名" name={["direct_config", "username"]}>
+                <Input placeholder="Basic Auth 用户名（可选）" />
+              </Form.Item>
+              <Form.Item label="密码" name={["direct_config", "password"]}>
+                <Input.Password placeholder="Basic Auth 密码（可选）" autoComplete="off" />
+              </Form.Item>
+
+              <Form.Item label="客户端证书（base64）" name={["direct_config", "client_cert_data"]}>
+                <Input.TextArea rows={3} placeholder="client_cert_data（可选）" />
+              </Form.Item>
+              <Form.Item label="客户端私钥（base64）" name={["direct_config", "client_key_data"]}>
+                <Input.TextArea rows={3} placeholder="client_key_data（可选）" />
+              </Form.Item>
+              <Form.Item label="CA 证书（base64）" name={["direct_config", "ca_data"]}>
+                <Input.TextArea rows={3} placeholder="ca_data（可选）" />
+              </Form.Item>
+
+              <Form.Item label="跳过 TLS 验证" name={["direct_config", "insecure_skip_tls_verify"]} valuePropName="checked">
+                <Switch />
+              </Form.Item>
+            </>
+          )}
         </Form>
       </Modal>
     </Card>

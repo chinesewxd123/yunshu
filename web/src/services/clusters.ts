@@ -3,7 +3,9 @@ import { getData, http } from "./http";
 export interface ClusterItem {
   id: number;
   name: string;
+  connection_mode?: "kubeconfig" | "direct";
   kubeconfig?: string;
+  direct_config?: DirectConfigPayload;
   status: number;
   created_at: string;
   updated_at: string;
@@ -16,14 +18,30 @@ export interface ClusterListResponse {
   page_size: number;
 }
 
+export interface DirectConfigPayload {
+  server?: string;
+  insecure_skip_tls_verify?: boolean;
+  ca_data?: string;
+  token?: string;
+  username?: string;
+  password?: string;
+  client_cert_data?: string;
+  client_key_data?: string;
+  dict_config_key?: string;
+}
+
 export interface ClusterCreatePayload {
   name: string;
-  kubeconfig: string;
+  connection_mode?: "kubeconfig" | "direct";
+  kubeconfig?: string;
+  direct_config?: DirectConfigPayload;
 }
 
 export interface ClusterUpdatePayload {
   name?: string;
+  connection_mode?: "kubeconfig" | "direct";
   kubeconfig?: string;
+  direct_config?: DirectConfigPayload;
 }
 
 export interface ClusterStatusResponse {

@@ -140,6 +140,9 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			{DictType: "alert_threshold_unit", Label: "计数(count)", Value: "count", Sort: intRef(5), Status: 1, Remark: "用于请求数/错误数"},
 			// 集群 kubeconfig 模板（请替换 server/token）；「集群管理」表单可一键插入
 			{DictType: "k8s_kubeconfig_template", Label: "单集群 kubeconfig 模板", Value: "kubeconfig文件", Sort: intRef(1), Status: 1, Remark: "占位说明：可在字典中维护完整 kubeconfig 供集群管理选择；勿将生产密钥提交到 Git"},
+			// 集群直连配置模板：label 作为配置键，value 存直连 JSON（可在集群管理 direct 模式通过 dict_config_key 引用）
+			{DictType: "k8s_direct_config", Label: "prod-sa-token", Value: `{"server":"https://10.0.0.10:6443","token":"replace-with-service-account-token","ca_data":"replace-with-base64-ca","insecure_skip_tls_verify":false}`, Sort: intRef(1), Status: 1, Remark: "生产集群直连示例（token 认证）"},
+			{DictType: "k8s_direct_config", Label: "staging-basic-auth", Value: `{"server":"https://10.0.0.20:6443","username":"admin","password":"replace-with-password","insecure_skip_tls_verify":true}`, Sort: intRef(2), Status: 1, Remark: "测试集群直连示例（用户名密码认证）"},
 
 			// Mail（作为字典权威来源，覆盖 config.yaml）
 			{DictType: "mail_host", Label: "163 SMTP", Value: "smtp.163.com", Sort: intRef(1), Status: 1, Remark: "mail.host：字典存在则覆盖 config.yaml"},
