@@ -189,3 +189,15 @@ func (r *DictEntryRepository) GetByDictTypeAndValue(ctx context.Context, dictTyp
 	}
 	return &item, nil
 }
+
+// GetByDictTypeAndLabel 根据字典类型和标签获取字典项
+func (r *DictEntryRepository) GetByDictTypeAndLabel(ctx context.Context, dictType, label string) (*model.DictEntry, error) {
+	var item model.DictEntry
+	err := r.db.WithContext(ctx).
+		Where("dict_type = ? AND label = ?", strings.TrimSpace(dictType), strings.TrimSpace(label)).
+		First(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}

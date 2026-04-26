@@ -4,17 +4,23 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 
 	"yunshu/internal/repository"
 
 	"k8s.io/client-go/rest"
+	"gorm.io/gorm"
 )
 
 // getDirectConfigFromDict 从数据字典读取直连配置
 func getDirectConfigFromDict(ctx context.Context, dictRepo *repository.DictEntryRepository, configKey string) (*DirectConfig, error) {
-	entry, err := dictRepo.GetByDictTypeAndValue(ctx, "k8s_direct_config", configKey)
+	// 优先按 label（配置键）查；兼容历史“按 value 作为键”查法。
+	entry, err := dictRepo.GetByDictTypeAndLabel(ctx, "k8s_direct_config", configKey)
+	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+		entry, err = dictRepo.GetByDictTypeAndValue(ctx, "k8s_direct_config", configKey)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("获取数据字典配置失败: %w", err)
 	}

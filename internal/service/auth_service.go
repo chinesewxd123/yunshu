@@ -370,11 +370,14 @@ func (s *AuthService) issueLoginResponse(ctx context.Context, user *model.User) 
 	}, nil
 }
 
-// SendPasswordLoginCode generates and stores a 4-digit verification code image using base64Captcha
+// SendPasswordLoginCode generates captcha image using base64Captcha.
 func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string) (*SendPasswordLoginCodeResponse, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return nil, apperror.BadRequest("用户名不能为空")
+	}
+	if s.redis == nil {
+		return nil, apperror.Internal("验证码服务未就绪，请稍后重试")
 	}
 
 	// Check if user exists
@@ -401,12 +404,6 @@ func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string
 		}
 	}
 
-	// Generate 4-digit code
-	code, err := generateNumericCode(4)
-	if err != nil {
-		return nil, err
-	}
-
 	// Use base64Captcha to generate image
 	driver := base64Captcha.NewDriverDigit(
 		80,  // height
@@ -421,43 +418,31 @@ func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string
 	if err != nil {
 		return nil, apperror.Internal("验证码图片生成失败")
 	}
-
-	// Override with our numeric code in Redis
-	codeTTL := s.emailCodeTTL()
 	cooldownTTL := s.emailCodeCooldown()
-	codeKey := store.PasswordLoginCodeKey(captchaKey)
-
-	if err = s.redis.Set(ctx, codeKey, code, codeTTL).Err(); err != nil {
-		return nil, err
-	}
 	if err = s.redis.Set(ctx, cooldownKey, "1", cooldownTTL).Err(); err != nil {
-		_ = s.redis.Del(ctx, codeKey).Err()
 		return nil, err
 	}
 
 	return &SendPasswordLoginCodeResponse{
 		CaptchaKey: captchaKey,
-		Image:      imageBase64,
-		ExpiresIn:  int(codeTTL.Seconds()),
+		// Keep old frontend contract: return raw base64 only (without data URL prefix).
+		Image:      strings.TrimPrefix(imageBase64, "data:image/png;base64,"),
+		ExpiresIn:  int(s.emailCodeTTL().Seconds()),
 		CooldownIn: int(cooldownTTL.Seconds()),
 	}, nil
 }
 
-// validatePasswordLoginCode verifies the password login code from Redis using captcha key
+// validatePasswordLoginCode verifies the password login code using base64Captcha store.
 func (s *AuthService) validatePasswordLoginCode(ctx context.Context, captchaKey, code string) error {
+	_ = ctx
 	captchaKey = strings.TrimSpace(captchaKey)
-	codeKey := store.PasswordLoginCodeKey(captchaKey)
-
-	storedCode, err := s.redis.Get(ctx, codeKey).Result()
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return apperror.Unauthorized("验证码已过期或未发送，请重新获取")
-		}
-		return err
+	code = strings.TrimSpace(code)
+	if captchaKey == "" || code == "" {
+		return apperror.Unauthorized("验证码不能为空")
 	}
 
-	if storedCode != strings.TrimSpace(code) {
-		return apperror.Unauthorized("验证码错误")
+	if !base64Captcha.DefaultMemStore.Verify(captchaKey, code, true) {
+		return apperror.Unauthorized("验证码错误或已过期")
 	}
 
 	return nil
@@ -465,9 +450,9 @@ func (s *AuthService) validatePasswordLoginCode(ctx context.Context, captchaKey,
 
 // clearPasswordLoginCode removes the password login code from Redis after successful verification
 func (s *AuthService) clearPasswordLoginCode(ctx context.Context, captchaKey string) {
-	captchaKey = strings.TrimSpace(captchaKey)
-	codeKey := store.PasswordLoginCodeKey(captchaKey)
-	_ = s.redis.Del(ctx, codeKey).Err()
+	_ = ctx
+	_ = captchaKey
+	// no-op: base64Captcha.DefaultMemStore.Verify(..., clear=true) already clears used code.
 }
 
 func (s *AuthService) ensureEmailCodeDependencies() error {

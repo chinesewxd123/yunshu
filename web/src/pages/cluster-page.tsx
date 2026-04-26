@@ -54,6 +54,19 @@ export function ClusterPage() {
   }>();
   const connectionMode = Form.useWatch("connection_mode", form) || "kubeconfig";
 
+  const directConfigKeyOptions = useMemo(
+    () =>
+      directCfgDict.map((it) => {
+        const rawValue = String(it.value ?? "").trim();
+        const usesJSONAsValue = rawValue.startsWith("{") || rawValue.startsWith("[");
+        return {
+          label: String(it.label),
+          value: usesJSONAsValue ? String(it.label) : rawValue,
+        };
+      }),
+    [directCfgDict],
+  );
+
   useEffect(() => {
     void loadClusters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -498,7 +511,7 @@ export function ClusterPage() {
                   allowClear
                   showSearch
                   optionFilterProp="label"
-                  options={directCfgDict.map((it) => ({ label: String(it.label), value: String(it.value) }))}
+                  options={directConfigKeyOptions}
                   placeholder="可选：先选择模板键，再按需覆盖下面字段"
                 />
               </Form.Item>

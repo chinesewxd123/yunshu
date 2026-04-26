@@ -33,6 +33,7 @@ export const PROJECT_DICT_TYPE_OPTIONS: DictTypeOption[] = [
   { label: "钉钉 chatId（dingtalk_chat_id）", value: "dingtalk_chat_id" },
   { label: "钉钉 signSecret（dingtalk_sign_secret）", value: "dingtalk_sign_secret" },
   { label: "Kubeconfig 模板（k8s_kubeconfig_template）", value: "k8s_kubeconfig_template" },
+  { label: "K8s 直连配置键（k8s_direct_config）", value: "k8s_direct_config" },
   { label: "服务器分组分类（server_group_category）", value: "server_group_category" },
   { label: "服务器系统类型（server_os_type）", value: "server_os_type" },
   { label: "服务器认证类型（server_auth_type）", value: "server_auth_type" },
