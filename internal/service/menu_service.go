@@ -624,7 +624,8 @@ func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bo
 		{Path: "/rbac/rolebindings", Name: "RBAC - RoleBinding", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "rbac-rolebindings-page", Status: 1},
 		{Path: "/rbac/clusterroles", Name: "RBAC - ClusterRole", Icon: "SafetyCertificateOutlined", Sort: 22, Component: "rbac-clusterroles-page", Status: 1},
 		{Path: "/rbac/clusterrolebindings", Name: "RBAC - ClusterRoleBinding", Icon: "SafetyCertificateOutlined", Sort: 23, Component: "rbac-clusterrolebindings-page", Status: 1},
-		{Path: "/k8s-scoped-policies", Name: "K8s 三元策略", Icon: "AuditOutlined", Sort: 24, Component: "k8s-scoped-policies-page", Status: 1},
+		{Path: "/serviceaccounts", Name: "ServiceAccount 管理", Icon: "SafetyCertificateOutlined", Sort: 24, Component: "serviceaccounts-page", Status: 1},
+		{Path: "/k8s-scoped-policies", Name: "K8s 三元策略", Icon: "AuditOutlined", Sort: 25, Component: "k8s-scoped-policies-page", Status: 1},
 	}
 
 	changed := false
