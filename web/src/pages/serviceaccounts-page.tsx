@@ -73,7 +73,9 @@ export function ServiceaccountsPage() {
               {detail.role_bindings?.length ? (
                 detail.role_bindings.map((it) => (
                   <Tag key={`${it.namespace}/${it.name}`}>
-                    {(it.namespace ? `${it.namespace}/` : "") + it.name} -> {it.role_ref}
+                    {(it.namespace ? `${it.namespace}/` : "") + it.name}
+                    {" -> "}
+                    {it.role_ref}
                   </Tag>
                 ))
               ) : (
@@ -87,7 +89,9 @@ export function ServiceaccountsPage() {
               {detail.cluster_role_bindings?.length ? (
                 detail.cluster_role_bindings.map((it) => (
                   <Tag key={it.name} color="purple">
-                    {it.name} -> {it.role_ref}
+                    {it.name}
+                    {" -> "}
+                    {it.role_ref}
                   </Tag>
                 ))
               ) : (
