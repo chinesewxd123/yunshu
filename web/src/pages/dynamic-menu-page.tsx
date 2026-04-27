@@ -33,6 +33,7 @@ const PATH_COMPONENT_FALLBACK: Record<string, string> = {
   "/rbac/rolebindings": "rbac-rolebindings-page",
   "/rbac/clusterroles": "rbac-clusterroles-page",
   "/rbac/clusterrolebindings": "rbac-clusterrolebindings-page",
+  "/serviceaccounts": "serviceaccounts-page",
   "/k8s-scoped-policies": "k8s-scoped-policies-page",
   "/alert-channels": "alert-channels-page",
   "/alert-events": "alert-events-page",

@@ -283,6 +283,10 @@ func defaultPermissions() []model.Permission {
 		{Name: "RBAC 详情", Resource: "/api/v1/rbac/detail", Action: "GET", Description: "Get RBAC detail"},
 		{Name: "RBAC 应用 YAML", Resource: "/api/v1/rbac/apply", Action: "POST", Description: "Apply RBAC yaml"},
 		{Name: "RBAC 删除", Resource: "/api/v1/rbac", Action: "DELETE", Description: "Delete RBAC resource"},
+		{Name: "ServiceAccount 列表", Resource: "/api/v1/serviceaccounts", Action: "GET", Description: "List serviceaccounts"},
+		{Name: "ServiceAccount 详情", Resource: "/api/v1/serviceaccounts/detail", Action: "GET", Description: "Get serviceaccount detail"},
+		{Name: "ServiceAccount 应用 YAML", Resource: "/api/v1/serviceaccounts/apply", Action: "POST", Description: "Apply serviceaccount yaml"},
+		{Name: "ServiceAccount 删除", Resource: "/api/v1/serviceaccounts", Action: "DELETE", Description: "Delete serviceaccount"},
 
 		{Name: "Deployment 列表", Resource: "/api/v1/deployments", Action: "GET", Description: "List deployments"},
 		{Name: "Deployment 详情", Resource: "/api/v1/deployments/detail", Action: "GET", Description: "Get deployment detail"},
@@ -652,6 +656,7 @@ func defaultMenus() []model.Menu {
 				{Name: "IngressClass 入口类", Path: "/ingress-classes", Icon: "GatewayOutlined", Sort: 18, Component: "ingress-classes-page", Status: 1},
 				{Name: "网络策略管理", Path: "/network-policies", Icon: "DeploymentUnitOutlined", Sort: 19, Component: "network-policies-page", Status: 1},
 				{Name: "Event 事件", Path: "/events", Icon: "FileSearchOutlined", Sort: 20, Component: "events-page", Status: 1},
+				{Name: "ServiceAccount 管理", Path: "/serviceaccounts", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "serviceaccounts-page", Status: 1},
 			},
 		},
 		{

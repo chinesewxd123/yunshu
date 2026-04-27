@@ -67,6 +67,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	crdService := service.NewK8sCRDService(k8sRuntimeService)
 	crService := service.NewK8sCRService(k8sRuntimeService)
 	rbacService := service.NewK8sRBACService(k8sRuntimeService)
+	serviceAccountService := service.NewK8sServiceAccountService(k8sRuntimeService)
 	overviewService := service.NewOverviewService(app.DB, k8sRuntimeService, app.Redis)
 
 	projectRepo := repository.NewProjectRepository(app.DB)
@@ -115,6 +116,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	crdHandler := handler.NewCRDHandler(crdService)
 	crHandler := handler.NewCRHandler(crService)
 	rbacHandler := handler.NewRBACHandler(rbacService)
+	serviceAccountHandler := handler.NewServiceAccountHandler(serviceAccountService)
 	overviewHandler := handler.NewOverviewHandler(overviewService)
 	projectHandler := handler.NewProjectHandler(projectMgmtService, runtimeClient.ProjectSrv, runtimeClient.LogSourceSrv)
 	logAgentHandler := handler.NewLogAgentHandler(logAgentService, runtimeClient.AgentSrv)
@@ -487,6 +489,13 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	rbac.GET("/detail", rbacHandler.Detail)
 	rbac.POST("/apply", rbacHandler.Apply)
 	rbac.DELETE("", rbacHandler.Delete)
+
+	serviceAccounts := api.Group("/serviceaccounts")
+	serviceAccounts.Use(authMiddleware, authorize, k8sScopeAuthorize, opAudit)
+	serviceAccounts.GET("", serviceAccountHandler.List)
+	serviceAccounts.GET("/detail", serviceAccountHandler.Detail)
+	serviceAccounts.POST("/apply", serviceAccountHandler.Apply)
+	serviceAccounts.DELETE("", serviceAccountHandler.Delete)
 
 	projects := api.Group("/projects")
 	projects.Use(authMiddleware, authorize, opAudit)
