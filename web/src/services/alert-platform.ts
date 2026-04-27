@@ -46,6 +46,8 @@ export interface AlertMonitorRuleItem {
   labels_json?: string;
   annotations_json?: string;
   enabled: boolean;
+  policy_silence_active?: boolean;
+  policy_silence_remaining_seconds?: number;
   created_at: string;
   updated_at: string;
 }

@@ -672,4 +672,23 @@ func (b *logBroker) HasRecentPublisher(key string, within time.Duration) bool {
 	return time.Since(t) <= within
 }
 
+// Snapshot 返回指定 stream key 的历史快照（按时间升序，最多 maxLines 条）。
+func (b *logBroker) Snapshot(key string, maxLines int) []AgentLogEvent {
+	if maxLines <= 0 {
+		maxLines = 2000
+	}
+	if maxLines > maxLogHistoryPerStream {
+		maxLines = maxLogHistoryPerStream
+	}
+	b.mu.RLock()
+	history := b.history[key]
+	start := 0
+	if len(history) > maxLines {
+		start = len(history) - maxLines
+	}
+	snapshot := append([]AgentLogEvent(nil), history[start:]...)
+	b.mu.RUnlock()
+	return snapshot
+}
+
 var AgentLogBroker = newLogBroker()

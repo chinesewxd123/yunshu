@@ -49,7 +49,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	cloudExpiryRuleSvc := service.NewCloudExpiryRuleService(app.DB)
 	alertPolicyService := service.NewAlertPolicyService(app.DB)
 	alertDatasourceSvc := service.NewAlertDatasourceService(app.DB)
-	alertMonitorRuleSvc := service.NewAlertMonitorRuleService(app.DB)
+	alertMonitorRuleSvc := service.NewAlertMonitorRuleService(app.DB, app.Redis)
 
 	clusterRepo := repository.NewK8sClusterRepository(app.DB)
 	k8sRuntimeService := service.NewK8sRuntimeService(clusterRepo)
