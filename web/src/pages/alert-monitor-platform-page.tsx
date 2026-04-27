@@ -966,7 +966,7 @@ export function AlertMonitorPlatformPage() {
         message.success("已创建");
       }
       setDsModalOpen(false);
-      await loadDatasources();
+      await loadDatasources(projectContextId);
     } finally {
       setDsSubmitting(false);
     }
@@ -975,7 +975,7 @@ export function AlertMonitorPlatformPage() {
   async function removeDs(id: number) {
     await deleteAlertDatasource(id);
     message.success("已删除");
-    await loadDatasources();
+    await loadDatasources(projectContextId);
   }
 
   const nativeAlertsColumns: ColumnsType<PromNativeAlertRow> = useMemo(
@@ -1257,6 +1257,18 @@ export function AlertMonitorPlatformPage() {
     { title: "级别", dataIndex: "severity", width: 90 },
     { title: "for(s)", dataIndex: "for_seconds", width: 80 },
     { title: "间隔(s)", dataIndex: "eval_interval_seconds", width: 90 },
+    {
+      title: "策略静默",
+      key: "policy_silence",
+      width: 180,
+      render: (_: unknown, r: AlertMonitorRuleItem) => {
+        const left = Number(r.policy_silence_remaining_seconds || 0);
+        if (r.policy_silence_active && left > 0) {
+          return <Tag color="gold">策略静默中（剩余 {left}s）</Tag>;
+        }
+        return <Tag>未静默</Tag>;
+      },
+    },
     { title: "启用", dataIndex: "enabled", width: 70, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
     {
       title: "操作",
@@ -1662,7 +1674,7 @@ export function AlertMonitorPlatformPage() {
         message.success("已创建");
       }
       setRuleModalOpen(false);
-      await loadRules();
+      await loadRules(projectContextId);
     } finally {
       setRuleSubmitting(false);
     }
@@ -1671,7 +1683,7 @@ export function AlertMonitorPlatformPage() {
   async function removeRule(id: number) {
     await deleteAlertMonitorRule(id);
     message.success("已删除");
-    await loadRules();
+    await loadRules(projectContextId);
   }
 
   const cloudExpiryColumns: ColumnsType<CloudExpiryRuleItem> = [

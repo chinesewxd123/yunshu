@@ -174,14 +174,15 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 	return svc
 }
 
-func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, labels map[string]string) (map[uint]struct{}, string, string) {
+func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, labels map[string]string) (map[uint]struct{}, string, string, int) {
 	enabled, err := s.policySvc.ListEnabled(ctx)
 	if err != nil || len(enabled) == 0 {
-		return nil, "", ""
+		return nil, "", "", 0
 	}
 	out := map[uint]struct{}{}
 	matchedIDs := make([]string, 0)
 	matchedNames := make([]string, 0)
+	maxSilenceSeconds := 0
 	for _, p := range enabled {
 		if status == "resolved" && !p.NotifyResolved {
 			continue
@@ -190,12 +191,59 @@ func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, 
 		if len(ids) > 0 {
 			matchedIDs = append(matchedIDs, fmt.Sprintf("%d", p.ID))
 			matchedNames = append(matchedNames, p.Name)
+			if p.SilenceSeconds > maxSilenceSeconds {
+				maxSilenceSeconds = p.SilenceSeconds
+			}
 		}
 		for _, id := range ids {
 			out[id] = struct{}{}
 		}
 	}
-	return out, strings.Join(matchedIDs, ","), strings.Join(matchedNames, ",")
+	return out, strings.Join(matchedIDs, ","), strings.Join(matchedNames, ","), maxSilenceSeconds
+}
+
+func (s *AlertService) shouldSuppressByPolicySilence(ctx context.Context, status, groupKey, matchedPolicyIDs string, silenceSeconds int, labels map[string]string) bool {
+	if s.redis == nil || silenceSeconds <= 0 || status != "firing" {
+		return false
+	}
+	gk := strings.TrimSpace(groupKey)
+	pid := strings.TrimSpace(matchedPolicyIDs)
+	if gk == "" || pid == "" {
+		return false
+	}
+	key := "alert:policy:silence:" + gk + ":" + pid
+	ok, err := s.redis.SetNX(ctx, key, "1", time.Duration(silenceSeconds)*time.Second).Result()
+	if err != nil {
+		return false
+	}
+	if labels != nil {
+		if ruleID, parsed := parseLabelUint(labels["monitor_rule_id"]); parsed && ruleID > 0 {
+			// 为规则列表页提供可观测状态：策略静默窗口剩余时间
+			_ = s.redis.Set(ctx, fmt.Sprintf("alert:policy:silence:rule:%d", ruleID), pid, time.Duration(silenceSeconds)*time.Second).Err()
+		}
+	}
+	return !ok
+}
+
+func (s *AlertService) logSuppressedPolicySilence(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, silenceSeconds int, payload map[string]interface{}) {
+	reqBytes, _ := json.Marshal(payload)
+	event := model.AlertEvent{
+		Source:          "alertmanager",
+		Title:           title + " (policy silence suppressed)",
+		Severity:        severity,
+		Status:          status,
+		Cluster:         cluster,
+		MonitorPipeline: strings.TrimSpace(fmt.Sprintf("%v", payload["monitor_pipeline"])),
+		GroupKey:        strings.TrimSpace(groupKey),
+		LabelsDigest:    strings.TrimSpace(labelsDigest),
+		ChannelName:     "（未外发·策略静默窗口抑制）",
+		Success:         true,
+		HTTPStatusCode:  200,
+		ErrorMessage:    "policy_silence_suppressed",
+		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
+		ResponsePayload: truncateText(fmt.Sprintf("suppressed by policy silence_seconds=%d", silenceSeconds), s.cfg.MaxPayloadChars),
+	}
+	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
 func (s *AlertService) startPrometheusEnrichWorkers() {
@@ -817,9 +865,14 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			s.logSuppressedDedup(ctx, title, severity, status, alert.Fingerprint, outgoing)
 			continue
 		}
-		policyChannels, matchedPolicyIDs, matchedPolicyNames := s.channelIDSetForAlert(ctx, status, labels)
+		policyChannels, matchedPolicyIDs, matchedPolicyNames, policySilenceSeconds := s.channelIDSetForAlert(ctx, status, labels)
 		outgoing["matched_policy_ids"] = matchedPolicyIDs
 		outgoing["matched_policy_names"] = matchedPolicyNames
+		outgoing["policy_silence_seconds"] = policySilenceSeconds
+		if s.shouldSuppressByPolicySilence(ctx, status, groupKey, matchedPolicyIDs, policySilenceSeconds, labels) {
+			s.logSuppressedPolicySilence(ctx, title, severity, status, envLabel, groupKey, labelsDigest, policySilenceSeconds, outgoing)
+			continue
+		}
 		sentCount := 0
 		for i := range channels {
 			if len(policyChannels) > 0 {

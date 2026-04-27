@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -2349,5 +2350,84 @@ func (s *ProjectMgmtService) ListRemoteLogUnits(ctx context.Context, q RemoteLog
 
 // ExportLogs 导出相关的业务逻辑。
 func (s *ProjectMgmtService) ExportLogs(ctx context.Context, q LogExportQuery) ([]byte, string, error) {
-	return nil, "", apperror.BadRequest("已移除 SSH 导出日志，仅支持 Agent 实时日志流")
+	if q.ProjectID == 0 {
+		return nil, "", apperror.BadRequest("project_id 不能为空")
+	}
+	sv, err := s.serverRepo.GetByID(ctx, q.ServerID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, "", apperror.NotFound("服务器不存在")
+		}
+		return nil, "", err
+	}
+	if sv.ProjectID != q.ProjectID {
+		return nil, "", apperror.BadRequest("服务器不属于当前项目")
+	}
+	src, err := s.logRepo.GetByIDInProject(ctx, q.ProjectID, q.LogSourceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, "", apperror.NotFound("日志源不存在")
+		}
+		return nil, "", err
+	}
+	svcRow, err := s.serviceRepo.GetByID(ctx, src.ServiceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, "", apperror.NotFound("日志源对应服务不存在")
+		}
+		return nil, "", err
+	}
+	if svcRow.ServerID != q.ServerID {
+		return nil, "", apperror.BadRequest("日志源不属于当前服务器")
+	}
+
+	var includeRe *regexp.Regexp
+	if q.Include != nil && strings.TrimSpace(*q.Include) != "" {
+		includeRe, err = regexp.Compile(strings.TrimSpace(*q.Include))
+		if err != nil {
+			return nil, "", apperror.BadRequest("包含正则表达式不合法")
+		}
+	}
+	var excludeRe *regexp.Regexp
+	if q.Exclude != nil && strings.TrimSpace(*q.Exclude) != "" {
+		excludeRe, err = regexp.Compile(strings.TrimSpace(*q.Exclude))
+		if err != nil {
+			return nil, "", apperror.BadRequest("排除正则表达式不合法")
+		}
+	}
+
+	maxLines := q.MaxLines
+	if maxLines <= 0 {
+		maxLines = 2000
+	}
+	if maxLines > maxLogHistoryPerStream {
+		maxLines = maxLogHistoryPerStream
+	}
+	key := BuildLogStreamKey(q.ProjectID, q.ServerID, q.LogSourceID)
+	events := AgentLogBroker.Snapshot(key, maxLines)
+	lines := make([]string, 0, len(events))
+	for _, ev := range events {
+		line := strings.TrimSpace(ev.Line)
+		if line == "" {
+			continue
+		}
+		if includeRe != nil && !includeRe.MatchString(line) {
+			continue
+		}
+		if excludeRe != nil && excludeRe.MatchString(line) {
+			continue
+		}
+		if fp := strings.TrimSpace(ev.FilePath); fp != "" {
+			lines = append(lines, fmt.Sprintf("[%s] %s", fp, line))
+		} else {
+			lines = append(lines, line)
+		}
+	}
+	content := strings.Join(lines, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	filename := fmt.Sprintf("project-%d-server-%d-source-%d-logs-%s.txt",
+		q.ProjectID, q.ServerID, q.LogSourceID, time.Now().Format("20060102-150405"))
+	return []byte(content), filename, nil
 }

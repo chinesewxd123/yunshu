@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -34,21 +37,34 @@ type AlertMonitorRuleUpsertRequest struct {
 }
 
 type AlertMonitorRuleService struct {
-	db *gorm.DB
+	db    *gorm.DB
+	redis *redis.Client
 }
 
-func NewAlertMonitorRuleService(db *gorm.DB) *AlertMonitorRuleService {
-	return &AlertMonitorRuleService{db: db}
+type AlertMonitorRuleListItem struct {
+	model.AlertMonitorRule
+	PolicySilenceActive           bool  `json:"policy_silence_active"`
+	PolicySilenceRemainingSeconds int64 `json:"policy_silence_remaining_seconds"`
 }
 
-func (s *AlertMonitorRuleService) List(ctx context.Context, q AlertMonitorRuleListQuery) ([]model.AlertMonitorRule, int64, int, int, error) {
+func NewAlertMonitorRuleService(db *gorm.DB, redisClient *redis.Client) *AlertMonitorRuleService {
+	return &AlertMonitorRuleService{db: db, redis: redisClient}
+}
+
+func (s *AlertMonitorRuleService) List(ctx context.Context, q AlertMonitorRuleListQuery) ([]AlertMonitorRuleListItem, int64, int, int, error) {
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
 	tx := s.db.WithContext(ctx).Model(&model.AlertMonitorRule{})
 	if q.DatasourceID != nil && *q.DatasourceID > 0 {
 		tx = tx.Where("datasource_id = ?", *q.DatasourceID)
 	}
-	if q.ProjectID != nil {
-		tx = tx.Where("project_id = ?", *q.ProjectID)
+	if q.ProjectID != nil && *q.ProjectID > 0 {
+		// alert_monitor_rules 表无 project_id 字段，按 datasource 归属项目过滤
+		tx = tx.Where("datasource_id IN (?)",
+			s.db.WithContext(ctx).
+				Model(&model.AlertDatasource{}).
+				Select("id").
+				Where("project_id = ?", *q.ProjectID),
+		)
 	}
 	if kw := strings.TrimSpace(q.Keyword); kw != "" {
 		like := "%" + kw + "%"
@@ -62,7 +78,19 @@ func (s *AlertMonitorRuleService) List(ctx context.Context, q AlertMonitorRuleLi
 	if err := tx.Order("id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
 		return nil, 0, page, pageSize, err
 	}
-	return list, total, page, pageSize, nil
+	out := make([]AlertMonitorRuleListItem, 0, len(list))
+	for _, row := range list {
+		item := AlertMonitorRuleListItem{AlertMonitorRule: row}
+		if s.redis != nil {
+			key := "alert:policy:silence:rule:" + fmt.Sprintf("%d", row.ID)
+			if ttl, err := s.redis.TTL(ctx, key).Result(); err == nil && ttl > 0 {
+				item.PolicySilenceActive = true
+				item.PolicySilenceRemainingSeconds = int64(ttl / time.Second)
+			}
+		}
+		out = append(out, item)
+	}
+	return out, total, page, pageSize, nil
 }
 
 func (s *AlertMonitorRuleService) ListEnabled(ctx context.Context) ([]model.AlertMonitorRule, error) {

@@ -59,7 +59,7 @@ func webhookJSONAPIFailure(respBody string) (checked bool, errMsg string) {
 }
 
 func (s *AlertService) sendToChannel(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}) (int, string, error) {
-	title = s.buildUnifiedNotifyTitle(ctx, title, severity, payload)
+	title = s.buildUnifiedNotifyTitle(ctx, title, severity, status, payload)
 	if payload != nil {
 		payload["title"] = title
 	}
@@ -155,17 +155,45 @@ func (s *AlertService) renderChannelMessage(ctx context.Context, title, severity
 	return rendered
 }
 
-func (s *AlertService) buildUnifiedNotifyTitle(ctx context.Context, rawTitle, severity string, payload map[string]interface{}) string {
-	alarmLevel := strings.ToUpper(strings.TrimSpace(severity))
-	if alarmLevel == "" {
-		alarmLevel = "WARNING"
+func (s *AlertService) buildUnifiedNotifyTitle(ctx context.Context, rawTitle, severity, status string, payload map[string]interface{}) string {
+	statusNorm := strings.ToLower(strings.TrimSpace(status))
+	prefix := "告警通知"
+	level := strings.ToUpper(strings.TrimSpace(severity))
+	if statusNorm == "resolved" {
+		prefix = "告警恢复"
+		level = "RESOLVED"
 	}
-	alertName := strings.TrimSpace(rawTitle)
-	if alertName == "" {
-		alertName = "未命名告警"
+	if level == "" {
+		level = strings.ToUpper(strings.TrimSpace(status))
 	}
+	if level == "" {
+		level = "WARNING"
+	}
+	alertName := resolveNotifyAlertName(rawTitle, payload)
 	projectName := s.resolveNotifyProjectName(ctx, payload)
-	return fmt.Sprintf("[告警][%s][%s][%s]", alarmLevel, projectName, alertName)
+	return fmt.Sprintf("[%s][%s][%s][%s]", prefix, level, projectName, alertName)
+}
+
+func resolveNotifyAlertName(rawTitle string, payload map[string]interface{}) string {
+	if payload != nil {
+		if labelsAny, ok := payload["labels"]; ok {
+			switch labels := labelsAny.(type) {
+			case map[string]string:
+				if v := strings.TrimSpace(labels["alertname"]); v != "" {
+					return v
+				}
+			case map[string]interface{}:
+				if v := strings.TrimSpace(fmt.Sprintf("%v", labels["alertname"])); v != "" && v != "<nil>" {
+					return v
+				}
+			}
+		}
+	}
+	name := strings.TrimSpace(rawTitle)
+	if name == "" {
+		return "未命名告警"
+	}
+	return name
 }
 
 func projectNameFromLabelMap(labelsAny interface{}) string {

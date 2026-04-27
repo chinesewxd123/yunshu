@@ -392,7 +392,8 @@ export async function exportProjectLogs(
   projectId: number,
   params: { server_id: number; log_source_id: number; max_lines?: number; include?: string; exclude?: string },
 ): Promise<Blob> {
-  return (await http.get(`/projects/${projectId}/logs/export`, { params, responseType: "blob" })) as unknown as Blob;
+  const resp = await http.get<Blob>(`/projects/${projectId}/logs/export`, { params, responseType: "blob" });
+  return resp.data;
 }
 
 export async function listProjectLogFiles(projectId: number, params: { server_id: number; dir: string }) {
