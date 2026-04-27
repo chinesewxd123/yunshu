@@ -210,6 +210,16 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// Guard against unexpected panics from 3rd-party k8s wrapper (kom),
+			// so one cluster failure won't crash the whole backend process.
+			defer func() {
+				if r := recover(); r != nil {
+					mu.Lock()
+					out.PodClusterErrors++
+					out.EventClusterErrors++
+					mu.Unlock()
+				}
+			}()
 
 			// 连接探测保持短超时，避免不可达集群拖慢全局。
 			cctx, cancel := context.WithTimeout(overallCtx, 2*time.Second)
@@ -225,7 +235,15 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 			// Pod 聚合也限制时长，超时按失败集群处理。
 			pctx, pcancel := context.WithTimeout(overallCtx, 4*time.Second)
 			var pods []corev1.Pod
-			err = k.WithContext(pctx).Resource(&corev1.Pod{}).AllNamespace().List(&pods).Error
+			podQuery := k.WithContext(pctx)
+			if podQuery == nil {
+				pcancel()
+				mu.Lock()
+				out.PodClusterErrors++
+				mu.Unlock()
+				return
+			}
+			err = podQuery.Resource(&corev1.Pod{}).AllNamespace().List(&pods).Error
 			pcancel()
 			if err != nil {
 				mu.Lock()
@@ -251,7 +269,15 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 			// Event 概览仅采样最近 500 条，避免在大集群拖慢首页。
 			ectx, ecancel := context.WithTimeout(overallCtx, 4*time.Second)
 			var events []corev1.Event
-			err = k.WithContext(ectx).Resource(&corev1.Event{}).AllNamespace().Limit(500).List(&events).Error
+			eventQuery := k.WithContext(ectx)
+			if eventQuery == nil {
+				ecancel()
+				mu.Lock()
+				out.EventClusterErrors++
+				mu.Unlock()
+				return
+			}
+			err = eventQuery.Resource(&corev1.Event{}).AllNamespace().Limit(500).List(&events).Error
 			ecancel()
 			if err != nil {
 				mu.Lock()
