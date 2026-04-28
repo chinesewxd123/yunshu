@@ -637,6 +637,24 @@ func extractAlertIPFromPayload(requestPayload, fallback string) string {
 	return strings.TrimSpace(fallback)
 }
 
+func extractAlertStartedAtFromPayload(requestPayload string) string {
+	raw := strings.TrimSpace(requestPayload)
+	if raw == "" {
+		return ""
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return ""
+	}
+	for _, key := range []string{"starts_at", "startsAt"} {
+		v := strings.TrimSpace(fmt.Sprintf("%v", payload[key]))
+		if v != "" && v != "<nil>" {
+			return v
+		}
+	}
+	return ""
+}
+
 func extractAlertPayloadLabels(requestPayload string) (map[string]string, map[string]interface{}) {
 	raw := strings.TrimSpace(requestPayload)
 	if raw != "" {
@@ -654,6 +672,9 @@ func extractAlertPayloadLabels(requestPayload string) (map[string]string, map[st
 					return out, payload
 				}
 			}
+			// 非 labels 结构（如钉钉/企微下发体）也返回 payload，
+			// 便于从 atMobiles/mentioned_mobile_list 等字段提取接收人。
+			return map[string]string{}, payload
 		}
 	}
 	return map[string]string{}, nil
@@ -768,6 +789,7 @@ func hydrateAlertEvent(it *model.AlertEvent) {
 		it.Cluster = rawCluster
 	}
 	it.AlertIP = extractAlertIPFromPayload(it.RequestPayload, it.Environment)
+	it.AlertStartedAt = extractAlertStartedAtFromPayload(it.RequestPayload)
 	it.MatchedPolicyIDList = parseUintCSV(it.MatchedPolicyIDs)
 	it.MatchedPolicyNameList = parseTrimmedCSV(it.MatchedPolicyNames)
 	it.ReceiverList = extractEventReceivers(it.RequestPayload, it.ChannelName)

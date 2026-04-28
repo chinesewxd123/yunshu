@@ -16,6 +16,7 @@ type AlertEvent struct {
 	Cluster            string         `json:"cluster" gorm:"size:128;index;comment:K8s/Prometheus external_labels.cluster 等环境名；平台规则未显式配置时可为空"`
 	Environment        string         `json:"environment,omitempty" gorm:"-"`
 	AlertIP            string         `json:"alert_ip,omitempty" gorm:"-"`
+	AlertStartedAt     string         `json:"alert_started_at,omitempty" gorm:"-"`
 	MonitorPipeline    string         `json:"monitor_pipeline" gorm:"size:32;index;comment:监控链路 prometheus=Prometheus+YAML+Alertmanager platform=平台规则"`
 	GroupKey           string         `json:"group_key" gorm:"size:128;index;comment:聚合分组键"`
 	LabelsDigest       string         `json:"labels_digest" gorm:"size:128;index;comment:标签摘要"`

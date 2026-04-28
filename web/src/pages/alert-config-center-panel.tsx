@@ -666,6 +666,12 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               },
               { title: "HTTP", dataIndex: "http_status_code", width: 80 },
               {
+                title: "告警产生时间",
+                dataIndex: "alert_started_at",
+                width: 170,
+                render: (v: string) => (v ? formatDateTime(v) : "-"),
+              },
+              {
                 title: "链路说明",
                 key: "flow_explain",
                 width: 340,
@@ -679,7 +685,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                   );
                 },
               },
-              { title: "时间", dataIndex: "created_at", width: 170, render: (v: string) => formatDateTime(v) },
+              { title: "发送/记录时间", dataIndex: "created_at", width: 170, render: (v: string) => formatDateTime(v) },
             ]}
           />
         </>

@@ -13,6 +13,9 @@
 
 - [项目简介](#项目简介)
 - [快速开始](#快速开始)
+  - [本地源码启动](#本地源码启动)
+  - [Docker Compose 部署](#docker-compose-部署)
+  - [分支切换（git checkout）](#分支切换git-checkout)
 - [功能状态标记说明](#功能状态标记说明)
 - [页面功能与截图](#页面功能与截图)
   - [1. 登录与概览](#1-登录与概览)
@@ -49,12 +52,14 @@ Yunshu 主要能力：
 - MySQL
 - Redis
 
-### 启动步骤
+### 本地源码启动
+
+#### 启动步骤
 
 ```bash
 git clone <your-repo-url>
 cd yunshu
-
+git checkout <branch-name>
 go mod download
 cd web && npm install && cd ..
 
@@ -69,6 +74,70 @@ go run . server
 cd web
 npm run dev
 ```
+
+### Docker Compose 部署
+
+项目根目录已提供 `docker-compose.yml`，包含以下服务：
+
+- `mysql`（5.7）
+- `redis`（7.x）
+- `backend`（Go API）
+- `frontend`（Nginx + 前端静态资源）
+
+#### 1) 启动
+
+```bash
+git clone <your-repo-url>
+cd yunshu
+git checkout <branch-name>
+# 首次或镜像更新时建议带 --build
+docker compose up -d --build
+```
+
+#### 2) 查看状态与日志
+
+```bash
+docker compose ps
+docker compose logs -f backend
+docker compose logs -f frontend
+```
+
+#### 3) 停止与清理
+
+```bash
+docker compose down
+
+# 连同数据卷一起清理（谨慎）
+docker compose down -v
+```
+
+#### 4) 访问入口
+
+- 前端：`http://<host>:80`
+- 后端 API：`http://<host>:8080`
+
+> 说明：`docker-compose.yml` 默认读取项目内 `configs`、`logs`，并映射 MySQL/Redis 端口。生产环境请替换默认密码、JWT/加密密钥，并按需调整挂载路径与资源限制。
+
+### 分支切换（git checkout）
+
+```bash
+# 查看本地与远程分支
+git branch -a
+
+# 切换到已有本地分支
+git checkout <branch-name>
+
+# 基于远程分支创建并切换本地分支
+git checkout -b <branch-name> origin/<branch-name>
+
+# 回到主分支（按仓库实际分支名 main/master）
+git checkout main
+```
+
+常见场景建议：
+
+- 开发新功能：从 `main` 切新分支后再开发。
+- 联调/排障：先 `git checkout main && git pull`，再切目标分支，避免基线过旧。
 
 ---
 

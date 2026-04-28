@@ -3004,7 +3004,9 @@ export function AlertMonitorPlatformPage() {
           </Space>
         }
       >
-        <Typography.Paragraph type="secondary">部门为根节点时包含子部门内全部启用用户。</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">
+          通知优先级：已配置处理人邮箱时，仅发送处理人；未配置处理人时，才回退到邮件通道收件人。
+        </Typography.Paragraph>
         <Form form={assignForm} layout="vertical">
           <Form.Item name="user_ids" label="用户">
             <Select mode="multiple" options={users} optionFilterProp="label" placeholder="选择用户" />
@@ -3014,7 +3016,7 @@ export function AlertMonitorPlatformPage() {
               用户资料邮箱：{assignUsersHint}
             </Typography.Paragraph>
           ) : null}
-          <Form.Item name="department_ids" label="部门（子树）">
+          <Form.Item name="department_ids" label="部门（子树，已不参与通知收件人计算）">
             <TreeSelect treeData={deptTree} treeCheckable showSearch allowClear treeDefaultExpandAll style={{ width: "100%" }} placeholder="随用户带出，可改" />
           </Form.Item>
           {assignUserIds?.length === 1 ? (
@@ -3023,7 +3025,7 @@ export function AlertMonitorPlatformPage() {
             </Form.Item>
           ) : (
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              多人时通知按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。额外邮箱字段已废弃，统一走用户资料。
+              多人时通知按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。部门与项目成员不再扩散收件人，额外邮箱字段已废弃。
             </Typography.Paragraph>
           )}
           <Form.Item name="notify_on_resolved" label="恢复时通知" valuePropName="checked">
@@ -3051,7 +3053,7 @@ export function AlertMonitorPlatformPage() {
       >
         <Space direction="vertical" style={{ width: "100%" }} size="small">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            当前规则 ID：{dutyRuleId ?? "-"}。班次命中时会与“处理人”邮箱合并去重后写入 <Typography.Text code>assignee_emails</Typography.Text>。
+            当前规则 ID：{dutyRuleId ?? "-"}。班次命中时会与“处理人”邮箱合并去重后写入 <Typography.Text code>assignee_emails</Typography.Text>，并优先于邮件通道固定收件人。
           </Typography.Paragraph>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 12 }}>
             若其他规则上已配好相同时间段与值班人，可从该规则「复制班次」到本规则（会新增独立记录，两条规则各自生效、互不影响）。

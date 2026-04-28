@@ -22,6 +22,7 @@ export interface AlertEventItem {
   status: string;
   cluster?: string;
   alert_ip?: string;
+  alert_started_at?: string;
   /** prometheus = Prometheus 规则+Alertmanager Webhook；platform = 平台内监控规则 */
   monitor_pipeline?: string;
   group_key?: string;

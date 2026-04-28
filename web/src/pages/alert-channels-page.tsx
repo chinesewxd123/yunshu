@@ -482,7 +482,7 @@ export function AlertChannelsPage() {
       />
 
       <Modal
-        title={current ? `编辑通道 #${current.id}` : "新建告警通道"}
+        title={current ? "编辑通道" : "新建告警通道"}
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
