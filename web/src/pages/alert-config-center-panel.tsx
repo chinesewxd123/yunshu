@@ -1,5 +1,5 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Popconfirm, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, message } from "antd";
+import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, InputNumber, Popconfirm, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createAlertPolicy,
@@ -105,6 +105,7 @@ const webhookPayloadTemplates: Record<string, Record<string, unknown>> = {
 };
 
 type PolicyTemplateKey = "prod_critical_all" | "prod_warning_wecom_email" | "prod_info_email";
+type MatcherPair = { key: string; value: string };
 const policyTemplates: Record<
   PolicyTemplateKey,
   {
@@ -185,6 +186,37 @@ function summarizeAlertHint(row: AlertEventItem): string {
   return reason;
 }
 
+function parseMatcherJSONToPairs(raw?: string): MatcherPair[] {
+  const s = String(raw || "").trim();
+  if (!s) return [];
+  try {
+    const parsed = JSON.parse(s) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+    return Object.entries(parsed)
+      .map(([key, value]) => ({ key: String(key || "").trim(), value: String(value ?? "").trim() }))
+      .filter((it) => it.key && it.value);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeMatcherPairs(raw: unknown): MatcherPair[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((it) => {
+      const row = it as Partial<MatcherPair>;
+      return { key: String(row?.key || "").trim(), value: String(row?.value || "").trim() };
+    })
+    .filter((it) => it.key && it.value);
+}
+
+function matcherPairsToJSON(raw: unknown): string {
+  const pairs = normalizeMatcherPairs(raw);
+  const obj: Record<string, string> = {};
+  for (const it of pairs) obj[it.key] = it.value;
+  return stringifyPrettyJSON(obj, "{}");
+}
+
 export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, embedded, hideTabs }: AlertConfigCenterPanelProps) {
   const [stats, setStats] = useState<{
     total: number;
@@ -225,6 +257,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     JSON.stringify(webhookPayloadTemplates.warning_prod, null, 2),
   );
   const webhookTokenOptions = useDictOptions("alert_webhook_token");
+  const promqlLabelKeyOptions = useDictOptions("alert_promql_label_key");
   const webhookTokenPick = useMemo(() => {
     const t = String(webhookToken || "").trim();
     const m = webhookTokenOptions.find((o) => String(o.value ?? "").trim() === t);
@@ -232,6 +265,19 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
   }, [webhookToken, webhookTokenOptions]);
 
   const channelOptions = useMemo(() => channels.map((c) => ({ label: c.name, value: c.id })), [channels]);
+  const labelKeyAutoCompleteOptions = useMemo(
+    () => {
+      return promqlLabelKeyOptions
+        .map((opt) => {
+          const value = String(opt.value ?? "").trim();
+          const label = String(opt.label ?? "").trim() || value;
+          return { value, label: `${label} (${value})` };
+        })
+        .filter((it) => it.value)
+        .sort((a, b) => a.value.localeCompare(b.value, "zh-CN"));
+    },
+    [promqlLabelKeyOptions],
+  );
   const policyTemplateOptions = useMemo(
     () => [
       { label: "prod-critical-all（钉钉+企微+邮件）", value: "prod_critical_all" },
@@ -339,6 +385,8 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
       silence_seconds: 0,
       match_labels_json: "{}",
       match_regex_json: "{}",
+      match_labels_pairs: [],
+      match_regex_pairs: [],
       channels_json_array: [],
     });
     setPolicyEditorOpen(true);
@@ -352,6 +400,8 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
       channels_json_array: row.channel_ids ?? [],
       match_labels_json: stringifyPrettyJSON(row.match_labels ?? {}, "{}"),
       match_regex_json: stringifyPrettyJSON(row.match_regex ?? {}, "{}"),
+      match_labels_pairs: parseMatcherJSONToPairs(row.match_labels_json),
+      match_regex_pairs: parseMatcherJSONToPairs(row.match_regex_json),
     });
     setPolicyEditorOpen(true);
   }
@@ -374,6 +424,8 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
       silence_seconds: tpl.silence_seconds,
       match_labels_json: tpl.match_labels_json,
       match_regex_json: tpl.match_regex_json,
+      match_labels_pairs: parseMatcherJSONToPairs(tpl.match_labels_json),
+      match_regex_pairs: parseMatcherJSONToPairs(tpl.match_regex_json),
       channels_json_array: selectedChannelIDs,
     });
     if (selectedChannelIDs.length > 0) {
@@ -394,8 +446,8 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
         priority: Number(v.priority || 100),
         notify_resolved: !!v.notify_resolved,
         silence_seconds: Number(v.silence_seconds || 0),
-        match_labels_json: String(v.match_labels_json || "{}"),
-        match_regex_json: String(v.match_regex_json || "{}"),
+        match_labels_json: matcherPairsToJSON(v.match_labels_pairs),
+        match_regex_json: matcherPairsToJSON(v.match_regex_pairs),
         channels_json: JSON.stringify(v.channels_json_array ?? []),
       };
       if (currentPolicy) {
@@ -626,81 +678,87 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
 
   const activeContent = tabItems.find((item) => item.key === tab)?.children ?? null;
 
+  const showOverviewAndDebug = !(embedded && hideTabs && tab === "policies");
+
   const body = (
     <>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <Card size="small" styles={{ body: { padding: 12 } }}>
-          <Statistic title="总告警数" value={stats?.total ?? 0} />
-        </Card>
-        <Card size="small" styles={{ body: { padding: 12 } }}>
-          <Statistic title="Firing" value={stats?.firing ?? 0} valueStyle={{ color: "#cf1322" }} />
-        </Card>
-        <Card size="small" styles={{ body: { padding: 12 } }}>
-          <Statistic title="Resolved" value={stats?.resolved ?? 0} valueStyle={{ color: "#389e0d" }} />
-        </Card>
-        <Card size="small" styles={{ body: { padding: 12 } }}>
-          <Statistic title="发送成功" value={stats?.success ?? 0} valueStyle={{ color: "#1677ff" }} />
-        </Card>
-        <Card size="small" styles={{ body: { padding: 12 } }}>
-          <Statistic title="发送失败" value={stats?.failed ?? 0} valueStyle={{ color: "#cf1322" }} />
-        </Card>
-        <Card size="small" styles={{ body: { padding: 12 } }}>
-          <Statistic title="今日新增" value={stats?.today_created ?? 0} />
-        </Card>
-      </div>
-      <Card size="small" title="Webhook 联调（Alertmanager -> 平台）" style={{ marginBottom: 12 }}>
-        <Space direction="vertical" style={{ width: "100%" }} size={12}>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            与生产链路一致：Alertmanager 的 <Typography.Text code>webhook_configs</Typography.Text> 指向本平台的{" "}
-            <Typography.Text code>POST /api/v1/alerts/webhook/alertmanager</Typography.Text>，携带与配置一致的 Token（
-            <Typography.Text code>X-Webhook-Token</Typography.Text> / <Typography.Text code>Authorization</Typography.Text> / 查询参数{" "}
-            <Typography.Text code>token</Typography.Text>
-            ）。下方「发送模拟 Webhook」走同一接口，记录出现在「历史告警记录」Tab，并与策略命中、通道分发一致。
-          </Typography.Paragraph>
-          <Space wrap>
-            <Input
-              style={{ width: 360 }}
-              value={webhookToken}
-              placeholder="Webhook Token（可为空）"
-              onChange={(e) => setWebhookToken(e.target.value)}
-            />
-            <Select
-              style={{ width: 300 }}
-              allowClear
-              value={webhookTokenPick}
-              options={webhookTokenOptions}
-              placeholder="从字典选择 webhook token"
-              onChange={(v) => setWebhookToken(String(v ?? ""))}
-            />
-            <Button type="primary" loading={webhookSending} onClick={() => void sendWebhookDemo()}>
-              发送模拟Webhook
-            </Button>
-            <Select
-              style={{ width: 220 }}
-              value={webhookTemplate}
-              options={webhookTemplateOptions}
-              onChange={(v) => applyWebhookTemplate(v as "warning_prod" | "critical_prod" | "resolved_prod")}
-            />
-            <Button onClick={() => applyWebhookTemplate(webhookTemplate)}>套用模板</Button>
-          </Space>
-          <Typography.Text type="secondary">
-            已选择模板会立即同步到下方 JSON；发送前请确认 status 和 alerts[0].status 是否符合预期（firing/resolved）。
-          </Typography.Text>
-          <Input.TextArea
-            rows={8}
-            value={webhookPayload}
-            onChange={(e) => setWebhookPayload(e.target.value)}
-            placeholder="Alertmanager webhook JSON"
-          />
-        </Space>
-      </Card>
+      {showOverviewAndDebug ? (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <Card size="small" styles={{ body: { padding: 12 } }}>
+              <Statistic title="总告警数" value={stats?.total ?? 0} />
+            </Card>
+            <Card size="small" styles={{ body: { padding: 12 } }}>
+              <Statistic title="Firing" value={stats?.firing ?? 0} valueStyle={{ color: "#cf1322" }} />
+            </Card>
+            <Card size="small" styles={{ body: { padding: 12 } }}>
+              <Statistic title="Resolved" value={stats?.resolved ?? 0} valueStyle={{ color: "#389e0d" }} />
+            </Card>
+            <Card size="small" styles={{ body: { padding: 12 } }}>
+              <Statistic title="发送成功" value={stats?.success ?? 0} valueStyle={{ color: "#1677ff" }} />
+            </Card>
+            <Card size="small" styles={{ body: { padding: 12 } }}>
+              <Statistic title="发送失败" value={stats?.failed ?? 0} valueStyle={{ color: "#cf1322" }} />
+            </Card>
+            <Card size="small" styles={{ body: { padding: 12 } }}>
+              <Statistic title="今日新增" value={stats?.today_created ?? 0} />
+            </Card>
+          </div>
+          <Card size="small" title="Webhook 联调（Alertmanager -> 平台）" style={{ marginBottom: 12 }}>
+            <Space direction="vertical" style={{ width: "100%" }} size={12}>
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                与生产链路一致：Alertmanager 的 <Typography.Text code>webhook_configs</Typography.Text> 指向本平台的{" "}
+                <Typography.Text code>POST /api/v1/alerts/webhook/alertmanager</Typography.Text>，携带与配置一致的 Token（
+                <Typography.Text code>X-Webhook-Token</Typography.Text> / <Typography.Text code>Authorization</Typography.Text> / 查询参数{" "}
+                <Typography.Text code>token</Typography.Text>
+                ）。下方「发送模拟 Webhook」走同一接口，记录出现在「历史告警记录」Tab，并与策略命中、通道分发一致。
+              </Typography.Paragraph>
+              <Space wrap>
+                <Input
+                  style={{ width: 360 }}
+                  value={webhookToken}
+                  placeholder="Webhook Token（可为空）"
+                  onChange={(e) => setWebhookToken(e.target.value)}
+                />
+                <Select
+                  style={{ width: 300 }}
+                  allowClear
+                  value={webhookTokenPick}
+                  options={webhookTokenOptions}
+                  placeholder="从字典选择 webhook token"
+                  onChange={(v) => setWebhookToken(String(v ?? ""))}
+                />
+                <Button type="primary" loading={webhookSending} onClick={() => void sendWebhookDemo()}>
+                  发送模拟Webhook
+                </Button>
+                <Select
+                  style={{ width: 220 }}
+                  value={webhookTemplate}
+                  options={webhookTemplateOptions}
+                  onChange={(v) => applyWebhookTemplate(v as "warning_prod" | "critical_prod" | "resolved_prod")}
+                />
+                <Button onClick={() => applyWebhookTemplate(webhookTemplate)}>套用模板</Button>
+              </Space>
+              <Typography.Text type="secondary">
+                已选择模板会立即同步到下方 JSON；发送前请确认 status 和 alerts[0].status 是否符合预期（firing/resolved）。
+              </Typography.Text>
+              <Input.TextArea
+                rows={8}
+                value={webhookPayload}
+                onChange={(e) => setWebhookPayload(e.target.value)}
+                placeholder="Alertmanager webhook JSON"
+              />
+            </Space>
+          </Card>
+        </>
+      ) : null}
 
       {hideTabs ? (
         activeContent
@@ -748,12 +806,75 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
           <Form.Item name="channels_json_array" label="通知通道">
             <Select mode="multiple" allowClear options={channelOptions} placeholder="选择命中的通知通道" />
           </Form.Item>
-          <Form.Item name="match_labels_json" label="match_labels_json" extra='例如：{"severity":"critical","cluster":"prod-1"}'>
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="match_regex_json" label="match_regex_json" extra='例如：{"namespace":"^(prod|stg)-.*$"}'>
-            <Input.TextArea rows={3} />
-          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="关于 monitor_pipeline（避免策略误匹配）"
+            description={
+              <span>
+                平台会把告警标记为 <Typography.Text code>monitor_pipeline</Typography.Text>：
+                <Typography.Text code>prometheus</Typography.Text> 表示来自 Alertmanager Webhook 入站，
+                <Typography.Text code>platform</Typography.Text> 表示来自平台监控规则评估。通常策略无需强制写该字段；
+                如果在 <Typography.Text code>match_labels_json</Typography.Text> 写了 <Typography.Text code>{`{\"monitor_pipeline\":\"platform\"}`}</Typography.Text>，
+                则只会命中平台规则告警，Webhook 入站告警会匹配不到。
+              </span>
+            }
+          />
+          <Card size="small" title="match labels（精确匹配）" style={{ marginBottom: 12 }}>
+            <Form.List name="match_labels_pairs">
+              {(fields, { add, remove }) => (
+                <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                  {fields.map((field) => (
+                    <Space key={field.key} align="start" wrap style={{ width: "100%" }}>
+                      <Form.Item name={[field.name, "key"]} style={{ minWidth: 240, marginBottom: 0 }}>
+                        <AutoComplete
+                          options={labelKeyAutoCompleteOptions}
+                          placeholder="标签键（可选可输）"
+                          filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
+                          allowClear
+                        />
+                      </Form.Item>
+                      <Form.Item name={[field.name, "value"]} style={{ minWidth: 260, marginBottom: 0 }}>
+                        <Input placeholder="值（精确匹配）" />
+                      </Form.Item>
+                      <Button icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} />
+                    </Space>
+                  ))}
+                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ key: "", value: "" })}>
+                    新增精确匹配项
+                  </Button>
+                </Space>
+              )}
+            </Form.List>
+          </Card>
+          <Card size="small" title="match regex（正则匹配）" style={{ marginBottom: 12 }}>
+            <Form.List name="match_regex_pairs">
+              {(fields, { add, remove }) => (
+                <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                  {fields.map((field) => (
+                    <Space key={field.key} align="start" wrap style={{ width: "100%" }}>
+                      <Form.Item name={[field.name, "key"]} style={{ minWidth: 240, marginBottom: 0 }}>
+                        <AutoComplete
+                          options={labelKeyAutoCompleteOptions}
+                          placeholder="标签键（可选可输）"
+                          filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
+                          allowClear
+                        />
+                      </Form.Item>
+                      <Form.Item name={[field.name, "value"]} style={{ minWidth: 260, marginBottom: 0 }}>
+                        <Input placeholder='值（正则），例如 ^(prod|stg)-.*$' />
+                      </Form.Item>
+                      <Button icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} />
+                    </Space>
+                  ))}
+                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ key: "", value: "" })}>
+                    新增正则匹配项
+                  </Button>
+                </Space>
+              )}
+            </Form.List>
+          </Card>
         </Form>
       </Drawer>
 

@@ -480,7 +480,18 @@ export function AlertMonitorPlatformPage() {
     () => dsBasicUserDictOpts.map((o) => ({ label: o.label, value: String(o.value) })),
     [dsBasicUserDictOpts],
   );
-  const silMatcherNameOpts = useDictOptions("alert_silence_matcher_name");
+  const silenceMatcherNameOptions = useMemo(
+    () =>
+      promqlLabelKeyOpts
+        .map((o) => {
+          const value = String(o.value || "").trim();
+          const label = String(o.label || "").trim() || value;
+          return { label: `${label} (${value})`, value };
+        })
+        .filter((o) => o.value)
+        .sort((a, b) => a.value.localeCompare(b.value, "zh-CN")),
+    [promqlLabelKeyOpts],
+  );
   const ruleComparatorOptions = useMemo(
     () => [
       { label: "大于 (>)", value: ">" },
@@ -2535,7 +2546,7 @@ export function AlertMonitorPlatformPage() {
                       <AutoComplete
                         allowClear
                         placeholder="label 名（可输入或选字典）"
-                        options={silMatcherNameOpts.map((o) => ({ label: o.label, value: String(o.value) }))}
+                        options={silenceMatcherNameOptions}
                         filterOption={(input, option) =>
                           (option?.label ?? "").toString().toLowerCase().includes(input.toLowerCase()) ||
                           (option?.value ?? "").toString().toLowerCase().includes(input.toLowerCase())

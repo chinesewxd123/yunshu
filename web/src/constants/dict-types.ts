@@ -11,7 +11,6 @@ export const PROJECT_DICT_TYPE_OPTIONS: DictTypeOption[] = [
   { label: "告警级别（alert_severity）", value: "alert_severity" },
   { label: "告警数据源地址（alert_datasource_base_url）", value: "alert_datasource_base_url" },
   { label: "告警数据源账号（alert_datasource_basic_user）", value: "alert_datasource_basic_user" },
-  { label: "告警静默匹配键（alert_silence_matcher_name）", value: "alert_silence_matcher_name" },
   { label: "PromQL 标签键（alert_promql_label_key）", value: "alert_promql_label_key" },
   { label: "阈值单位（alert_threshold_unit）", value: "alert_threshold_unit" },
   { label: "告警规则文案预设（alert_rule_template_preset）", value: "alert_rule_template_preset" },

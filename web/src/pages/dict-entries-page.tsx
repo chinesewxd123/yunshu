@@ -18,6 +18,7 @@ export function DictEntriesPage() {
   const [form] = Form.useForm<DictPayload>();
   const formDictType = Form.useWatch("dict_type", form) as string | undefined;
   const autoSortLocked = !current && String(formDictType || "") === "alert_promql_label_key";
+  const isAlertLabelGovernedDictType = String(formDictType || "").trim() === "alert_promql_label_key";
   const dictTypeOptions = useMemo(() => {
     const fromList = Array.from(new Set(list.map((item) => String(item.dict_type || "").trim()).filter(Boolean))).map((v) => ({
       label: `${v}（现有）`,
@@ -214,9 +215,16 @@ export function DictEntriesPage() {
             name="dict_type"
             rules={[{ required: true, message: "请选择字典类型" }]}
             extra={
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 12 }}>
-                字典类型按项目规范统一管理；新增配置时请优先从下拉选择，避免同义多名导致代码读取不到。
-              </Typography.Paragraph>
+              <>
+                <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 12 }}>
+                  字典类型按项目规范统一管理；新增配置时请优先从下拉选择，避免同义多名导致代码读取不到。
+                </Typography.Paragraph>
+                {isAlertLabelGovernedDictType ? (
+                  <Typography.Paragraph type="warning" style={{ marginBottom: 0, fontSize: 12 }}>
+                    告警标签键已统一以 `alert_promql_label_key` 为唯一来源，策略匹配与静默匹配都读取该类型。
+                  </Typography.Paragraph>
+                ) : null}
+              </>
             }
           >
             <Select

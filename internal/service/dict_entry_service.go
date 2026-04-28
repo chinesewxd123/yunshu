@@ -73,6 +73,19 @@ type DictEntryService struct {
 	initOnce sync.Once
 }
 
+const (
+	dictTypeAlertPromQLLabelKey      = "alert_promql_label_key"
+	dictTypeAlertSilenceMatcherName  = "alert_silence_matcher_name"
+)
+
+func canonicalDictType(dictType string) string {
+	t := strings.TrimSpace(dictType)
+	if t == dictTypeAlertSilenceMatcherName {
+		return dictTypeAlertPromQLLabelKey
+	}
+	return t
+}
+
 func NewDictEntryService(repo *repository.DictEntryRepository) *DictEntryService {
 	return &DictEntryService{repo: repo}
 }
@@ -84,6 +97,9 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 	_ = s.repo.CleanupDuplicateTypeValue(ctx)
 
 	s.initOnce.Do(func() {
+		// 历史收敛：静默 matcher key 已统一到 alert_promql_label_key，先迁移再删除旧类型。
+		s.migrateAlertSilenceMatcherKeys(ctx)
+
 		// 不再使用数据字典维护 HTTP 方法；清理历史遗留行，避免与「仅保留敏感配置类字典」目标冲突。
 		_ = s.repo.DeleteByTypes(ctx, []string{"http_action"})
 
@@ -102,13 +118,6 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			{DictType: "dingtalk_notify_mode", Label: "应用会话(app_chat)", Value: "app_chat", Sort: intRef(2), Status: 1, Remark: "钉钉通知模式"},
 			{DictType: "alert_datasource_base_url", Label: "Prometheus 根地址示例", Value: "http://prometheus:9090", Sort: intRef(1), Status: 1, Remark: "告警数据源 Base URL，可在数据字典增删"},
 			{DictType: "alert_datasource_basic_user", Label: "Basic 用户示例", Value: "prometheus", Sort: intRef(1), Status: 1, Remark: "告警数据源 Basic 用户，可在数据字典增删"},
-			// 静默 matcher 常用 label（值即 Prometheus / Alertmanager labels 键名）
-			{DictType: "alert_silence_matcher_name", Label: "告警名 alertname", Value: "alertname", Sort: intRef(1), Status: 1, Remark: "静默匹配器 name"},
-			{DictType: "alert_silence_matcher_name", Label: "集群 cluster", Value: "cluster", Sort: intRef(2), Status: 1, Remark: "静默匹配器 name"},
-			{DictType: "alert_silence_matcher_name", Label: "命名空间 namespace", Value: "namespace", Sort: intRef(3), Status: 1, Remark: "静默匹配器 name"},
-			{DictType: "alert_silence_matcher_name", Label: "级别 severity", Value: "severity", Sort: intRef(4), Status: 1, Remark: "静默匹配器 name"},
-			{DictType: "alert_silence_matcher_name", Label: "任务 job", Value: "job", Sort: intRef(5), Status: 1, Remark: "静默匹配器 name"},
-			{DictType: "alert_silence_matcher_name", Label: "实例 instance", Value: "instance", Sort: intRef(6), Status: 1, Remark: "静默匹配器 name"},
 			// PromQL 标签键候选（规则编辑页下拉）
 			{DictType: "alert_promql_label_key", Label: "instance", Value: "instance", Sort: intRef(1), Status: 1, Remark: "PromQL 标签键"},
 			{DictType: "alert_promql_label_key", Label: "job", Value: "job", Sort: intRef(2), Status: 1, Remark: "PromQL 标签键"},
@@ -202,6 +211,8 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 		_ = s.repo.DeleteByTypeAndValue(ctx, "mail_username", "root@example.com")
 		_ = s.repo.DeleteByTypeAndValue(ctx, "mail_from_email", "root@example.com")
 		_ = s.repo.DeleteByTypeAndValue(ctx, "mail_from_name", "YunShu")
+		// 旧类型清理：收敛为单一 alert_promql_label_key 后，不再保留旧 dict_type。
+		_ = s.repo.DeleteByTypes(ctx, []string{dictTypeAlertSilenceMatcherName})
 	})
 
 	// 内置种子处理后再做一次去重，兜底并发/历史脏数据场景。
@@ -209,8 +220,39 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 	_ = s.repo.CleanupDuplicateTypeValue(ctx)
 }
 
+func (s *DictEntryService) migrateAlertSilenceMatcherKeys(ctx context.Context) {
+	oldList, err := s.repo.ListByType(ctx, dictTypeAlertSilenceMatcherName)
+	if err != nil || len(oldList) == 0 {
+		return
+	}
+	for _, it := range oldList {
+		targetLabel := strings.TrimSpace(it.Label)
+		targetValue := strings.TrimSpace(it.Value)
+		if targetLabel == "" || targetValue == "" {
+			continue
+		}
+		existsByValue, err := s.repo.ExistsByTypeValue(ctx, dictTypeAlertPromQLLabelKey, targetValue, 0)
+		if err == nil && existsByValue {
+			continue
+		}
+		existsByLabel, err := s.repo.ExistsByTypeLabel(ctx, dictTypeAlertPromQLLabelKey, targetLabel, 0)
+		if err == nil && existsByLabel {
+			continue
+		}
+		_ = s.repo.Create(ctx, &model.DictEntry{
+			DictType: dictTypeAlertPromQLLabelKey,
+			Label:    targetLabel,
+			Value:    targetValue,
+			Sort:     it.Sort,
+			Status:   it.Status,
+			Remark:   strings.TrimSpace(it.Remark),
+		})
+	}
+}
+
 func (s *DictEntryService) List(ctx context.Context, query DictEntryListQuery) (*pagination.Result[model.DictEntry], error) {
 	s.ensureBuiltins(ctx)
+	query.DictType = canonicalDictType(query.DictType)
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
 	list, total, err := s.repo.List(ctx, query.DictType, query.Keyword, query.Status, page, pageSize)
 	if err != nil {
@@ -231,7 +273,7 @@ func (s *DictEntryService) Create(ctx context.Context, req DictEntryCreateReques
 		return nil, err
 	}
 	item := model.DictEntry{
-		DictType: strings.TrimSpace(req.DictType),
+		DictType: canonicalDictType(req.DictType),
 		Label:    strings.TrimSpace(req.Label),
 		Value:    strings.TrimSpace(rawVal),
 		Sort:     dictEntrySort(req.Sort),
@@ -266,6 +308,7 @@ func (s *DictEntryService) Update(ctx context.Context, id uint, req DictEntryUpd
 		return nil, err
 	}
 	item.DictType = strings.TrimSpace(req.DictType)
+	item.DictType = canonicalDictType(item.DictType)
 	item.Label = strings.TrimSpace(req.Label)
 	item.Value = strings.TrimSpace(rawVal)
 	item.Sort = dictEntrySort(req.Sort)
@@ -299,7 +342,7 @@ func (s *DictEntryService) Delete(ctx context.Context, id uint) error {
 
 func (s *DictEntryService) Options(ctx context.Context, dictType string) ([]DictEntryOption, error) {
 	s.ensureBuiltins(ctx)
-	list, err := s.repo.ListByTypeEnabled(ctx, dictType)
+	list, err := s.repo.ListByTypeEnabled(ctx, canonicalDictType(dictType))
 	if err != nil {
 		return nil, err
 	}

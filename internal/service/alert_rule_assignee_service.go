@@ -109,8 +109,18 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, rule
 		out = append(out, e)
 	}
 	if len(list) > 0 && s.userRepo != nil {
+		hasExplicitAssignee := false
 		uidSet := map[uint]struct{}{}
 		for _, row := range list {
+			if strings.TrimSpace(row.UserIDsJSON) != "" && strings.TrimSpace(row.UserIDsJSON) != "[]" {
+				hasExplicitAssignee = true
+			}
+			if strings.TrimSpace(row.DepartmentIDsJSON) != "" && strings.TrimSpace(row.DepartmentIDsJSON) != "[]" {
+				hasExplicitAssignee = true
+			}
+			if strings.TrimSpace(row.ExtraEmailsJSON) != "" && strings.TrimSpace(row.ExtraEmailsJSON) != "[]" {
+				hasExplicitAssignee = true
+			}
 			for _, id := range parseUintSliceJSON(row.UserIDsJSON) {
 				uidSet[id] = struct{}{}
 			}
@@ -143,6 +153,13 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, rule
 			for _, e := range extras {
 				add(e)
 			}
+		}
+		// 若已明确配置处理人/部门/额外邮箱，则不再兜底追加项目成员，避免“误发给整个项目成员”。
+		if hasExplicitAssignee {
+			if len(out) == 0 {
+				return nil, nil
+			}
+			return out, nil
 		}
 	}
 	// 未配置处理人时仍可仅依赖项目成员；与 project_members 表对齐。
