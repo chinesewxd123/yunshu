@@ -30,6 +30,7 @@ export interface AlertEventItem {
   matched_policy_names?: string;
   matched_policy_id_list?: number[];
   matched_policy_name_list?: string[];
+  receiver_list?: string[];
   channel_id: number;
   channel_name: string;
   success: boolean;
@@ -129,6 +130,7 @@ export function listAlertEvents(params: {
   keyword?: string;
   cluster?: string;
   alert_ip?: string;
+  status?: string;
   monitor_pipeline?: string;
   group_key?: string;
 }) {

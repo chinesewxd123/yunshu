@@ -157,6 +157,9 @@ const policyTemplates: Record<
 
 function describeAlertEvent(row: AlertEventItem): string {
   const reason = String(row.error_message || "").trim();
+  const channelText = String(row.channel_name || "").trim() || "未匹配通道";
+  const receiverText = row.receiver_list?.length ? row.receiver_list.join(", ") : "-";
+  const hasMatchedPolicy = !!row.matched_policy_name_list?.length;
   if (row.success) {
     if (reason === "silence_suppressed") return "已命中平台静默，告警写入历史但未向通道发送。";
     if (reason === "policy_suppressed") return "已命中策略静默窗口，本次不再重复外发。";
@@ -164,12 +167,16 @@ function describeAlertEvent(row: AlertEventItem): string {
     if (reason === "aggregate_suppressed") return "已命中 firing 聚合窗口，本次被汇总抑制。";
     if (reason === "resolved_aggregate_suppressed") return "已命中恢复聚合窗口，本次恢复通知被汇总抑制。";
     if (row.channel_name?.includes("静默抑制")) return "平台在分发前拦截了本次告警。";
-    return "告警已完成分发并写入历史记录。";
+    if (!hasMatchedPolicy) {
+      return `未命中策略，按通道匹配直连发送；通道[${channelText}]，接收人[${receiverText}]。`;
+    }
+    return `通道[${channelText}] 已发送，接收人[${receiverText}]。`;
   }
   if (reason === "no_enabled_channels") return "当前没有启用的通知通道，因此仅记录历史。";
+  if (reason === "no_policy_matched") return "未命中任何告警策略，已按策略门禁拦截，不会发送到通道。";
   if (reason === "no_channel_matched") return "有通道存在，但本次告警未匹配到可发送通道。";
   if (reason === "no_channel_matched_policy") return "命中了策略，但策略绑定的通道未命中或不可用。";
-  if (reason) return `发送失败：${reason}`;
+  if (reason) return `通道[${channelText}] 发送失败，接收人[${receiverText}]，原因：${reason}`;
   return "告警进入了平台链路，但未获取到更多说明。";
 }
 
@@ -246,6 +253,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
   const [eventsTotal, setEventsTotal] = useState(0);
   const [eventKeyword, setEventKeyword] = useState("");
   const [eventAlertIP, setEventAlertIP] = useState("");
+  const [eventStatus, setEventStatus] = useState("");
   const [eventMonitorPipeline, setEventMonitorPipeline] = useState("");
   const [eventGroupKey, setEventGroupKey] = useState("");
   const eventsPageSizeRef = useRef(eventsPageSize);
@@ -343,6 +351,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
           page_size: pageSize,
           keyword: eventKeyword.trim() || undefined,
           alert_ip: eventAlertIP.trim() || undefined,
+          status: eventStatus.trim() || undefined,
           monitor_pipeline: eventMonitorPipeline.trim() || undefined,
           group_key: eventGroupKey.trim() || undefined,
         });
@@ -354,7 +363,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
         setEventsLoading(false);
       }
     },
-    [eventKeyword, eventAlertIP, eventMonitorPipeline, eventGroupKey],
+    [eventKeyword, eventAlertIP, eventStatus, eventMonitorPipeline, eventGroupKey],
   );
 
   useEffect(() => {
@@ -366,12 +375,12 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     if (tab !== "history") {
       return;
     }
-    const delay = eventKeyword || eventAlertIP || eventGroupKey ? 300 : 0;
+    const delay = eventKeyword || eventAlertIP || eventStatus || eventGroupKey ? 300 : 0;
     const timer = window.setTimeout(() => {
       void loadEvents(1, eventsPageSizeRef.current);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [tab, eventKeyword, eventAlertIP, eventMonitorPipeline, eventGroupKey, loadEvents]);
+  }, [tab, eventKeyword, eventAlertIP, eventStatus, eventMonitorPipeline, eventGroupKey, loadEvents]);
 
   function openCreatePolicy() {
     setCurrentPolicy(null);
@@ -556,6 +565,17 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               onChange={(v) => setEventMonitorPipeline((v as string) || "")}
               filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
             />
+            <Select
+              style={{ width: 160 }}
+              placeholder="状态"
+              value={eventStatus || undefined}
+              options={[
+                { label: "firing", value: "firing" },
+                { label: "resolved", value: "resolved" },
+              ]}
+              allowClear
+              onChange={(v) => setEventStatus((v as string) || "")}
+            />
             <Input
               style={{ width: 220 }}
               placeholder="group_key"
@@ -583,7 +603,16 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
             }}
             columns={[
               { title: "ID", dataIndex: "id", width: 80 },
-              { title: "标题", dataIndex: "title", width: 220, ellipsis: true },
+              {
+                title: "标题",
+                dataIndex: "title",
+                width: 360,
+                render: (v: string) => (
+                  <Typography.Text style={{ whiteSpace: "normal", wordBreak: "break-word" }}>
+                    {v || "-"}
+                  </Typography.Text>
+                ),
+              },
               { title: "告警IP", dataIndex: "alert_ip", width: 160, ellipsis: true, render: (v: string) => v || "-" },
               {
                 title: "监控链路",
@@ -596,7 +625,6 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                 },
               },
               { title: "GroupKey", dataIndex: "group_key", width: 140, ellipsis: true, render: (v: string) => v || "-" },
-              { title: "来源", dataIndex: "source", width: 120 },
               {
                 title: "级别",
                 dataIndex: "severity",
@@ -615,6 +643,22 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               },
               { title: "通道", dataIndex: "channel_name", width: 160, ellipsis: true },
               {
+                title: "接收人",
+                dataIndex: "receiver_list",
+                width: 220,
+                ellipsis: true,
+                render: (_: unknown, row: AlertEventItem) => {
+                  if (!row.receiver_list?.length) return "-";
+                  return (
+                    <Space size={[4, 4]} wrap>
+                      {row.receiver_list.map((one) => (
+                        <Tag key={`${row.id}-${one}`}>{one}</Tag>
+                      ))}
+                    </Space>
+                  );
+                },
+              },
+              {
                 title: "发送结果",
                 dataIndex: "success",
                 width: 100,
@@ -622,26 +666,9 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               },
               { title: "HTTP", dataIndex: "http_status_code", width: 80 },
               {
-                title: "提示",
-                key: "hint",
-                width: 160,
-                ellipsis: true,
-                render: (_: unknown, row: AlertEventItem) => {
-                  if (row.success && row.error_message) {
-                    const msg = summarizeAlertHint(row);
-                    return (
-                      <Typography.Text type="secondary" ellipsis={{ tooltip: msg }}>
-                        {msg}
-                      </Typography.Text>
-                    );
-                  }
-                  return "-";
-                },
-              },
-              {
                 title: "链路说明",
                 key: "flow_explain",
-                width: 260,
+                width: 340,
                 ellipsis: true,
                 render: (_: unknown, row: AlertEventItem) => {
                   const msg = describeAlertEvent(row);
@@ -649,22 +676,6 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                     <Typography.Text type="secondary" ellipsis={{ tooltip: msg }}>
                       {msg}
                     </Typography.Text>
-                  );
-                },
-              },
-              {
-                title: "错误信息",
-                dataIndex: "error_message",
-                width: 160,
-                ellipsis: true,
-                render: (_: unknown, row: AlertEventItem) => {
-                  const v = row.success ? "" : row.error_message;
-                  return v ? (
-                    <Typography.Text type="danger" ellipsis={{ tooltip: v }}>
-                      {v}
-                    </Typography.Text>
-                  ) : (
-                    "-"
                   );
                 },
               },

@@ -41,6 +41,7 @@ type AlertEventListQuery struct {
 	Keyword         string `form:"keyword"`
 	Cluster         string `form:"cluster"`
 	AlertIP         string `form:"alert_ip"`
+	Status          string `form:"status"`
 	MonitorPipeline string `form:"monitor_pipeline"`
 	GroupKey        string `form:"group_key"`
 }
@@ -540,6 +541,9 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 			like,
 		)
 	}
+	if v := strings.ToLower(strings.TrimSpace(q.Status)); v != "" {
+		tx = tx.Where("LOWER(TRIM(status)) = ?", v)
+	}
 	if v := strings.TrimSpace(q.MonitorPipeline); v != "" {
 		tx = tx.Where("monitor_pipeline = ?", v)
 	}
@@ -559,7 +563,67 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 	for i := range list {
 		hydrateAlertEvent(&list[i])
 	}
+	s.backfillResolvedAlertIP(ctx, list)
 	return list, total, page, pageSize, nil
+}
+
+func (s *AlertService) backfillResolvedAlertIP(ctx context.Context, list []model.AlertEvent) {
+	if len(list) == 0 {
+		return
+	}
+	missing := map[string]struct{}{}
+	for i := range list {
+		st := strings.ToLower(strings.TrimSpace(list[i].Status))
+		if st != "resolved" {
+			continue
+		}
+		if strings.TrimSpace(list[i].AlertIP) != "" {
+			continue
+		}
+		gk := strings.TrimSpace(list[i].GroupKey)
+		if gk == "" {
+			continue
+		}
+		missing[gk] = struct{}{}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	groupKeys := make([]string, 0, len(missing))
+	for k := range missing {
+		groupKeys = append(groupKeys, k)
+	}
+	var firingRows []model.AlertEvent
+	if err := s.db.WithContext(ctx).
+		Where("group_key IN ? AND LOWER(TRIM(status)) = ?", groupKeys, "firing").
+		Order("id DESC").
+		Find(&firingRows).Error; err != nil {
+		return
+	}
+	ipByGroup := map[string]string{}
+	for i := range firingRows {
+		row := firingRows[i]
+		gk := strings.TrimSpace(row.GroupKey)
+		if gk == "" {
+			continue
+		}
+		if _, ok := ipByGroup[gk]; ok {
+			continue
+		}
+		hydrateAlertEvent(&row)
+		ip := strings.TrimSpace(row.AlertIP)
+		if ip != "" {
+			ipByGroup[gk] = ip
+		}
+	}
+	for i := range list {
+		if strings.ToLower(strings.TrimSpace(list[i].Status)) != "resolved" || strings.TrimSpace(list[i].AlertIP) != "" {
+			continue
+		}
+		if ip := strings.TrimSpace(ipByGroup[strings.TrimSpace(list[i].GroupKey)]); ip != "" {
+			list[i].AlertIP = ip
+		}
+	}
 }
 
 func extractAlertIPFromPayload(requestPayload, fallback string) string {
@@ -617,6 +681,83 @@ func parseTrimmedCSV(raw string) []string {
 	return out
 }
 
+func parseStringListAny(v interface{}) []string {
+	raw := normalizeRecipientList(v)
+	var out []string
+	for _, one := range raw {
+		s := strings.TrimSpace(one)
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func payloadValueByPath(payload map[string]interface{}, path string) interface{} {
+	if payload == nil {
+		return nil
+	}
+	cur := interface{}(payload)
+	for _, part := range strings.Split(strings.TrimSpace(path), ".") {
+		key := strings.TrimSpace(part)
+		if key == "" {
+			continue
+		}
+		obj, ok := cur.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		cur, ok = obj[key]
+		if !ok {
+			return nil
+		}
+	}
+	return cur
+}
+
+func uniqTrimmedStrings(in []string, lower bool) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(in))
+	for _, one := range in {
+		s := strings.TrimSpace(one)
+		if s == "" {
+			continue
+		}
+		k := s
+		if lower {
+			k = strings.ToLower(s)
+		}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+func extractEventReceivers(requestPayload, channelName string) []string {
+	_, payload := extractAlertPayloadLabels(requestPayload)
+	if payload == nil {
+		return nil
+	}
+	ch := strings.ToLower(strings.TrimSpace(channelName))
+	var out []string
+	if strings.Contains(ch, "email") || strings.Contains(ch, "邮件") {
+		for _, key := range []string{"assignee_emails", "to", "recipients", "emails"} {
+			out = append(out, parseStringListAny(payloadValueByPath(payload, key))...)
+		}
+		return uniqTrimmedStrings(out, true)
+	}
+	if strings.Contains(ch, "ding") || strings.Contains(ch, "钉") || strings.Contains(ch, "wecom") || strings.Contains(ch, "wechat") || strings.Contains(ch, "企微") || strings.Contains(ch, "企业微信") {
+		for _, key := range []string{"at.atMobiles", "text.mentioned_mobile_list", "atMobiles", "mentioned_mobile_list"} {
+			out = append(out, parseStringListAny(payloadValueByPath(payload, key))...)
+		}
+		return uniqTrimmedStrings(out, false)
+	}
+	return nil
+}
+
 func hydrateAlertEvent(it *model.AlertEvent) {
 	if it == nil {
 		return
@@ -629,6 +770,7 @@ func hydrateAlertEvent(it *model.AlertEvent) {
 	it.AlertIP = extractAlertIPFromPayload(it.RequestPayload, it.Environment)
 	it.MatchedPolicyIDList = parseUintCSV(it.MatchedPolicyIDs)
 	it.MatchedPolicyNameList = parseTrimmedCSV(it.MatchedPolicyNames)
+	it.ReceiverList = extractEventReceivers(it.RequestPayload, it.ChannelName)
 }
 
 func previewPayloadFieldCatalog(payload map[string]interface{}) ([]string, []string, []string) {
@@ -1033,16 +1175,18 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 		outgoing["matched_policy_ids"] = matchedPolicyIDs
 		outgoing["matched_policy_names"] = matchedPolicyNames
 		outgoing["policy_silence_seconds"] = policySilenceSeconds
+		if len(policyChannels) == 0 {
+			s.logNoMatchedChannel(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing, "no_policy_matched")
+			continue
+		}
 		if s.shouldSuppressByPolicySilence(ctx, status, groupKey, matchedPolicyIDs, policySilenceSeconds, labels) {
 			s.logSuppressedPolicySilence(ctx, title, severity, status, envLabel, groupKey, labelsDigest, policySilenceSeconds, outgoing)
 			continue
 		}
 		sentCount := 0
 		for i := range channels {
-			if len(policyChannels) > 0 {
-				if _, ok := policyChannels[channels[i].ID]; !ok {
-					continue
-				}
+			if _, ok := policyChannels[channels[i].ID]; !ok {
+				continue
 			}
 			settings, _ := parseChannelSettings(channels[i].HeadersJSON)
 			if !channelMatchesAlert(settings, labels, dims) {
