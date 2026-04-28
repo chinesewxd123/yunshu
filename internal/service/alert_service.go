@@ -672,6 +672,9 @@ func extractAlertPayloadLabels(requestPayload string) (map[string]string, map[st
 					return out, payload
 				}
 			}
+			// 非 labels 结构（如钉钉/企微下发体）也返回 payload，
+			// 便于从 atMobiles/mentioned_mobile_list 等字段提取接收人。
+			return map[string]string{}, payload
 		}
 	}
 	return map[string]string{}, nil
