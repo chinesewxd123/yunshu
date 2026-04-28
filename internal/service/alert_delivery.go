@@ -643,6 +643,33 @@ func maskWebhookURL(raw string) string {
 }
 
 func mergeAssigneeEmails(recipients []string, payload map[string]interface{}) []string {
+	// 严格处理人优先：
+	// - assignee_emails 非空：仅发 assignee_emails（忽略通道固定收件人）
+	// - assignee_emails 为空：使用通道固定收件人兜底
+	var assignee []string
+	if payload != nil {
+		if raw, ok := payload["assignee_emails"]; ok {
+			for _, e := range normalizeRecipientList(raw) {
+				s := strings.TrimSpace(strings.ToLower(e))
+				if s != "" {
+					assignee = append(assignee, s)
+				}
+			}
+		}
+	}
+	if len(assignee) > 0 {
+		seen := map[string]struct{}{}
+		out := make([]string, 0, len(assignee))
+		for _, e := range assignee {
+			if _, ok := seen[e]; ok {
+				continue
+			}
+			seen[e] = struct{}{}
+			out = append(out, e)
+		}
+		return out
+	}
+
 	seen := map[string]struct{}{}
 	var out []string
 	add := func(e string) {
@@ -658,13 +685,6 @@ func mergeAssigneeEmails(recipients []string, payload map[string]interface{}) []
 	}
 	for _, r := range recipients {
 		add(r)
-	}
-	if payload != nil {
-		if raw, ok := payload["assignee_emails"]; ok {
-			for _, e := range normalizeRecipientList(raw) {
-				add(e)
-			}
-		}
 	}
 	return out
 }

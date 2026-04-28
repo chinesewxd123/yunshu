@@ -89,7 +89,10 @@ func (s *AlertRuleAssigneeService) UpsertPrimary(ctx context.Context, ruleID uin
 	return &row, nil
 }
 
-// ResolveNotifyEmails 合并：规则处理人（用户/部门/extra）+ 项目成员邮箱（规则绑定 project_id 时）。
+// ResolveNotifyEmails 合并规则处理人邮箱（仅用户 + extra）。
+// 说明：
+// 1) 不再按部门展开全员邮箱，避免“配置部门导致群发”；
+// 2) 不再项目成员兜底；未配置处理人时返回空，由邮件通道固定收件人兜底。
 func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, ruleID uint) ([]string, error) {
 	list, err := s.ListByRule(ctx, ruleID)
 	if err != nil {
@@ -109,27 +112,9 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, rule
 		out = append(out, e)
 	}
 	if len(list) > 0 && s.userRepo != nil {
-		hasExplicitAssignee := false
 		uidSet := map[uint]struct{}{}
 		for _, row := range list {
-			if strings.TrimSpace(row.UserIDsJSON) != "" && strings.TrimSpace(row.UserIDsJSON) != "[]" {
-				hasExplicitAssignee = true
-			}
-			if strings.TrimSpace(row.DepartmentIDsJSON) != "" && strings.TrimSpace(row.DepartmentIDsJSON) != "[]" {
-				hasExplicitAssignee = true
-			}
-			if strings.TrimSpace(row.ExtraEmailsJSON) != "" && strings.TrimSpace(row.ExtraEmailsJSON) != "[]" {
-				hasExplicitAssignee = true
-			}
 			for _, id := range parseUintSliceJSON(row.UserIDsJSON) {
-				uidSet[id] = struct{}{}
-			}
-			deptIDs := parseUintSliceJSON(row.DepartmentIDsJSON)
-			moreIDs, err := s.userRepo.ListActiveIDsByDepartmentSubtree(ctx, deptIDs)
-			if err != nil {
-				return nil, err
-			}
-			for _, id := range moreIDs {
 				uidSet[id] = struct{}{}
 			}
 		}
@@ -152,36 +137,6 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, rule
 			extras, _ := assigneeParseStringSliceJSON(row.ExtraEmailsJSON)
 			for _, e := range extras {
 				add(e)
-			}
-		}
-		// 若已明确配置处理人/部门/额外邮箱，则不再兜底追加项目成员，避免“误发给整个项目成员”。
-		if hasExplicitAssignee {
-			if len(out) == 0 {
-				return nil, nil
-			}
-			return out, nil
-		}
-	}
-	// 未配置处理人时仍可仅依赖项目成员；与 project_members 表对齐。
-	if s.memberRepo != nil && s.userRepo != nil {
-		var projectID uint
-		_ = s.db.WithContext(ctx).
-			Table("alert_monitor_rules amr").
-			Select("ad.project_id AS project_id").
-			Joins("JOIN alert_datasources ad ON ad.id = amr.datasource_id AND ad.deleted_at IS NULL").
-			Where("amr.id = ? AND amr.deleted_at IS NULL", ruleID).
-			Scan(&projectID).Error
-		if projectID > 0 {
-			uids, err := s.memberRepo.ListUserIDsByProject(ctx, projectID)
-			if err == nil && len(uids) > 0 {
-				users, err := s.userRepo.ListByIDs(ctx, uids)
-				if err == nil {
-					for i := range users {
-						if users[i].Status == model.StatusEnabled && users[i].Email != nil {
-							add(*users[i].Email)
-						}
-					}
-				}
 			}
 		}
 	}
