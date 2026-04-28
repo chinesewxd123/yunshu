@@ -69,13 +69,6 @@ const fallbackMap: Record<string, Option[]> = {
     { label: "错误", value: "error" },
     { label: "未知", value: "unknown" },
   ],
-  /** 静默表单 matcher 名称下拉；条目以数据字典为准 */
-  alert_silence_matcher_name: [
-    { label: "alertname", value: "alertname" },
-    { label: "cluster", value: "cluster" },
-    { label: "namespace", value: "namespace" },
-    { label: "severity", value: "severity" },
-  ],
   /** 监控规则 PromQL 生成器中的标签键候选；条目以数据字典为准 */
   alert_promql_label_key: [
     { label: "instance", value: "instance" },

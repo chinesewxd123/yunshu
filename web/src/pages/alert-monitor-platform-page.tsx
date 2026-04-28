@@ -79,6 +79,7 @@ import {
   type AlertSilenceItem,
   type CloudExpiryRuleItem,
 } from "../services/alert-platform";
+import { stringifyPrettyJSON } from "../services/alert-mappers";
 import { useDictOptions } from "../hooks/use-dict-options";
 import type { UserUpdatePayload } from "../types/api";
 import { getUser, updateUser } from "../services/users";
@@ -87,7 +88,7 @@ import { AlertConfigCenterPanel, type AlertConfigTab } from "./alert-config-cent
 
 dayjs.locale("zh-cn");
 
-type TabKey = "datasources" | "config" | "silences" | "rules" | "cloud-expiry" | "promql";
+type TabKey = "datasources" | "policies" | "silences" | "rules" | "history" | "cloud-expiry" | "promql";
 
 type SilenceMatcherForm = { name: string; value: string; is_regex: boolean };
 
@@ -110,6 +111,20 @@ type RuleComparator = ">" | ">=" | "<" | "<=" | "==" | "!=";
 type RuleBuilderLogic = "and" | "or";
 type RuleBuilderCondition = { metric: string; comparator: RuleComparator; threshold: number | null };
 type MetricLabelFilter = { key: string; op: "=" | "!=" | "=~" | "!~"; value: string };
+
+function parseTemplatePresetPair(raw: string): { summary: string; description: string } | null {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  try {
+    const parsed = JSON.parse(s) as { summary?: string; description?: string };
+    const summary = String(parsed.summary || "").trim();
+    const description = String(parsed.description || "").trim();
+    if (!summary || !description) return null;
+    return { summary, description };
+  } catch {
+    return null;
+  }
+}
 
 function parseSilenceMatchersForForm(raw?: string): SilenceMatcherForm[] {
   const s = raw?.trim();
@@ -356,14 +371,11 @@ export function AlertMonitorPlatformPage() {
   }, [searchParams]);
   const tab: TabKey = useMemo(() => {
     const t = searchParams.get("tab");
-    if (t === "config" || t === "silences" || t === "rules" || t === "cloud-expiry" || t === "promql") return t;
+    if (t === "config") {
+      return searchParams.get("cfg") === "history" ? "history" : "policies";
+    }
+    if (t === "policies" || t === "silences" || t === "rules" || t === "history" || t === "cloud-expiry" || t === "promql") return t;
     return "datasources";
-  }, [searchParams]);
-
-  const configTab: AlertConfigTab = useMemo(() => {
-    const c = searchParams.get("cfg");
-    if (c === "history") return c;
-    return "policies";
   }, [searchParams]);
 
   function setTab(key: TabKey) {
@@ -372,20 +384,7 @@ export function AlertMonitorPlatformPage() {
         const p = new URLSearchParams(prev);
         if (key === "datasources") p.delete("tab");
         else p.set("tab", key);
-        if (key !== "config") p.delete("cfg");
-        return p;
-      },
-      { replace: true },
-    );
-  }
-
-  function setConfigTab(key: AlertConfigTab) {
-    setSearchParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        p.set("tab", "config");
-        if (key === "policies") p.delete("cfg");
-        else p.set("cfg", key);
+        p.delete("cfg");
         return p;
       },
       { replace: true },
@@ -402,6 +401,10 @@ export function AlertMonitorPlatformPage() {
       },
       { replace: true },
     );
+  }
+
+  function openHistoryTab() {
+    setTab("history");
   }
 
   const [dsList, setDsList] = useState<AlertDatasourceItem[]>([]);
@@ -477,7 +480,18 @@ export function AlertMonitorPlatformPage() {
     () => dsBasicUserDictOpts.map((o) => ({ label: o.label, value: String(o.value) })),
     [dsBasicUserDictOpts],
   );
-  const silMatcherNameOpts = useDictOptions("alert_silence_matcher_name");
+  const silenceMatcherNameOptions = useMemo(
+    () =>
+      promqlLabelKeyOpts
+        .map((o) => {
+          const value = String(o.value || "").trim();
+          const label = String(o.label || "").trim() || value;
+          return { label: `${label} (${value})`, value };
+        })
+        .filter((o) => o.value)
+        .sort((a, b) => a.value.localeCompare(b.value, "zh-CN")),
+    [promqlLabelKeyOpts],
+  );
   const ruleComparatorOptions = useMemo(
     () => [
       { label: "大于 (>)", value: ">" },
@@ -1028,13 +1042,10 @@ export function AlertMonitorPlatformPage() {
       width: 200,
       ellipsis: true,
       render: (_: unknown, r: AlertSilenceItem) => {
-        try {
-          const arr = JSON.parse(r.matchers_json || "[]") as Array<{ name?: string; value?: string }>;
-          if (!Array.isArray(arr)) return "—";
-          return arr.map((x) => `${x.name ?? ""}=${x.value ?? ""}`).join(", ");
-        } catch {
-          return r.matchers_json?.slice(0, 80) ?? "—";
+        if (r.matchers?.length) {
+          return r.matchers.map((x) => `${x.name ?? ""}=${x.value ?? ""}`).join(", ");
         }
+        return r.matchers_json?.slice(0, 80) ?? "—";
       },
     },
     { title: "开始", dataIndex: "starts_at", width: 170, render: (t: string) => formatDateTime(t) },
@@ -1154,7 +1165,7 @@ export function AlertMonitorPlatformPage() {
     setSilCurrent(r);
     silForm.setFieldsValue({
       name: r.name,
-      matchers: parseSilenceMatchersForForm(r.matchers_json),
+      matchers: r.matchers?.length ? r.matchers : parseSilenceMatchersForForm(r.matchers_json),
       comment: r.comment,
       enabled: r.enabled,
       starts_at: dayjs(r.starts_at),
@@ -1241,7 +1252,17 @@ export function AlertMonitorPlatformPage() {
 
   const ruleColumns = [
     { title: "ID", dataIndex: "id", width: 70 },
-    { title: "项目", dataIndex: "project_name", width: 160, render: (v: string, r: AlertMonitorRuleItem) => v || (r.project_id ? String(r.project_id) : "—") },
+    {
+      title: "项目",
+      dataIndex: "project_name",
+      width: 160,
+      render: (v: string, r: AlertMonitorRuleItem) => {
+        if (String(v || "").trim()) return v;
+        const ds = dsList.find((d) => d.id === r.datasource_id);
+        if (String(ds?.project_name || "").trim()) return String(ds?.project_name);
+        return r.project_id ? String(r.project_id) : "—";
+      },
+    },
     { title: "名称", dataIndex: "name", width: 160 },
     {
       title: "数据源",
@@ -1251,24 +1272,12 @@ export function AlertMonitorPlatformPage() {
         const name = String(r.datasource_name || "").trim();
         if (name) return name;
         const ds = dsList.find((d) => d.id === r.datasource_id);
-        return ds ? (ds.project_name ? `${ds.project_name} / ${ds.name}` : ds.name) : String(r.datasource_id);
+        return ds ? ds.name : String(r.datasource_id);
       },
     },
     { title: "级别", dataIndex: "severity", width: 90 },
     { title: "for(s)", dataIndex: "for_seconds", width: 80 },
     { title: "间隔(s)", dataIndex: "eval_interval_seconds", width: 90 },
-    {
-      title: "策略静默",
-      key: "policy_silence",
-      width: 180,
-      render: (_: unknown, r: AlertMonitorRuleItem) => {
-        const left = Number(r.policy_silence_remaining_seconds || 0);
-        if (r.policy_silence_active && left > 0) {
-          return <Tag color="gold">策略静默中（剩余 {left}s）</Tag>;
-        }
-        return <Tag>未静默</Tag>;
-      },
-    },
     { title: "启用", dataIndex: "enabled", width: 70, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
     {
       title: "操作",
@@ -1345,13 +1354,9 @@ export function AlertMonitorPlatformPage() {
     // 1) match custom dict presets (value is JSON string)
     for (const o of ruleTemplatePresetDictOpts) {
       const raw = String(o.value || "");
-      try {
-        const parsed = JSON.parse(raw) as { summary?: string; description?: string };
-        if (String(parsed.summary || "").trim() === s && String(parsed.description || "").trim() === d) {
-          return `custom:${raw}`;
-        }
-      } catch {
-        // ignore invalid custom entries
+      const parsed = parseTemplatePresetPair(raw);
+      if (parsed && parsed.summary === s && parsed.description === d) {
+        return `custom:${raw}`;
       }
     }
 
@@ -1407,24 +1412,18 @@ export function AlertMonitorPlatformPage() {
   function applyRuleAnnotationPreset(preset: string) {
     if (preset.startsWith("custom:")) {
       const raw = preset.slice("custom:".length);
-      try {
-        const parsed = JSON.parse(raw) as { summary?: string; description?: string };
-        const summary = String(parsed.summary || "").trim();
-        const description = String(parsed.description || "").trim();
-        if (!summary || !description) {
-          throw new Error("模板不完整");
-        }
+      const parsed = parseTemplatePresetPair(raw);
+      if (parsed) {
         ruleForm.setFieldsValue({
-          summary_template: summary,
-          description_template: description,
+          summary_template: parsed.summary,
+          description_template: parsed.description,
           rule_template_preset: preset,
         });
         message.success("已应用自定义模板预设");
         return;
-      } catch {
-        message.error('自定义模板预设格式错误：请在数据字典 value 中配置 JSON，如 {"summary":"...","description":"..."}');
-        return;
       }
+      message.error('自定义模板预设格式错误：请在数据字典 value 中配置 JSON，如 {"summary":"...","description":"..."}');
+      return;
     }
     const selected = preset === "smart" ? detectRulePresetByContext() : preset;
     const map: Record<string, { summary: string; description: string }> = {
@@ -1479,16 +1478,8 @@ export function AlertMonitorPlatformPage() {
   }
 
   function openRuleEdit(r: AlertMonitorRuleItem) {
-    let summaryTemplate = "";
-    let descriptionTemplate = "";
-    try {
-      const ann = JSON.parse(r.annotations_json || "{}");
-      summaryTemplate = typeof ann.summary === "string" ? ann.summary : "";
-      descriptionTemplate = typeof ann.description === "string" ? ann.description : "";
-    } catch {
-      summaryTemplate = "";
-      descriptionTemplate = "";
-    }
+    const summaryTemplate = typeof r.annotations?.summary === "string" ? r.annotations.summary : "";
+    const descriptionTemplate = typeof r.annotations?.description === "string" ? r.annotations.description : "";
     setRuleCurrent(r);
     const presetKey = detectPresetKeyByTemplates(summaryTemplate, descriptionTemplate);
     ruleForm.setFieldsValue({
@@ -1660,7 +1651,7 @@ export function AlertMonitorPlatformPage() {
       const payload = {
         ...v,
         threshold_unit: normalizedUnit,
-        labels_json: ruleCurrent?.labels_json ?? "{}",
+        labels_json: stringifyPrettyJSON(ruleCurrent?.labels ?? {}, "{}"),
         annotations_json: JSON.stringify({
           summary: String(v.summary_template || "").trim(),
           description: String(v.description_template || "").trim(),
@@ -1755,7 +1746,7 @@ export function AlertMonitorPlatformPage() {
       advance_days: row.advance_days,
       severity: row.severity || "warning",
       eval_interval_seconds: row.eval_interval_seconds,
-      labels_json: row.labels_json || "{}",
+      labels_json: stringifyPrettyJSON(row.labels ?? {}, "{}"),
       enabled: row.enabled,
     });
     setCloudExpiryModalOpen(true);
@@ -1807,7 +1798,7 @@ export function AlertMonitorPlatformPage() {
     try {
       const parsed = JSON.parse(s) as unknown;
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-      return JSON.stringify(parsed);
+      return stringifyPrettyJSON(parsed, "{}");
     } catch {
       return null;
     }
@@ -1821,8 +1812,8 @@ export function AlertMonitorPlatformPage() {
       const { list } = await getMonitorRuleAssignees(ruleId);
       const row = list?.[0];
       assignForm.setFieldsValue({
-        user_ids: row ? parseUintArrayJSON(row.user_ids_json) : [],
-        department_ids: row ? parseUintArrayJSON(row.department_ids_json) : [],
+        user_ids: row?.user_ids ?? [],
+        department_ids: row?.department_ids ?? [],
         notify_on_resolved: row?.notify_on_resolved ?? false,
         remark: row?.remark ?? "",
       });
@@ -1915,9 +1906,9 @@ export function AlertMonitorPlatformPage() {
           starts_at: b.starts_at,
           ends_at: b.ends_at,
           title: b.title,
-          user_ids_json: b.user_ids_json || "[]",
-          department_ids_json: b.department_ids_json || "[]",
-          extra_emails_json: b.extra_emails_json && String(b.extra_emails_json).trim() ? b.extra_emails_json : "[]",
+          user_ids_json: JSON.stringify(b.user_ids ?? []),
+          department_ids_json: JSON.stringify(b.department_ids ?? []),
+          extra_emails_json: JSON.stringify(b.extra_emails ?? []),
           remark: b.remark ?? "",
         });
       }
@@ -1981,8 +1972,8 @@ export function AlertMonitorPlatformPage() {
       monitor_rule_id: r.monitor_rule_id,
       range: [dayjs(r.starts_at), dayjs(r.ends_at)],
       title: r.title,
-      user_ids: parseUintArrayJSON(r.user_ids_json),
-      department_ids: parseUintArrayJSON(r.department_ids_json),
+      user_ids: r.user_ids ?? [],
+      department_ids: r.department_ids ?? [],
       profile_email: undefined,
       remark: r.remark,
     });
@@ -2094,6 +2085,12 @@ export function AlertMonitorPlatformPage() {
             label: "数据源",
             children: (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                <Alert
+                  type="info"
+                  showIcon
+                  message="数据源是告警入口与巡检基础"
+                  description="这里维护 Prometheus / Alertmanager 的访问地址，供平台规则巡检、活跃告警快照与 PromQL 调试复用。"
+                />
                 <Space>
                   <Button type="primary" icon={<PlusOutlined />} onClick={openDsCreate}>
                     新建数据源
@@ -2107,45 +2104,69 @@ export function AlertMonitorPlatformPage() {
             ),
           },
           {
-            key: "config",
-            label: "策略与联调",
+            key: "policies",
+            label: "告警策略",
             children: (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
-                <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  Webhook 入站、告警策略、历史记录与规则模板与左侧「数据源 / 监控规则 / 值班」共用同一告警链路：前者决定命中与通知策略，后者负责 Prometheus 侧规则与处理人、值班邮箱合并。
-                </Typography.Paragraph>
+                <Alert
+                  type="info"
+                  showIcon
+                  message="告警策略只处理 Webhook 入站告警"
+                  description={
+                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                      <span>策略负责按 labels / regex 命中通道、静默窗口与恢复通知；它不等于 Prometheus 规则，也不直接改 Alertmanager 的静默状态。</span>
+                      <Space wrap>
+                        <Button size="small" onClick={openHistoryTab}>查看历史记录</Button>
+                      </Space>
+                    </Space>
+                  }
+                />
                 <Collapse
                   size="small"
                   items={[
                     {
                       key: "roles",
-                      label: "功能边界：策略 / 规则模板 / 监控规则",
+                      label: "功能边界：策略 / 监控规则 / 历史记录",
                       children: (
                         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                           <ul style={{ margin: 0, paddingLeft: 18 }}>
                             <li>
-                              <strong>告警策略</strong>：仅作用于经 Alertmanager Webhook 进入平台的告警，按 match_labels 等筛选并绑定通道；与 Prometheus 页面里的「规则文件」无自动同步关系。
+                              <strong>告警策略</strong>：只对 Alertmanager Webhook 入站告警生效，决定命中哪些通道以及是否进入策略静默窗口。
                             </li>
                             <li>
-                              <strong>告警规则模板</strong>：可复用的 PromQL / labels / annotations 片段库，便于人工拷贝到 Prometheus 或本平台「监控规则」。
+                              <strong>监控规则与值班</strong>：平台定时向已登记数据源执行 PromQL，命中后走同一套通知链路。
                             </li>
                             <li>
-                              <strong>规则与值班绑定</strong>：平台定时向已登记数据源执行 PromQL，命中后走同一套通知与处理人逻辑；若与 Alertmanager 双发，请自行控制重复告警。
+                              <strong>历史记录</strong>：统一查看命中、抑制、发送成功/失败的结果证据。
                             </li>
                           </ul>
                         </Typography.Paragraph>
                       ),
                     },
                   ]}
-                  style={{ marginBottom: 8 }}
                 />
-                <AlertConfigCenterPanel embedded activeTab={configTab} onTabChange={setConfigTab} />
+                <AlertConfigCenterPanel embedded hideTabs activeTab="policies" onTabChange={() => undefined} />
+              </Space>
+            ),
+          },
+          {
+            key: "history",
+            label: "历史记录",
+            children: (
+              <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                <Alert
+                  type="info"
+                  showIcon
+                  message="历史记录是统一观测出口"
+                  description="无论告警来自 Prometheus + Alertmanager，还是来自平台监控规则，最终都会在这里查看命中策略、抑制原因、通道结果与错误信息。"
+                />
+                <AlertConfigCenterPanel embedded hideTabs activeTab="history" onTabChange={() => undefined} />
               </Space>
             ),
           },
           {
             key: "silences",
-            label: "静默",
+            label: "平台静默",
             children: (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
                 <Alert
@@ -2153,10 +2174,14 @@ export function AlertMonitorPlatformPage() {
                   showIcon
                   message="平台静默 ≠ Alertmanager 静默"
                   description={
-                    <span>
-                      下方「平台静默规则」在<strong>服务端处理 Webhook</strong>时按 matchers 与告警 labels 比对，命中则<strong>不再向通道发送</strong>（并可能落一条「silence suppressed」类记录）。不会调用 Alertmanager API
-                      去创建静默；Prometheus / AM UI 里的告警状态不会因本列表而变化。若要与 AM 一致，请在 Alertmanager 侧配置 silences。
-                    </span>
+                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                      <span>
+                        下方「平台静默规则」在<strong>服务端处理 Webhook</strong>时按 matchers 与告警 labels 比对，命中则<strong>不再向通道发送</strong>（并可能落一条「silence suppressed」类记录）。不会调用 Alertmanager API 去创建静默；Prometheus / AM UI 里的告警状态不会因本列表而变化。若要与 AM 一致，请在 Alertmanager 侧配置 silences。
+                      </span>
+                      <Space wrap>
+                        <Button size="small" onClick={openHistoryTab}>查看静默后的历史记录</Button>
+                      </Space>
+                    </Space>
                   }
                 />
                 <Typography.Title level={5} style={{ margin: 0 }}>
@@ -2228,7 +2253,7 @@ export function AlertMonitorPlatformPage() {
           },
           {
             key: "rules",
-            label: "规则与值班绑定",
+            label: "监控规则与值班",
             children: (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
                 <Space>
@@ -2240,19 +2265,24 @@ export function AlertMonitorPlatformPage() {
                   </Button>
                 </Space>
                 <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  规则级「处理人」与所选「值班表」当前班次通知邮箱会在告警 outgoing 中合并去重；部门选择为根部门子树全员。
+                  这里配置的是平台内监控规则：平台会定时对数据源执行 PromQL，命中后走与 Webhook 入站相同的通知与历史记录链路。规则级「处理人」与所选「值班表」当前班次通知邮箱会在告警 outgoing 中合并去重；部门选择为根部门子树全员。
                 </Typography.Paragraph>
                 <Alert
                   type="info"
                   showIcon
                   message="规则配置建议"
                   description={
-                    <span>
-                      建议先确认四项：1) <Typography.Text code>datasource</Typography.Text> 选正确集群；2){" "}
-                      <Typography.Text code>severity</Typography.Text> 与策略匹配（critical/warning/info）；3){" "}
-                      <Typography.Text code>for_seconds</Typography.Text> 防抖时长；4) <Typography.Text code>eval_interval_seconds</Typography.Text>{" "}
-                      评估频率（常用 30s/60s）。
-                    </span>
+                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                      <span>
+                        建议先确认四项：1) <Typography.Text code>datasource</Typography.Text> 选正确集群；2){" "}
+                        <Typography.Text code>severity</Typography.Text> 与策略匹配（critical/warning/info）；3){" "}
+                        <Typography.Text code>for_seconds</Typography.Text> 防抖时长；4) <Typography.Text code>eval_interval_seconds</Typography.Text>{" "}
+                        评估频率（常用 30s/60s）。
+                      </span>
+                      <Space wrap>
+                        <Button size="small" onClick={openHistoryTab}>查看规则触发历史</Button>
+                      </Space>
+                    </Space>
                   }
                 />
                 <Table rowKey="id" columns={ruleColumns} dataSource={ruleList} pagination={false} scroll={{ x: 1100 }} />
@@ -2516,7 +2546,7 @@ export function AlertMonitorPlatformPage() {
                       <AutoComplete
                         allowClear
                         placeholder="label 名（可输入或选字典）"
-                        options={silMatcherNameOpts.map((o) => ({ label: o.label, value: String(o.value) }))}
+                        options={silenceMatcherNameOptions}
                         filterOption={(input, option) =>
                           (option?.label ?? "").toString().toLowerCase().includes(input.toLowerCase()) ||
                           (option?.value ?? "").toString().toLowerCase().includes(input.toLowerCase())
@@ -2710,12 +2740,8 @@ export function AlertMonitorPlatformPage() {
                   message.error("JSON 格式错误，无法格式化");
                   return;
                 }
-                try {
-                  cloudExpiryForm.setFieldValue("labels_json", JSON.stringify(JSON.parse(normalized), null, 2));
-                  message.success("已格式化 JSON");
-                } catch {
-                  message.error("JSON 格式错误，无法格式化");
-                }
+                cloudExpiryForm.setFieldValue("labels_json", normalized);
+                message.success("已格式化 JSON");
               }}
             >
               格式化 JSON

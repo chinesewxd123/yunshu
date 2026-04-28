@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +40,7 @@ type AlertEventListQuery struct {
 	PageSize        int    `form:"page_size"`
 	Keyword         string `form:"keyword"`
 	Cluster         string `form:"cluster"`
+	AlertIP         string `form:"alert_ip"`
 	MonitorPipeline string `form:"monitor_pipeline"`
 	GroupKey        string `form:"group_key"`
 }
@@ -239,7 +241,7 @@ func (s *AlertService) logSuppressedPolicySilence(ctx context.Context, title, se
 		ChannelName:     "（未外发·策略静默窗口抑制）",
 		Success:         true,
 		HTTPStatusCode:  200,
-		ErrorMessage:    "policy_silence_suppressed",
+		ErrorMessage:    "policy_suppressed",
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload: truncateText(fmt.Sprintf("suppressed by policy silence_seconds=%d", silenceSeconds), s.cfg.MaxPayloadChars),
 	}
@@ -279,13 +281,30 @@ func (s *AlertService) startPrometheusEnrichWorkers() {
 }
 
 type AlertChannelPreviewRequest struct {
-	Settings map[string]interface{} `json:"settings"`
-	Payload  map[string]interface{} `json:"payload"`
-	Firing   bool                   `json:"firing"`
+	Settings         map[string]interface{} `json:"settings"`
+	Payload          map[string]interface{} `json:"payload"`
+	Firing           bool                   `json:"firing"`
+	TemplateFiring   string                 `json:"template_firing"`
+	TemplateResolved string                 `json:"template_resolved"`
+	Status           string                 `json:"status"`
+	Title            string                 `json:"title"`
+	Content          string                 `json:"content"`
+	Severity         string                 `json:"severity"`
+	ProjectID        uint                   `json:"project_id"`
+	RawPayloadJSON   string                 `json:"raw_payload_json"`
+}
+
+type AlertChannelPreviewResponse struct {
+	Rendered           string                 `json:"rendered"`
+	SamplePayload      map[string]interface{} `json:"sample_payload"`
+	AvailableFields    []string               `json:"available_fields"`
+	RawPayloadFields   []string               `json:"raw_payload_fields"`
+	CombinedFields     []string               `json:"combined_fields"`
+	SuggestedLabelKeys []string               `json:"suggested_label_keys"`
 }
 
 // PreviewChannelTemplate 渲染并返回通道模板预览文本。
-func (s *AlertService) PreviewChannelTemplate(ctx context.Context, req AlertChannelPreviewRequest) (map[string]string, error) {
+func (s *AlertService) PreviewChannelTemplate(ctx context.Context, req AlertChannelPreviewRequest) (*AlertChannelPreviewResponse, error) {
 	settings := req.Settings
 	if settings == nil {
 		settings = map[string]interface{}{}
@@ -294,13 +313,53 @@ func (s *AlertService) PreviewChannelTemplate(ctx context.Context, req AlertChan
 	if payload == nil {
 		payload = map[string]interface{}{}
 	}
-	status := "resolved"
-	if req.Firing {
+	if raw := strings.TrimSpace(req.RawPayloadJSON); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &payload)
+	}
+	if labelsAny, ok := payload["labels"]; !ok || labelsAny == nil {
+		payload["labels"] = map[string]interface{}{}
+	}
+	if labels, ok := payload["labels"].(map[string]interface{}); ok {
+		if req.ProjectID > 0 {
+			labels["project_id"] = req.ProjectID
+		}
+		if strings.TrimSpace(fmt.Sprintf("%v", labels["alertname"])) == "" {
+			labels["alertname"] = "PreviewAlert"
+		}
+	}
+	if strings.TrimSpace(req.TemplateFiring) != "" {
+		settings["messageTemplateFiring"] = strings.TrimSpace(req.TemplateFiring)
+	}
+	if strings.TrimSpace(req.TemplateResolved) != "" {
+		settings["messageTemplateResolved"] = strings.TrimSpace(req.TemplateResolved)
+	}
+	if strings.TrimSpace(fmt.Sprintf("%v", payload["summary"])) == "" && strings.TrimSpace(req.Content) != "" {
+		payload["summary"] = strings.TrimSpace(req.Content)
+	}
+	if strings.TrimSpace(fmt.Sprintf("%v", payload["severity"])) == "" && strings.TrimSpace(req.Severity) != "" {
+		payload["severity"] = strings.TrimSpace(req.Severity)
+	}
+	if strings.TrimSpace(fmt.Sprintf("%v", payload["status"])) == "" && strings.TrimSpace(req.Status) != "" {
+		payload["status"] = strings.TrimSpace(req.Status)
+	}
+	status := strings.TrimSpace(req.Status)
+	if status == "" && req.Firing {
 		status = "firing"
 	}
+	if status == "" {
+		status = "resolved"
+	}
 	// 使用统一渲染函数生成消息文本，title/severity 可从 payload 或设置中扩展。
-	msg := s.renderChannelMessage(ctx, "Preview", "", status, payload, settings)
-	return map[string]string{"message": msg}, nil
+	msg := s.renderChannelMessage(ctx, alertnotify.SafeOr(strings.TrimSpace(req.Title), "Preview"), strings.TrimSpace(req.Severity), status, payload, settings)
+	rawFields, combinedFields, labelKeys := previewPayloadFieldCatalog(payload)
+	return &AlertChannelPreviewResponse{
+		Rendered:           msg,
+		SamplePayload:      payload,
+		AvailableFields:    []string{"Title", "Severity", "Status", "StatusText", "Summary", "Description", "ProjectName", "Cluster", "OccurredAt", "StartsAt", "EndsAt", "Current", "Count", "Fingerprint", "GeneratorURL", "Labels", "LabelsText"},
+		RawPayloadFields:   rawFields,
+		CombinedFields:     combinedFields,
+		SuggestedLabelKeys: labelKeys,
+	}, nil
 }
 
 func (s *AlertService) enqueuePrometheusEnrich(task promEnrichTask) {
@@ -469,6 +528,18 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 	if v := strings.TrimSpace(q.Cluster); v != "" {
 		tx = tx.Where("cluster = ?", v)
 	}
+	if v := strings.TrimSpace(q.AlertIP); v != "" {
+		like := "%" + v + "%"
+		tx = tx.Where(
+			"cluster = ? OR request_payload LIKE ? OR request_payload LIKE ? OR request_payload LIKE ? OR request_payload LIKE ? OR request_payload LIKE ?",
+			v,
+			"%\"instance\":\""+v+"\"%",
+			"%\"pod_ip\":\""+v+"\"%",
+			"%\"node\":\""+v+"\"%",
+			"%\"ip\":\""+v+"\"%",
+			like,
+		)
+	}
 	if v := strings.TrimSpace(q.MonitorPipeline); v != "" {
 		tx = tx.Where("monitor_pipeline = ?", v)
 	}
@@ -485,7 +556,100 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 		Find(&list).Error; err != nil {
 		return nil, 0, page, pageSize, err
 	}
+	for i := range list {
+		hydrateAlertEvent(&list[i])
+	}
 	return list, total, page, pageSize, nil
+}
+
+func extractAlertIPFromPayload(requestPayload, fallback string) string {
+	labels, _ := extractAlertPayloadLabels(requestPayload)
+	for _, key := range []string{"instance", "pod_ip", "ip", "node"} {
+		v := strings.TrimSpace(labels[key])
+		if v != "" {
+			return v
+		}
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func extractAlertPayloadLabels(requestPayload string) (map[string]string, map[string]interface{}) {
+	raw := strings.TrimSpace(requestPayload)
+	if raw != "" {
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(raw), &payload); err == nil {
+			if labelsAny, ok := payload["labels"]; ok {
+				if labels, ok := labelsAny.(map[string]interface{}); ok {
+					out := make(map[string]string, len(labels))
+					for key, value := range labels {
+						v := strings.TrimSpace(fmt.Sprintf("%v", value))
+						if v != "" && v != "<nil>" {
+							out[key] = v
+						}
+					}
+					return out, payload
+				}
+			}
+		}
+	}
+	return map[string]string{}, nil
+}
+
+func parseUintCSV(raw string) []uint {
+	var out []uint
+	for _, part := range strings.Split(strings.TrimSpace(raw), ",") {
+		n, ok := parseLabelUint(part)
+		if ok && n > 0 {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func parseTrimmedCSV(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(strings.TrimSpace(raw), ",") {
+		v := strings.TrimSpace(part)
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func hydrateAlertEvent(it *model.AlertEvent) {
+	if it == nil {
+		return
+	}
+	labels, _ := extractAlertPayloadLabels(it.RequestPayload)
+	it.Environment = strings.TrimSpace(it.Cluster)
+	if rawCluster := strings.TrimSpace(labels["cluster"]); rawCluster != "" {
+		it.Cluster = rawCluster
+	}
+	it.AlertIP = extractAlertIPFromPayload(it.RequestPayload, it.Environment)
+	it.MatchedPolicyIDList = parseUintCSV(it.MatchedPolicyIDs)
+	it.MatchedPolicyNameList = parseTrimmedCSV(it.MatchedPolicyNames)
+}
+
+func previewPayloadFieldCatalog(payload map[string]interface{}) ([]string, []string, []string) {
+	rawFields := make([]string, 0)
+	labelKeys := make([]string, 0)
+	for key := range payload {
+		rawFields = append(rawFields, key)
+	}
+	sort.Strings(rawFields)
+	if labelsAny, ok := payload["labels"]; ok {
+		if labels, ok := labelsAny.(map[string]interface{}); ok {
+			for key := range labels {
+				labelKeys = append(labelKeys, key)
+			}
+		}
+	}
+	sort.Strings(labelKeys)
+	combined := append([]string{}, []string{"Title", "Severity", "Status", "StatusText", "Summary", "Description", "ProjectName", "Cluster", "OccurredAt", "StartsAt", "EndsAt", "Current", "Count", "Fingerprint", "GeneratorURL", "Labels", "LabelsText"}...)
+	combined = append(combined, rawFields...)
+	sort.Strings(combined)
+	return rawFields, combined, labelKeys
 }
 
 // 钉钉 markdown：正文里需出现 @手机号 / @userid / @all；企业微信仅用 mentioned_* 即可，勿再拼此段以免双重 @。
@@ -688,9 +852,9 @@ func (s *AlertService) logSilenceSuppressed(ctx context.Context, title, severity
 		ChannelName:     "（静默抑制）",
 		Success:         true,
 		HTTPStatusCode:  200,
-		ErrorMessage:    fmt.Sprintf("silence_id=%d", silenceID),
+		ErrorMessage:    "silence_suppressed",
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload: truncateText("suppressed by platform silence", s.cfg.MaxPayloadChars),
+		ResponsePayload: truncateText(fmt.Sprintf("suppressed by platform silence_id=%d", silenceID), s.cfg.MaxPayloadChars),
 	}
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
@@ -888,11 +1052,11 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			_, _, _ = s.sendToChannel(ctx, &channels[i], "alertmanager", title, severity, status, outgoing)
 		}
 		if sentCount == 0 {
-			reason := "no enabled channel matched"
+			reason := "no_channel_matched"
 			if len(channels) == 0 {
-				reason = "no enabled channels"
+				reason = "no_enabled_channels"
 			} else if len(policyChannels) > 0 {
-				reason = "no channel matched policy"
+				reason = "no_channel_matched_policy"
 			}
 			s.logNoMatchedChannel(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing, reason)
 		}

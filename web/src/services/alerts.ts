@@ -1,4 +1,5 @@
 import { getData, http } from "./http";
+import { normalizePagedPayload, parseCommaSeparatedList, parseCommaSeparatedNumbers, parseNumberArray, parseStringMap } from "./alert-mappers";
 
 export interface AlertChannelItem {
   id: number;
@@ -20,12 +21,15 @@ export interface AlertEventItem {
   severity: string;
   status: string;
   cluster?: string;
+  alert_ip?: string;
   /** prometheus = Prometheus 规则+Alertmanager Webhook；platform = 平台内监控规则 */
   monitor_pipeline?: string;
   group_key?: string;
   labels_digest?: string;
   matched_policy_ids?: string;
   matched_policy_names?: string;
+  matched_policy_id_list?: number[];
+  matched_policy_name_list?: string[];
   channel_id: number;
   channel_name: string;
   success: boolean;
@@ -45,6 +49,9 @@ export interface AlertPolicyItem {
   match_labels_json?: string;
   match_regex_json?: string;
   channels_json?: string;
+  match_labels?: Record<string, string>;
+  match_regex?: Record<string, string>;
+  channel_ids?: number[];
   template_id?: number;
   notify_resolved: boolean;
   silence_seconds: number;
@@ -121,11 +128,18 @@ export function listAlertEvents(params: {
   page_size: number;
   keyword?: string;
   cluster?: string;
+  alert_ip?: string;
   monitor_pipeline?: string;
   group_key?: string;
 }) {
-  return getData<{ list: AlertEventItem[]; total: number; page: number; page_size: number }>(
+  return getData<{ list?: AlertEventItem[]; items?: AlertEventItem[]; total: number; page: number; page_size: number }>(
     http.get("/alerts/events", { params }),
+  ).then((payload) =>
+    normalizePagedPayload(payload, (item) => ({
+      ...item,
+      matched_policy_id_list: parseCommaSeparatedNumbers(item.matched_policy_ids),
+      matched_policy_name_list: parseCommaSeparatedList(item.matched_policy_names),
+    })),
   );
 }
 
@@ -153,7 +167,15 @@ export function sendAlertmanagerWebhook(payload: Record<string, unknown>, token?
 }
 
 export function listAlertPolicies(params: { page: number; page_size: number; keyword?: string; enabled?: boolean }) {
-  return getData<{ list: AlertPolicyItem[]; total: number; page: number; page_size: number }>(http.get("/alerts/policies", { params }));
+  return getData<{ list?: AlertPolicyItem[]; items?: AlertPolicyItem[]; total: number; page: number; page_size: number }>(http.get("/alerts/policies", { params })).then(
+    (payload) =>
+      normalizePagedPayload(payload, (item) => ({
+        ...item,
+        match_labels: parseStringMap(item.match_labels_json),
+        match_regex: parseStringMap(item.match_regex_json),
+        channel_ids: parseNumberArray(item.channels_json),
+      })),
+  );
 }
 
 export function createAlertPolicy(payload: Partial<AlertPolicyItem> & { name: string }) {

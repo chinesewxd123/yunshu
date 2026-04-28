@@ -24,7 +24,7 @@ func (h *AlertPolicyHandler) List(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		return gin.H{"list": list, "total": total, "page": page, "page_size": pageSize}, nil
+		return gin.H{"items": list, "list": list, "total": total, "page": page, "page_size": pageSize}, nil
 	})
 }
 

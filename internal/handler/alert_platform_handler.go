@@ -42,7 +42,7 @@ func (h *AlertPlatformHandler) ListDatasources(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		return gin.H{"list": list, "total": total, "page": page, "page_size": pageSize}, nil
+		return gin.H{"items": list, "list": list, "total": total, "page": page, "page_size": pageSize}, nil
 	})
 }
 
@@ -124,7 +124,7 @@ func (h *AlertPlatformHandler) ListSilences(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		return gin.H{"list": list, "total": total, "page": page, "page_size": pageSize}, nil
+		return gin.H{"items": list, "list": list, "total": total, "page": page, "page_size": pageSize}, nil
 	})
 }
 
@@ -174,7 +174,7 @@ func (h *AlertPlatformHandler) ListMonitorRules(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		return gin.H{"list": list, "total": total, "page": page, "page_size": pageSize}, nil
+		return gin.H{"items": list, "list": list, "total": total, "page": page, "page_size": pageSize}, nil
 	})
 }
 
@@ -237,7 +237,7 @@ func (h *AlertPlatformHandler) ListDutyBlocks(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		return gin.H{"list": list, "total": total, "page": page, "page_size": pageSize}, nil
+		return gin.H{"items": list, "list": list, "total": total, "page": page, "page_size": pageSize}, nil
 	})
 }
 

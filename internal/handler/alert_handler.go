@@ -92,6 +92,7 @@ func (h *AlertHandler) ListEvents(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{
+		"items":     list,
 		"list":      list,
 		"total":     total,
 		"page":      page,
