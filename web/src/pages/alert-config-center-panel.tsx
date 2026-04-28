@@ -13,6 +13,7 @@ import {
   type AlertPolicyItem,
   updateAlertPolicy,
 } from "../services/alerts";
+import { stringifyPrettyJSON } from "../services/alert-mappers";
 import { useDictOptions } from "../hooks/use-dict-options";
 import { formatDateTime } from "../utils/format";
 
@@ -24,6 +25,8 @@ export type AlertConfigCenterPanelProps = {
   onTabChange: (key: AlertConfigTab) => void;
   /** 嵌入「告警监控平台」时不显示最外层标题 Card */
   embedded?: boolean;
+  /** 嵌入主页面时，仅展示当前视图内容，不再显示内部 tabs */
+  hideTabs?: boolean;
 };
 
 const webhookPayloadTemplates: Record<string, Record<string, unknown>> = {
@@ -151,7 +154,38 @@ const policyTemplates: Record<
   },
 };
 
-export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, embedded }: AlertConfigCenterPanelProps) {
+function describeAlertEvent(row: AlertEventItem): string {
+  const reason = String(row.error_message || "").trim();
+  if (row.success) {
+    if (reason === "silence_suppressed") return "已命中平台静默，告警写入历史但未向通道发送。";
+    if (reason === "policy_suppressed") return "已命中策略静默窗口，本次不再重复外发。";
+    if (reason === "dedup_suppressed") return "已命中指纹去重，本次告警被去重抑制。";
+    if (reason === "aggregate_suppressed") return "已命中 firing 聚合窗口，本次被汇总抑制。";
+    if (reason === "resolved_aggregate_suppressed") return "已命中恢复聚合窗口，本次恢复通知被汇总抑制。";
+    if (row.channel_name?.includes("静默抑制")) return "平台在分发前拦截了本次告警。";
+    return "告警已完成分发并写入历史记录。";
+  }
+  if (reason === "no_enabled_channels") return "当前没有启用的通知通道，因此仅记录历史。";
+  if (reason === "no_channel_matched") return "有通道存在，但本次告警未匹配到可发送通道。";
+  if (reason === "no_channel_matched_policy") return "命中了策略，但策略绑定的通道未命中或不可用。";
+  if (reason) return `发送失败：${reason}`;
+  return "告警进入了平台链路，但未获取到更多说明。";
+}
+
+function summarizeAlertHint(row: AlertEventItem): string {
+  const reason = String(row.error_message || "").trim();
+  if (!row.success) return "-";
+  if (!reason) return "-";
+  if (reason === "silence_suppressed") return "已命中平台静默，通知已拦截";
+  if (reason === "policy_suppressed") return "已命中策略静默窗口，本次未外发";
+  if (reason === "dedup_suppressed") return "已触发去重策略，本次不再重复发送";
+  if (reason === "aggregate_suppressed") return "已命中 firing 聚合窗口";
+  if (reason === "resolved_aggregate_suppressed") return "已命中恢复聚合窗口";
+  if (/suppressed/i.test(reason)) return "已被系统策略抑制，本次未发送";
+  return reason;
+}
+
+export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, embedded, hideTabs }: AlertConfigCenterPanelProps) {
   const [stats, setStats] = useState<{
     total: number;
     firing: number;
@@ -179,7 +213,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
   const [eventsPageSize, setEventsPageSize] = useState(10);
   const [eventsTotal, setEventsTotal] = useState(0);
   const [eventKeyword, setEventKeyword] = useState("");
-  const [eventCluster, setEventCluster] = useState("");
+  const [eventAlertIP, setEventAlertIP] = useState("");
   const [eventMonitorPipeline, setEventMonitorPipeline] = useState("");
   const [eventGroupKey, setEventGroupKey] = useState("");
   const eventsPageSizeRef = useRef(eventsPageSize);
@@ -207,12 +241,13 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     [],
   );
 
-  const clusterOptions = useMemo(() => {
-    const fromStats = (stats?.cluster_values ?? []).map((v) => v.trim()).filter(Boolean);
-    const fromPage = (events ?? []).map((it) => (it.cluster || "").trim()).filter(Boolean);
-    const merged = Array.from(new Set([...fromStats, ...fromPage])).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  const alertIPOptions = useMemo(() => {
+    const fromPage = (events ?? [])
+      .map((it) => String(it.alert_ip || "").trim())
+      .filter(Boolean);
+    const merged = Array.from(new Set([...fromPage])).sort((a, b) => a.localeCompare(b, "zh-CN"));
     return merged.map((v) => ({ label: v, value: v }));
-  }, [stats?.cluster_values, events]);
+  }, [events]);
 
   const pipelineOptions = useMemo(() => {
     const fromStats = (stats?.monitor_pipeline_values ?? []).map((v) => String(v).trim()).filter(Boolean);
@@ -261,7 +296,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
           page,
           page_size: pageSize,
           keyword: eventKeyword.trim() || undefined,
-          cluster: eventCluster.trim() || undefined,
+          alert_ip: eventAlertIP.trim() || undefined,
           monitor_pipeline: eventMonitorPipeline.trim() || undefined,
           group_key: eventGroupKey.trim() || undefined,
         });
@@ -273,7 +308,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
         setEventsLoading(false);
       }
     },
-    [eventKeyword, eventCluster, eventMonitorPipeline, eventGroupKey],
+    [eventKeyword, eventAlertIP, eventMonitorPipeline, eventGroupKey],
   );
 
   useEffect(() => {
@@ -285,12 +320,12 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     if (tab !== "history") {
       return;
     }
-    const delay = eventKeyword || eventCluster || eventGroupKey ? 300 : 0;
+    const delay = eventKeyword || eventAlertIP || eventGroupKey ? 300 : 0;
     const timer = window.setTimeout(() => {
       void loadEvents(1, eventsPageSizeRef.current);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [tab, eventKeyword, eventCluster, eventMonitorPipeline, eventGroupKey, loadEvents]);
+  }, [tab, eventKeyword, eventAlertIP, eventMonitorPipeline, eventGroupKey, loadEvents]);
 
   function openCreatePolicy() {
     setCurrentPolicy(null);
@@ -312,17 +347,11 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
   function openEditPolicy(row: AlertPolicyItem) {
     setCurrentPolicy(row);
     setPolicyTemplate("prod_warning_wecom_email");
-    let channelsJSON: number[] = [];
-    try {
-      channelsJSON = JSON.parse(row.channels_json || "[]");
-    } catch {
-      channelsJSON = [];
-    }
     policyForm.setFieldsValue({
       ...row,
-      channels_json_array: channelsJSON,
-      match_labels_json: row.match_labels_json || "{}",
-      match_regex_json: row.match_regex_json || "{}",
+      channels_json_array: row.channel_ids ?? [],
+      match_labels_json: stringifyPrettyJSON(row.match_labels ?? {}, "{}"),
+      match_regex_json: stringifyPrettyJSON(row.match_regex ?? {}, "{}"),
     });
     setPolicyEditorOpen(true);
   }
@@ -402,6 +431,201 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     }
   }
 
+  const tabItems = [
+    {
+      key: "policies",
+      label: "告警策略配置",
+      children: (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+            <Space />
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreatePolicy}>新增策略</Button>
+          </div>
+          <Table
+            rowKey="id"
+            loading={policyLoading}
+            dataSource={policyList}
+            pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showQuickJumper: true }}
+            columns={[
+              { title: "策略名", dataIndex: "name", width: 180 },
+              { title: "优先级", dataIndex: "priority", width: 90 },
+              { title: "描述", dataIndex: "description", ellipsis: true },
+              { title: "恢复通知", dataIndex: "notify_resolved", width: 100, render: (v: boolean) => (v ? <Tag color="success">是</Tag> : <Tag>否</Tag>) },
+              { title: "静默(s)", dataIndex: "silence_seconds", width: 90 },
+              { title: "状态", dataIndex: "enabled", width: 90, render: (v: boolean) => (v ? <Tag color="success">启用</Tag> : <Tag>停用</Tag>) },
+              {
+                title: "操作",
+                width: 180,
+                render: (_: unknown, row: AlertPolicyItem) => (
+                  <Space>
+                    <Button type="link" icon={<EditOutlined />} onClick={() => openEditPolicy(row)}>编辑</Button>
+                    <Popconfirm title="确认删除策略？" onConfirm={() => void deleteAlertPolicy(row.id).then(() => { message.success("已删除"); void loadPolicies(); })}>
+                      <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
+                    </Popconfirm>
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </>
+      ),
+    },
+    {
+      key: "history",
+      label: "历史告警记录",
+      children: (
+        <>
+          <Space style={{ width: "100%", marginBottom: 12 }} wrap>
+            <Input
+              style={{ width: 260 }}
+              placeholder="关键词（标题/错误/通道）"
+              value={eventKeyword}
+              onChange={(e) => setEventKeyword(e.target.value)}
+              allowClear
+            />
+            <Select
+              style={{ width: 220 }}
+              placeholder="告警IP（labels.instance / pod_ip）"
+              value={eventAlertIP || undefined}
+              options={alertIPOptions}
+              showSearch
+              allowClear
+              onSearch={(v) => setEventAlertIP(v)}
+              onChange={(v) => setEventAlertIP((v as string) || "")}
+              filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
+            />
+            <Select
+              style={{ width: 240 }}
+              placeholder="监控链路（区分双来源）"
+              value={eventMonitorPipeline || undefined}
+              options={pipelineOptions}
+              showSearch
+              allowClear
+              onChange={(v) => setEventMonitorPipeline((v as string) || "")}
+              filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+            />
+            <Input
+              style={{ width: 220 }}
+              placeholder="group_key"
+              value={eventGroupKey}
+              onChange={(e) => setEventGroupKey(e.target.value)}
+              allowClear
+            />
+            <Button icon={<ReloadOutlined />} onClick={() => void loadEvents(eventsPage, eventsPageSize)}>
+              刷新
+            </Button>
+          </Space>
+          <Table
+            rowKey="id"
+            loading={eventsLoading}
+            dataSource={events}
+            scroll={{ x: 1640 }}
+            pagination={{
+              current: eventsPage,
+              pageSize: eventsPageSize,
+              total: eventsTotal,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50, 100],
+              showQuickJumper: true,
+              onChange: (p, ps) => void loadEvents(p, ps),
+            }}
+            columns={[
+              { title: "ID", dataIndex: "id", width: 80 },
+              { title: "标题", dataIndex: "title", width: 220, ellipsis: true },
+              { title: "告警IP", dataIndex: "alert_ip", width: 160, ellipsis: true, render: (v: string) => v || "-" },
+              {
+                title: "监控链路",
+                dataIndex: "monitor_pipeline",
+                width: 130,
+                render: (v: string) => {
+                  if (v === "platform") return <Tag color="purple">platform</Tag>;
+                  if (v === "prometheus") return <Tag color="blue">prometheus</Tag>;
+                  return v ? <Tag>{v}</Tag> : <span>-</span>;
+                },
+              },
+              { title: "GroupKey", dataIndex: "group_key", width: 140, ellipsis: true, render: (v: string) => v || "-" },
+              { title: "来源", dataIndex: "source", width: 120 },
+              {
+                title: "级别",
+                dataIndex: "severity",
+                width: 100,
+                render: (v: string) => (
+                  <Tag color={v === "critical" ? "red" : v === "warning" ? "orange" : "blue"}>{v || "-"}</Tag>
+                ),
+              },
+              { title: "状态", dataIndex: "status", width: 90, render: (v: string) => <Tag>{v || "-"}</Tag> },
+              {
+                title: "命中策略",
+                dataIndex: "matched_policy_names",
+                width: 200,
+                ellipsis: true,
+                render: (_: string, row: AlertEventItem) => (row.matched_policy_name_list?.length ? row.matched_policy_name_list.join(", ") : "-"),
+              },
+              { title: "通道", dataIndex: "channel_name", width: 160, ellipsis: true },
+              {
+                title: "发送结果",
+                dataIndex: "success",
+                width: 100,
+                render: (v: boolean) => (v ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>),
+              },
+              { title: "HTTP", dataIndex: "http_status_code", width: 80 },
+              {
+                title: "提示",
+                key: "hint",
+                width: 160,
+                ellipsis: true,
+                render: (_: unknown, row: AlertEventItem) => {
+                  if (row.success && row.error_message) {
+                    const msg = summarizeAlertHint(row);
+                    return (
+                      <Typography.Text type="secondary" ellipsis={{ tooltip: msg }}>
+                        {msg}
+                      </Typography.Text>
+                    );
+                  }
+                  return "-";
+                },
+              },
+              {
+                title: "链路说明",
+                key: "flow_explain",
+                width: 260,
+                ellipsis: true,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const msg = describeAlertEvent(row);
+                  return (
+                    <Typography.Text type="secondary" ellipsis={{ tooltip: msg }}>
+                      {msg}
+                    </Typography.Text>
+                  );
+                },
+              },
+              {
+                title: "错误信息",
+                dataIndex: "error_message",
+                width: 160,
+                ellipsis: true,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const v = row.success ? "" : row.error_message;
+                  return v ? (
+                    <Typography.Text type="danger" ellipsis={{ tooltip: v }}>
+                      {v}
+                    </Typography.Text>
+                  ) : (
+                    "-"
+                  );
+                },
+              },
+              { title: "时间", dataIndex: "created_at", width: 170, render: (v: string) => formatDateTime(v) },
+            ]}
+          />
+        </>
+      ),
+    },
+  ] as const;
+
+  const activeContent = tabItems.find((item) => item.key === tab)?.children ?? null;
+
   const body = (
     <>
       <div
@@ -478,196 +702,11 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
         </Space>
       </Card>
 
-      <Tabs
-        activeKey={tab}
-        onChange={(k) => setTab(k as AlertConfigTab)}
-        items={[
-          {
-            key: "policies",
-            label: "告警策略配置",
-            children: (
-              <>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-                  <Space />
-                  <Button type="primary" icon={<PlusOutlined />} onClick={openCreatePolicy}>新增策略</Button>
-                </div>
-                <Table
-                  rowKey="id"
-                  loading={policyLoading}
-                  dataSource={policyList}
-                  pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showQuickJumper: true }}
-                  columns={[
-                    { title: "策略名", dataIndex: "name", width: 180 },
-                    { title: "优先级", dataIndex: "priority", width: 90 },
-                    { title: "描述", dataIndex: "description", ellipsis: true },
-                    { title: "恢复通知", dataIndex: "notify_resolved", width: 100, render: (v: boolean) => (v ? <Tag color="success">是</Tag> : <Tag>否</Tag>) },
-                    { title: "静默(s)", dataIndex: "silence_seconds", width: 90 },
-                    { title: "状态", dataIndex: "enabled", width: 90, render: (v: boolean) => (v ? <Tag color="success">启用</Tag> : <Tag>停用</Tag>) },
-                    {
-                      title: "操作",
-                      width: 180,
-                      render: (_: unknown, row: AlertPolicyItem) => (
-                        <Space>
-                          <Button type="link" icon={<EditOutlined />} onClick={() => openEditPolicy(row)}>编辑</Button>
-                          <Popconfirm title="确认删除策略？" onConfirm={() => void deleteAlertPolicy(row.id).then(() => { message.success("已删除"); void loadPolicies(); })}>
-                            <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
-                          </Popconfirm>
-                        </Space>
-                      ),
-                    },
-                  ]}
-                />
-              </>
-            ),
-          },
-          {
-            key: "history",
-            label: "历史告警记录",
-            children: (
-              <>
-                <Space style={{ width: "100%", marginBottom: 12 }} wrap>
-                  <Input
-                    style={{ width: 260 }}
-                    placeholder="关键词（标题/错误/通道）"
-                    value={eventKeyword}
-                    onChange={(e) => setEventKeyword(e.target.value)}
-                    allowClear
-                  />
-                  <Select
-                    style={{ width: 220 }}
-                    placeholder="K8s / cluster（Prom external_labels）"
-                    value={eventCluster || undefined}
-                    options={clusterOptions}
-                    showSearch
-                    allowClear
-                    onSearch={(v) => setEventCluster(v)}
-                    onChange={(v) => setEventCluster((v as string) || "")}
-                    filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
-                  />
-                  <Select
-                    style={{ width: 240 }}
-                    placeholder="监控链路（区分双来源）"
-                    value={eventMonitorPipeline || undefined}
-                    options={pipelineOptions}
-                    showSearch
-                    allowClear
-                    onChange={(v) => setEventMonitorPipeline((v as string) || "")}
-                    filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
-                  />
-                  <Input
-                    style={{ width: 220 }}
-                    placeholder="group_key"
-                    value={eventGroupKey}
-                    onChange={(e) => setEventGroupKey(e.target.value)}
-                    allowClear
-                  />
-                  <Button icon={<ReloadOutlined />} onClick={() => void loadEvents(eventsPage, eventsPageSize)}>
-                    刷新
-                  </Button>
-                </Space>
-                <Table
-                  rowKey="id"
-                  loading={eventsLoading}
-                  dataSource={events}
-                  scroll={{ x: 1640 }}
-                  pagination={{
-                    current: eventsPage,
-                    pageSize: eventsPageSize,
-                    total: eventsTotal,
-                    showSizeChanger: true,
-                    pageSizeOptions: [10, 20, 50, 100],
-                    showQuickJumper: true,
-                    onChange: (p, ps) => void loadEvents(p, ps),
-                  }}
-                  columns={[
-                    { title: "ID", dataIndex: "id", width: 80 },
-                    { title: "标题", dataIndex: "title", width: 220, ellipsis: true },
-                    { title: "集群(cluster)", dataIndex: "cluster", width: 140, ellipsis: true, render: (v: string) => v || "-" },
-                    {
-                      title: "监控链路",
-                      dataIndex: "monitor_pipeline",
-                      width: 130,
-                      render: (v: string) => {
-                        if (v === "platform") return <Tag color="purple">platform</Tag>;
-                        if (v === "prometheus") return <Tag color="blue">prometheus</Tag>;
-                        return v ? <Tag>{v}</Tag> : <span>-</span>;
-                      },
-                    },
-                    { title: "GroupKey", dataIndex: "group_key", width: 140, ellipsis: true, render: (v: string) => v || "-" },
-                    { title: "来源", dataIndex: "source", width: 120 },
-                    {
-                      title: "级别",
-                      dataIndex: "severity",
-                      width: 100,
-                      render: (v: string) => (
-                        <Tag color={v === "critical" ? "red" : v === "warning" ? "orange" : "blue"}>{v || "-"}</Tag>
-                      ),
-                    },
-                    { title: "状态", dataIndex: "status", width: 90, render: (v: string) => <Tag>{v || "-"}</Tag> },
-                    {
-                      title: "命中策略",
-                      dataIndex: "matched_policy_names",
-                      width: 200,
-                      ellipsis: true,
-                      render: (v: string) => (v?.trim() ? v : "-"),
-                    },
-                    { title: "通道", dataIndex: "channel_name", width: 160, ellipsis: true },
-                    {
-                      title: "发送结果",
-                      dataIndex: "success",
-                      width: 100,
-                      render: (v: boolean) => (v ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>),
-                    },
-                    { title: "HTTP", dataIndex: "http_status_code", width: 80 },
-                    {
-                      title: "提示",
-                      key: "hint",
-                      width: 160,
-                      ellipsis: true,
-                      render: (_: unknown, row: AlertEventItem) => {
-                        // success=true 但带有 error_message 的，一般是抑制/去重等“提示信息”
-                        if (row.success && row.error_message) {
-                          const raw = String(row.error_message || "").trim();
-                          const msg = (() => {
-                            if (!raw) return "";
-                            if (/^silence_id=\d+$/i.test(raw)) return "已命中静默规则，通知已拦截";
-                            if (/dedup_suppressed/i.test(raw)) return "已触发去重策略，本次不再重复发送";
-                            if (/suppressed/i.test(raw)) return "已被系统策略抑制，本次未发送";
-                            return raw;
-                          })();
-                          return (
-                            <Typography.Text type="secondary" ellipsis={{ tooltip: msg }}>
-                              {msg}
-                            </Typography.Text>
-                          );
-                        }
-                        return "-";
-                      },
-                    },
-                    {
-                      title: "错误信息",
-                      dataIndex: "error_message",
-                      width: 160,
-                      ellipsis: true,
-                      render: (_: unknown, row: AlertEventItem) => {
-                        const v = row.success ? "" : row.error_message;
-                        return v ? (
-                          <Typography.Text type="danger" ellipsis={{ tooltip: v }}>
-                            {v}
-                          </Typography.Text>
-                        ) : (
-                          "-"
-                        );
-                      },
-                    },
-                    { title: "时间", dataIndex: "created_at", width: 170, render: (v: string) => formatDateTime(v) },
-                  ]}
-                />
-              </>
-            ),
-          },
-        ]}
-      />
+      {hideTabs ? (
+        activeContent
+      ) : (
+        <Tabs activeKey={tab} onChange={(k) => setTab(k as AlertConfigTab)} items={tabItems as never} />
+      )}
 
       <Drawer
         title={currentPolicy ? "编辑告警策略" : "新增告警策略"}

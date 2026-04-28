@@ -19,6 +19,9 @@ type AlertPolicy struct {
 	MatchLabelsJSON string `json:"match_labels_json" gorm:"type:text;comment:精确匹配labels JSON"`
 	MatchRegexJSON  string `json:"match_regex_json" gorm:"type:text;comment:正则匹配labels JSON"`
 	ChannelsJSON    string `json:"channels_json" gorm:"type:text;comment:通知通道ID数组JSON"`
+	MatchLabels     map[string]string `json:"match_labels,omitempty" gorm:"-"`
+	MatchRegex      map[string]string `json:"match_regex,omitempty" gorm:"-"`
+	ChannelIDs      []uint            `json:"channel_ids,omitempty" gorm:"-"`
 
 	TemplateID *uint `json:"template_id" gorm:"index;comment:关联模板ID(可选)"`
 

@@ -244,6 +244,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	alerts.PUT("/channels/:id", alertHandler.UpdateChannel)
 	alerts.DELETE("/channels/:id", alertHandler.DeleteChannel)
 	alerts.POST("/channels/:id/test", alertHandler.TestChannel)
+	alerts.POST("/channels/preview-template", alertHandler.PreviewChannelTemplate)
 	alerts.GET("/events", alertHandler.ListEvents)
 	alerts.GET("/history/stats", alertHandler.HistoryStats)
 	alerts.GET("/policies", alertPolicyHandler.List)

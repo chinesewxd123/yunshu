@@ -43,6 +43,15 @@ func NewAlertPolicyService(db *gorm.DB) *AlertPolicyService {
 	return &AlertPolicyService{db: db}
 }
 
+func hydrateAlertPolicy(it *model.AlertPolicy) {
+	if it == nil {
+		return
+	}
+	it.MatchLabels = parseMapJSON(it.MatchLabelsJSON)
+	it.MatchRegex = parseMapJSON(it.MatchRegexJSON)
+	it.ChannelIDs = parseUintSliceJSON(it.ChannelsJSON)
+}
+
 func (s *AlertPolicyService) List(ctx context.Context, q AlertPolicyListQuery) (list []model.AlertPolicy, total int64, page int, pageSize int, err error) {
 	page, pageSize = pagination.Normalize(q.Page, q.PageSize)
 	tx := s.db.WithContext(ctx).Model(&model.AlertPolicy{})
@@ -58,6 +67,9 @@ func (s *AlertPolicyService) List(ctx context.Context, q AlertPolicyListQuery) (
 	}
 	if err = tx.Order("priority ASC, id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
 		return nil, 0, page, pageSize, err
+	}
+	for i := range list {
+		hydrateAlertPolicy(&list[i])
 	}
 	return list, total, page, pageSize, nil
 }
@@ -160,6 +172,7 @@ func (s *AlertPolicyService) Create(ctx context.Context, req AlertPolicyUpsertRe
 	if err := s.db.WithContext(ctx).Create(it).Error; err != nil {
 		return nil, err
 	}
+	hydrateAlertPolicy(it)
 	return it, nil
 }
 
@@ -201,6 +214,7 @@ func (s *AlertPolicyService) Update(ctx context.Context, id uint, req AlertPolic
 	if err := s.db.WithContext(ctx).Save(&it).Error; err != nil {
 		return nil, err
 	}
+	hydrateAlertPolicy(&it)
 	return &it, nil
 }
 
@@ -239,6 +253,9 @@ func (s *AlertPolicyService) ListEnabled(ctx context.Context) ([]model.AlertPoli
 		Order("priority ASC, id ASC").
 		Find(&list).Error; err != nil {
 		return nil, err
+	}
+	for i := range list {
+		hydrateAlertPolicy(&list[i])
 	}
 	return list, nil
 }

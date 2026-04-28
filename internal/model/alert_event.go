@@ -14,11 +14,15 @@ type AlertEvent struct {
 	Severity           string         `json:"severity" gorm:"size:32;not null;default:warning;comment:严重级别"`
 	Status             string         `json:"status" gorm:"size:32;not null;default:firing;comment:告警状态"`
 	Cluster            string         `json:"cluster" gorm:"size:128;index;comment:K8s/Prometheus external_labels.cluster 等环境名；平台规则未显式配置时可为空"`
+	Environment        string         `json:"environment,omitempty" gorm:"-"`
+	AlertIP            string         `json:"alert_ip,omitempty" gorm:"-"`
 	MonitorPipeline    string         `json:"monitor_pipeline" gorm:"size:32;index;comment:监控链路 prometheus=Prometheus+YAML+Alertmanager platform=平台规则"`
 	GroupKey           string         `json:"group_key" gorm:"size:128;index;comment:聚合分组键"`
 	LabelsDigest       string         `json:"labels_digest" gorm:"size:128;index;comment:标签摘要"`
 	MatchedPolicyIDs   string         `json:"matched_policy_ids" gorm:"size:256;comment:命中策略ID列表,逗号分隔"`
 	MatchedPolicyNames string         `json:"matched_policy_names" gorm:"size:512;comment:命中策略名称列表,逗号分隔"`
+	MatchedPolicyIDList   []uint      `json:"matched_policy_id_list,omitempty" gorm:"-"`
+	MatchedPolicyNameList []string    `json:"matched_policy_name_list,omitempty" gorm:"-"`
 	ChannelID          uint           `json:"channel_id" gorm:"index;comment:通知渠道ID"`
 	ChannelName        string         `json:"channel_name" gorm:"size:64;comment:通知渠道名称"`
 	Success            bool           `json:"success" gorm:"not null;default:false;comment:通知是否成功"`

@@ -26,6 +26,7 @@ func (h *CloudExpiryRuleHandler) List(c *gin.Context) {
 			return nil, err
 		}
 		return gin.H{
+			"items":     list,
 			"list":      list,
 			"total":     total,
 			"page":      page,
