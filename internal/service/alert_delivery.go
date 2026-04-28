@@ -582,7 +582,7 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 		ChannelName:        channel.Name,
 		Success:            success,
 		HTTPStatusCode:     code,
-		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
+		RequestPayload:     truncateText(string(buildEventPayloadBytes(reqBytes, alertPayload)), s.cfg.MaxPayloadChars),
 		ResponsePayload:    respPayload,
 	}
 	if reqErr != nil {
@@ -603,6 +603,41 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 		return code, respBody, apperror.Internal(apiErr)
 	}
 	return code, respBody, nil
+}
+
+func buildEventPayloadBytes(reqBytes []byte, alertPayload map[string]interface{}) []byte {
+	// 历史记录展示需要 starts_at 等原始告警上下文（钉钉/企微下发体默认不包含），
+	// 这里仅扩充入库 payload，不影响实际发往通道的请求体。
+	if len(reqBytes) == 0 {
+		return reqBytes
+	}
+	var reqMap map[string]interface{}
+	if err := json.Unmarshal(reqBytes, &reqMap); err != nil {
+		return reqBytes
+	}
+	if reqMap == nil {
+		reqMap = map[string]interface{}{}
+	}
+	for _, key := range []string{"starts_at", "startsAt", "occurred_at", "status", "severity", "group_key", "monitor_pipeline"} {
+		if _, exists := reqMap[key]; exists {
+			continue
+		}
+		if alertPayload != nil {
+			if v, ok := alertPayload[key]; ok && v != nil {
+				reqMap[key] = v
+			}
+		}
+	}
+	if _, ok := reqMap["labels"]; !ok && alertPayload != nil {
+		if v, ok2 := alertPayload["labels"]; ok2 && v != nil {
+			reqMap["labels"] = v
+		}
+	}
+	bs, err := json.Marshal(reqMap)
+	if err != nil {
+		return reqBytes
+	}
+	return bs
 }
 
 func dingtalkRequestDebugNote(channel *model.AlertChannel, req *http.Request) string {
