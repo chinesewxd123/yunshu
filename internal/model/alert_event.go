@@ -23,6 +23,7 @@ type AlertEvent struct {
 	MatchedPolicyNames string         `json:"matched_policy_names" gorm:"size:512;comment:命中策略名称列表,逗号分隔"`
 	MatchedPolicyIDList   []uint      `json:"matched_policy_id_list,omitempty" gorm:"-"`
 	MatchedPolicyNameList []string    `json:"matched_policy_name_list,omitempty" gorm:"-"`
+	ReceiverList       []string       `json:"receiver_list,omitempty" gorm:"-"`
 	ChannelID          uint           `json:"channel_id" gorm:"index;comment:通知渠道ID"`
 	ChannelName        string         `json:"channel_name" gorm:"size:64;comment:通知渠道名称"`
 	Success            bool           `json:"success" gorm:"not null;default:false;comment:通知是否成功"`
