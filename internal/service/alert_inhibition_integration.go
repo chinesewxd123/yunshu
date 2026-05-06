@@ -122,6 +122,7 @@ func (s *AlertService) logInhibitionEvent(ctx context.Context, title, severity, 
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload: truncateText(fmt.Sprintf("suppressed by source fingerprint: %s", event.SourceFingerprint), s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&e, payload)
 	_ = s.db.WithContext(ctx).Create(&e).Error
 }
 

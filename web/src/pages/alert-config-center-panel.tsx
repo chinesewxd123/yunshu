@@ -158,6 +158,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     today_created: number;
     cluster_values?: string[];
     monitor_pipeline_values?: string[];
+    datasource_filter_options?: Array<{ id: number; name: string }>;
   }>();
 
   const [channels, setChannels] = useState<Array<{ id: number; name: string }>>([]);
@@ -179,7 +180,8 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
   const [eventKeyword, setEventKeyword] = useState("");
   const [eventAlertIP, setEventAlertIP] = useState("");
   const [eventStatus, setEventStatus] = useState("");
-  const [eventMonitorPipeline, setEventMonitorPipeline] = useState("");
+  /** 格式：`ds:<数据源ID>` 或 `mp:<monitor_pipeline slug>`（兼容历史 prometheus/platform） */
+  const [eventSourceFilter, setEventSourceFilter] = useState("");
   const [eventGroupKey, setEventGroupKey] = useState("");
   const eventsPageSizeRef = useRef(eventsPageSize);
   eventsPageSizeRef.current = eventsPageSize;
@@ -220,15 +222,39 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     return merged.map((v) => ({ label: v, value: v }));
   }, [events]);
 
-  const pipelineOptions = useMemo(() => {
+  const sourceFilterOptions = useMemo(() => {
+    const opts: { label: string; value: string }[] = [];
+    const seen = new Set<string>();
+    for (const row of stats?.datasource_filter_options ?? []) {
+      const id = Number(row?.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const name = String(row?.name ?? "").trim();
+      const value = `ds:${id}`;
+      if (seen.has(value)) continue;
+      seen.add(value);
+      opts.push({
+        label: name ? `${name}（数据源 #${id}）` : `数据源 #${id}`,
+        value,
+      });
+    }
+    const slugLabels: Record<string, string> = {
+      alertmanager: "Alertmanager（未绑定数据源）",
+      platform_monitor: "平台监控规则（无数据源记录）",
+      cloud_expiry: "云资源到期",
+      prometheus: "历史：Prometheus + Alertmanager",
+      platform: "历史：平台监控链路",
+    };
+    const slugFromPage = (events ?? []).map((it) => String(it.monitorPipeline ?? "").trim()).filter(Boolean);
     const fromStats = (stats?.monitor_pipeline_values ?? []).map((v) => String(v).trim()).filter(Boolean);
-    const fromPage = (events ?? []).map((it) => (it.monitorPipeline || "").trim()).filter(Boolean);
-    const merged = Array.from(new Set([...fromStats, ...fromPage])).sort((a, b) => a.localeCompare(b, "zh-CN"));
-    return merged.map((v) => ({
-      label: v === "platform" ? `${v}（平台规则）` : v === "prometheus" ? `${v}（Prometheus+YAML）` : v,
-      value: v,
-    }));
-  }, [stats?.monitor_pipeline_values, events]);
+    for (const slug of Array.from(new Set([...fromStats, ...slugFromPage])).sort((a, b) => a.localeCompare(b, "zh-CN"))) {
+      if (!slug || slug.startsWith("ds:")) continue;
+      const value = `mp:${slug}`;
+      if (seen.has(value)) continue;
+      seen.add(value);
+      opts.push({ label: slugLabels[slug] ?? `来源：${slug}`, value });
+    }
+    return opts.sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
+  }, [stats?.datasource_filter_options, stats?.monitor_pipeline_values, events]);
   const webhookTemplateOptions = useMemo(
     () => [
       { label: "warning（prod）", value: "warning_prod" },
@@ -400,13 +426,24 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     async (page: number, pageSize: number) => {
       setEventsLoading(true);
       try {
+        const src = String(eventSourceFilter || "").trim();
+        let datasourceId: number | undefined;
+        let monitorPipeline: string | undefined;
+        if (src.startsWith("ds:")) {
+          const id = Number(src.slice(3));
+          if (Number.isFinite(id) && id > 0) datasourceId = id;
+        } else if (src.startsWith("mp:")) {
+          const slug = src.slice(3).trim();
+          if (slug) monitorPipeline = slug;
+        }
         const res = await listAlertEvents({
           page,
           page_size: pageSize,
           keyword: eventKeyword.trim() || undefined,
           alertIP: eventAlertIP.trim() || undefined,
           status: eventStatus.trim() || undefined,
-          monitorPipeline: eventMonitorPipeline.trim() || undefined,
+          monitorPipeline,
+          datasourceId,
           groupKey: eventGroupKey.trim() || undefined,
         });
         setEvents(res.list ?? []);
@@ -417,7 +454,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
         setEventsLoading(false);
       }
     },
-    [eventKeyword, eventAlertIP, eventStatus, eventMonitorPipeline, eventGroupKey],
+    [eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey],
   );
 
   useEffect(() => {
@@ -429,12 +466,12 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     if (tab !== "history") {
       return;
     }
-    const delay = eventKeyword || eventAlertIP || eventStatus || eventGroupKey ? 300 : 0;
+    const delay = eventKeyword || eventAlertIP || eventStatus || eventSourceFilter || eventGroupKey ? 300 : 0;
     const timer = window.setTimeout(() => {
       void loadEvents(1, eventsPageSizeRef.current);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [tab, eventKeyword, eventAlertIP, eventStatus, eventMonitorPipeline, eventGroupKey, loadEvents]);
+  }, [tab, eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey, loadEvents]);
 
   useEffect(() => {
     if (tab !== "subscriptions") {
@@ -605,13 +642,13 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
             />
             <Select
-              style={{ width: 240 }}
-              placeholder="监控链路（区分双来源）"
-              value={eventMonitorPipeline || undefined}
-              options={pipelineOptions}
+              style={{ width: 280 }}
+              placeholder="数据源 / 来源（WatchAlert 式）"
+              value={eventSourceFilter || undefined}
+              options={sourceFilterOptions}
               showSearch
               allowClear
-              onChange={(v) => setEventMonitorPipeline((v as string) || "")}
+              onChange={(v) => setEventSourceFilter((v as string) || "")}
               filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
             />
             <Select
@@ -664,13 +701,30 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               },
               { title: "告警IP", dataIndex: "alertIP", width: 160, ellipsis: true, render: (v: string) => v || "-" },
               {
-                title: "监控链路",
-                dataIndex: "monitorPipeline",
-                width: 130,
-                render: (v: string) => {
-                  if (v === "platform") return <Tag color="purple">platform</Tag>;
-                  if (v === "prometheus") return <Tag color="blue">prometheus</Tag>;
-                  return v ? <Tag>{v}</Tag> : <span>-</span>;
+                title: "数据源 / 来源",
+                key: "datasourceDisplay",
+                width: 200,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const name = String(row.datasourceName ?? "").trim();
+                  const typ = String(row.datasourceType ?? "").trim();
+                  const slug = String(row.monitorPipeline ?? "").trim();
+                  if (name) {
+                    return (
+                      <Space align="start" size={4} wrap>
+                        <Typography.Text style={{ maxWidth: 160 }} ellipsis={{ tooltip: name }}>
+                          {name}
+                        </Typography.Text>
+                        {typ ? <Tag>{typ}</Tag> : null}
+                      </Space>
+                    );
+                  }
+                  if (slug === "alertmanager") return <Tag color="blue">Alertmanager</Tag>;
+                  if (slug === "cloud_expiry") return <Tag color="volcano">云到期</Tag>;
+                  if (slug === "platform_monitor") return <Tag color="purple">平台规则</Tag>;
+                  if (slug === "platform") return <Tag color="purple">platform（历史）</Tag>;
+                  if (slug === "prometheus") return <Tag color="blue">prometheus（历史）</Tag>;
+                  if (slug.startsWith("ds:")) return <Tag>{slug}</Tag>;
+                  return slug ? <Tag>{slug}</Tag> : <span>-</span>;
                 },
               },
               { title: "GroupKey", dataIndex: "groupKey", width: 140, ellipsis: true, render: (v: string) => v || "-" },

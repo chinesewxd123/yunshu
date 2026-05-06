@@ -66,7 +66,7 @@ func (s *AlertService) tickMonitorRules(ctx context.Context) error {
 	return nil
 }
 
-func buildMonitorRuleLabels(rule *model.AlertMonitorRule, projectID uint) map[string]string {
+func buildMonitorRuleLabels(rule *model.AlertMonitorRule, projectID uint, ds *model.AlertDatasource) map[string]string {
 	labels := map[string]string{
 		"alertname":       rule.Name,
 		"severity":        strings.TrimSpace(rule.Severity),
@@ -74,6 +74,16 @@ func buildMonitorRuleLabels(rule *model.AlertMonitorRule, projectID uint) map[st
 		"datasource_id":   fmt.Sprintf("%d", rule.DatasourceID),
 		"project_id":      fmt.Sprintf("%d", projectID),
 		"source":          "prometheus_monitor",
+	}
+	if ds != nil {
+		if n := strings.TrimSpace(ds.Name); n != "" {
+			labels["datasource_name"] = n
+		}
+		typ := strings.TrimSpace(ds.Type)
+		if typ == "" {
+			typ = "prometheus"
+		}
+		labels["datasource_type"] = typ
 	}
 	if strings.TrimSpace(rule.Severity) == "" {
 		labels["severity"] = "warning"
@@ -194,7 +204,7 @@ func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.A
 	if projectID == 0 {
 		projectID = ds.ProjectID
 	}
-	labels := buildMonitorRuleLabels(rule, projectID)
+	labels := buildMonitorRuleLabels(rule, projectID, &ds)
 	sampleLabels, sampleValue := parsePromFirstSample(body)
 	for k, v := range sampleLabels {
 		k = strings.TrimSpace(k)

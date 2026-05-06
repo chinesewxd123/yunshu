@@ -27,11 +27,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// 监控链路：与 Prometheus cluster 标签解耦，便于筛选与策略匹配（避免「同一规则双路告警」难以区分）。
-const (
-	monitorPipelinePrometheus = "prometheus" // Prometheus.yml + rules + Alertmanager -> 平台 Webhook
-	monitorPipelinePlatform   = "platform"   // 平台内 PromQL 规则评估（receiver=platform-monitor）
-)
+// 历史 monitor_pipeline 取值 prometheus/platform 仍可能存在于旧数据；新写入以数据源为主，见 resolveAlertDatasourceMeta。
 
 type AlertChannelListQuery struct {
 	Keyword string `form:"keyword"`
@@ -45,6 +41,7 @@ type AlertEventListQuery struct {
 	AlertIP         string `form:"alertIP"`
 	Status          string `form:"status"`
 	MonitorPipeline string `form:"monitorPipeline"`
+	DatasourceID    uint   `form:"datasourceId"`
 	GroupKey        string `form:"groupKey"`
 }
 
@@ -283,6 +280,7 @@ func (s *AlertService) logSuppressedRouteSilence(ctx context.Context, title, sev
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload: truncateText(fmt.Sprintf("suppressed by subscription silence_seconds=%d", silenceSeconds), s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
@@ -586,6 +584,9 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 	}
 	if v := strings.TrimSpace(q.MonitorPipeline); v != "" {
 		tx = tx.Where("monitor_pipeline = ?", v)
+	}
+	if q.DatasourceID > 0 {
+		tx = tx.Where("datasource_id = ?", q.DatasourceID)
 	}
 	if v := strings.TrimSpace(q.GroupKey); v != "" {
 		tx = tx.Where("group_key = ?", v)
@@ -1060,6 +1061,7 @@ func (s *AlertService) logSilenceSuppressed(ctx context.Context, title, severity
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload: truncateText(fmt.Sprintf("suppressed by platform silence_id=%d", silenceID), s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
@@ -1084,6 +1086,7 @@ func (s *AlertService) logNoMatchedChannel(ctx context.Context, title, severity,
 		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload:    "",
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
@@ -1098,11 +1101,18 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 	}
 	for _, alert := range payload.Alerts {
 		labels := mergeStringMap(payload.CommonLabels, alert.Labels)
-		monitorPipeline := monitorPipelinePrometheus
-		if s.isPlatformMonitor(labels, payload.Receiver) {
-			monitorPipeline = monitorPipelinePlatform
+		dsID, dsName, dsType, pipelineSlug := s.resolveAlertDatasourceMeta(ctx, labels, payload.Receiver)
+		labels["monitor_pipeline"] = pipelineSlug
+		if dsID > 0 {
+			labels["datasource_id"] = fmt.Sprintf("%d", dsID)
 		}
-		labels["monitor_pipeline"] = monitorPipeline
+		if strings.TrimSpace(dsName) != "" {
+			labels["datasource_name"] = strings.TrimSpace(dsName)
+		}
+		if strings.TrimSpace(dsType) != "" {
+			labels["datasource_type"] = strings.TrimSpace(dsType)
+		}
+		monitorPipeline := pipelineSlug
 		annotations := mergeStringMap(payload.CommonAnnotations, alert.Annotations)
 		status := strings.TrimSpace(alert.Status)
 		if status == "" {
@@ -1149,6 +1159,7 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 					"receiver": payload.Receiver, "fingerprint": alert.Fingerprint,
 					"groupKey": groupKey, "cluster": envLabel, "labelsDigest": labelsDigest,
 					"monitorPipeline": monitorPipeline,
+					"datasourceId":    dsID, "datasourceName": dsName, "datasourceType": dsType,
 				}
 				s.logSilenceSuppressed(ctx, title, severity, status, envLabel, groupKey, labelsDigest, sid, minPayload)
 				continue
@@ -1178,6 +1189,9 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			"occurredAt":      time.Now().Format(time.RFC3339),
 			"cluster":         envLabel,
 			"monitorPipeline": monitorPipeline,
+			"datasourceId":    dsID,
+			"datasourceName":  dsName,
+			"datasourceType":  dsType,
 			"groupKey":        groupKey,
 			"labelsDigest":    labelsDigest,
 		}
@@ -1212,14 +1226,6 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			currentValue = "-"
 		}
 		outgoing["current"] = currentValue
-		// P3：异步增强，不阻塞通知主链路（缓存 miss 时上面已尽力同步查询）
-		if status == "firing" {
-			s.enqueuePrometheusEnrich(promEnrichTask{
-				Fingerprint:  alert.Fingerprint,
-				GeneratorURL: alert.GeneratorURL,
-			})
-		}
-		// P3：异步增强，不阻塞通知主链路（缓存 miss 时上面已尽力同步查询）
 		if status == "firing" {
 			s.enqueuePrometheusEnrich(promEnrichTask{
 				Fingerprint:  alert.Fingerprint,
@@ -1315,6 +1321,112 @@ func (s *AlertService) ValidateWebhookToken(token string) bool {
 	return strings.TrimSpace(token) == expected
 }
 
+// resolveAlertDatasourceMeta 统一解析「数据源」维度：优先标签/规则上的 datasource_id，其次平台规则反查；monitor_pipeline 列写入简短 slug 便于筛选。
+func (s *AlertService) resolveAlertDatasourceMeta(ctx context.Context, labels map[string]string, receiver string) (dsID uint, dsName, dsType, pipelineSlug string) {
+	rcv := strings.TrimSpace(receiver)
+	if rcv == "cloud-expiry" {
+		return 0, "云资源到期", "cloud_expiry", "cloud_expiry"
+	}
+	for _, key := range []string{"yunshu_datasource_id", "datasource_id"} {
+		if labels == nil {
+			break
+		}
+		if n, ok := parseLabelUint(labels[key]); ok && n > 0 {
+			dsID = n
+			break
+		}
+	}
+	if dsID == 0 && s.isPlatformMonitor(labels, receiver) {
+		if rid, ok := parseLabelUint(labels["monitor_rule_id"]); ok && rid > 0 {
+			var rule model.AlertMonitorRule
+			if err := s.db.WithContext(ctx).First(&rule, rid).Error; err == nil && rule.DatasourceID > 0 {
+				dsID = rule.DatasourceID
+			}
+		}
+	}
+	if dsID > 0 {
+		var ds model.AlertDatasource
+		if err := s.db.WithContext(ctx).First(&ds, dsID).Error; err == nil {
+			dsName = strings.TrimSpace(ds.Name)
+			dsType = strings.TrimSpace(ds.Type)
+		}
+		if dsType == "" {
+			dsType = "prometheus"
+		}
+		return dsID, dsName, dsType, fmt.Sprintf("ds:%d", dsID)
+	}
+	if labels != nil {
+		if n := strings.TrimSpace(labels["datasource_name"]); n != "" {
+			dsName = n
+		}
+		if t := strings.TrimSpace(labels["datasource_type"]); t != "" {
+			dsType = t
+		}
+	}
+	if dsType == "" {
+		dsType = "prometheus"
+	}
+	if s.isPlatformMonitor(labels, receiver) {
+		if dsName == "" {
+			dsName = "平台监控规则"
+		}
+		return 0, dsName, dsType, "platform_monitor"
+	}
+	return 0, dsName, dsType, "alertmanager"
+}
+
+func fillAlertEventDatasourceFromPayload(ev *model.AlertEvent, payload map[string]interface{}) {
+	if ev == nil || payload == nil {
+		return
+	}
+	if id := payloadUintAny(payload["datasourceId"]); id > 0 {
+		ev.DatasourceID = id
+	}
+	if s := strings.TrimSpace(fmt.Sprintf("%v", payload["datasourceName"])); s != "" && s != "<nil>" {
+		ev.DatasourceName = truncateText(s, 128)
+	}
+	if s := strings.TrimSpace(fmt.Sprintf("%v", payload["datasourceType"])); s != "" && s != "<nil>" {
+		ev.DatasourceType = truncateText(s, 32)
+	}
+}
+
+func payloadUintAny(v interface{}) uint {
+	if v == nil {
+		return 0
+	}
+	switch x := v.(type) {
+	case uint:
+		return x
+	case uint32:
+		return uint(x)
+	case uint64:
+		if x <= 1<<32-1 {
+			return uint(x)
+		}
+	case int:
+		if x > 0 {
+			return uint(x)
+		}
+	case int64:
+		if x > 0 && x < 1<<32 {
+			return uint(x)
+		}
+	case float64:
+		if x > 0 && x < 1e12 {
+			return uint(x)
+		}
+	case string:
+		if n, ok := parseLabelUint(x); ok {
+			return n
+		}
+	case json.Number:
+		if u, err := x.Int64(); err == nil && u > 0 {
+			return uint(u)
+		}
+	}
+	return 0
+}
+
 func (s *AlertService) isPlatformMonitor(labels map[string]string, receiver string) bool {
 	if strings.TrimSpace(receiver) == "platform-monitor" {
 		return true
@@ -1365,15 +1477,22 @@ func mergeStringMap(base, override map[string]string) map[string]string {
 	return out
 }
 
+// AlertDatasourceFilterOption 历史告警筛选：已出现过的数据源（按事件表聚合）。
+type AlertDatasourceFilterOption struct {
+	ID   uint   `json:"id" gorm:"column:id"`
+	Name string `json:"name" gorm:"column:name"`
+}
+
 type AlertHistoryStats struct {
-	Total                 int64    `json:"total"`
-	Firing                int64    `json:"firing"`
-	Resolved              int64    `json:"resolved"`
-	Success               int64    `json:"success"`
-	Failed                int64    `json:"failed"`
-	TodayCreated          int64    `json:"today_created"`
-	ClusterValues         []string `json:"cluster_values"`
-	MonitorPipelineValues []string `json:"monitor_pipeline_values"`
+	Total                   int64                         `json:"total"`
+	Firing                  int64                         `json:"firing"`
+	Resolved                int64                         `json:"resolved"`
+	Success                 int64                         `json:"success"`
+	Failed                  int64                         `json:"failed"`
+	TodayCreated            int64                         `json:"today_created"`
+	ClusterValues           []string                      `json:"cluster_values"`
+	MonitorPipelineValues   []string                      `json:"monitor_pipeline_values"`
+	DatasourceFilterOptions []AlertDatasourceFilterOption `json:"datasource_filter_options"`
 }
 
 func (s *AlertService) HistoryStats(ctx context.Context) (*AlertHistoryStats, error) {
@@ -1422,5 +1541,16 @@ func (s *AlertService) HistoryStats(ctx context.Context) (*AlertHistoryStats, er
 		return nil, err
 	}
 	stats.MonitorPipelineValues = pipes
+	var dsRows []AlertDatasourceFilterOption
+	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).
+		Select("datasource_id AS id, MAX(datasource_name) AS name").
+		Where("datasource_id > ?", 0).
+		Group("datasource_id").
+		Order("id DESC").
+		Limit(200).
+		Scan(&dsRows).Error; err != nil {
+		return nil, err
+	}
+	stats.DatasourceFilterOptions = dsRows
 	return stats, nil
 }

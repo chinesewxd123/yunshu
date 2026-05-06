@@ -83,6 +83,7 @@ func (s *AlertService) logSuppressedGroupAggregateBySpec(ctx context.Context, sp
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload: truncateText(spec.responsePrefix+groupKey, s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
@@ -204,6 +205,7 @@ func (s *AlertService) logSuppressedDedup(ctx context.Context, title, severity, 
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload: truncateText("suppressed by fingerprint dedup: "+fingerprint, s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
@@ -316,5 +318,6 @@ func (s *AlertService) logSuppressedFiringTiming(ctx context.Context, title, sev
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload: truncateText("suppressed by group timing: "+groupKey, s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }

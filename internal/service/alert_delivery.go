@@ -502,6 +502,7 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 		RequestPayload:     truncateText(string(buildEventPayloadBytes(reqBytes, alertPayload, s.cfg.MaxPayloadChars)), s.cfg.MaxPayloadChars),
 		ResponsePayload:    respPayload,
 	}
+	fillAlertEventDatasourceFromPayload(&event, alertPayload)
 	if reqErr != nil {
 		event.ErrorMessage = truncateText(reqErr.Error(), 1000)
 	} else if code < 200 || code >= 300 {
@@ -545,7 +546,7 @@ func enrichRequestMapWithAlertPayload(reqMap map[string]interface{}, alertPayloa
 	if reqMap == nil {
 		return
 	}
-	for _, key := range []string{"startsAt", "endsAt", "occurredAt", "generatorURL", "status", "severity", "groupKey", "monitorPipeline"} {
+	for _, key := range []string{"startsAt", "endsAt", "occurredAt", "generatorURL", "status", "severity", "groupKey", "monitorPipeline", "datasourceId", "datasourceName", "datasourceType"} {
 		if existing, ok := reqMap[key]; ok && payloadMetaValueMeaningful(existing) {
 			continue
 		}
@@ -817,6 +818,7 @@ func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.Aler
 		RequestPayload:     truncateText(string(buildEventPayloadBytes(reqBytes, payload, s.cfg.MaxPayloadChars)), s.cfg.MaxPayloadChars),
 		ResponsePayload:    truncateText(respNote, s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	if sendErr != nil && okCount == 0 {
 		event.HTTPStatusCode = 500
 		event.Success = false

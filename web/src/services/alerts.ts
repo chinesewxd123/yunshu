@@ -23,8 +23,11 @@ export interface AlertEventItem {
   cluster?: string;
   alertIP?: string;
   alertStartedAt?: string;
-  /** prometheus = Prometheus 规则+Alertmanager Webhook；platform = 平台内监控规则 */
+  /** 路由 slug：ds:<id>、alertmanager、platform_monitor、cloud_expiry；历史可能为 prometheus/platform */
   monitorPipeline?: string;
+  datasourceId?: number;
+  datasourceName?: string;
+  datasourceType?: string;
   groupKey?: string;
   labelsDigest?: string;
   matchedPolicyIds?: string;
@@ -122,6 +125,8 @@ export function listAlertEvents(params: {
   alertIP?: string;
   status?: string;
   monitorPipeline?: string;
+  /** 与后端 datasourceId 一致，按已配置 Prometheus 数据源筛选 */
+  datasourceId?: number;
   groupKey?: string;
 }) {
   return getData<{ list?: AlertEventItem[]; items?: AlertEventItem[]; total: number; page: number; page_size: number }>(
@@ -145,8 +150,10 @@ export function getAlertHistoryStats() {
     today_created: number;
     /** K8s / Prometheus external_labels.cluster 等（历史记录中去重） */
     cluster_values?: string[];
-    /** prometheus、platform（历史记录中去重） */
+    /** 历史 monitor_pipeline slug 去重（含 ds:N、alertmanager 等） */
     monitor_pipeline_values?: string[];
+    /** 历史事件中已出现的数据源，用于筛选下拉 */
+    datasource_filter_options?: Array<{ id: number; name: string }>;
   }>(http.get("/alerts/history/stats"));
 }
 

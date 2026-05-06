@@ -17,7 +17,10 @@ type AlertEvent struct {
 	Environment        string         `json:"environment,omitempty" gorm:"-"`
 	AlertIP            string         `json:"alertIP,omitempty" gorm:"-"`
 	AlertStartedAt     string         `json:"alertStartedAt,omitempty" gorm:"-"`
-	MonitorPipeline    string         `json:"monitorPipeline" gorm:"size:32;index;comment:监控链路 prometheus=Prometheus+YAML+Alertmanager platform=平台规则"`
+	MonitorPipeline    string         `json:"monitorPipeline" gorm:"size:32;index;comment:路由/来源 slug：ds:<id>、alertmanager、cloud_expiry；历史数据可能为 prometheus/platform"`
+	DatasourceID       uint           `json:"datasourceId" gorm:"index;comment:告警数据源ID，0 表示未绑定或未解析"`
+	DatasourceName     string         `json:"datasourceName" gorm:"size:128;index;comment:数据源显示名"`
+	DatasourceType     string         `json:"datasourceType" gorm:"size:32;index;comment:数据源类型如 prometheus、cloud_expiry"`
 	GroupKey           string         `json:"groupKey" gorm:"size:128;index;comment:聚合分组键"`
 	LabelsDigest       string         `json:"labelsDigest" gorm:"size:128;index;comment:标签摘要"`
 	MatchedPolicyIDs   string         `json:"matchedPolicyIds" gorm:"size:256;comment:命中策略ID列表,逗号分隔"`

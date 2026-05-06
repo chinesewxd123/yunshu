@@ -12,6 +12,7 @@ var historyRetentionLabelKeys = []string{
 	"alertname", "severity", "namespace", "pod", "pod_name", "instance", "node", "cluster",
 	"project_id", "job", "deployment", "container", "prometheus", "region", "service",
 	"app", "name", "statefulset", "daemonset", "workload", "uid",
+	"datasource_id", "datasource_name", "datasource_type", "yunshu_datasource_id", "monitor_pipeline",
 }
 
 func truncateHistoryString(s string, max int) string {
