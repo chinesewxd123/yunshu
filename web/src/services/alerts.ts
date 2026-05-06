@@ -84,6 +84,12 @@ export function testAlertChannel(
   return getData<void>(http.post(`/alerts/channels/${id}/test`, payload ?? {}));
 }
 
+/** 与后端 alertdispatch 模板变量说明一致（通道 Go template {{.Name}}） */
+export interface AlertTemplateVariableDoc {
+  name: string;
+  description: string;
+}
+
 export interface AlertTemplatePreviewResult {
   rendered: string;
   sample_payload: Record<string, unknown>;
@@ -91,6 +97,8 @@ export interface AlertTemplatePreviewResult {
   raw_payload_fields: string[];
   combined_fields: string[];
   suggested_label_keys: string[];
+  /** 固定模板变量及含义（WatchAlert 式「通知模板」文档化） */
+  template_variables?: AlertTemplateVariableDoc[];
 }
 
 export function previewAlertChannelTemplate(payload: {

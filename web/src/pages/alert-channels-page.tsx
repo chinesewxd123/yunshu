@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SendOutlined } from "@ant-design/icons";
-import { Button, Card, Collapse, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from "antd";
+import { Button, Card, Collapse, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
 import { useEffect, useRef, useState } from "react";
 import {
   createAlertChannel,
@@ -683,7 +683,15 @@ export function AlertChannelsPage() {
           <Form.Item
             name="template_firing"
             label="告警触发模板（可视化配置）"
-            extra={'留空时使用系统默认模板；支持变量：{{.Title}} {{.Severity}} {{.StatusText}} {{.ProjectName}} {{.Cluster}} {{.Summary}} {{.Description}} {{.OccurredAt}} {{.StartsAt}} {{.EndsAt}} {{.Current}} {{.Fingerprint}} {{.GeneratorURL}} {{.LabelsText}}，也可按标签取值：{{index .Labels "alertname"}}'}
+            extra={
+              <>
+                留空时使用系统默认模板；Go text/template 语法。完整变量含义见下方「模板变量说明」表（与后端{" "}
+                <Typography.Link href="https://cairry.github.io/docs/" target="_blank" rel="noreferrer">
+                  WatchAlert 式通知模板
+                </Typography.Link>{" "}
+                文档化一致）。标签示例：<Typography.Text code>{"{{index .Labels \"alertname\"}}"}</Typography.Text>
+              </>
+            }
           >
             <Input.TextArea ref={firingTemplateRef} rows={6} placeholder="支持 Go Template 语法，例如 {{.Title}}" />
           </Form.Item>
@@ -796,6 +804,26 @@ export function AlertChannelsPage() {
                 <Tag key={v}>{v}</Tag>
               ))}
             </Space>
+          </Form.Item>
+          <Form.Item
+            label="模板变量说明"
+            extra="与预览接口 template_variables 同步；编写 {{.变量名}} 时请与此表一致。"
+          >
+            <Table
+              size="small"
+              pagination={false}
+              rowKey="name"
+              dataSource={previewResult?.template_variables ?? []}
+              columns={[
+                {
+                  title: "变量名（模板内）",
+                  dataIndex: "name",
+                  width: 220,
+                  render: (v: string) => <Typography.Text code>{"{{." + v + "}}"}</Typography.Text>,
+                },
+                { title: "说明", dataIndex: "description" },
+              ]}
+            />
           </Form.Item>
           <Form.Item label="原始 JSON 字段" extra="来自你填写的预览原始 JSON 顶层 key">
             <Space wrap>

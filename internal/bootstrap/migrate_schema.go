@@ -160,6 +160,41 @@ func migrateLogAgentsClearPlaceholderListenPort(db *gorm.DB) error {
 		Update("listen_port", 0).Error
 }
 
+// migrateNormalizeAlertEventStatus 将历史告警行的 status 规范为小写，便于走 status 单列索引（避免 LOWER(TRIM(status)) 无法命中索引）。
+func migrateNormalizeAlertEventStatus(db *gorm.DB) error {
+	if db == nil || !db.Migrator().HasTable(&model.AlertEvent{}) {
+		return nil
+	}
+	switch db.Dialector.Name() {
+	case "mysql":
+		return db.Exec(`
+UPDATE alert_events
+SET status = LOWER(TRIM(status))
+WHERE deleted_at IS NULL
+  AND status IS NOT NULL
+  AND status <> LOWER(TRIM(status))
+`).Error
+	case "postgres":
+		return db.Exec(`
+UPDATE alert_events
+SET status = LOWER(TRIM(status))
+WHERE deleted_at IS NULL
+  AND status IS NOT NULL
+  AND status <> LOWER(TRIM(status))
+`).Error
+	case "sqlite":
+		return db.Exec(`
+UPDATE alert_events
+SET status = LOWER(TRIM(status))
+WHERE deleted_at IS NULL
+  AND status IS NOT NULL
+  AND LOWER(TRIM(status)) <> status
+`).Error
+	default:
+		return nil
+	}
+}
+
 // AutoMigrateModels 与 `go run . migrate` 使用同一套表结构；server 启动时执行可避免漏跑迁移导致 500。
 func AutoMigrateModels(db *gorm.DB) error {
 	if db == nil {
@@ -201,6 +236,7 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&model.AlertSubscriptionNode{},
 		&model.AlertReceiverGroup{},
 		&model.AlertSubscriptionMatch{},
+		&model.CloudExpiryRule{},
 		&model.Project{},
 		&model.ProjectMember{},
 		&model.ServerGroup{},
@@ -212,6 +248,9 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&model.LogAgent{},
 		&model.AgentDiscovery{},
 	); err != nil {
+		return err
+	}
+	if err := migrateNormalizeAlertEventStatus(db); err != nil {
 		return err
 	}
 	if err := migrateEnableDingTalkSignSecretDictSeed(db); err != nil {

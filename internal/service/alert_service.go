@@ -14,10 +14,12 @@ import (
 	"sync"
 	"time"
 
+	"yunshu/internal/alertdispatch"
 	"yunshu/internal/config"
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/alertnotify"
 	"yunshu/internal/pkg/apperror"
+	cryptox "yunshu/internal/pkg/crypto"
 	"yunshu/internal/pkg/mailer"
 	"yunshu/internal/pkg/pagination"
 
@@ -114,6 +116,8 @@ type AlertServiceOptions struct {
 	SilenceSvc  *AlertSilenceService
 	AssigneeSvc *AlertRuleAssigneeService
 	DutySvc     *AlertDutyService
+	// EncryptionKey 与项目/云账号凭据加密一致；非空时用于云到期规则解密云账号 AK/SK。
+	EncryptionKey string
 }
 
 type promEnrichTask struct {
@@ -179,6 +183,11 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 		svc.silenceSvc = opts.SilenceSvc
 		svc.assigneeSvc = opts.AssigneeSvc
 		svc.dutySvc = opts.DutySvc
+		if key := strings.TrimSpace(opts.EncryptionKey); key != "" {
+			if aead, err := cryptox.NewAESGCMFromKeyString(key); err == nil {
+				svc.aead = aead
+			}
+		}
 	}
 	svc.startPrometheusEnrichWorkers()
 	svc.startInhibitionPruner(context.Background())
@@ -324,12 +333,13 @@ type AlertChannelPreviewRequest struct {
 }
 
 type AlertChannelPreviewResponse struct {
-	Rendered           string                 `json:"rendered"`
-	SamplePayload      map[string]interface{} `json:"sample_payload"`
-	AvailableFields    []string               `json:"available_fields"`
-	RawPayloadFields   []string               `json:"raw_payload_fields"`
-	CombinedFields     []string               `json:"combined_fields"`
-	SuggestedLabelKeys []string               `json:"suggested_label_keys"`
+	Rendered           string                             `json:"rendered"`
+	SamplePayload      map[string]interface{}             `json:"sample_payload"`
+	AvailableFields    []string                           `json:"available_fields"`
+	RawPayloadFields   []string                           `json:"raw_payload_fields"`
+	CombinedFields     []string                           `json:"combined_fields"`
+	SuggestedLabelKeys []string                           `json:"suggested_label_keys"`
+	TemplateVariables  []alertdispatch.ChannelTemplateVariableDoc `json:"template_variables"`
 }
 
 // PreviewChannelTemplate 渲染并返回通道模板预览文本。
@@ -381,13 +391,15 @@ func (s *AlertService) PreviewChannelTemplate(ctx context.Context, req AlertChan
 	// 使用统一渲染函数生成消息文本，title/severity 可从 payload 或设置中扩展。
 	msg := s.renderChannelMessage(ctx, alertnotify.SafeOr(strings.TrimSpace(req.Title), "Preview"), strings.TrimSpace(req.Severity), status, payload, settings)
 	rawFields, combinedFields, labelKeys := previewPayloadFieldCatalog(payload)
+	docs := alertdispatch.ChannelTemplateVariableDocs()
 	return &AlertChannelPreviewResponse{
 		Rendered:           msg,
 		SamplePayload:      payload,
-		AvailableFields:    []string{"Title", "Severity", "Status", "StatusText", "Summary", "Description", "ProjectName", "Cluster", "OccurredAt", "StartsAt", "EndsAt", "Current", "Count", "Fingerprint", "GeneratorURL", "Labels", "LabelsText"},
+		AvailableFields:    append([]string{}, alertdispatch.ChannelTemplateFieldList()...),
 		RawPayloadFields:   rawFields,
 		CombinedFields:     combinedFields,
 		SuggestedLabelKeys: labelKeys,
+		TemplateVariables:  docs,
 	}, nil
 }
 
@@ -542,7 +554,7 @@ func (s *AlertService) TestChannel(ctx context.Context, id uint, req AlertTestRe
 		"occurredAt": time.Now().Format(time.RFC3339),
 		"cluster":    "manual-test",
 	}
-	_, _, err := s.sendToChannel(ctx, &ch, "manual-test", title, severity, "firing", payload)
+	_, _, err := s.sendToChannel(ctx, &ch, alertdispatch.NewEnvelope("manual-test", title, severity, "firing", payload))
 	return err
 }
 
@@ -570,7 +582,7 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 		)
 	}
 	if v := strings.ToLower(strings.TrimSpace(q.Status)); v != "" {
-		tx = tx.Where("LOWER(TRIM(status)) = ?", v)
+		tx = tx.Where("status = ?", v)
 	}
 	if v := strings.TrimSpace(q.MonitorPipeline); v != "" {
 		tx = tx.Where("monitor_pipeline = ?", v)
@@ -623,7 +635,7 @@ func (s *AlertService) backfillResolvedAlertIP(ctx context.Context, list []model
 	}
 	var firingRows []model.AlertEvent
 	if err := s.db.WithContext(ctx).
-		Where("group_key IN ? AND LOWER(TRIM(status)) = ?", groupKeys, "firing").
+		Where("group_key IN ? AND status = ?", groupKeys, "firing").
 		Order("id DESC").
 		Find(&firingRows).Error; err != nil {
 		return
@@ -838,7 +850,7 @@ func previewPayloadFieldCatalog(payload map[string]interface{}) ([]string, []str
 		}
 	}
 	sort.Strings(labelKeys)
-	combined := append([]string{}, []string{"Title", "Severity", "Status", "StatusText", "Summary", "Description", "ProjectName", "Cluster", "OccurredAt", "StartsAt", "EndsAt", "Current", "Count", "Fingerprint", "GeneratorURL", "Labels", "LabelsText"}...)
+	combined := append([]string{}, alertdispatch.ChannelTemplateFieldList()...)
 	combined = append(combined, rawFields...)
 	sort.Strings(combined)
 	return rawFields, combined, labelKeys
@@ -1268,7 +1280,7 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 				continue
 			}
 			sentCount++
-			_, _, _ = s.sendToChannel(ctx, &channels[i], "alertmanager", title, severity, status, outgoing)
+			_, _, _ = s.sendToChannel(ctx, &channels[i], alertdispatch.NewEnvelope("alertmanager", title, severity, status, outgoing))
 		}
 		if sentCount == 0 {
 			reason := "no_channel_matched"
@@ -1369,10 +1381,10 @@ func (s *AlertService) HistoryStats(ctx context.Context) (*AlertHistoryStats, er
 	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Count(&stats.Total).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("LOWER(TRIM(status)) = ?", "firing").Count(&stats.Firing).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("status = ?", "firing").Count(&stats.Firing).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("LOWER(TRIM(status)) = ?", "resolved").Count(&stats.Resolved).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("status = ?", "resolved").Count(&stats.Resolved).Error; err != nil {
 		return nil, err
 	}
 	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("success = ?", true).Count(&stats.Success).Error; err != nil {
@@ -1381,7 +1393,13 @@ func (s *AlertService) HistoryStats(ctx context.Context) (*AlertHistoryStats, er
 	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("success = ?", false).Count(&stats.Failed).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("DATE(created_at) = CURRENT_DATE").Count(&stats.TodayCreated).Error; err != nil {
+	// 使用半开区间替代 DATE(created_at)，便于命中 created_at 索引（语义：应用进程本地日历日的 00:00–24:00）。
+	now := time.Now()
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	dayEnd := dayStart.Add(24 * time.Hour)
+	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).
+		Where("created_at >= ? AND created_at < ?", dayStart, dayEnd).
+		Count(&stats.TodayCreated).Error; err != nil {
 		return nil, err
 	}
 	var clusters []string

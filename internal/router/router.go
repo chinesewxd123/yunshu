@@ -42,9 +42,10 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	alertAssigneeSvc := service.NewAlertRuleAssigneeService(app.DB, userRepo, projectMemberRepo)
 	alertDutySvc := service.NewAlertDutyService(app.DB, userRepo)
 	alertService := service.NewAlertService(app.DB, app.Redis, app.Mailer, app.Config.Alert, &service.AlertServiceOptions{
-		SilenceSvc:  alertSilenceSvc,
-		AssigneeSvc: alertAssigneeSvc,
-		DutySvc:     alertDutySvc,
+		SilenceSvc:    alertSilenceSvc,
+		AssigneeSvc:   alertAssigneeSvc,
+		DutySvc:       alertDutySvc,
+		EncryptionKey: app.Config.Security.EncryptionKey,
 	})
 	cloudExpiryRuleSvc := service.NewCloudExpiryRuleService(app.DB)
 	alertDatasourceSvc := service.NewAlertDatasourceService(app.DB)

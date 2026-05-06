@@ -10,7 +10,7 @@ import (
 // 参考：夜莺业务组订阅机制、Alertmanager 路由树
 type AlertSubscriptionNode struct {
 	ID        uint `json:"id" gorm:"primaryKey;comment:主键ID"`
-	ProjectID uint `json:"project_id" gorm:"not null;index;comment:业务组ID"`
+	ProjectID uint `json:"project_id" gorm:"not null;index;index:idx_alert_sub_proj_enabled,priority:1;comment:业务组ID"`
 
 	// 树形结构
 	ParentID *uint `json:"parent_id" gorm:"index;comment:父节点ID"`
@@ -28,7 +28,7 @@ type AlertSubscriptionNode struct {
 
 	// 路由行为
 	Continue bool `json:"continue" gorm:"not null;default:false;comment:匹配成功后是否继续匹配子节点"`
-	Enabled  bool `json:"enabled" gorm:"not null;default:true;index;comment:是否启用"`
+	Enabled  bool `json:"enabled" gorm:"not null;default:true;index;index:idx_alert_sub_proj_enabled,priority:2;comment:是否启用"`
 
 	// 通知配置
 	ReceiverGroupIDsJSON string `json:"receiver_group_ids_json" gorm:"type:text;comment:通知组ID数组JSON"`

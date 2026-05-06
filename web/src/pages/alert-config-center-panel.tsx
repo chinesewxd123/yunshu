@@ -560,6 +560,31 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
       label: "历史告警记录",
       children: (
         <>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="历史告警与「当前活跃」说明"
+            description={
+              <>
+                <p style={{ marginBottom: 8 }}>
+                  本表为<strong>通知投递审计</strong>（每次向通道外发或抑制链路写入的记录），对应 WatchAlert
+                  文档中的<strong>历史告警 / 推送结果查询</strong>语义；可按 firing / resolved、监控链路、订阅命中等筛选。
+                </p>
+                <p style={{ marginBottom: 0 }}>
+                  <strong>Prometheus 当前仍在触发的活跃告警</strong>请在「告警监控平台 → PromQL」使用数据源联查（如「活跃告警」）或自建
+                  PromQL；平台内规则触发明细见「监控规则」与下方统计卡片。
+                </p>
+                <p style={{ marginTop: 8, marginBottom: 0 }}>
+                  设计参考：{" "}
+                  <Typography.Link href="https://cairry.github.io/docs/" target="_blank" rel="noreferrer">
+                    WatchAlert 功能介绍
+                  </Typography.Link>
+                  。
+                </p>
+              </>
+            }
+          />
           <Space style={{ width: "100%", marginBottom: 12 }} wrap>
             <Input
               style={{ width: 260 }}

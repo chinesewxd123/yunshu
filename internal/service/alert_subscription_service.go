@@ -114,7 +114,7 @@ func (s *AlertSubscriptionService) ListNodes(ctx context.Context, q AlertSubscri
 	}
 
 	var list []model.AlertSubscriptionNode
-	if err := tx.Order("level ASC, priority ASC, id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
+	if err := tx.Order("level ASC, id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
 		return nil, 0, page, pageSize, err
 	}
 
