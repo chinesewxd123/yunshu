@@ -29,7 +29,7 @@ func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force b
 			interval = 3600
 		}
 		syntheticID := uint(1000000) + rule.ID
-		if !force && !s.shouldEvalRule(syntheticID, interval, now) {
+		if !force && !s.shouldEvalRuleRedis(ctx, syntheticID, interval, now) {
 			continue
 		}
 		s.evaluateOneCloudExpiryRule(ctx, rule, now)

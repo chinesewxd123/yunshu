@@ -47,7 +47,6 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 		DutySvc:     alertDutySvc,
 	})
 	cloudExpiryRuleSvc := service.NewCloudExpiryRuleService(app.DB)
-	alertPolicyService := service.NewAlertPolicyService(app.DB)
 	alertDatasourceSvc := service.NewAlertDatasourceService(app.DB)
 	alertMonitorRuleSvc := service.NewAlertMonitorRuleService(app.DB, app.Redis)
 
@@ -99,8 +98,11 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	dictEntryHandler := handler.NewDictEntryHandler(dictEntryService)
 	alertHandler := handler.NewAlertHandler(alertService)
 	cloudExpiryRuleHandler := handler.NewCloudExpiryRuleHandler(cloudExpiryRuleSvc, alertService)
-	alertPolicyHandler := handler.NewAlertPolicyHandler(alertPolicyService)
 	alertPlatformHandler := handler.NewAlertPlatformHandler(alertDatasourceSvc, alertSilenceSvc, alertMonitorRuleSvc, alertAssigneeSvc, alertDutySvc)
+	alertSubscriptionSvc := alertService.GetSubscriptionService()
+	alertSubscriptionHandler := handler.NewAlertSubscriptionHandler(alertSubscriptionSvc)
+	alertReceiverGroupSvc := service.NewAlertReceiverGroupService(app.DB, service.NewReceiverGroupCache(app.DB))
+	alertReceiverGroupHandler := handler.NewAlertReceiverGroupHandler(alertReceiverGroupSvc)
 	adminHandler := handler.NewAdminHandler(app.Redis)
 	clusterHandler := handler.NewClusterHandler(clusterService)
 	podHandler := handler.NewPodHandler(podService)
@@ -247,10 +249,6 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	alerts.POST("/channels/preview-template", alertHandler.PreviewChannelTemplate)
 	alerts.GET("/events", alertHandler.ListEvents)
 	alerts.GET("/history/stats", alertHandler.HistoryStats)
-	alerts.GET("/policies", alertPolicyHandler.List)
-	alerts.POST("/policies", alertPolicyHandler.Create)
-	alerts.PUT("/policies/:id", alertPolicyHandler.Update)
-	alerts.DELETE("/policies/:id", alertPolicyHandler.Delete)
 
 	alerts.GET("/datasources", alertPlatformHandler.ListDatasources)
 	alerts.POST("/datasources", alertPlatformHandler.CreateDatasource)
@@ -276,6 +274,21 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	alerts.POST("/duty-blocks", alertPlatformHandler.CreateDutyBlock)
 	alerts.PUT("/duty-blocks/:id", alertPlatformHandler.UpdateDutyBlock)
 	alerts.DELETE("/duty-blocks/:id", alertPlatformHandler.DeleteDutyBlock)
+
+	// 订阅树（路由树）：用于更接近夜莺的“订阅/路由”配置方式
+	alerts.GET("/subscriptions", alertSubscriptionHandler.ListNodes)
+	alerts.GET("/subscriptions/tree", alertSubscriptionHandler.GetNodeTree)
+	alerts.POST("/subscriptions", alertSubscriptionHandler.CreateNode)
+	alerts.PUT("/subscriptions/:id", alertSubscriptionHandler.UpdateNode)
+	alerts.DELETE("/subscriptions/:id", alertSubscriptionHandler.DeleteNode)
+	alerts.POST("/subscriptions/:id/move", alertSubscriptionHandler.MoveNode)
+	alerts.POST("/subscriptions/migrate-from-policies", alertSubscriptionHandler.MigrateFromPolicies)
+
+	// 接收组（订阅节点引用）
+	alerts.GET("/receiver-groups", alertReceiverGroupHandler.List)
+	alerts.POST("/receiver-groups", alertReceiverGroupHandler.Create)
+	alerts.PUT("/receiver-groups/:id", alertReceiverGroupHandler.Update)
+	alerts.DELETE("/receiver-groups/:id", alertReceiverGroupHandler.Delete)
 
 	// 云服务器到期规则（Cloud Expiry Rules）
 	alerts.GET("/cloud-expiry-rules", cloudExpiryRuleHandler.List)

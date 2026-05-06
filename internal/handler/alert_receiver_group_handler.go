@@ -10,16 +10,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type AlertPolicyHandler struct {
-	svc *service.AlertPolicyService
+type AlertReceiverGroupHandler struct {
+	svc *service.AlertReceiverGroupService
 }
 
-func NewAlertPolicyHandler(svc *service.AlertPolicyService) *AlertPolicyHandler {
-	return &AlertPolicyHandler{svc: svc}
+func NewAlertReceiverGroupHandler(svc *service.AlertReceiverGroupService) *AlertReceiverGroupHandler {
+	return &AlertReceiverGroupHandler{svc: svc}
 }
 
-func (h *AlertPolicyHandler) List(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, q service.AlertPolicyListQuery) (gin.H, error) {
+func (h *AlertReceiverGroupHandler) List(c *gin.Context) {
+	handleQuery(c, func(ctx context.Context, q service.AlertReceiverGroupListQuery) (gin.H, error) {
 		list, total, page, pageSize, err := h.svc.List(ctx, q)
 		if err != nil {
 			return nil, err
@@ -28,22 +28,22 @@ func (h *AlertPolicyHandler) List(c *gin.Context) {
 	})
 }
 
-func (h *AlertPolicyHandler) Create(c *gin.Context) {
+func (h *AlertReceiverGroupHandler) Create(c *gin.Context) {
 	handleJSON(c, h.svc.Create)
 }
 
-func (h *AlertPolicyHandler) Update(c *gin.Context) {
+func (h *AlertReceiverGroupHandler) Update(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AlertPolicyUpsertRequest) (*model.AlertPolicy, error) {
+	handleJSON(c, func(ctx context.Context, req service.AlertReceiverGroupUpsertRequest) (*model.AlertReceiverGroup, error) {
 		return h.svc.Update(ctx, id, req)
 	})
 }
 
-func (h *AlertPolicyHandler) Delete(c *gin.Context) {
+func (h *AlertReceiverGroupHandler) Delete(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {
 		response.Error(c, err)
@@ -55,3 +55,4 @@ func (h *AlertPolicyHandler) Delete(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"message": "deleted"})
 }
+

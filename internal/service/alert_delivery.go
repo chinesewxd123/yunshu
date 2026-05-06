@@ -116,7 +116,7 @@ func (s *AlertService) renderChannelMessage(ctx context.Context, title, severity
 	if compact := alertnotify.FormatCompactLabels(labels, 24); strings.TrimSpace(compact) != "" {
 		labelsText = compact
 	}
-	occurredAt := payloadString(payload, "occurred_at")
+	occurredAt := payloadString(payload, "occurredAt")
 	if occurredAt == "" {
 		occurredAt = time.Now().In(time.Local).Format("2006-01-02 15:04:05 MST")
 	}
@@ -131,12 +131,12 @@ func (s *AlertService) renderChannelMessage(ctx context.Context, title, severity
 		"ProjectName":  s.resolveNotifyProjectName(ctx, payload),
 		"Cluster":      payloadString(payload, "cluster"),
 		"OccurredAt":   occurredAt,
-		"StartsAt":     alertnotify.FormatPayloadTime(payload["starts_at"]),
-		"EndsAt":       alertnotify.FormatPayloadTime(payload["ends_at"]),
+		"StartsAt":     alertnotify.FormatPayloadTime(payload["startsAt"]),
+		"EndsAt":       alertnotify.FormatPayloadTime(payload["endsAt"]),
 		"Current":      payloadString(payload, "current"),
 		"Count":        payloadString(payload, "count"),
 		"Fingerprint":  payloadString(payload, "fingerprint"),
-		"GeneratorURL": payloadString(payload, "generator_url"),
+		"GeneratorURL": payloadString(payload, "generatorURL"),
 		"Labels":       labels,
 		"LabelsText":   labelsText,
 	}
@@ -541,20 +541,20 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 	}
 
 	cluster := alertnotify.StringFromPayload(alertPayload, "cluster")
-	monPipe := strings.TrimSpace(alertnotify.StringFromPayload(alertPayload, "monitor_pipeline"))
-	groupKey := alertnotify.StringFromPayload(alertPayload, "group_key")
-	labelsDigest := alertnotify.StringFromPayload(alertPayload, "labels_digest")
+	monPipe := strings.TrimSpace(alertnotify.StringFromPayload(alertPayload, "monitorPipeline"))
+	groupKey := alertnotify.StringFromPayload(alertPayload, "groupKey")
+	labelsDigest := alertnotify.StringFromPayload(alertPayload, "labelsDigest")
 	if cluster == "" {
 		cluster = alertnotify.StringFromPayload(body, "cluster")
 	}
 	if monPipe == "" {
-		monPipe = strings.TrimSpace(alertnotify.StringFromPayload(body, "monitor_pipeline"))
+		monPipe = strings.TrimSpace(alertnotify.StringFromPayload(body, "monitorPipeline"))
 	}
 	if groupKey == "" {
-		groupKey = alertnotify.StringFromPayload(body, "group_key")
+		groupKey = alertnotify.StringFromPayload(body, "groupKey")
 	}
 	if labelsDigest == "" {
-		labelsDigest = alertnotify.StringFromPayload(body, "labels_digest")
+		labelsDigest = alertnotify.StringFromPayload(body, "labelsDigest")
 	}
 	httpOK := reqErr == nil && code >= 200 && code < 300
 	apiChecked, apiErr := webhookJSONAPIFailure(respBody)
@@ -576,8 +576,8 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 		MonitorPipeline:    monPipe,
 		GroupKey:           groupKey,
 		LabelsDigest:       labelsDigest,
-		MatchedPolicyIDs:   alertnotify.StringFromPayload(alertPayload, "matched_policy_ids"),
-		MatchedPolicyNames: alertnotify.StringFromPayload(alertPayload, "matched_policy_names"),
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(alertPayload, "matchedPolicyIds"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(alertPayload, "matchedPolicyNames"),
 		ChannelID:          channel.ID,
 		ChannelName:        channel.Name,
 		Success:            success,
@@ -618,7 +618,7 @@ func buildEventPayloadBytes(reqBytes []byte, alertPayload map[string]interface{}
 	if reqMap == nil {
 		reqMap = map[string]interface{}{}
 	}
-	for _, key := range []string{"starts_at", "startsAt", "occurred_at", "status", "severity", "group_key", "monitor_pipeline"} {
+	for _, key := range []string{"startsAt", "endsAt", "occurredAt", "generatorURL", "status", "severity", "groupKey", "monitorPipeline"} {
 		if _, exists := reqMap[key]; exists {
 			continue
 		}
@@ -769,11 +769,11 @@ func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.Aler
 		Severity:           severity,
 		Status:             status,
 		Cluster:            alertnotify.StringFromPayload(payload, "cluster"),
-		MonitorPipeline:    strings.TrimSpace(alertnotify.StringFromPayload(payload, "monitor_pipeline")),
-		GroupKey:           alertnotify.StringFromPayload(payload, "group_key"),
-		LabelsDigest:       alertnotify.StringFromPayload(payload, "labels_digest"),
-		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matched_policy_ids"),
-		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matched_policy_names"),
+		MonitorPipeline:    strings.TrimSpace(alertnotify.StringFromPayload(payload, "monitorPipeline")),
+		GroupKey:           alertnotify.StringFromPayload(payload, "groupKey"),
+		LabelsDigest:       alertnotify.StringFromPayload(payload, "labelsDigest"),
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matchedPolicyIds"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matchedPolicyNames"),
 		ChannelID:          channel.ID,
 		ChannelName:        channel.Name,
 		Success:            okCount > 0,

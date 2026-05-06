@@ -61,33 +61,9 @@ func (s *AlertService) tickMonitorRules(ctx context.Context) error {
 				defer s.monitorEvalLockRelease(ctx, r.ID)
 				s.evaluateOneMonitorRule(ctx, &r.AlertMonitorRule, r.ProjectID)
 			}(rule)
-			continue
 		}
-		if !s.shouldEvalRule(rule.ID, rule.EvalIntervalSeconds, now) {
-			continue
-		}
-		s.evaluateOneMonitorRule(ctx, &rule.AlertMonitorRule, rule.ProjectID)
 	}
 	return nil
-}
-
-func (s *AlertService) shouldEvalRule(ruleID uint, intervalSec int, now time.Time) bool {
-	if intervalSec < 5 {
-		intervalSec = 5
-	}
-	iv := time.Duration(intervalSec) * time.Second
-	s.monitorEvalMu.Lock()
-	defer s.monitorEvalMu.Unlock()
-	st, ok := s.monitorEvalState[ruleID]
-	if !ok {
-		st = &monitorEvalRuleState{}
-		s.monitorEvalState[ruleID] = st
-	}
-	if st.lastEval.IsZero() || now.Sub(st.lastEval) >= iv {
-		st.lastEval = now
-		return true
-	}
-	return false
 }
 
 func buildMonitorRuleLabels(rule *model.AlertMonitorRule, projectID uint) map[string]string {
@@ -234,99 +210,5 @@ func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.A
 	fp := fmt.Sprintf("monitor_rule_%d", rule.ID)
 	now := time.Now()
 
-	if s.redis != nil {
-		s.evaluateMonitorRuleWithRedis(ctx, rule, firing, labels, annotations, fp, now)
-		return
-	}
-
-	s.monitorEvalMu.Lock()
-	st, ok := s.monitorEvalState[rule.ID]
-	if !ok {
-		st = &monitorEvalRuleState{}
-		s.monitorEvalState[rule.ID] = st
-	}
-
-	if firing {
-		if st.activeFiring {
-			s.monitorEvalMu.Unlock()
-			return
-		}
-		if st.pendingSince == nil {
-			if rule.ForSeconds <= 0 {
-				st.activeFiring = true
-				s.monitorEvalMu.Unlock()
-				_ = s.ReceiveAlertmanager(ctx, AlertManagerPayload{
-					Receiver:     "platform-monitor",
-					Status:       "firing",
-					GroupLabels:  map[string]string{"alertname": rule.Name},
-					CommonLabels: labels,
-					Alerts: []AlertManagerAlert{{
-						Status:       "firing",
-						Labels:       labels,
-						Annotations:  annotations,
-						StartsAt:     now,
-						EndsAt:       now.Add(24 * time.Hour),
-						GeneratorURL: "",
-						Fingerprint:  fp,
-					}},
-				})
-				return
-			}
-			t := now
-			st.pendingSince = &t
-			s.monitorEvalMu.Unlock()
-			return
-		}
-		forDur := time.Duration(rule.ForSeconds) * time.Second
-		if forDur < 0 {
-			forDur = 0
-		}
-		if now.Sub(*st.pendingSince) >= forDur {
-			st.activeFiring = true
-			st.pendingSince = nil
-			s.monitorEvalMu.Unlock()
-			_ = s.ReceiveAlertmanager(ctx, AlertManagerPayload{
-				Receiver:     "platform-monitor",
-				Status:       "firing",
-				GroupLabels:  map[string]string{"alertname": rule.Name},
-				CommonLabels: labels,
-				Alerts: []AlertManagerAlert{{
-					Status:       "firing",
-					Labels:       labels,
-					Annotations:  annotations,
-					StartsAt:     now,
-					EndsAt:       now.Add(24 * time.Hour),
-					GeneratorURL: "",
-					Fingerprint:  fp,
-				}},
-			})
-			return
-		}
-		s.monitorEvalMu.Unlock()
-		return
-	}
-
-	if st.activeFiring {
-		st.activeFiring = false
-		st.pendingSince = nil
-		s.monitorEvalMu.Unlock()
-		_ = s.ReceiveAlertmanager(ctx, AlertManagerPayload{
-			Receiver:     "platform-monitor",
-			Status:       "resolved",
-			GroupLabels:  map[string]string{"alertname": rule.Name},
-			CommonLabels: labels,
-			Alerts: []AlertManagerAlert{{
-				Status:       "resolved",
-				Labels:       labels,
-				Annotations:  annotations,
-				StartsAt:     now.Add(-time.Minute),
-				EndsAt:       now,
-				GeneratorURL: "",
-				Fingerprint:  fp,
-			}},
-		})
-		return
-	}
-	st.pendingSince = nil
-	s.monitorEvalMu.Unlock()
+	s.evaluateMonitorRuleWithRedis(ctx, rule, firing, labels, annotations, fp, now)
 }

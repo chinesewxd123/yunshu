@@ -98,10 +98,12 @@ alert:
   dedup_ttl_seconds: 86400
   # group_key 聚合维度（用于服务端收敛/聚合）
   group_by: ["alertname", "cluster", "namespace", "severity", "receiver"]
-  # 同 group_key firing 状态最小发送间隔（秒）
-  notify_interval_seconds: 300
-  # 同 group_key resolved 状态最小发送间隔（秒），用于恢复汇总去抖
-  resolved_notify_interval_seconds: 30
+  # group 第一次发送前等待窗口（秒）：用于“先收集后发送”（对齐 Alertmanager/夜莺 group_wait）
+  group_wait_seconds: 0
+  # group 已发送后，若有“新变化”（labelsDigest变化）再次发送的最小间隔（秒）（对齐 group_interval）
+  group_interval_seconds: 60
+  # group 持续 firing 且无新变化时的重复提醒间隔（秒）（对齐 repeat_interval）
+  repeat_interval_seconds: 300
   # group_key 状态在 Redis 中过期时间（秒）
   aggregate_ttl_seconds: 86400
   # 平台消息长度限制（字符数，按 rune 计算；默认值偏保守，避免钉钉/企微超限）

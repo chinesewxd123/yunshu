@@ -40,10 +40,10 @@ type AlertEventListQuery struct {
 	PageSize        int    `form:"page_size"`
 	Keyword         string `form:"keyword"`
 	Cluster         string `form:"cluster"`
-	AlertIP         string `form:"alert_ip"`
+	AlertIP         string `form:"alertIP"`
 	Status          string `form:"status"`
-	MonitorPipeline string `form:"monitor_pipeline"`
-	GroupKey        string `form:"group_key"`
+	MonitorPipeline string `form:"monitorPipeline"`
+	GroupKey        string `form:"groupKey"`
 }
 
 type AlertChannelUpsertRequest struct {
@@ -90,7 +90,6 @@ type AlertService struct {
 	mailer      mailer.Sender
 	cfg         config.AlertConfig
 	enrichQueue chan promEnrichTask
-	policySvc   *AlertPolicyService
 
 	silenceSvc  *AlertSilenceService
 	assigneeSvc *AlertRuleAssigneeService
@@ -98,15 +97,16 @@ type AlertService struct {
 
 	monitorEvalCancel context.CancelFunc
 	monitorEvalMu     sync.Mutex
-	monitorEvalState  map[uint]*monitorEvalRuleState
 	aead              cipher.AEAD
 	cloudExpiryState  map[string]bool
-}
 
-type monitorEvalRuleState struct {
-	activeFiring bool
-	pendingSince *time.Time
-	lastEval     time.Time
+	// 可选依赖：告警抑制、订阅树路由
+	inhibitionSvc   *AlertInhibitionService   // 告警抑制服务
+	subscriptionSvc *AlertSubscriptionService // 订阅树服务
+	receiverGroupCache *ReceiverGroupCache    // 接收组缓存
+
+	metrics        *AlertMetrics // Prometheus自监控指标
+	metricsUpdater *AlertMetricsUpdater
 }
 
 // AlertServiceOptions 可选依赖：静默、处理人、内置规则评估。
@@ -135,11 +135,14 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 	if cfg.PromQueryTimeout <= 0 {
 		cfg.PromQueryTimeout = 5
 	}
-	if cfg.NotifyIntervalSeconds <= 0 {
-		cfg.NotifyIntervalSeconds = 300
+	if cfg.GroupWaitSeconds < 0 {
+		cfg.GroupWaitSeconds = 0
 	}
-	if cfg.ResolvedNotifyIntervalSeconds <= 0 {
-		cfg.ResolvedNotifyIntervalSeconds = 30
+	if cfg.GroupIntervalSeconds <= 0 {
+		cfg.GroupIntervalSeconds = 60
+	}
+	if cfg.RepeatIntervalSeconds <= 0 {
+		cfg.RepeatIntervalSeconds = 300
 	}
 	if cfg.AggregateTTLSeconds <= 0 {
 		cfg.AggregateTTLSeconds = 86400
@@ -161,90 +164,115 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 		redis:            redisClient,
 		mailer:           sender,
 		cfg:              cfg,
-		policySvc:        NewAlertPolicyService(db),
-		monitorEvalState: make(map[uint]*monitorEvalRuleState),
 		cloudExpiryState: make(map[string]bool),
+		inhibitionSvc:    NewAlertInhibitionService(db, redisClient),
+		subscriptionSvc:  NewAlertSubscriptionService(db),
+		receiverGroupCache: NewReceiverGroupCache(db),
+		metrics:          NewAlertMetrics(),
 	}
+
+	// 初始化指标更新器并启动
+	svc.metricsUpdater = NewAlertMetricsUpdater(svc.metrics, svc.inhibitionSvc)
+	svc.metricsUpdater.Start()
+
 	if opts != nil {
 		svc.silenceSvc = opts.SilenceSvc
 		svc.assigneeSvc = opts.AssigneeSvc
 		svc.dutySvc = opts.DutySvc
 	}
 	svc.startPrometheusEnrichWorkers()
+	svc.startInhibitionPruner(context.Background())
 	evalCtx, cancel := context.WithCancel(context.Background())
 	svc.monitorEvalCancel = cancel
 	go svc.runMonitorRuleEvaluator(evalCtx)
 	return svc
 }
 
+func (s *AlertService) GetSubscriptionService() *AlertSubscriptionService {
+	return s.subscriptionSvc
+}
+
 func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, labels map[string]string) (map[uint]struct{}, string, string, int) {
-	enabled, err := s.policySvc.ListEnabled(ctx)
-	if err != nil || len(enabled) == 0 {
+	// 彻底弃用旧策略：仅使用订阅树路由（订阅节点 -> 接收组 -> 通道）
+	if s.subscriptionSvc == nil || s.receiverGroupCache == nil {
+		return nil, "", "", 0
+	}
+	projectID := parseLabelUintOrZero(labels["project_id"])
+	severity := strings.TrimSpace(labels["severity"])
+	route, ok := s.subscriptionSvc.MatchRouteDetailed(ctx, projectID, labels, severity, status)
+	if !ok || len(route.ReceiverGroupIDs) == 0 {
 		return nil, "", "", 0
 	}
 	out := map[uint]struct{}{}
-	matchedIDs := make([]string, 0)
-	matchedNames := make([]string, 0)
-	maxSilenceSeconds := 0
-	for _, p := range enabled {
-		if status == "resolved" && !p.NotifyResolved {
+	for _, gid := range route.ReceiverGroupIDs {
+		g, err := s.receiverGroupCache.Get(gid)
+		if err != nil || g == nil {
 			continue
 		}
-		ids := s.policySvc.MatchPolicyChannels(p, labels)
-		if len(ids) > 0 {
-			matchedIDs = append(matchedIDs, fmt.Sprintf("%d", p.ID))
-			matchedNames = append(matchedNames, p.Name)
-			if p.SilenceSeconds > maxSilenceSeconds {
-				maxSilenceSeconds = p.SilenceSeconds
+		if !g.IsActiveNow() {
+			continue
+		}
+		for _, cid := range g.ChannelIDs {
+			if cid > 0 {
+				out[cid] = struct{}{}
 			}
 		}
-		for _, id := range ids {
-			out[id] = struct{}{}
-		}
 	}
-	return out, strings.Join(matchedIDs, ","), strings.Join(matchedNames, ","), maxSilenceSeconds
+	ids := make([]string, 0, len(route.MatchedNodeIDs))
+	for _, id := range route.MatchedNodeIDs {
+		ids = append(ids, fmt.Sprintf("%d", id))
+	}
+	return out, strings.Join(ids, ","), strings.Join(route.MatchedNodeNames, ","), route.SilenceSeconds
 }
 
-func (s *AlertService) shouldSuppressByPolicySilence(ctx context.Context, status, groupKey, matchedPolicyIDs string, silenceSeconds int, labels map[string]string) bool {
+func parseLabelUintOrZero(s string) uint {
+	n, ok := parseLabelUint(s)
+	if !ok {
+		return 0
+	}
+	return n
+}
+
+func (s *AlertService) shouldSuppressByRouteSilence(ctx context.Context, status, groupKey, matchedNodeIDs string, silenceSeconds int, labels map[string]string) bool {
 	if s.redis == nil || silenceSeconds <= 0 || status != "firing" {
 		return false
 	}
 	gk := strings.TrimSpace(groupKey)
-	pid := strings.TrimSpace(matchedPolicyIDs)
-	if gk == "" || pid == "" {
+	nid := strings.TrimSpace(matchedNodeIDs)
+	if gk == "" || nid == "" {
 		return false
 	}
-	key := "alert:policy:silence:" + gk + ":" + pid
+	key := "alert:subscription:silence:" + gk + ":" + nid
 	ok, err := s.redis.SetNX(ctx, key, "1", time.Duration(silenceSeconds)*time.Second).Result()
 	if err != nil {
 		return false
 	}
 	if labels != nil {
 		if ruleID, parsed := parseLabelUint(labels["monitor_rule_id"]); parsed && ruleID > 0 {
-			// 为规则列表页提供可观测状态：策略静默窗口剩余时间
-			_ = s.redis.Set(ctx, fmt.Sprintf("alert:policy:silence:rule:%d", ruleID), pid, time.Duration(silenceSeconds)*time.Second).Err()
+			// 为规则列表页提供可观测状态：订阅静默窗口剩余时间
+			_ = s.redis.Set(ctx, fmt.Sprintf("alert:subscription:silence:rule:%d", ruleID), nid, time.Duration(silenceSeconds)*time.Second).Err()
 		}
 	}
 	return !ok
 }
 
-func (s *AlertService) logSuppressedPolicySilence(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, silenceSeconds int, payload map[string]interface{}) {
+func (s *AlertService) logSuppressedRouteSilence(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, silenceSeconds int, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
 		Source:          "alertmanager",
-		Title:           title + " (policy silence suppressed)",
+		Title:           title + " (subscription silence suppressed)",
 		Severity:        severity,
 		Status:          status,
 		Cluster:         cluster,
-		MonitorPipeline: strings.TrimSpace(fmt.Sprintf("%v", payload["monitor_pipeline"])),
+		MonitorPipeline: strings.TrimSpace(fmt.Sprintf("%v", payload["monitorPipeline"])),
 		GroupKey:        strings.TrimSpace(groupKey),
 		LabelsDigest:    strings.TrimSpace(labelsDigest),
-		ChannelName:     "（未外发·策略静默窗口抑制）",
+		ChannelName:     "（未外发·订阅静默窗口抑制）",
 		Success:         true,
 		HTTPStatusCode:  200,
-		ErrorMessage:    "policy_suppressed",
+		ErrorMessage:    "subscription_suppressed",
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload: truncateText(fmt.Sprintf("suppressed by policy silence_seconds=%d", silenceSeconds), s.cfg.MaxPayloadChars),
+		ResponsePayload: truncateText(fmt.Sprintf("suppressed by subscription silence_seconds=%d", silenceSeconds), s.cfg.MaxPayloadChars),
 	}
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
@@ -505,14 +533,14 @@ func (s *AlertService) TestChannel(ctx context.Context, id uint, req AlertTestRe
 		severity = "info"
 	}
 	payload := map[string]interface{}{
-		"source":      "manual-test",
-		"title":       title,
-		"content":     content,
-		"summary":     content,
-		"severity":    severity,
-		"status":      "firing",
-		"occurred_at": time.Now().Format(time.RFC3339),
-		"cluster":     "manual-test",
+		"source":     "manual-test",
+		"title":      title,
+		"content":    content,
+		"summary":    content,
+		"severity":   severity,
+		"status":     "firing",
+		"occurredAt": time.Now().Format(time.RFC3339),
+		"cluster":    "manual-test",
 	}
 	_, _, err := s.sendToChannel(ctx, &ch, "manual-test", title, severity, "firing", payload)
 	return err
@@ -646,7 +674,7 @@ func extractAlertStartedAtFromPayload(requestPayload string) string {
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		return ""
 	}
-	for _, key := range []string{"starts_at", "startsAt"} {
+	for _, key := range []string{"startsAt"} {
 		v := strings.TrimSpace(fmt.Sprintf("%v", payload[key]))
 		if v != "" && v != "<nil>" {
 			return v
@@ -1034,8 +1062,8 @@ func (s *AlertService) logNoMatchedChannel(ctx context.Context, title, severity,
 		MonitorPipeline:    monitorPipelineFromPayload(payload),
 		GroupKey:           groupKey,
 		LabelsDigest:       labelsDigest,
-		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matched_policy_ids"),
-		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matched_policy_names"),
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matchedPolicyIds"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matchedPolicyNames"),
 		ChannelID:          0,
 		ChannelName:        "（无匹配通道）",
 		Success:            false,
@@ -1107,15 +1135,57 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 				minPayload := map[string]interface{}{
 					"labels": labels, "annotations": annotations, "severity": severity, "status": status,
 					"receiver": payload.Receiver, "fingerprint": alert.Fingerprint,
-					"group_key": groupKey, "cluster": envLabel, "labels_digest": labelsDigest,
-					"monitor_pipeline": monitorPipeline,
+					"groupKey": groupKey, "cluster": envLabel, "labelsDigest": labelsDigest,
+					"monitorPipeline": monitorPipeline,
 				}
 				s.logSilenceSuppressed(ctx, title, severity, status, envLabel, groupKey, labelsDigest, sid, minPayload)
 				continue
 			}
 		}
 
-		count, deduped, _ := s.updateFingerprintState(ctx, alert.Fingerprint, status)
+		count, _, _ := s.updateFingerprintState(ctx, alert.Fingerprint, status)
+
+		// 构建outgoing payload（提前到抑制检查前）
+		outgoing := map[string]interface{}{
+			"source":          "alertmanager",
+			"title":           title,
+			"summary":         summary,
+			"severity":        severity,
+			"status":          status,
+			"receiver":        payload.Receiver,
+			"fingerprint":     alert.Fingerprint,
+			"count":           count,
+			"labels":          labels,
+			"annotations":     annotations,
+			"group_labels":    payload.GroupLabels,
+			"am_version":      payload.Version,
+			"startsAt":        alert.StartsAt,
+			"endsAt":          alert.EndsAt,
+			"generatorURL":    alert.GeneratorURL,
+			"truncated":       payload.TruncatedAlerts,
+			"occurredAt":      time.Now().Format(time.RFC3339),
+			"cluster":         envLabel,
+			"monitorPipeline": monitorPipeline,
+			"groupKey":        groupKey,
+			"labelsDigest":    labelsDigest,
+		}
+
+		// 告警抑制检查
+		if status == "firing" && s.inhibitionSvc != nil {
+			if inhibited, inhEvent := s.CheckInhibition(ctx, labels); inhibited {
+				s.logInhibitionEvent(ctx, title, severity, status, envLabel, groupKey, labelsDigest, inhEvent, outgoing)
+				// 记录为被抑制的源告警（如果它本身匹配源告警规则）
+				_ = s.RecordSourceInhibition(ctx, labels)
+				continue
+			}
+			// 记录源告警（如果匹配）
+			_ = s.RecordSourceInhibition(ctx, labels)
+		}
+
+		// 清除源告警记录（当告警恢复时）
+		if status == "resolved" && s.inhibitionSvc != nil {
+			_ = s.ClearSourceInhibition(ctx, labels)
+		}
 
 		ctxEnrich, cancelEnrich := context.WithTimeout(ctx, time.Duration(maxInt(1, s.cfg.PromQueryTimeout))*time.Second)
 		currentValue := strings.TrimSpace(s.getCachedCurrentValue(ctx, alert.Fingerprint))
@@ -1129,6 +1199,7 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 		if currentValue == "" {
 			currentValue = "-"
 		}
+		outgoing["current"] = currentValue
 		// P3：异步增强，不阻塞通知主链路（缓存 miss 时上面已尽力同步查询）
 		if status == "firing" {
 			s.enqueuePrometheusEnrich(promEnrichTask{
@@ -1136,78 +1207,60 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 				GeneratorURL: alert.GeneratorURL,
 			})
 		}
-		outgoing := map[string]interface{}{
-			"source":           "alertmanager",
-			"title":            title,
-			"summary":          summary,
-			"severity":         severity,
-			"status":           status,
-			"receiver":         payload.Receiver,
-			"fingerprint":      alert.Fingerprint,
-			"count":            count,
-			"labels":           labels,
-			"annotations":      annotations,
-			"group_labels":     payload.GroupLabels,
-			"am_version":       payload.Version,
-			"starts_at":        alert.StartsAt,
-			"ends_at":          alert.EndsAt,
-			"generator_url":    alert.GeneratorURL,
-			"current":          currentValue,
-			"truncated":        payload.TruncatedAlerts,
-			"occurred_at":      time.Now().Format(time.RFC3339),
-			"cluster":          envLabel,
-			"monitor_pipeline": monitorPipeline,
-			"group_key":        groupKey,
-			"labels_digest":    labelsDigest,
+		// P3：异步增强，不阻塞通知主链路（缓存 miss 时上面已尽力同步查询）
+		if status == "firing" {
+			s.enqueuePrometheusEnrich(promEnrichTask{
+				Fingerprint:  alert.Fingerprint,
+				GeneratorURL: alert.GeneratorURL,
+			})
 		}
 		// Prometheus/Alertmanager 规则可在 labels 中携带 project_id，此处查库写入 project_name，供统一标题与通道展示。
 		s.enrichOutgoingProjectName(ctx, outgoing)
 		s.enrichAssigneeAndDutyEmails(ctx, outgoing, labels)
 
-		// 服务端第二层收敛：同 group_key 在 firing 状态下按 notify_interval 控制发送频率
+		// 服务端第二层收敛：对齐 Alertmanager/N9E 的 group_wait/group_interval/repeat_interval
 		if status == "firing" {
-			shouldSend, aggCount, firstSeen, lastSeen := s.updateGroupAggregateState(ctx, groupKey)
+			// 新一轮 firing 开始前，清理“恢复已发送”标记，允许后续新的 resolved 再发送一次恢复通知。
+			_ = s.clearResolvedNotificationSent(ctx, alert.Fingerprint)
+			shouldSend, reason, aggCount, firstSeen, lastSeen := s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
 			outgoing["agg_count"] = aggCount
 			outgoing["agg_first_seen"] = firstSeen
 			outgoing["agg_last_seen"] = lastSeen
 			if !shouldSend {
-				s.logSuppressedAggregate(ctx, title, severity, status, groupKey, outgoing)
+				outgoing["suppressed_reason"] = reason
+				s.logSuppressedFiringTiming(ctx, title, severity, status, groupKey, labelsDigest, reason, outgoing)
 				continue
 			}
 		}
 		if status == "resolved" {
-			// resolved 恢复汇总：短窗口内同 group_key 合并为一条恢复通知
-			shouldSend, rCount, firstSeen, lastSeen := s.updateGroupResolvedState(ctx, groupKey)
-			outgoing["resolved_count"] = rCount
-			outgoing["resolved_first_seen"] = firstSeen
-			outgoing["resolved_last_seen"] = lastSeen
-			outgoing["summary"] = fmt.Sprintf("恢复汇总：%d 条在 %s ~ %s 已恢复。", rCount, alertnotify.SafeOr(firstSeen, "-"), alertnotify.SafeOr(lastSeen, "-"))
-			outgoing["resolved_sent"] = shouldSend
-			if !shouldSend {
+			// 对齐夜莺/Alertmanager 语义：resolved 对同一 fingerprint 只发送一次。
+			firstResolved, _ := s.markResolvedNotificationSent(ctx, alert.Fingerprint)
+			if !firstResolved {
+				outgoing["resolved_sent"] = false
+				outgoing["summary"] = "重复恢复事件已抑制（同一告警实例仅发送一次恢复通知）。"
 				s.logSuppressedResolvedAggregate(ctx, title, severity, status, groupKey, outgoing)
 				continue
 			}
+			outgoing["resolved_sent"] = true
 		}
 
-		if status == "firing" && deduped {
-			s.logSuppressedDedup(ctx, title, severity, status, alert.Fingerprint, outgoing)
-			continue
-		}
-		policyChannels, matchedPolicyIDs, matchedPolicyNames, policySilenceSeconds := s.channelIDSetForAlert(ctx, status, labels)
-		outgoing["matched_policy_ids"] = matchedPolicyIDs
-		outgoing["matched_policy_names"] = matchedPolicyNames
-		outgoing["policy_silence_seconds"] = policySilenceSeconds
-		if len(policyChannels) == 0 {
+		// firing 去重不应阻断 repeat interval 语义：
+		// 具体“是否重复发送”由 groupKey 的 group_wait/group_interval/repeat_interval 状态机控制。
+		subscriptionChannels, matchedPolicyIDs, matchedPolicyNames, subscriptionSilenceSeconds := s.channelIDSetForAlert(ctx, status, labels)
+		outgoing["matchedPolicyIds"] = matchedPolicyIDs
+		outgoing["matchedPolicyNames"] = matchedPolicyNames
+		outgoing["subscription_silence_seconds"] = subscriptionSilenceSeconds
+		if len(subscriptionChannels) == 0 {
 			s.logNoMatchedChannel(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing, "no_policy_matched")
 			continue
 		}
-		if s.shouldSuppressByPolicySilence(ctx, status, groupKey, matchedPolicyIDs, policySilenceSeconds, labels) {
-			s.logSuppressedPolicySilence(ctx, title, severity, status, envLabel, groupKey, labelsDigest, policySilenceSeconds, outgoing)
+		if s.shouldSuppressByRouteSilence(ctx, status, groupKey, matchedPolicyIDs, subscriptionSilenceSeconds, labels) {
+			s.logSuppressedRouteSilence(ctx, title, severity, status, envLabel, groupKey, labelsDigest, subscriptionSilenceSeconds, outgoing)
 			continue
 		}
 		sentCount := 0
 		for i := range channels {
-			if _, ok := policyChannels[channels[i].ID]; !ok {
+			if _, ok := subscriptionChannels[channels[i].ID]; !ok {
 				continue
 			}
 			settings, _ := parseChannelSettings(channels[i].HeadersJSON)
@@ -1221,8 +1274,8 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			reason := "no_channel_matched"
 			if len(channels) == 0 {
 				reason = "no_enabled_channels"
-			} else if len(policyChannels) > 0 {
-				reason = "no_channel_matched_policy"
+			} else if len(subscriptionChannels) > 0 {
+				reason = "no_channel_matched_subscription"
 			}
 			s.logNoMatchedChannel(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing, reason)
 		}
@@ -1233,10 +1286,6 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			}
 			// resolved 到来：清理 firing 聚合状态，避免后续误聚合
 			_ = s.clearGroupAggregateState(ctx, groupKey)
-			// resolved 汇总发送后再清理 resolved 状态；若本次被去抖抑制，则保留用于后续汇总
-			if v, ok := outgoing["resolved_sent"].(bool); ok && v {
-				_ = s.clearGroupResolvedState(ctx, groupKey)
-			}
 		}
 	}
 	return nil
@@ -1283,7 +1332,7 @@ func monitorPipelineFromPayload(payload map[string]interface{}) string {
 	if payload == nil {
 		return ""
 	}
-	s := strings.TrimSpace(fmt.Sprintf("%v", payload["monitor_pipeline"]))
+	s := strings.TrimSpace(fmt.Sprintf("%v", payload["monitorPipeline"]))
 	if s == "" || s == "<nil>" {
 		return ""
 	}

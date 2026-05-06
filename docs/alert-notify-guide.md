@@ -25,8 +25,9 @@ alert:
   dedup_ttl_seconds: 86400
 
   group_by: ["alertname", "cluster", "namespace", "severity", "receiver"]
-  notify_interval_seconds: 300
-  resolved_notify_interval_seconds: 30
+  group_wait_seconds: 0
+  group_interval_seconds: 60
+  repeat_interval_seconds: 300
   aggregate_ttl_seconds: 86400
 
   platform_limits:
@@ -46,8 +47,9 @@ alert:
 
 - `webhook_token`：Alertmanager webhook 鉴权 token（请求头 `X-Alert-Token` 或 query `token`）
 - `group_by`：服务端 `group_key` 的计算维度
-- `notify_interval_seconds`：同一 `group_key` 的 firing 最小发送间隔
-- `resolved_notify_interval_seconds`：同一 `group_key` 的 resolved 最小发送间隔（恢复汇总去抖）
+- `group_wait_seconds`：首次见到某个 `group_key` 后的等待窗口（收集同组告警），到达后才允许“首次发送”
+- `group_interval_seconds`：已发送后，若组内容发生变化（平台用 `labels_digest` 近似）再次发送的最小间隔
+- `repeat_interval_seconds`：持续 firing 且无新变化时的重复提醒间隔
 - `aggregate_ttl_seconds`：聚合状态在 Redis 的保留时间
 - `platform_limits.*`：平台消息预算（当前按请求体 JSON 大小限制进行控制）
 - `prometheus_url`：用于从 `generatorURL` 解析表达式并查询当前值
@@ -141,23 +143,20 @@ groups:
 
 ---
 
-## 5. 告警与恢复的聚合收敛规则
+## 5. 告警与恢复的聚合收敛规则（对齐夜莺/Alertmanager）
 
 ## 5.1 firing（告警触发）
 
-- 先做指纹去重（`fingerprint`）
-- 再做 `group_key` 聚合节流：
-  - 首次必发
-  - 同组后续告警仅在 `notify_interval_seconds` 到达时发送
-  - 窗口内抑制事件写入数据库（`aggregate_suppressed`）
+- 以 `group_key` 为维度执行 group 时序语义：
+  - `group_wait_seconds`：首次见到 group 后先等待（收集同组告警），窗口内写抑制事件（`group_wait_suppressed`）
+  - `group_interval_seconds`：已发送后若组内发生“新变化”（平台用 `labels_digest` 近似），在窗口内写抑制事件（`group_interval_suppressed`）
+  - `repeat_interval_seconds`：持续 firing 且无变化时，在窗口内写抑制事件（`repeat_suppressed`）
 
 ## 5.2 resolved（告警恢复）
 
 - 已支持恢复通知（依赖 Alertmanager `send_resolved: true`）
-- 同一 `group_key` 的恢复在短窗口内合并成恢复汇总：
-  - 首次恢复必发
-  - 之后按 `resolved_notify_interval_seconds` 去抖
-  - 窗口内抑制事件写库（`resolved_aggregate_suppressed`）
+- 对齐夜莺语义：同一告警实例（同 `fingerprint`）的恢复通知 **仅发送一次**；
+  - 重复 resolved 事件会写库（`resolved_aggregate_suppressed`）但不会重复外发
 
 恢复汇总示例摘要：
 

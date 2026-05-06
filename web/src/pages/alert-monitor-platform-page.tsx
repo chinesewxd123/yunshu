@@ -2105,16 +2105,16 @@ export function AlertMonitorPlatformPage() {
           },
           {
             key: "policies",
-            label: "告警策略",
+            label: "订阅树路由",
             children: (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
                 <Alert
                   type="info"
                   showIcon
-                  message="告警策略只处理 Webhook 入站告警"
+                  message="订阅树统一处理 Webhook 入站告警与平台规则告警"
                   description={
                     <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                      <span>策略负责按 labels / regex 命中通道、静默窗口与恢复通知；它不等于 Prometheus 规则，也不直接改 Alertmanager 的静默状态。</span>
+                      <span>订阅节点按 labels / regex 命中接收组与通道，并执行节点静默窗口与恢复通知；它不等于 Prometheus 规则，也不直接改 Alertmanager 的静默状态。</span>
                       <Space wrap>
                         <Button size="small" onClick={openHistoryTab}>查看历史记录</Button>
                       </Space>
@@ -2131,7 +2131,7 @@ export function AlertMonitorPlatformPage() {
                         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                           <ul style={{ margin: 0, paddingLeft: 18 }}>
                             <li>
-                              <strong>告警策略</strong>：只对 Alertmanager Webhook 入站告警生效，决定命中哪些通道以及是否进入策略静默窗口。
+                              <strong>订阅树</strong>：对 Alertmanager Webhook 入站告警和平台规则告警统一生效，决定命中节点、接收组与通道，并执行订阅静默窗口。
                             </li>
                             <li>
                               <strong>监控规则与值班</strong>：平台定时向已登记数据源执行 PromQL，命中后走同一套通知链路。
@@ -2145,7 +2145,7 @@ export function AlertMonitorPlatformPage() {
                     },
                   ]}
                 />
-                <AlertConfigCenterPanel embedded hideTabs activeTab="policies" onTabChange={() => undefined} />
+                <AlertConfigCenterPanel embedded hideTabs activeTab="subscriptions" onTabChange={() => undefined} />
               </Space>
             ),
           },

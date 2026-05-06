@@ -124,10 +124,12 @@ type AlertConfig struct {
 	// GroupBy 决定 group_key 计算维度，用于服务端聚合/收敛。
 	// 建议包含：alertname, cluster, namespace, severity, receiver
 	GroupBy []string `mapstructure:"group_by"`
-	// NotifyIntervalSeconds: 同一个 group_key 在 firing 状态下的最小发送间隔（秒）。
-	NotifyIntervalSeconds int `mapstructure:"notify_interval_seconds"`
-	// ResolvedNotifyIntervalSeconds: 同一个 group_key 在 resolved 状态下的最小发送间隔（秒），用于恢复汇总去抖。
-	ResolvedNotifyIntervalSeconds int `mapstructure:"resolved_notify_interval_seconds"`
+	// GroupWaitSeconds: group 第一次发送前的等待窗口（秒），用于“先收集后发送”（类似 Alertmanager group_wait）。
+	GroupWaitSeconds int `mapstructure:"group_wait_seconds"`
+	// GroupIntervalSeconds: group 已发送后，若有“新变化”（labelsDigest 变化）再次发送的最小间隔（秒）（类似 Alertmanager group_interval）。
+	GroupIntervalSeconds int `mapstructure:"group_interval_seconds"`
+	// RepeatIntervalSeconds: group 在持续 firing 且无新变化时的重复提醒间隔（秒）（类似 Alertmanager repeat_interval）。
+	RepeatIntervalSeconds int `mapstructure:"repeat_interval_seconds"`
 	// AggregateTTLSeconds: group_key 状态在 Redis 中的过期时间（秒）。
 	AggregateTTLSeconds int `mapstructure:"aggregate_ttl_seconds"`
 
@@ -172,11 +174,14 @@ func Load(path string) (*Config, error) {
 	if cfg.Alert.PrometheusEnrichWorkers <= 0 {
 		cfg.Alert.PrometheusEnrichWorkers = 4
 	}
-	if cfg.Alert.NotifyIntervalSeconds <= 0 {
-		cfg.Alert.NotifyIntervalSeconds = 300
+	if cfg.Alert.GroupWaitSeconds < 0 {
+		cfg.Alert.GroupWaitSeconds = 0
 	}
-	if cfg.Alert.ResolvedNotifyIntervalSeconds <= 0 {
-		cfg.Alert.ResolvedNotifyIntervalSeconds = 30
+	if cfg.Alert.GroupIntervalSeconds <= 0 {
+		cfg.Alert.GroupIntervalSeconds = 60
+	}
+	if cfg.Alert.RepeatIntervalSeconds <= 0 {
+		cfg.Alert.RepeatIntervalSeconds = 300
 	}
 	if cfg.Alert.AggregateTTLSeconds <= 0 {
 		cfg.Alert.AggregateTTLSeconds = 86400

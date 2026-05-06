@@ -9,12 +9,12 @@ import (
 // BuildMarkdownCard 通用夜莺风格 Markdown：适用于 Prometheus/Alertmanager 全类告警（主机、容器、中间件、K8s 等）。
 // 段落间使用「---」分隔，列表项双换行以改善企业微信等客户端渲染。
 func BuildMarkdownCard(title, status, severity, summary string, dims Dims, payload map[string]interface{}) string {
-	occurredAt := strings.TrimSpace(fmt.Sprintf("%v", payload["occurred_at"]))
+	occurredAt := strings.TrimSpace(fmt.Sprintf("%v", payload["occurredAt"]))
 	current := strings.TrimSpace(fmt.Sprintf("%v", payload["current"]))
 	receiver := strings.TrimSpace(fmt.Sprintf("%v", payload["receiver"]))
 	fingerprint := strings.TrimSpace(fmt.Sprintf("%v", payload["fingerprint"]))
 	count := strings.TrimSpace(fmt.Sprintf("%v", payload["count"]))
-	generatorURL := strings.TrimSpace(fmt.Sprintf("%v", payload["generator_url"]))
+	generatorURL := strings.TrimSpace(fmt.Sprintf("%v", payload["generatorURL"]))
 	description := strings.TrimSpace(PayloadAnnotation(payload, "description"))
 	labels := PayloadLabels(payload)
 	hints := AuxiliaryStateHints(labels)
@@ -54,17 +54,17 @@ func BuildMarkdownCard(title, status, severity, summary string, dims Dims, paylo
 		hdr.WriteString("`\n\n**通知时间**: ")
 		hdr.WriteString(SafeOr(occurredAt, "-"))
 	}
-	if ts := FormatPayloadTime(payload["starts_at"]); ts != "" {
+	if ts := FormatPayloadTime(payload["startsAt"]); ts != "" {
 		hdr.WriteString("\n\n**起始时间**: ")
 		hdr.WriteString(ts)
 	}
-	if te := FormatPayloadTime(payload["ends_at"]); te != "" && isResolved {
+	if te := FormatPayloadTime(payload["endsAt"]); te != "" && isResolved {
 		hdr.WriteString("\n\n**结束时间**: ")
 		hdr.WriteString(te)
 	}
 	if isResolved {
-		if st, ok1 := ParsePayloadTime(payload["starts_at"]); ok1 {
-			if en, ok2 := ParsePayloadTime(payload["ends_at"]); ok2 && en.After(st) {
+		if st, ok1 := ParsePayloadTime(payload["startsAt"]); ok1 {
+			if en, ok2 := ParsePayloadTime(payload["endsAt"]); ok2 && en.After(st) {
 				if d := en.Sub(st); d > 0 {
 					hdr.WriteString("\n\n**持续时长**: ")
 					hdr.WriteString(d.Round(time.Second).String())
