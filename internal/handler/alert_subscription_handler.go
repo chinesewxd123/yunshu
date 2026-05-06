@@ -61,7 +61,7 @@ func (h *AlertSubscriptionHandler) ListNodes(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	response.Success(c, gin.H{
 		"list":      list,
 		"total":     total,
 		"page":      page,
@@ -97,7 +97,7 @@ func (h *AlertSubscriptionHandler) GetNodeTree(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, tree)
+	response.Success(c, tree)
 }
 
 // CreateNode godoc
@@ -122,7 +122,7 @@ func (h *AlertSubscriptionHandler) CreateNode(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, node)
+	response.Success(c, node)
 }
 
 // UpdateNode godoc
@@ -155,7 +155,7 @@ func (h *AlertSubscriptionHandler) UpdateNode(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, node)
+	response.Success(c, node)
 }
 
 // DeleteNode godoc
@@ -180,7 +180,7 @@ func (h *AlertSubscriptionHandler) DeleteNode(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	response.Success(c, gin.H{"message": "deleted"})
 }
 
 // MoveNode godoc
@@ -238,7 +238,7 @@ func (h *AlertSubscriptionHandler) MoveNode(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, updated)
+	response.Success(c, updated)
 }
 
 // migrateFromPoliciesBody 迁移旧策略时的可选参数。

@@ -1,4 +1,5 @@
 import { getData, http } from "./http";
+import type { ApiResponse } from "../types/api";
 
 export interface AlertSubscriptionNode {
   id: number;
@@ -47,8 +48,16 @@ export function listSubscriptionNodes(params: { project_id: number; parent_id?: 
   );
 }
 
-export function getSubscriptionTree(params: { project_id: number }) {
-  return getData<AlertSubscriptionNode[]>(http.get("/alerts/subscriptions/tree", { params }));
+/** 拉取订阅树；兼容旧版接口直接返回 JSON 数组、新版统一 { code, data } 两种形态 */
+export async function getSubscriptionTree(params: { project_id: number }) {
+  const res = await http.get<AlertSubscriptionNode[] | ApiResponse<AlertSubscriptionNode[]>>("/alerts/subscriptions/tree", {
+    params,
+  });
+  if (Array.isArray(res)) return res;
+  if (res && typeof res === "object" && "data" in res && Array.isArray((res as ApiResponse<AlertSubscriptionNode[]>).data)) {
+    return (res as ApiResponse<AlertSubscriptionNode[]>).data;
+  }
+  return [];
 }
 
 export function createSubscriptionNode(payload: Partial<AlertSubscriptionNode> & { project_id: number; name: string }) {
