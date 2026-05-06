@@ -310,13 +310,14 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     return walk(subTree);
   }, [subTree, subSelectedID]);
 
-  const loadSubscriptions = useCallback(async () => {
-    if (!subProjectID) return;
+  const loadSubscriptions = useCallback(async (overrideProjectId?: number) => {
+    const pid = overrideProjectId ?? subProjectID;
+    if (!pid) return;
     setSubLoading(true);
     try {
       const [tree, groups] = await Promise.all([
-        getSubscriptionTree({ project_id: subProjectID }),
-        listReceiverGroups({ project_id: subProjectID, page: 1, page_size: 200 }),
+        getSubscriptionTree({ project_id: pid }),
+        listReceiverGroups({ project_id: pid, page: 1, page_size: 200 }),
       ]);
       setSubTree(tree ?? []);
       setReceiverGroups(groups.list ?? groups.items ?? []);
@@ -417,9 +418,19 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
   }
 
   async function migrateOldPolicies() {
-    const rep = await migratePoliciesToSubscriptions({ disable_old: true });
-    message.success(`迁移完成：策略${rep.policies_total}，迁移${rep.policies_migrated}，节点${rep.nodes_created}，接收组${rep.receiver_groups_created}`);
-    await loadSubscriptions();
+    const rep = await migratePoliciesToSubscriptions({
+      disable_old: true,
+      ...(subProjectID ? { default_project_id: subProjectID } : {}),
+    });
+    const targetPid = Number(rep.resolved_default_project_id) || subProjectID;
+    if (targetPid > 0) {
+      setSubProjectID(targetPid);
+    }
+    message.success(
+      `迁移完成：策略${rep.policies_total}，迁移${rep.policies_migrated}，节点${rep.nodes_created}，接收组${rep.receiver_groups_created}` +
+        (targetPid > 0 ? `（已切换到项目 ID ${targetPid} 查看订阅树）` : ""),
+    );
+    await loadSubscriptions(targetPid > 0 ? targetPid : undefined);
   }
 
   const loadEvents = useCallback(

@@ -241,16 +241,28 @@ func (h *AlertSubscriptionHandler) MoveNode(c *gin.Context) {
 	c.JSON(http.StatusOK, updated)
 }
 
+// migrateFromPoliciesBody 迁移旧策略时的可选参数。
+type migrateFromPoliciesBody struct {
+	DisableOld       *bool `json:"disable_old"`
+	DefaultProjectID *uint `json:"default_project_id"`
+}
+
 // MigrateFromPolicies 将旧告警策略迁移为订阅树节点 + 接收组。
 func (h *AlertSubscriptionHandler) MigrateFromPolicies(c *gin.Context) {
+	var body migrateFromPoliciesBody
+	_ = c.ShouldBindJSON(&body)
 	disableOld := true
-	var req map[string]bool
-	if err := c.ShouldBindJSON(&req); err == nil {
-		if v, ok := req["disable_old"]; ok {
-			disableOld = v
-		}
+	if body.DisableOld != nil {
+		disableOld = *body.DisableOld
 	}
-	rep, err := h.svc.MigrateFromPolicies(c.Request.Context(), disableOld)
+	var defaultPID uint
+	if body.DefaultProjectID != nil {
+		defaultPID = *body.DefaultProjectID
+	}
+	rep, err := h.svc.MigrateFromPolicies(c.Request.Context(), service.MigrateFromPoliciesOptions{
+		DisableOld:       disableOld,
+		DefaultProjectID: defaultPID,
+	})
 	if err != nil {
 		response.Error(c, err)
 		return

@@ -16,13 +16,32 @@ type SubscriptionMigrationReport struct {
 	ReceiverGroupsCreated int `json:"receiver_groups_created"`
 	NodesCreated          int `json:"nodes_created"`
 	PoliciesDisabled      int `json:"policies_disabled"`
+	// ResolvedDefaultProjectID 当策略 match_labels 未带 project_id 时，实际归入的项目 ID（便于前端选中同一项目查看树）
+	ResolvedDefaultProjectID uint `json:"resolved_default_project_id"`
 }
 
-func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, disableOld bool) (*SubscriptionMigrationReport, error) {
+// MigrateFromPoliciesOptions 迁移参数：DefaultProjectID 非 0 时，作为「未写 project_id」策略的目标项目；为 0 则取数据库中首个启用项目。
+type MigrateFromPoliciesOptions struct {
+	DisableOld         bool
+	DefaultProjectID   uint
+}
+
+func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, opts MigrateFromPoliciesOptions) (*SubscriptionMigrationReport, error) {
+	disableOld := opts.DisableOld
 	rep := &SubscriptionMigrationReport{}
 	if s == nil || s.db == nil {
 		return rep, nil
 	}
+
+	fallbackProject := opts.DefaultProjectID
+	if fallbackProject == 0 {
+		fp, err := s.firstEnabledProjectID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("无法为未指定 project_id 的策略确定目标项目（请先创建业务项目）: %w", err)
+		}
+		fallbackProject = fp
+	}
+	rep.ResolvedDefaultProjectID = fallbackProject
 	// 旧策略代码已剔除：迁移仅通过表读取历史数据（alert_policies）
 	type legacyPolicy struct {
 		ID            uint      `gorm:"column:id"`
@@ -85,6 +104,9 @@ func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, disa
 			continue
 		}
 		projectID := extractProjectIDFromPolicyMatchLabels(p.MatchLabelsJSON)
+		if projectID == 0 {
+			projectID = fallbackProject
+		}
 		root, err := getOrCreateRoot(projectID)
 		if err != nil {
 			return nil, err
@@ -180,5 +202,17 @@ func extractProjectIDFromPolicyMatchLabels(raw string) uint {
 		}
 	}
 	return 0
+}
+
+func (s *AlertSubscriptionService) firstEnabledProjectID(ctx context.Context) (uint, error) {
+	var p model.Project
+	err := s.db.WithContext(ctx).Where("status = ?", 1).Order("id ASC").First(&p).Error
+	if err != nil {
+		return 0, err
+	}
+	if p.ID == 0 {
+		return 0, fmt.Errorf("no project")
+	}
+	return p.ID, nil
 }
 

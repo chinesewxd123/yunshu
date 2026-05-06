@@ -136,10 +136,11 @@ func (s *AlertSubscriptionService) GetNodeByID(ctx context.Context, id uint) (*m
 }
 
 // GetNodeTree 获取完整订阅树（按项目）
+// 管理界面需展示启用与停用节点，故不按 enabled 过滤（路由匹配缓存仍只加载 enabled=true）。
 func (s *AlertSubscriptionService) GetNodeTree(ctx context.Context, projectID uint) ([]model.AlertSubscriptionNode, error) {
 	var nodes []model.AlertSubscriptionNode
 	if err := s.db.WithContext(ctx).
-		Where("project_id = ? AND enabled = ?", projectID, true).
+		Where("project_id = ?", projectID).
 		Order("path ASC, id ASC").
 		Find(&nodes).Error; err != nil {
 		return nil, err

@@ -67,10 +67,19 @@ export function moveSubscriptionNode(id: number, payload: { new_parent_id?: numb
   return getData<AlertSubscriptionNode>(http.post(`/alerts/subscriptions/${id}/move`, payload));
 }
 
-export function migratePoliciesToSubscriptions(payload?: { disable_old?: boolean }) {
-  return getData<{ policies_total: number; policies_migrated: number; receiver_groups_created: number; nodes_created: number; policies_disabled: number }>(
-    http.post("/alerts/subscriptions/migrate-from-policies", payload ?? { disable_old: true }),
-  );
+export function migratePoliciesToSubscriptions(payload?: {
+  disable_old?: boolean;
+  /** 未在 match_labels 中写 project_id 的策略归入该项目；不传则由服务端取首个启用项目 */
+  default_project_id?: number;
+}) {
+  return getData<{
+    policies_total: number;
+    policies_migrated: number;
+    receiver_groups_created: number;
+    nodes_created: number;
+    policies_disabled: number;
+    resolved_default_project_id?: number;
+  }>(http.post("/alerts/subscriptions/migrate-from-policies", payload ?? { disable_old: true }));
 }
 
 export function listReceiverGroups(params: { project_id?: number; keyword?: string; enabled?: boolean; page?: number; page_size?: number }) {
