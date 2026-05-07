@@ -153,23 +153,43 @@ func (s *AlertSubscriptionService) GetNodeTree(ctx context.Context, projectID ui
 	return buildNodeTree(nodes), nil
 }
 
-// buildNodeTree 将扁平列表构建为树结构
+// buildNodeTree 将扁平列表构建为树结构。
+// 注意：旧实现向父节点 append 的是结构体副本，子节点的 Children 后续无法再挂孙节点，导致 UI 上只能看到「并排根节点」。
+// 此处按父 ID 递归拼装，保证任意深度嵌套正确。
 func buildNodeTree(nodes []model.AlertSubscriptionNode) []model.AlertSubscriptionNode {
-	nodeMap := make(map[uint]*model.AlertSubscriptionNode)
-	for i := range nodes {
-		nodeMap[nodes[i].ID] = &nodes[i]
+	if len(nodes) == 0 {
+		return nil
 	}
-
+	byID := make(map[uint]*model.AlertSubscriptionNode, len(nodes))
+	for i := range nodes {
+		nodes[i].Children = nil
+		byID[nodes[i].ID] = &nodes[i]
+	}
+	var childrenOf func(uint) []model.AlertSubscriptionNode
+	childrenOf = func(parentID uint) []model.AlertSubscriptionNode {
+		var out []model.AlertSubscriptionNode
+		for i := range nodes {
+			p := nodes[i].ParentID
+			if p == nil || *p != parentID {
+				continue
+			}
+			sub := *byID[nodes[i].ID]
+			sub.Children = childrenOf(nodes[i].ID)
+			out = append(out, sub)
+		}
+		sort.Slice(out, func(a, b int) bool { return out[a].ID < out[b].ID })
+		return out
+	}
 	var roots []model.AlertSubscriptionNode
 	for i := range nodes {
-		if nodes[i].ParentID == nil {
-			roots = append(roots, nodes[i])
-		} else {
-			if parent, ok := nodeMap[*nodes[i].ParentID]; ok {
-				parent.Children = append(parent.Children, nodes[i])
-			}
+		if nodes[i].ParentID != nil {
+			continue
 		}
+		r := *byID[nodes[i].ID]
+		r.Children = childrenOf(nodes[i].ID)
+		roots = append(roots, r)
 	}
+	sort.Slice(roots, func(a, b int) bool { return roots[a].ID < roots[b].ID })
 	return roots
 }
 

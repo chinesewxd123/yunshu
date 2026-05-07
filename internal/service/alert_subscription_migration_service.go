@@ -107,6 +107,15 @@ func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, opts
 		if projectID == 0 {
 			projectID = fallbackProject
 		}
+		policyCode := fmt.Sprintf("policy_%d", p.ID)
+		var already model.AlertSubscriptionNode
+		if err := s.db.WithContext(ctx).
+			Where("project_id = ? AND code = ?", projectID, policyCode).
+			First(&already).Error; err == nil {
+			// 已迁移过（重复执行迁移时避免再建接收组/节点）
+			continue
+		}
+
 		root, err := getOrCreateRoot(projectID)
 		if err != nil {
 			return nil, err

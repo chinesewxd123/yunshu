@@ -283,18 +283,28 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     if (!subProjectID && normalized.length) setSubProjectID(normalized[0].id);
   }
 
-  const receiverGroupOptions = useMemo(
-    () => receiverGroups.map((g) => ({ label: g.name, value: g.id })),
-    [receiverGroups],
-  );
+  const receiverGroupOptions = useMemo(() => {
+    const seen = new Set<number>();
+    const out: { label: string; value: number }[] = [];
+    for (const g of receiverGroups) {
+      const id = Number(g.id);
+      if (!Number.isFinite(id) || id <= 0 || seen.has(id)) continue;
+      seen.add(id);
+      out.push({ label: g.name, value: id });
+    }
+    return out;
+  }, [receiverGroups]);
 
   const subscriptionTreeData = useMemo(() => {
-    const toTree = (nodes: AlertSubscriptionNode[]): any[] =>
-      (nodes ?? []).map((n) => ({
-        key: n.id,
-        title: `${n.name}${n.enabled ? "" : "（停用）"}`,
-        children: toTree(n.children ?? []),
-      }));
+    const toTree = (nodes: AlertSubscriptionNode[]): { key: string; title: string; children?: ReturnType<typeof toTree> }[] =>
+      (nodes ?? []).map((n) => {
+        const ch = toTree(n.children ?? []);
+        return {
+          key: String(n.id),
+          title: `${n.name}${n.enabled ? "" : "（停用）"}`,
+          ...(ch.length > 0 ? { children: ch } : {}),
+        };
+      });
     return toTree(subTree);
   }, [subTree]);
 
@@ -549,7 +559,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
             <Card size="small" title="订阅树" loading={subLoading} styles={{ body: { padding: 8 } }}>
               <Tree
                 treeData={subscriptionTreeData}
-                selectedKeys={subSelectedID ? [subSelectedID] : []}
+                selectedKeys={subSelectedID ? [String(subSelectedID)] : []}
                 onSelect={(keys) => {
                   const id = Number(keys?.[0] ?? 0);
                   if (id > 0) void onSelectSubscriptionNode(id);
