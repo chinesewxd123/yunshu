@@ -1,5 +1,4 @@
 import { getData, http } from "./http";
-import type { ApiResponse } from "../types/api";
 
 export interface AlertSubscriptionNode {
   id: number;
@@ -48,14 +47,13 @@ export function listSubscriptionNodes(params: { project_id: number; parent_id?: 
   );
 }
 
-/** 拉取订阅树；兼容旧版接口直接返回 JSON 数组、新版统一 { code, data } 两种形态 */
-export async function getSubscriptionTree(params: { project_id: number }) {
-  const res = await http.get<AlertSubscriptionNode[] | ApiResponse<AlertSubscriptionNode[]>>("/alerts/subscriptions/tree", {
-    params,
-  });
-  if (Array.isArray(res)) return res;
-  if (res && typeof res === "object" && "data" in res && Array.isArray((res as ApiResponse<AlertSubscriptionNode[]>).data)) {
-    return (res as ApiResponse<AlertSubscriptionNode[]>).data;
+/** 拉取订阅树；兼容旧版直接返回 JSON 数组、新版统一 { code, data }（axios 拦截器已解包为 body） */
+export async function getSubscriptionTree(params: { project_id: number }): Promise<AlertSubscriptionNode[]> {
+  const raw: unknown = await http.get("/alerts/subscriptions/tree", { params });
+  if (Array.isArray(raw)) return raw as AlertSubscriptionNode[];
+  if (raw !== null && typeof raw === "object" && "data" in raw) {
+    const d = (raw as { data?: unknown }).data;
+    if (Array.isArray(d)) return d as AlertSubscriptionNode[];
   }
   return [];
 }

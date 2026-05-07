@@ -295,15 +295,18 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     return out;
   }, [receiverGroups]);
 
+  type SubscriptionAntTreeNode = { key: string; title: string; children?: SubscriptionAntTreeNode[] };
+
   const subscriptionTreeData = useMemo(() => {
-    const toTree = (nodes: AlertSubscriptionNode[]): { key: string; title: string; children?: ReturnType<typeof toTree> }[] =>
+    const toTree = (nodes: AlertSubscriptionNode[]): SubscriptionAntTreeNode[] =>
       (nodes ?? []).map((n) => {
         const ch = toTree(n.children ?? []);
-        return {
+        const row: SubscriptionAntTreeNode = {
           key: String(n.id),
           title: `${n.name}${n.enabled ? "" : "（停用）"}`,
-          ...(ch.length > 0 ? { children: ch } : {}),
         };
+        if (ch.length > 0) row.children = ch;
+        return row;
       });
     return toTree(subTree);
   }, [subTree]);
