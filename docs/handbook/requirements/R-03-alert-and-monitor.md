@@ -27,7 +27,7 @@
 | 项目绑定 | 规则项目从数据源推导；通知邮箱 = 处理人 ∪ **项目启用成员邮箱** |
 | 静默 | 时间区间、matcher 与 Alertmanager 语义对齐；批量静默对多条分别创建 |
 | 值班 | `alert_duty_blocks` 挂 `monitor_rule_id`；与处理人邮箱合并去重 |
-| 订阅树 | 节点 `match_labels_json` / `match_regex_json` 为 JSON 字符串，需合法；节点引用接收组，接收组再绑定通道 |
+| 订阅树 | 节点 `match_labels_json` / `match_regex_json` 为 JSON 字符串，需合法；节点引用接收组，接收组再绑定通道；与 Prometheus/平台规则 labels 对齐约定见 `docs/alert-subscription-labels-chain.md` |
 
 ## 4. 相关表
 

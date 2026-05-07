@@ -1090,6 +1090,31 @@ func (s *AlertService) logNoMatchedChannel(ctx context.Context, title, severity,
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
+func (s *AlertService) logAllChannelsDeliveryFailed(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, payload map[string]interface{}) {
+	reqBytes, _ := json.Marshal(payload)
+	event := model.AlertEvent{
+		Source:             "alertmanager",
+		Title:              title + " (all channel delivery failed)",
+		Severity:           severity,
+		Status:             status,
+		Cluster:            cluster,
+		MonitorPipeline:    monitorPipelineFromPayload(payload),
+		GroupKey:           groupKey,
+		LabelsDigest:       labelsDigest,
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matchedPolicyIds"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matchedPolicyNames"),
+		ChannelID:          0,
+		ChannelName:        "（外发失败·全部通道）",
+		Success:            false,
+		HTTPStatusCode:     0,
+		ErrorMessage:       "all_channel_delivery_failed",
+		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
+		ResponsePayload:    "",
+	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
+	_ = s.db.WithContext(ctx).Create(&event).Error
+}
+
 // ReceiveAlertmanager 执行对应的业务逻辑。
 func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertManagerPayload) error {
 	var channels []model.AlertChannel
@@ -1250,17 +1275,6 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 				continue
 			}
 		}
-		if status == "resolved" {
-			// 对齐夜莺/Alertmanager 语义：resolved 对同一 fingerprint 只发送一次。
-			firstResolved, _ := s.markResolvedNotificationSent(ctx, alert.Fingerprint)
-			if !firstResolved {
-				outgoing["resolved_sent"] = false
-				outgoing["summary"] = "重复恢复事件已抑制（同一告警实例仅发送一次恢复通知）。"
-				s.logSuppressedResolvedAggregate(ctx, title, severity, status, groupKey, outgoing)
-				continue
-			}
-			outgoing["resolved_sent"] = true
-		}
 
 		// firing 去重不应阻断 repeat interval 语义：
 		// 具体“是否重复发送”由 groupKey 的 group_wait/group_interval/repeat_interval 状态机控制。
@@ -1276,7 +1290,28 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			s.logSuppressedRouteSilence(ctx, title, severity, status, envLabel, groupKey, labelsDigest, subscriptionSilenceSeconds, outgoing)
 			continue
 		}
+		if status == "resolved" && !s.alertFiringWasDelivered(ctx, alert.Fingerprint) {
+			s.logResolvedSuppressedNoPriorFiringDelivery(ctx, title, severity, status, groupKey, labelsDigest, outgoing)
+			_ = s.clearFingerprintState(ctx, alert.Fingerprint)
+			if s.redis != nil && strings.TrimSpace(alert.Fingerprint) != "" {
+				_ = s.redis.Del(ctx, "alert:current:"+strings.TrimSpace(alert.Fingerprint)).Err()
+			}
+			_ = s.clearGroupAggregateState(ctx, groupKey)
+			continue
+		}
+		// 恢复通知去重：仅在确定会尝试外发之后占位，避免 no_policy / 无 prior firing 等路径误占槽导致永不重试。
+		if status == "resolved" {
+			firstResolved, _ := s.markResolvedNotificationSent(ctx, alert.Fingerprint)
+			if !firstResolved {
+				outgoing["resolved_sent"] = false
+				outgoing["summary"] = "重复恢复事件已抑制（同一告警实例仅发送一次恢复通知）。"
+				s.logSuppressedResolvedAggregate(ctx, title, severity, status, groupKey, outgoing)
+				continue
+			}
+			outgoing["resolved_sent"] = true
+		}
 		sentCount := 0
+		okDeliveries := 0
 		for i := range channels {
 			if _, ok := subscriptionChannels[channels[i].ID]; !ok {
 				continue
@@ -1286,7 +1321,16 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 				continue
 			}
 			sentCount++
-			_, _, _ = s.sendToChannel(ctx, &channels[i], alertdispatch.NewEnvelope("alertmanager", title, severity, status, outgoing))
+			code, _, err := s.sendToChannel(ctx, &channels[i], alertdispatch.NewEnvelope("alertmanager", title, severity, status, outgoing))
+			if err == nil && code >= 200 && code < 300 {
+				okDeliveries++
+			}
+		}
+		if status == "firing" && okDeliveries > 0 {
+			s.markAlertFiringDelivered(ctx, alert.Fingerprint)
+		}
+		if status == "resolved" && okDeliveries == 0 {
+			_ = s.clearResolvedNotificationSent(ctx, alert.Fingerprint)
 		}
 		if sentCount == 0 {
 			reason := "no_channel_matched"
@@ -1297,6 +1341,9 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			}
 			s.logNoMatchedChannel(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing, reason)
 		}
+		if status == "firing" && sentCount > 0 && okDeliveries == 0 {
+			s.logAllChannelsDeliveryFailed(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing)
+		}
 		if status == "resolved" {
 			_ = s.clearFingerprintState(ctx, alert.Fingerprint)
 			if s.redis != nil && strings.TrimSpace(alert.Fingerprint) != "" {
@@ -1304,6 +1351,7 @@ func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertMan
 			}
 			// resolved 到来：清理 firing 聚合状态，避免后续误聚合
 			_ = s.clearGroupAggregateState(ctx, groupKey)
+			s.clearAlertFiringDelivered(ctx, alert.Fingerprint)
 		}
 	}
 	return nil

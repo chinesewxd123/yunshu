@@ -300,6 +300,60 @@ func (s *AlertService) decideFiringGroupTiming(ctx context.Context, groupKey, la
 	return true, "", c, firstSeen, lastSeen
 }
 
+func firingDeliveredRedisKey(fingerprint string) string {
+	return "alert:firing_delivered:" + strings.TrimSpace(fingerprint)
+}
+
+// markAlertFiringDelivered 记录「该指纹已成功外发过至少一次 firing 通知」，
+// 避免 firing 被分组节流等抑制后，resolved 仍外发造成「只有恢复没有触发」。
+func (s *AlertService) markAlertFiringDelivered(ctx context.Context, fingerprint string) {
+	if s.redis == nil || strings.TrimSpace(fingerprint) == "" {
+		return
+	}
+	ttlSec := maxInt(s.cfg.AggregateTTLSeconds, 7*24*3600)
+	_ = s.redis.Set(ctx, firingDeliveredRedisKey(fingerprint), "1", time.Duration(ttlSec)*time.Second).Err()
+}
+
+func (s *AlertService) alertFiringWasDelivered(ctx context.Context, fingerprint string) bool {
+	if s.redis == nil || strings.TrimSpace(fingerprint) == "" {
+		return true
+	}
+	v, err := s.redis.Get(ctx, firingDeliveredRedisKey(fingerprint)).Result()
+	return err == nil && strings.TrimSpace(v) == "1"
+}
+
+func (s *AlertService) clearAlertFiringDelivered(ctx context.Context, fingerprint string) {
+	if s.redis == nil || strings.TrimSpace(fingerprint) == "" {
+		return
+	}
+	_ = s.redis.Del(ctx, firingDeliveredRedisKey(fingerprint)).Err()
+}
+
+func (s *AlertService) logResolvedSuppressedNoPriorFiringDelivery(ctx context.Context, title, severity, status, groupKey, labelsDigest string, payload map[string]interface{}) {
+	reqBytes, _ := json.Marshal(payload)
+	event := model.AlertEvent{
+		Source:             "alertmanager",
+		Title:              title + " (resolved suppressed: no prior firing delivery)",
+		Severity:           severity,
+		Status:             status,
+		Cluster:            strings.TrimSpace(fmt.Sprintf("%v", payload["cluster"])),
+		MonitorPipeline:    strings.TrimSpace(fmt.Sprintf("%v", payload["monitorPipeline"])),
+		GroupKey:           strings.TrimSpace(groupKey),
+		LabelsDigest:       strings.TrimSpace(labelsDigest),
+		MatchedPolicyIDs:   strings.TrimSpace(fmt.Sprintf("%v", payload["matchedPolicyIds"])),
+		MatchedPolicyNames: strings.TrimSpace(fmt.Sprintf("%v", payload["matchedPolicyNames"])),
+		ChannelID:          0,
+		ChannelName:        "（未外发·无成功触发投递）",
+		Success:            true,
+		HTTPStatusCode:     200,
+		ErrorMessage:       "resolved_no_prior_firing_delivery",
+		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
+		ResponsePayload:  "firing 未成功投递到任何通道（可能为分组节流抑制或通道失败），已抑制恢复外发",
+	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
+	_ = s.db.WithContext(ctx).Create(&event).Error
+}
+
 func (s *AlertService) logSuppressedFiringTiming(ctx context.Context, title, severity, status, groupKey, labelsDigest, reason string, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{

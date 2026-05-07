@@ -105,6 +105,10 @@ groups:
           summary: "磁盘使用率过高"
 ```
 
+**订阅树与标签链路**（`match_labels_json`、匹配级别、Prometheus / 平台规则 labels 如何对齐）：见 [告警订阅标签链路约定](./alert-subscription-labels-chain.md)。
+
+**路由、值班、单节点、resolved 行为等运维说明**：见 [告警路由与投递指南](./alert-routing-and-delivery-guide.md)。
+
 ---
 
 ## 4. 通道配置（页面：Webhook 告警通道）
