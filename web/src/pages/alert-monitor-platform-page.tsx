@@ -1316,6 +1316,7 @@ export function AlertMonitorPlatformPage() {
       eval_interval_seconds: 30,
       severity: "warning",
       threshold_unit: "percent",
+      labels_json: "{}",
       summary_template: "{{$labels.instance}}: {{.RuleName}} 告警触发，当前值 {{$value}}",
       description_template: "规则 {{.RuleName}} 触发，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
       rule_template_preset: "generic",
@@ -1490,6 +1491,7 @@ export function AlertMonitorPlatformPage() {
       eval_interval_seconds: r.eval_interval_seconds,
       severity: r.severity,
       threshold_unit: r.threshold_unit || "raw",
+      labels_json: stringifyPrettyJSON(r.labels ?? {}, "{}"),
       summary_template: summaryTemplate || "{{$labels.instance}}: {{.RuleName}} 告警触发，当前值 {{$value}}",
       description_template: descriptionTemplate || "规则 {{.RuleName}} 触发，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
       rule_template_preset: presetKey,
@@ -1648,10 +1650,15 @@ export function AlertMonitorPlatformPage() {
     try {
       const v = await ruleForm.validateFields();
       const normalizedUnit = String(v.threshold_unit || "raw").trim().toLowerCase() === "precent" ? "percent" : v.threshold_unit;
+      const labelsNorm = normalizeCloudExpiryLabelsJSON(String(v.labels_json ?? "{}"));
+      if (labelsNorm === null) {
+        message.error("附加 Labels 须为合法 JSON 对象");
+        return;
+      }
       const payload = {
         ...v,
         threshold_unit: normalizedUnit,
-        labels_json: stringifyPrettyJSON(ruleCurrent?.labels ?? {}, "{}"),
+        labels_json: labelsNorm,
         annotations_json: JSON.stringify({
           summary: String(v.summary_template || "").trim(),
           description: String(v.description_template || "").trim(),
@@ -2953,6 +2960,43 @@ export function AlertMonitorPlatformPage() {
           </Form.Item>
           <Form.Item name="severity" label="级别" rules={[{ required: true, message: "请选择级别" }]}>
             <Select placeholder="选择级别" options={ruleSeverityOptions} />
+          </Form.Item>
+          <Form.Item
+            name="labels_json"
+            label="附加 Labels（JSON）"
+            rules={[
+              {
+                validator: async (_, value) => {
+                  const normalized = normalizeCloudExpiryLabelsJSON(String(value ?? ""));
+                  if (normalized === null) {
+                    throw new Error("须为合法 JSON 对象，例如 {\"route\":\"prod-warning-email\",\"biz\":\"core\"}");
+                  }
+                },
+              },
+            ]}
+            extra={
+              "写入后会与 PromQL 样本标签等合并到告警 labels；订阅树节点可按 match_labels_json 分流。可与数据源侧 Prometheus 规则告警共用同一套标签维度（如 severity、cluster、route）。勿在此处填写 alertname / datasource_id，规则会自动填充。"
+            }
+          >
+            <Input.TextArea rows={4} placeholder='{"route":"prod-critical-all"}' />
+          </Form.Item>
+          <Form.Item>
+            <Button
+              type="link"
+              style={{ paddingLeft: 0 }}
+              onClick={() => {
+                const raw = String(ruleForm.getFieldValue("labels_json") || "");
+                const normalized = normalizeCloudExpiryLabelsJSON(raw);
+                if (normalized === null) {
+                  message.error("JSON 格式错误，无法格式化");
+                  return;
+                }
+                ruleForm.setFieldValue("labels_json", normalized);
+                message.success("已格式化 JSON");
+              }}
+            >
+              格式化 labels JSON
+            </Button>
           </Form.Item>
           <Form.Item
             label="告警文案预设（新手推荐）"

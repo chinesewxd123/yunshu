@@ -17,7 +17,6 @@ import {
   deleteSubscriptionNode,
   getSubscriptionTree,
   listReceiverGroups,
-  migratePoliciesToSubscriptions,
   updateSubscriptionNode,
   type AlertReceiverGroup,
   type AlertSubscriptionNode,
@@ -430,22 +429,6 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     await loadSubscriptions();
   }
 
-  async function migrateOldPolicies() {
-    const rep = await migratePoliciesToSubscriptions({
-      disable_old: true,
-      ...(subProjectID ? { default_project_id: subProjectID } : {}),
-    });
-    const targetPid = Number(rep.resolved_default_project_id) || subProjectID;
-    if (targetPid > 0) {
-      setSubProjectID(targetPid);
-    }
-    message.success(
-      `迁移完成：策略${rep.policies_total}，迁移${rep.policies_migrated}，节点${rep.nodes_created}，接收组${rep.receiver_groups_created}` +
-        (targetPid > 0 ? `（已切换到项目 ID ${targetPid} 查看订阅树）` : ""),
-    );
-    await loadSubscriptions(targetPid > 0 ? targetPid : undefined);
-  }
-
   const loadEvents = useCallback(
     async (page: number, pageSize: number) => {
       setEventsLoading(true);
@@ -542,7 +525,6 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
             <Button icon={<ReloadOutlined />} loading={subLoading} onClick={() => void loadSubscriptions()}>
               刷新
             </Button>
-            <Button onClick={() => void migrateOldPolicies()}>迁移旧策略</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => void createSubscription(null)}>
               新增根节点
             </Button>
