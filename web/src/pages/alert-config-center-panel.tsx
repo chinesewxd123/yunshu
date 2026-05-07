@@ -282,17 +282,30 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     if (!subProjectID && normalized.length) setSubProjectID(normalized[0].id);
   }
 
+  /** 同名接收组只展示一条，保留 id 较大者（通常为最近迁移/创建），避免下拉重复 */
   const receiverGroupOptions = useMemo(() => {
-    const seen = new Set<number>();
-    const out: { label: string; value: number }[] = [];
+    const byNameKey = new Map<string, { label: string; value: number }>();
     for (const g of receiverGroups) {
       const id = Number(g.id);
-      if (!Number.isFinite(id) || id <= 0 || seen.has(id)) continue;
-      seen.add(id);
-      out.push({ label: g.name, value: id });
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const label = String(g.name ?? "").trim() || `#${id}`;
+      const key = label.toLowerCase();
+      const prev = byNameKey.get(key);
+      if (!prev || id > prev.value) {
+        byNameKey.set(key, { label, value: id });
+      }
     }
-    return out;
+    return Array.from(byNameKey.values()).sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
   }, [receiverGroups]);
+
+  const subscriptionSeverityOptions = useMemo(
+    () =>
+      ["critical", "warning", "info", "error", "none"].map((v) => ({
+        label: v,
+        value: v,
+      })),
+    [],
+  );
 
   type SubscriptionAntTreeNode = { key: string; title: string; children?: SubscriptionAntTreeNode[] };
 
@@ -362,7 +375,12 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
       continue: node.continue,
       match_labels_json: node.match_labels_json ?? "{}",
       match_regex_json: node.match_regex_json ?? "{}",
-      match_severity: node.match_severity ?? "",
+      match_severity: node.match_severity
+        ? String(node.match_severity)
+            .split(/[,，;|]/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [],
       receiver_group_ids: node.receiver_group_ids ?? [],
       silence_seconds: node.silence_seconds ?? 0,
       notify_resolved: node.notify_resolved,
@@ -403,7 +421,14 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
       continue: !!v.continue,
       match_labels_json: String(v.match_labels_json || "{}"),
       match_regex_json: String(v.match_regex_json || "{}"),
-      match_severity: String(v.match_severity || "").trim(),
+      match_severity: Array.isArray(v.match_severity)
+        ? (v.match_severity as string[]).map((x) => String(x).trim()).filter(Boolean).join(",")
+        : String(v.match_severity || "")
+            .trim()
+            .split(/[,，;|]/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .join(","),
       receiver_group_ids_json: JSON.stringify((v.receiver_group_ids ?? []).map((x: any) => Number(x)).filter((x: number) => x > 0)),
       silence_seconds: Number(v.silence_seconds || 0),
       notify_resolved: !!v.notify_resolved,
@@ -580,11 +605,34 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                     <InputNumber min={0} />
                   </Form.Item>
                 </Space>
-                <Form.Item name="match_severity" label="匹配级别（可选）">
-                  <Input placeholder="critical/warning/info..." />
+                <Form.Item name="match_severity" label="匹配级别（可选，多选）" extra="告警 labels.severity 命中任一即通过；不选表示不按级别过滤。">
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="不选则不限级别"
+                    options={subscriptionSeverityOptions}
+                  />
                 </Form.Item>
-                <Form.Item name="receiver_group_ids" label="接收组" rules={[{ required: true, message: "至少选择一个接收组" }]}>
-                  <Select mode="multiple" options={receiverGroupOptions} placeholder="选择接收组（先在接收组里配置通道）" />
+                <Form.Item
+                  name="receiver_group_ids"
+                  label="接收组"
+                  dependencies={["parent_id"]}
+                  rules={[
+                    {
+                      validator: async (_, value) => {
+                        const pid = subForm.getFieldValue("parent_id");
+                        const isRoot = pid === null || pid === undefined || pid === "";
+                        if (isRoot) return;
+                        const ids = Array.isArray(value) ? value : [];
+                        if (ids.length === 0) {
+                          throw new Error("非根节点须至少选择一个接收组");
+                        }
+                      },
+                    },
+                  ]}
+                  extra="根节点可留空：仅作路由分流，通知由子节点上的接收组发出。"
+                >
+                  <Select mode="multiple" options={receiverGroupOptions} placeholder="选择接收组（先在接收组里配置通道）" allowClear />
                 </Form.Item>
                 <Form.Item name="match_labels_json" label="match_labels_json（精确匹配 JSON）">
                   <Input.TextArea rows={4} />

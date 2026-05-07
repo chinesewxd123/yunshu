@@ -67,7 +67,7 @@ type AlertSubscriptionNodeUpsertRequest struct {
 	Code            string             `json:"code" binding:"omitempty,max=64"`
 	MatchLabelsJSON string             `json:"match_labels_json"`
 	MatchRegexJSON  string             `json:"match_regex_json"`
-	MatchSeverity   string             `json:"match_severity" binding:"omitempty,max=32"`
+	MatchSeverity   string             `json:"match_severity" binding:"omitempty,max=128"`
 	Continue        bool               `json:"continue"`
 	Enabled         *bool              `json:"enabled"`
 	ReceiverGroupIDsJSON string        `json:"receiver_group_ids_json"`
@@ -359,14 +359,34 @@ func (s *AlertSubscriptionService) MatchRoute(projectID uint, labels map[string]
 	return res.ReceiverGroupIDs, ok
 }
 
+// severityMatchesNode 配置为空表示不限制；支持逗号/中文逗号分隔多级别，任一命中即可。
+func severityMatchesNode(configured, incoming string) bool {
+	configured = strings.TrimSpace(configured)
+	if configured == "" {
+		return true
+	}
+	inc := strings.TrimSpace(strings.ToLower(incoming))
+	for _, part := range strings.FieldsFunc(configured, func(r rune) bool {
+		return r == ',' || r == '，' || r == ';' || r == '|'
+	}) {
+		p := strings.TrimSpace(part)
+		if p == "" {
+			continue
+		}
+		if strings.EqualFold(p, inc) {
+			return true
+		}
+	}
+	return false
+}
+
 // nodeMatches 检查节点是否匹配告警
 func (s *AlertSubscriptionService) nodeMatches(node *CachedSubscriptionNode, labels map[string]string, severity, status string) bool {
 	// resolved 是否通知
 	if strings.EqualFold(strings.TrimSpace(status), "resolved") && !node.NotifyResolved {
 		return false
 	}
-	// 严重级别匹配
-	if node.MatchSeverity != "" && !strings.EqualFold(node.MatchSeverity, severity) {
+	if !severityMatchesNode(node.MatchSeverity, severity) {
 		return false
 	}
 

@@ -24,7 +24,7 @@ type AlertSubscriptionNode struct {
 	// 匹配条件（与父节点条件AND组合）
 	MatchLabelsJSON string `json:"match_labels_json" gorm:"type:text;comment:精确匹配labels JSON"`
 	MatchRegexJSON  string `json:"match_regex_json" gorm:"type:text;comment:正则匹配labels JSON"`
-	MatchSeverity   string `json:"match_severity" gorm:"size:32;comment:匹配的严重级别"`
+	MatchSeverity   string `json:"match_severity" gorm:"size:128;comment:匹配严重级别，逗号分隔多选如 critical,warning"`
 
 	// 路由行为
 	Continue bool `json:"continue" gorm:"not null;default:false;comment:匹配成功后是否继续匹配子节点"`
