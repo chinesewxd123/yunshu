@@ -133,6 +133,13 @@ type AlertConfig struct {
 	// AggregateTTLSeconds: group_key 状态在 Redis 中的过期时间（秒）。
 	AggregateTTLSeconds int `mapstructure:"aggregate_ttl_seconds"`
 
+	// WebhookAsyncDisabled: 为 true 时 Alertmanager Webhook 同步处理（不入队）；无 Redis 时恒为同步。
+	WebhookAsyncDisabled bool `mapstructure:"webhook_async_disabled"`
+	// WebhookQueueMaxLen: 异步 webhook 队列最大长度（Redis List）。
+	WebhookQueueMaxLen int `mapstructure:"webhook_queue_max_len"`
+	// MonitorEvalLeaderLockSeconds: 多副本下内置监控规则 tick 全局锁 TTL（秒），需 Redis。
+	MonitorEvalLeaderLockSeconds int `mapstructure:"monitor_eval_leader_lock_seconds"`
+
 	PlatformLimits AlertPlatformLimits `mapstructure:"platform_limits"`
 }
 
@@ -185,6 +192,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Alert.AggregateTTLSeconds <= 0 {
 		cfg.Alert.AggregateTTLSeconds = 86400
+	}
+	if cfg.Alert.WebhookQueueMaxLen <= 0 {
+		cfg.Alert.WebhookQueueMaxLen = 10000
+	}
+	if cfg.Alert.MonitorEvalLeaderLockSeconds <= 0 {
+		cfg.Alert.MonitorEvalLeaderLockSeconds = 30
 	}
 	if len(cfg.Alert.GroupBy) == 0 {
 		cfg.Alert.GroupBy = []string{"alertname", "cluster", "namespace", "severity", "receiver"}

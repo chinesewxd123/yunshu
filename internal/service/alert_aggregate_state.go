@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"yunshu/internal/model"
+
+	"gorm.io/gorm/clause"
 )
 
 type groupAggregateSpec struct {
@@ -68,7 +70,7 @@ func (s *AlertService) clearGroupAggregateStateBySpec(ctx context.Context, spec 
 func (s *AlertService) logSuppressedGroupAggregateBySpec(ctx context.Context, spec groupAggregateSpec, title, severity, status, groupKey string, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:          "alertmanager",
+		Source:          alertEventSourceFromPayload(payload),
 		Title:           title + spec.titleSuffix,
 		Severity:        severity,
 		Status:          status,
@@ -190,7 +192,7 @@ func (s *AlertService) clearResolvedNotificationSent(ctx context.Context, finger
 func (s *AlertService) logSuppressedDedup(ctx context.Context, title, severity, status, fingerprint string, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:          "alertmanager",
+		Source:          alertEventSourceFromPayload(payload),
 		Title:           title + " (dedup suppressed)",
 		Severity:        severity,
 		Status:          status,
@@ -307,32 +309,53 @@ func firingDeliveredRedisKey(fingerprint string) string {
 // markAlertFiringDelivered 记录「该指纹已成功外发过至少一次 firing 通知」，
 // 避免 firing 被分组节流等抑制后，resolved 仍外发造成「只有恢复没有触发」。
 func (s *AlertService) markAlertFiringDelivered(ctx context.Context, fingerprint string) {
-	if s.redis == nil || strings.TrimSpace(fingerprint) == "" {
+	fp := strings.TrimSpace(fingerprint)
+	if fp == "" {
 		return
 	}
-	ttlSec := maxInt(s.cfg.AggregateTTLSeconds, 7*24*3600)
-	_ = s.redis.Set(ctx, firingDeliveredRedisKey(fingerprint), "1", time.Duration(ttlSec)*time.Second).Err()
+	now := time.Now().UTC()
+	row := model.AlertFiringDelivery{Fingerprint: fp, UpdatedAt: now}
+	_ = s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "fingerprint"}},
+		DoUpdates: clause.AssignmentColumns([]string{"updated_at"}),
+	}).Create(&row).Error
+	if s.redis != nil {
+		ttlSec := maxInt(s.cfg.AggregateTTLSeconds, 7*24*3600)
+		_ = s.redis.Set(ctx, firingDeliveredRedisKey(fp), "1", time.Duration(ttlSec)*time.Second).Err()
+	}
 }
 
 func (s *AlertService) alertFiringWasDelivered(ctx context.Context, fingerprint string) bool {
-	if s.redis == nil || strings.TrimSpace(fingerprint) == "" {
+	fp := strings.TrimSpace(fingerprint)
+	if fp == "" {
 		return true
 	}
-	v, err := s.redis.Get(ctx, firingDeliveredRedisKey(fingerprint)).Result()
-	return err == nil && strings.TrimSpace(v) == "1"
+	if s.redis != nil {
+		v, err := s.redis.Get(ctx, firingDeliveredRedisKey(fp)).Result()
+		if err == nil && strings.TrimSpace(v) == "1" {
+			return true
+		}
+	}
+	var n int64
+	_ = s.db.WithContext(ctx).Model(&model.AlertFiringDelivery{}).Where("fingerprint = ?", fp).Count(&n).Error
+	return n > 0
 }
 
 func (s *AlertService) clearAlertFiringDelivered(ctx context.Context, fingerprint string) {
-	if s.redis == nil || strings.TrimSpace(fingerprint) == "" {
+	fp := strings.TrimSpace(fingerprint)
+	if fp == "" {
 		return
 	}
-	_ = s.redis.Del(ctx, firingDeliveredRedisKey(fingerprint)).Err()
+	if s.redis != nil {
+		_ = s.redis.Del(ctx, firingDeliveredRedisKey(fp)).Err()
+	}
+	_ = s.db.WithContext(ctx).Where("fingerprint = ?", fp).Delete(&model.AlertFiringDelivery{}).Error
 }
 
 func (s *AlertService) logResolvedSuppressedNoPriorFiringDelivery(ctx context.Context, title, severity, status, groupKey, labelsDigest string, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:             "alertmanager",
+		Source:             alertEventSourceFromPayload(payload),
 		Title:              title + " (resolved suppressed: no prior firing delivery)",
 		Severity:           severity,
 		Status:             status,
@@ -357,7 +380,7 @@ func (s *AlertService) logResolvedSuppressedNoPriorFiringDelivery(ctx context.Co
 func (s *AlertService) logSuppressedFiringTiming(ctx context.Context, title, severity, status, groupKey, labelsDigest, reason string, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:          "alertmanager",
+		Source:          alertEventSourceFromPayload(payload),
 		Title:           title + " (group timing suppressed)",
 		Severity:        severity,
 		Status:          status,

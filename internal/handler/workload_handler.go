@@ -32,6 +32,11 @@ func (h *WorkloadHandler) DeploymentScale(c *gin.Context) {
 	handleJSONOK(c, true, h.svc.DeploymentScale)
 }
 
+// DeploymentPatchContainerResources 垂直扩缩（容器 requests/limits）。
+func (h *WorkloadHandler) DeploymentPatchContainerResources(c *gin.Context) {
+	handleJSONOK(c, true, h.svc.DeploymentPatchContainerResources)
+}
+
 // DeploymentRestart 处理对应的 HTTP 请求并返回统一响应。
 func (h *WorkloadHandler) DeploymentRestart(c *gin.Context) {
 	handleJSONOK(c, true, h.svc.DeploymentRestart)
@@ -55,6 +60,11 @@ func (h *WorkloadHandler) StatefulSetDetail(c *gin.Context) {
 // StatefulSetScale 处理对应的 HTTP 请求并返回统一响应。
 func (h *WorkloadHandler) StatefulSetScale(c *gin.Context) {
 	handleJSONOK(c, true, h.svc.StatefulSetScale)
+}
+
+// StatefulSetPatchContainerResources 垂直扩缩（容器 requests/limits）。
+func (h *WorkloadHandler) StatefulSetPatchContainerResources(c *gin.Context) {
+	handleJSONOK(c, true, h.svc.StatefulSetPatchContainerResources)
 }
 
 // StatefulSetRestart 处理对应的 HTTP 请求并返回统一响应。
@@ -82,6 +92,11 @@ func (h *WorkloadHandler) DaemonSetRestart(c *gin.Context) {
 	handleJSONOK(c, true, h.svc.DaemonSetRestart)
 }
 
+// DaemonSetPatchContainerResources 垂直扩缩（容器 requests/limits）。
+func (h *WorkloadHandler) DaemonSetPatchContainerResources(c *gin.Context) {
+	handleJSONOK(c, true, h.svc.DaemonSetPatchContainerResources)
+}
+
 // DeleteDaemonSet 删除对应的 HTTP 接口处理逻辑。
 func (h *WorkloadHandler) DeleteDaemonSet(c *gin.Context) {
 	handleQueryOK(c, true, h.svc.DeleteDaemonSet)
@@ -95,6 +110,11 @@ func (h *WorkloadHandler) ListJobs(c *gin.Context) {
 // JobDetail 处理对应的 HTTP 请求并返回统一响应。
 func (h *WorkloadHandler) JobDetail(c *gin.Context) {
 	handleQuery(c, h.svc.JobDetail)
+}
+
+// JobPatchContainerResources 垂直扩缩（容器 requests/limits）。
+func (h *WorkloadHandler) JobPatchContainerResources(c *gin.Context) {
+	handleJSONOK(c, true, h.svc.JobPatchContainerResources)
 }
 
 // DeleteJob 删除对应的 HTTP 接口处理逻辑。
@@ -115,6 +135,11 @@ func (h *WorkloadHandler) ListCronJobsV2(c *gin.Context) {
 // CronJobDetail 处理对应的 HTTP 请求并返回统一响应。
 func (h *WorkloadHandler) CronJobDetail(c *gin.Context) {
 	handleQuery(c, h.svc.CronJobDetail)
+}
+
+// CronJobPatchContainerResources 垂直扩缩（容器 requests/limits）。
+func (h *WorkloadHandler) CronJobPatchContainerResources(c *gin.Context) {
+	handleJSONOK(c, true, h.svc.CronJobPatchContainerResources)
 }
 
 // CronJobSuspend 处理对应的 HTTP 请求并返回统一响应。

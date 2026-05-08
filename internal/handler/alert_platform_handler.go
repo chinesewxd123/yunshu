@@ -74,6 +74,21 @@ func (h *AlertPlatformHandler) DeleteDatasource(c *gin.Context) {
 	response.Success(c, gin.H{"message": "deleted"})
 }
 
+// PingDatasource GET — Prometheus 数据源连通性检测（即时查询 vector(1)）。
+func (h *AlertPlatformHandler) PingDatasource(c *gin.Context) {
+	id, err := parseUintParam(c, "id")
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	res, err := h.ds.PingDatasource(c.Request.Context(), id)
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, res)
+}
+
 func (h *AlertPlatformHandler) PromQuery(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {

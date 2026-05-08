@@ -14,6 +14,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// pingPromQL 为轻量即时查询，用于连通性检测（不依赖具体指标是否存在）。
+const pingPromQL = "vector(1)"
+
 type AlertDatasourceListQuery struct {
 	ProjectID uint   `form:"project_id"`
 	Keyword   string `form:"keyword"`
@@ -51,6 +54,13 @@ type PromQueryRangeRequest struct {
 	Start string `json:"start" binding:"required"`
 	End   string `json:"end" binding:"required"`
 	Step  string `json:"step" binding:"required"`
+}
+
+// DatasourcePingResult 数据源连通性检测结果（即使失败也 HTTP 200 返回本结构，便于前端展示）。
+type DatasourcePingResult struct {
+	OK        bool   `json:"ok"`
+	Message   string `json:"message"`
+	LatencyMs int64  `json:"latency_ms"`
 }
 
 type AlertDatasourceService struct {
@@ -264,4 +274,45 @@ func (s *AlertDatasourceService) PrometheusActiveAlerts(ctx context.Context, id 
 	defer cancel()
 	body, _, err := cli.ActiveAlerts(qctx)
 	return body, err
+}
+
+// PingDatasource 连通性检查：使用库内 promapi 客户端发起即时查询 vector(1)（与 PromQuery 同源配置）。
+// 使用 getRaw 绕过「已停用」限制，便于停用期间仍可探测连通性。
+func (s *AlertDatasourceService) PingDatasource(ctx context.Context, id uint) (*DatasourcePingResult, error) {
+	row, err := s.getRaw(ctx, id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperror.NotFound("告警数据源不存在")
+		}
+		return nil, err
+	}
+	t := strings.TrimSpace(row.Type)
+	if t == "" {
+		t = "prometheus"
+	}
+	if t != "prometheus" {
+		return &DatasourcePingResult{OK: false, Message: "仅 prometheus 类型支持连通性检测", LatencyMs: 0}, nil
+	}
+	if strings.TrimSpace(row.BaseURL) == "" {
+		return &DatasourcePingResult{OK: false, Message: "base_url 为空", LatencyMs: 0}, nil
+	}
+	cli := &promapi.Client{
+		BaseURL:       row.BaseURL,
+		BearerToken:   row.BearerToken,
+		BasicUser:     row.BasicUser,
+		BasicPassword: row.BasicPassword,
+		SkipTLSVerify: row.SkipTLSVerify,
+	}
+	qctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	start := time.Now()
+	body, _, err := cli.QueryInstant(qctx, pingPromQL, "")
+	latency := time.Since(start).Milliseconds()
+	if err != nil {
+		return &DatasourcePingResult{OK: false, Message: err.Error(), LatencyMs: latency}, nil
+	}
+	if !promapi.QueryResponseStatusSuccess(body) {
+		return &DatasourcePingResult{OK: false, Message: "Prometheus 返回非 success 状态", LatencyMs: latency}, nil
+	}
+	return &DatasourcePingResult{OK: true, Message: "ok", LatencyMs: latency}, nil
 }

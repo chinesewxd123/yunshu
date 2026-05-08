@@ -1,4 +1,12 @@
-import { DownOutlined, EyeOutlined, FileTextOutlined, ReloadOutlined, ScissorOutlined, TagsOutlined } from "@ant-design/icons";
+import {
+  ColumnHeightOutlined,
+  DownOutlined,
+  EyeOutlined,
+  FileTextOutlined,
+  ReloadOutlined,
+  ScissorOutlined,
+  TagsOutlined,
+} from "@ant-design/icons";
 import { Button, Card, Dropdown, Form, Input, InputNumber, Modal, Progress, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useRef, useState } from "react";
@@ -10,10 +18,12 @@ import { InputNumber as AntdInputNumber } from "antd";
 import { listNamespaces as listClusterNamespaces } from "../services/clusters";
 import {
   applyDeployment,
+  buildCpuMemoryResourceMaps,
   deleteDeployment,
   getDeploymentDetail,
   listDeployments,
   listDeploymentPods,
+  patchDeploymentContainerResources,
   restartDeployment,
   scaleDeployment,
   type WorkloadDetail,
@@ -138,6 +148,15 @@ export function DeploymentsPage() {
   const [scaleOpen, setScaleOpen] = useState(false);
   const [scaleValue, setScaleValue] = useState<number>(1);
   const [scaleTarget, setScaleTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
+  const [verticalOpen, setVerticalOpen] = useState(false);
+  const [verticalTarget, setVerticalTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
+  const [verticalForm] = Form.useForm<{
+    container_name?: string;
+    requests_cpu?: string;
+    requests_memory?: string;
+    limits_cpu?: string;
+    limits_memory?: string;
+  }>();
   const { openPods, viewer: podsViewer } = useRelatedPodsDrawer(async ({ clusterId, namespace, name }) => await listDeploymentPods(clusterId, namespace, name));
   const { renderKVIcon, viewer } = useKeyValueViewer({
     width: 760,
@@ -295,12 +314,22 @@ spec:
                   },
                   {
                     key: "scale",
-                    label: "扩缩容",
+                    label: "水平扩缩（副本 · HPA / scale 类）",
                     icon: <ScissorOutlined />,
                     onClick: () => {
                       setScaleTarget({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
                       setScaleValue(Number(record.replicas ?? 1) || 1);
                       setScaleOpen(true);
+                    },
+                  },
+                  {
+                    key: "vertical",
+                    label: "垂直扩缩（resources · VPA 类）",
+                    icon: <ColumnHeightOutlined />,
+                    onClick: () => {
+                      setVerticalTarget({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
+                      verticalForm.resetFields();
+                      setVerticalOpen(true);
                     },
                   },
                   {
@@ -327,7 +356,7 @@ spec:
       />
 
       <Modal
-        title={`Deployment 扩缩容${scaleTarget ? `：${scaleTarget.name}` : ""}`}
+        title={`Deployment 水平扩缩（HPA / scale 子资源类）${scaleTarget ? `：${scaleTarget.name}` : ""}`}
         open={scaleOpen}
         onCancel={() => setScaleOpen(false)}
         onOk={() => {
@@ -339,10 +368,63 @@ spec:
           })();
         }}
       >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          与 Kubernetes HPA 使用的 scale 子资源同类：适用于 Deployment、StatefulSet、ReplicaSet、ReplicationController。
+          DaemonSet、Job、CronJob 无此类「持续副本水平伸缩」，控制台不提供对应入口。
+        </Typography.Paragraph>
         <Space>
           <span>副本数</span>
           <InputNumber min={0} value={scaleValue} onChange={(v) => setScaleValue(Number(v ?? 0))} />
         </Space>
+      </Modal>
+
+      <Modal
+        title={`Deployment 垂直扩缩（Pod 模板 resources · VPA 类）${verticalTarget ? `：${verticalTarget.name}` : ""}`}
+        open={verticalOpen}
+        onCancel={() => setVerticalOpen(false)}
+        destroyOnClose
+        width={560}
+        onOk={() => {
+          if (!verticalTarget) return;
+          void verticalForm.validateFields().then(async (values) => {
+            const { requests, limits } = buildCpuMemoryResourceMaps(values);
+            if (Object.keys(requests).length === 0 && Object.keys(limits).length === 0) {
+              message.warning("请至少填写一项 requests 或 limits（如 cpu/memory）");
+              return;
+            }
+            await patchDeploymentContainerResources(verticalTarget.clusterId, verticalTarget.namespace, verticalTarget.name, {
+              container_name: values.container_name,
+              requests,
+              limits,
+            });
+            message.success("已更新容器资源");
+            setVerticalOpen(false);
+            listReloadRef.current();
+          });
+        }}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          与 VPA 直接修改工作负载 Pod 模板的 resources 属于同一类能力；生产环境请结合集群 VPA 策略评估滚动与装箱影响。
+          留空容器名则修改第一个容器。示例：CPU <Typography.Text code>100m</Typography.Text>，内存{" "}
+          <Typography.Text code>256Mi</Typography.Text>。
+        </Typography.Paragraph>
+        <Form form={verticalForm} layout="vertical">
+          <Form.Item label="容器名（可选）" name="container_name">
+            <Input placeholder="默认第一个容器" allowClear />
+          </Form.Item>
+          <Form.Item label="requests.cpu" name="requests_cpu">
+            <Input placeholder="如 100m" allowClear />
+          </Form.Item>
+          <Form.Item label="requests.memory" name="requests_memory">
+            <Input placeholder="如 256Mi" allowClear />
+          </Form.Item>
+          <Form.Item label="limits.cpu" name="limits_cpu">
+            <Input placeholder="如 500m" allowClear />
+          </Form.Item>
+          <Form.Item label="limits.memory" name="limits_memory">
+            <Input placeholder="如 512Mi" allowClear />
+          </Form.Item>
+        </Form>
       </Modal>
 
       {podsViewer}

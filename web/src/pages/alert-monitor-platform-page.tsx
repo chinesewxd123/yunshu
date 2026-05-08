@@ -1,4 +1,5 @@
 import {
+  ApiOutlined,
   DeleteOutlined,
   EditOutlined,
   CalendarOutlined,
@@ -64,6 +65,7 @@ import {
   listAlertSilences,
   listCloudExpiryRules,
   listDutyBlocks,
+  pingAlertDatasource,
   promActiveAlerts,
   promInstantQuery,
   promRangeQuery,
@@ -427,6 +429,7 @@ export function AlertMonitorPlatformPage() {
   const [dsCurrent, setDsCurrent] = useState<AlertDatasourceItem | null>(null);
   const [dsForm] = Form.useForm();
   const [dsSubmitting, setDsSubmitting] = useState(false);
+  const [dsPingId, setDsPingId] = useState<number | null>(null);
 
   const [silModalOpen, setSilModalOpen] = useState(false);
   const [silCurrent, setSilCurrent] = useState<AlertSilenceItem | null>(null);
@@ -921,6 +924,22 @@ export function AlertMonitorPlatformPage() {
     setPromStep("30s");
   }
 
+  async function runDsPing(id: number) {
+    setDsPingId(id);
+    try {
+      const res = await pingAlertDatasource(id);
+      if (res.ok) {
+        message.success(`连通正常，耗时 ${res.latency_ms} ms`);
+      } else {
+        message.error(res.message || "连通失败");
+      }
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDsPingId(null);
+    }
+  }
+
   const dsColumns = [
     { title: "ID", dataIndex: "id", width: 70 },
     { title: "项目", dataIndex: "project_name", width: 160, render: (v: string, r: AlertDatasourceItem) => v || String(r.project_id || "-") },
@@ -929,9 +948,18 @@ export function AlertMonitorPlatformPage() {
     { title: "启用", dataIndex: "enabled", width: 80, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
     {
       title: "操作",
-      width: 160,
+      width: 240,
       render: (_: unknown, r: AlertDatasourceItem) => (
-        <Space>
+        <Space wrap>
+          <Button
+            type="link"
+            size="small"
+            icon={<ApiOutlined />}
+            loading={dsPingId === r.id}
+            onClick={() => void runDsPing(r.id)}
+          >
+            连通检测
+          </Button>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openDsEdit(r)}>
             编辑
           </Button>

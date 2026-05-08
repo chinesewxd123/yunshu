@@ -27,6 +27,16 @@ func (s *AlertService) runMonitorRuleEvaluator(ctx context.Context) {
 }
 
 func (s *AlertService) tickMonitorRules(ctx context.Context) error {
+	if s.redis != nil {
+		ttlSec := s.cfg.MonitorEvalLeaderLockSeconds
+		if ttlSec <= 0 {
+			ttlSec = 30
+		}
+		ok, err := s.redis.SetNX(ctx, "alert:monitor:eval:leader", "1", time.Duration(ttlSec)*time.Second).Result()
+		if err != nil || !ok {
+			return nil
+		}
+	}
 	type evalRule struct {
 		model.AlertMonitorRule
 		ProjectID uint `gorm:"column:project_id"`

@@ -148,6 +148,12 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 	if cfg.AggregateTTLSeconds <= 0 {
 		cfg.AggregateTTLSeconds = 86400
 	}
+	if cfg.WebhookQueueMaxLen <= 0 {
+		cfg.WebhookQueueMaxLen = 10000
+	}
+	if cfg.MonitorEvalLeaderLockSeconds <= 0 {
+		cfg.MonitorEvalLeaderLockSeconds = 30
+	}
 	if len(cfg.GroupBy) == 0 {
 		cfg.GroupBy = []string{"alertname", "cluster", "namespace", "severity", "receiver"}
 	}
@@ -191,6 +197,7 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 	evalCtx, cancel := context.WithCancel(context.Background())
 	svc.monitorEvalCancel = cancel
 	go svc.runMonitorRuleEvaluator(evalCtx)
+	svc.runAlertWebhookIngestWorker(evalCtx)
 	return svc
 }
 
@@ -265,7 +272,7 @@ func (s *AlertService) shouldSuppressByRouteSilence(ctx context.Context, status,
 func (s *AlertService) logSuppressedRouteSilence(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, silenceSeconds int, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:          "alertmanager",
+		Source:          alertEventSourceFromPayload(payload),
 		Title:           title + " (subscription silence suppressed)",
 		Severity:        severity,
 		Status:          status,
@@ -1045,7 +1052,7 @@ func (s *AlertService) enrichAssigneeAndDutyEmails(ctx context.Context, outgoing
 func (s *AlertService) logSilenceSuppressed(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, silenceID uint, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:          "alertmanager",
+		Source:          alertEventSourceFromPayload(payload),
 		Title:           title + " (silence suppressed)",
 		Severity:        severity,
 		Status:          status,
@@ -1068,7 +1075,7 @@ func (s *AlertService) logSilenceSuppressed(ctx context.Context, title, severity
 func (s *AlertService) logNoMatchedChannel(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, payload map[string]interface{}, reason string) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:             "alertmanager",
+		Source:             alertEventSourceFromPayload(payload),
 		Title:              title + " (no matched channel)",
 		Severity:           severity,
 		Status:             status,
@@ -1093,7 +1100,7 @@ func (s *AlertService) logNoMatchedChannel(ctx context.Context, title, severity,
 func (s *AlertService) logAllChannelsDeliveryFailed(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:             "alertmanager",
+		Source:             alertEventSourceFromPayload(payload),
 		Title:              title + " (all channel delivery failed)",
 		Severity:           severity,
 		Status:             status,
@@ -1116,245 +1123,23 @@ func (s *AlertService) logAllChannelsDeliveryFailed(ctx context.Context, title, 
 }
 
 // ReceiveAlertmanager 执行对应的业务逻辑。
+// 配置启用且 Redis 可用时，Webhook 先入队异步消费；内置评估路径应调用 receiveAlertmanagerPayloadSync 避免二次入队。
 func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertManagerPayload) error {
-	var channels []model.AlertChannel
-	if err := s.db.WithContext(ctx).Model(&model.AlertChannel{}).
-		Where("enabled = ?", true).
-		Order("id ASC").
-		Find(&channels).Error; err != nil {
-		return err
+	if s.shouldEnqueueAlertmanagerWebhook() {
+		return s.enqueueAlertmanagerWebhook(ctx, payload)
 	}
-	for _, alert := range payload.Alerts {
-		labels := mergeStringMap(payload.CommonLabels, alert.Labels)
-		dsID, dsName, dsType, pipelineSlug := s.resolveAlertDatasourceMeta(ctx, labels, payload.Receiver)
-		labels["monitor_pipeline"] = pipelineSlug
-		if dsID > 0 {
-			labels["datasource_id"] = fmt.Sprintf("%d", dsID)
-		}
-		if strings.TrimSpace(dsName) != "" {
-			labels["datasource_name"] = strings.TrimSpace(dsName)
-		}
-		if strings.TrimSpace(dsType) != "" {
-			labels["datasource_type"] = strings.TrimSpace(dsType)
-		}
-		monitorPipeline := pipelineSlug
-		annotations := mergeStringMap(payload.CommonAnnotations, alert.Annotations)
-		status := strings.TrimSpace(alert.Status)
-		if status == "" {
-			status = strings.TrimSpace(payload.Status)
-		}
-		status = strings.ToLower(strings.TrimSpace(status))
-		if status == "" {
-			status = "firing"
-		}
-		eventName := strings.TrimSpace(labels["alertname"])
-		if eventName == "" {
-			eventName = strings.TrimSpace(payload.CommonLabels["alertname"])
-		}
-		if eventName == "" {
-			eventName = "Alertmanager 告警"
-		}
-		summary := strings.TrimSpace(annotations["summary"])
-		if summary == "" {
-			summary = strings.TrimSpace(annotations["description"])
-		}
-		if summary == "" {
-			summary = strings.TrimSpace(payload.CommonAnnotations["summary"])
-		}
-		if summary == "" {
-			summary = "Alertmanager webhook message"
-		}
-		severity := strings.TrimSpace(labels["severity"])
-		if severity == "" {
-			severity = strings.TrimSpace(payload.CommonLabels["severity"])
-		}
-		if severity == "" {
-			severity = "warning"
-		}
-		title := eventName
+	return s.receiveAlertmanagerPayloadSync(ctx, payload)
+}
 
-		dims := alertnotify.ExtractDims(labels)
-		groupKey := s.computeGroupKey(payload.Receiver, status, severity, eventName, labels, dims)
-		labelsDigest := alertnotify.DigestLabels(labels)
-		envLabel := s.resolveAlertEnvironmentLabel(labels, payload.Receiver, dims, alert.Labels)
-		if s.silenceSvc != nil {
-			if sid, muted, err := s.silenceSvc.FirstMatchingSilenceID(ctx, labels, time.Now()); err == nil && muted {
-				minPayload := map[string]interface{}{
-					"labels": labels, "annotations": annotations, "severity": severity, "status": status,
-					"receiver": payload.Receiver, "fingerprint": alert.Fingerprint,
-					"groupKey": groupKey, "cluster": envLabel, "labelsDigest": labelsDigest,
-					"monitorPipeline": monitorPipeline,
-					"datasourceId":    dsID, "datasourceName": dsName, "datasourceType": dsType,
-				}
-				s.logSilenceSuppressed(ctx, title, severity, status, envLabel, groupKey, labelsDigest, sid, minPayload)
-				continue
-			}
-		}
-
-		count, _, _ := s.updateFingerprintState(ctx, alert.Fingerprint, status)
-
-		// 构建outgoing payload（提前到抑制检查前）
-		outgoing := map[string]interface{}{
-			"source":          "alertmanager",
-			"title":           title,
-			"summary":         summary,
-			"severity":        severity,
-			"status":          status,
-			"receiver":        payload.Receiver,
-			"fingerprint":     alert.Fingerprint,
-			"count":           count,
-			"labels":          labels,
-			"annotations":     annotations,
-			"group_labels":    payload.GroupLabels,
-			"am_version":      payload.Version,
-			"startsAt":        alert.StartsAt,
-			"endsAt":          alert.EndsAt,
-			"generatorURL":    alert.GeneratorURL,
-			"truncated":       payload.TruncatedAlerts,
-			"occurredAt":      time.Now().Format(time.RFC3339),
-			"cluster":         envLabel,
-			"monitorPipeline": monitorPipeline,
-			"datasourceId":    dsID,
-			"datasourceName":  dsName,
-			"datasourceType":  dsType,
-			"groupKey":        groupKey,
-			"labelsDigest":    labelsDigest,
-		}
-
-		// 告警抑制检查
-		if status == "firing" && s.inhibitionSvc != nil {
-			if inhibited, inhEvent := s.CheckInhibition(ctx, labels); inhibited {
-				s.logInhibitionEvent(ctx, title, severity, status, envLabel, groupKey, labelsDigest, inhEvent, outgoing)
-				// 记录为被抑制的源告警（如果它本身匹配源告警规则）
-				_ = s.RecordSourceInhibition(ctx, labels)
-				continue
-			}
-			// 记录源告警（如果匹配）
-			_ = s.RecordSourceInhibition(ctx, labels)
-		}
-
-		// 清除源告警记录（当告警恢复时）
-		if status == "resolved" && s.inhibitionSvc != nil {
-			_ = s.ClearSourceInhibition(ctx, labels)
-		}
-
-		ctxEnrich, cancelEnrich := context.WithTimeout(ctx, time.Duration(maxInt(1, s.cfg.PromQueryTimeout))*time.Second)
-		currentValue := strings.TrimSpace(s.getCachedCurrentValue(ctx, alert.Fingerprint))
-		if currentValue == "" && strings.TrimSpace(s.cfg.PrometheusURL) != "" && strings.TrimSpace(alert.GeneratorURL) != "" {
-			if v, qerr := s.queryCurrentValueByGeneratorURL(ctxEnrich, alert.GeneratorURL); qerr == nil && strings.TrimSpace(v) != "" {
-				currentValue = strings.TrimSpace(v)
-				s.setCachedCurrentValue(ctx, alert.Fingerprint, currentValue)
-			}
-		}
-		cancelEnrich()
-		if currentValue == "" {
-			currentValue = "-"
-		}
-		outgoing["current"] = currentValue
-		if status == "firing" {
-			s.enqueuePrometheusEnrich(promEnrichTask{
-				Fingerprint:  alert.Fingerprint,
-				GeneratorURL: alert.GeneratorURL,
-			})
-		}
-		// Prometheus/Alertmanager 规则可在 labels 中携带 project_id，此处查库写入 project_name，供统一标题与通道展示。
-		s.enrichOutgoingProjectName(ctx, outgoing)
-		s.enrichAssigneeAndDutyEmails(ctx, outgoing, labels)
-
-		// 服务端第二层收敛：对齐 Alertmanager/N9E 的 group_wait/group_interval/repeat_interval
-		if status == "firing" {
-			// 新一轮 firing 开始前，清理“恢复已发送”标记，允许后续新的 resolved 再发送一次恢复通知。
-			_ = s.clearResolvedNotificationSent(ctx, alert.Fingerprint)
-			shouldSend, reason, aggCount, firstSeen, lastSeen := s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
-			outgoing["agg_count"] = aggCount
-			outgoing["agg_first_seen"] = firstSeen
-			outgoing["agg_last_seen"] = lastSeen
-			if !shouldSend {
-				outgoing["suppressed_reason"] = reason
-				s.logSuppressedFiringTiming(ctx, title, severity, status, groupKey, labelsDigest, reason, outgoing)
-				continue
-			}
-		}
-
-		// firing 去重不应阻断 repeat interval 语义：
-		// 具体“是否重复发送”由 groupKey 的 group_wait/group_interval/repeat_interval 状态机控制。
-		subscriptionChannels, matchedPolicyIDs, matchedPolicyNames, subscriptionSilenceSeconds := s.channelIDSetForAlert(ctx, status, labels)
-		outgoing["matchedPolicyIds"] = matchedPolicyIDs
-		outgoing["matchedPolicyNames"] = matchedPolicyNames
-		outgoing["subscription_silence_seconds"] = subscriptionSilenceSeconds
-		if len(subscriptionChannels) == 0 {
-			s.logNoMatchedChannel(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing, "no_policy_matched")
-			continue
-		}
-		if s.shouldSuppressByRouteSilence(ctx, status, groupKey, matchedPolicyIDs, subscriptionSilenceSeconds, labels) {
-			s.logSuppressedRouteSilence(ctx, title, severity, status, envLabel, groupKey, labelsDigest, subscriptionSilenceSeconds, outgoing)
-			continue
-		}
-		if status == "resolved" && !s.alertFiringWasDelivered(ctx, alert.Fingerprint) {
-			s.logResolvedSuppressedNoPriorFiringDelivery(ctx, title, severity, status, groupKey, labelsDigest, outgoing)
-			_ = s.clearFingerprintState(ctx, alert.Fingerprint)
-			if s.redis != nil && strings.TrimSpace(alert.Fingerprint) != "" {
-				_ = s.redis.Del(ctx, "alert:current:"+strings.TrimSpace(alert.Fingerprint)).Err()
-			}
-			_ = s.clearGroupAggregateState(ctx, groupKey)
-			continue
-		}
-		// 恢复通知去重：仅在确定会尝试外发之后占位，避免 no_policy / 无 prior firing 等路径误占槽导致永不重试。
-		if status == "resolved" {
-			firstResolved, _ := s.markResolvedNotificationSent(ctx, alert.Fingerprint)
-			if !firstResolved {
-				outgoing["resolved_sent"] = false
-				outgoing["summary"] = "重复恢复事件已抑制（同一告警实例仅发送一次恢复通知）。"
-				s.logSuppressedResolvedAggregate(ctx, title, severity, status, groupKey, outgoing)
-				continue
-			}
-			outgoing["resolved_sent"] = true
-		}
-		sentCount := 0
-		okDeliveries := 0
-		for i := range channels {
-			if _, ok := subscriptionChannels[channels[i].ID]; !ok {
-				continue
-			}
-			settings, _ := parseChannelSettings(channels[i].HeadersJSON)
-			if !channelMatchesAlert(settings, labels, dims) {
-				continue
-			}
-			sentCount++
-			code, _, err := s.sendToChannel(ctx, &channels[i], alertdispatch.NewEnvelope("alertmanager", title, severity, status, outgoing))
-			if err == nil && code >= 200 && code < 300 {
-				okDeliveries++
-			}
-		}
-		if status == "firing" && okDeliveries > 0 {
-			s.markAlertFiringDelivered(ctx, alert.Fingerprint)
-		}
-		if status == "resolved" && okDeliveries == 0 {
-			_ = s.clearResolvedNotificationSent(ctx, alert.Fingerprint)
-		}
-		if sentCount == 0 {
-			reason := "no_channel_matched"
-			if len(channels) == 0 {
-				reason = "no_enabled_channels"
-			} else if len(subscriptionChannels) > 0 {
-				reason = "no_channel_matched_subscription"
-			}
-			s.logNoMatchedChannel(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing, reason)
-		}
-		if status == "firing" && sentCount > 0 && okDeliveries == 0 {
-			s.logAllChannelsDeliveryFailed(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing)
-		}
-		if status == "resolved" {
-			_ = s.clearFingerprintState(ctx, alert.Fingerprint)
-			if s.redis != nil && strings.TrimSpace(alert.Fingerprint) != "" {
-				_ = s.redis.Del(ctx, "alert:current:"+strings.TrimSpace(alert.Fingerprint)).Err()
-			}
-			// resolved 到来：清理 firing 聚合状态，避免后续误聚合
-			_ = s.clearGroupAggregateState(ctx, groupKey)
-			s.clearAlertFiringDelivered(ctx, alert.Fingerprint)
-		}
+func alertEventSourceFromPayload(payload map[string]interface{}) string {
+	if payload == nil {
+		return "alertmanager"
 	}
-	return nil
+	src := strings.TrimSpace(fmt.Sprintf("%v", payload["source"]))
+	if src == "" {
+		return "alertmanager"
+	}
+	return src
 }
 
 // ValidateWebhookToken 校验相关的业务逻辑。

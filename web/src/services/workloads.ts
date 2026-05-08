@@ -36,6 +36,23 @@ export interface RelatedPodItem {
   start_time?: string;
 }
 
+/** 联调常用：从表单拼接 cpu/memory 的 requests/limits（仅非空字段写入） */
+export function buildCpuMemoryResourceMaps(form: {
+  requests_cpu?: string;
+  requests_memory?: string;
+  limits_cpu?: string;
+  limits_memory?: string;
+}): { requests: Record<string, string>; limits: Record<string, string> } {
+  const requests: Record<string, string> = {};
+  const limits: Record<string, string> = {};
+  const t = (s?: string) => (s ?? "").trim();
+  if (t(form.requests_cpu)) requests.cpu = t(form.requests_cpu);
+  if (t(form.requests_memory)) requests.memory = t(form.requests_memory);
+  if (t(form.limits_cpu)) limits.cpu = t(form.limits_cpu);
+  if (t(form.limits_memory)) limits.memory = t(form.limits_memory);
+  return { requests, limits };
+}
+
 export interface CronJobItemV2 {
   name: string;
   namespace: string;
@@ -75,6 +92,23 @@ export function deleteDeployment(clusterId: number, namespace: string, name: str
 export function scaleDeployment(clusterId: number, namespace: string, name: string, replicas: number) {
   return deploymentsSvc.post<boolean>("/scale", { cluster_id: clusterId, namespace, name, replicas });
 }
+
+/** 垂直扩缩：更新 Pod 模板内指定容器的 requests/limits（key 为 cpu、memory 等；空字符串可删除该键） */
+export function patchDeploymentContainerResources(
+  clusterId: number,
+  namespace: string,
+  name: string,
+  body: { container_name?: string; requests?: Record<string, string>; limits?: Record<string, string> },
+) {
+  return deploymentsSvc.post<boolean>("/container-resources", {
+    cluster_id: clusterId,
+    namespace,
+    name,
+    container_name: body.container_name ?? "",
+    requests: body.requests,
+    limits: body.limits,
+  });
+}
 export function restartDeployment(clusterId: number, namespace: string, name: string) {
   return deploymentsSvc.post<boolean>("/restart", { cluster_id: clusterId, namespace, name });
 }
@@ -96,6 +130,22 @@ export function deleteStatefulSet(clusterId: number, namespace: string, name: st
 }
 export function scaleStatefulSet(clusterId: number, namespace: string, name: string, replicas: number) {
   return statefulsetsSvc.post<boolean>("/scale", { cluster_id: clusterId, namespace, name, replicas });
+}
+
+export function patchStatefulSetContainerResources(
+  clusterId: number,
+  namespace: string,
+  name: string,
+  body: { container_name?: string; requests?: Record<string, string>; limits?: Record<string, string> },
+) {
+  return statefulsetsSvc.post<boolean>("/container-resources", {
+    cluster_id: clusterId,
+    namespace,
+    name,
+    container_name: body.container_name ?? "",
+    requests: body.requests,
+    limits: body.limits,
+  });
 }
 export function restartStatefulSet(clusterId: number, namespace: string, name: string) {
   return statefulsetsSvc.post<boolean>("/restart", { cluster_id: clusterId, namespace, name });
@@ -119,6 +169,24 @@ export function deleteDaemonSet(clusterId: number, namespace: string, name: stri
 export function restartDaemonSet(clusterId: number, namespace: string, name: string) {
   return daemonsetsSvc.post<boolean>("/restart", { cluster_id: clusterId, namespace, name });
 }
+
+/** DaemonSet 仅支持垂直扩缩（修改 Pod 模板 resources）；不支持水平副本扩缩（与 HPA scale 语义一致）。 */
+export function patchDaemonSetContainerResources(
+  clusterId: number,
+  namespace: string,
+  name: string,
+  body: { container_name?: string; requests?: Record<string, string>; limits?: Record<string, string> },
+) {
+  return daemonsetsSvc.post<boolean>("/container-resources", {
+    cluster_id: clusterId,
+    namespace,
+    name,
+    container_name: body.container_name ?? "",
+    requests: body.requests,
+    limits: body.limits,
+  });
+}
+
 export function listDaemonSetPods(clusterId: number, namespace: string, name: string) {
   return daemonsetsSvc.get<RelatedPodItem[]>("/pods", k8sParams(clusterId, { namespace, name }));
 }
@@ -138,6 +206,24 @@ export function deleteJob(clusterId: number, namespace: string, name: string) {
 export function rerunJob(clusterId: number, namespace: string, name: string) {
   return jobsSvc.post<{ job_name: string }>("/rerun", { cluster_id: clusterId, namespace, name });
 }
+
+/** Job 不支持 HPA 式水平副本扩缩；仅可改 Pod 模板 resources（对齐 VPA 纳管范围，批量任务建议配合 VPA Initial/Off 等策略）。 */
+export function patchJobContainerResources(
+  clusterId: number,
+  namespace: string,
+  name: string,
+  body: { container_name?: string; requests?: Record<string, string>; limits?: Record<string, string> },
+) {
+  return jobsSvc.post<boolean>("/container-resources", {
+    cluster_id: clusterId,
+    namespace,
+    name,
+    container_name: body.container_name ?? "",
+    requests: body.requests,
+    limits: body.limits,
+  });
+}
+
 export function listJobPods(clusterId: number, namespace: string, name: string) {
   return jobsSvc.get<RelatedPodItem[]>("/pods", k8sParams(clusterId, { namespace, name }));
 }
@@ -163,6 +249,24 @@ export function suspendCronJob(clusterId: number, namespace: string, name: strin
 export function triggerCronJob(clusterId: number, namespace: string, name: string) {
   return cronjobsSvc.post<{ job_name: string }>("/trigger", { cluster_id: clusterId, namespace, name });
 }
+
+/** CronJob 不支持水平副本扩缩；修改 jobTemplate 内 resources 主要影响后续创建的 Job（类似 VPA 对模板资源的调整）。 */
+export function patchCronJobContainerResources(
+  clusterId: number,
+  namespace: string,
+  name: string,
+  body: { container_name?: string; requests?: Record<string, string>; limits?: Record<string, string> },
+) {
+  return cronjobsSvc.post<boolean>("/container-resources", {
+    cluster_id: clusterId,
+    namespace,
+    name,
+    container_name: body.container_name ?? "",
+    requests: body.requests,
+    limits: body.limits,
+  });
+}
+
 export function listCronJobPods(clusterId: number, namespace: string, name: string) {
   return cronjobsSvc.get<RelatedPodItem[]>("/pods", k8sParams(clusterId, { namespace, name }));
 }

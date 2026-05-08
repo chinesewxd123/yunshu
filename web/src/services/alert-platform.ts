@@ -164,6 +164,17 @@ export function deleteAlertDatasource(id: number) {
   return getData<void>(http.delete(`/alerts/datasources/${id}`));
 }
 
+export interface DatasourcePingResult {
+  ok: boolean;
+  message: string;
+  latency_ms: number;
+}
+
+/** Prometheus 连通性检测（GET instant query vector(1)，与后端存储的鉴权/TLS 一致） */
+export function pingAlertDatasource(id: number) {
+  return getData<DatasourcePingResult>(http.get(`/alerts/datasources/${id}/ping`));
+}
+
 /** GET Prometheus /api/v1/alerts，返回原始 JSON（含 data.alerts）。 */
 export function promActiveAlerts(id: number) {
   return getData<{ data: unknown }>(http.get(`/alerts/datasources/${id}/prometheus-alerts`)).then((r) => r.data);

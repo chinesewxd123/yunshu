@@ -106,7 +106,7 @@ func (s *AlertService) computeFingerprintFromLabels(labels map[string]string) st
 func (s *AlertService) logInhibitionEvent(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, event *model.AlertInhibitionEvent, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	e := model.AlertEvent{
-		Source:          "alertmanager",
+		Source:          alertEventSourceFromPayload(payload),
 		Title:           title + " (inhibition suppressed)",
 		Severity:        severity,
 		Status:          status,

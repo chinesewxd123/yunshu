@@ -302,6 +302,9 @@ func (s *K8sWorkloadService) DeploymentDetail(ctx context.Context, q NamespacedD
 }
 
 // DeploymentScale 执行对应的业务逻辑。
+// DeploymentScale 水平扩缩（修改 replicas）。
+// 对齐 Kubernetes 中可通过 HPA / scale 子资源调整副本的控制器：Deployment、StatefulSet、ReplicaSet、ReplicationController；
+// 不包含 DaemonSet、Job、CronJob（后三者不按「副本数」做持续水平伸缩）。
 func (s *K8sWorkloadService) DeploymentScale(ctx context.Context, req WorkloadScaleRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -423,6 +426,7 @@ func (s *K8sWorkloadService) StatefulSetDetail(ctx context.Context, q Namespaced
 }
 
 // StatefulSetScale 执行对应的业务逻辑。
+// StatefulSetScale 水平扩缩（修改 replicas）。语义同 DeploymentScale，属 HPA scale 子资源一类。
 func (s *K8sWorkloadService) StatefulSetScale(ctx context.Context, req WorkloadScaleRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -442,6 +446,215 @@ func (s *K8sWorkloadService) StatefulSetScale(ctx context.Context, req WorkloadS
 	copyObj.Spec.Replicas = &req.Replicas
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
 		return apperror.Internal(fmt.Sprintf("StatefulSet 扩缩容失败: %v", err))
+	}
+	return nil
+}
+
+func workloadContainerIndex(containers []corev1.Container, name string) int {
+	n := strings.TrimSpace(name)
+	if n != "" {
+		for i, c := range containers {
+			if c.Name == n {
+				return i
+			}
+		}
+		return -1
+	}
+	if len(containers) > 0 {
+		return 0
+	}
+	return -1
+}
+
+// DeploymentPatchContainerResources 垂直扩缩：修改 Deployment Pod 模板内指定容器的 requests/limits（对齐 VPA 修改模板资源的范畴）。
+func (s *K8sWorkloadService) DeploymentPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj appsv1.Deployment
+	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return apperror.BadRequest("Deployment 资源不存在")
+		}
+		return apperror.Internal(fmt.Sprintf("获取 Deployment 失败: %v", err))
+	}
+	containers := obj.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return apperror.BadRequest("未找到指定容器；请填写正确的 container_name")
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("requests 无效: %v", err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("limits 无效: %v", err))
+	}
+	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return apperror.Internal(fmt.Sprintf("更新 Deployment 资源配额失败: %v", err))
+	}
+	return nil
+}
+
+// StatefulSetPatchContainerResources 垂直扩缩：修改 StatefulSet Pod 模板内指定容器的 requests/limits（对齐 VPA 范畴）。
+func (s *K8sWorkloadService) StatefulSetPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj appsv1.StatefulSet
+	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return apperror.BadRequest("StatefulSet 资源不存在")
+		}
+		return apperror.Internal(fmt.Sprintf("获取 StatefulSet 失败: %v", err))
+	}
+	containers := obj.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return apperror.BadRequest("未找到指定容器；请填写正确的 container_name")
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("requests 无效: %v", err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("limits 无效: %v", err))
+	}
+	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return apperror.Internal(fmt.Sprintf("更新 StatefulSet 资源配额失败: %v", err))
+	}
+	return nil
+}
+
+// DaemonSetPatchContainerResources 垂直扩缩：修改 DaemonSet Pod 模板内指定容器的 requests/limits。
+// VPA 虽可纳管 DaemonSet，但 DaemonSet 按节点全局副本运行，资源上调可能导致节点压力，运维上需谨慎评估。
+func (s *K8sWorkloadService) DaemonSetPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj appsv1.DaemonSet
+	if err := k.WithContext(ctx).Resource(&appsv1.DaemonSet{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return apperror.BadRequest("DaemonSet 资源不存在")
+		}
+		return apperror.Internal(fmt.Sprintf("获取 DaemonSet 失败: %v", err))
+	}
+	containers := obj.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return apperror.BadRequest("未找到指定容器；请填写正确的 container_name")
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("requests 无效: %v", err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("limits 无效: %v", err))
+	}
+	if err := k.WithContext(ctx).Resource(&appsv1.DaemonSet{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return apperror.Internal(fmt.Sprintf("更新 DaemonSet 资源配额失败: %v", err))
+	}
+	return nil
+}
+
+// JobPatchContainerResources 垂直扩缩：修改 Job Pod 模板内指定容器的 requests/limits。
+// 批量类工作负载若由集群 VPA 纳管，通常仅在 Initial/Off 等模式下对新建 Pod 生效更安全；此处仅修改模板，不调整并行语义。
+func (s *K8sWorkloadService) JobPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj batchv1.Job
+	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return apperror.BadRequest("Job 资源不存在")
+		}
+		return apperror.Internal(fmt.Sprintf("获取 Job 失败: %v", err))
+	}
+	containers := obj.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return apperror.BadRequest("未找到指定容器；请填写正确的 container_name")
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("requests 无效: %v", err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("limits 无效: %v", err))
+	}
+	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return apperror.Internal(fmt.Sprintf("更新 Job 资源配额失败: %v", err))
+	}
+	return nil
+}
+
+// CronJobPatchContainerResources 垂直扩缩：修改 CronJob 的 jobTemplate 内 Pod 模板资源。
+// 与 Job 类似，批量/定时任务场景下变更模板主要影响后续创建的 Job/Pod；运行中实例不受影响。
+func (s *K8sWorkloadService) CronJobPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj batchv1.CronJob
+	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return apperror.BadRequest("CronJob 资源不存在")
+		}
+		return apperror.Internal(fmt.Sprintf("获取 CronJob 失败: %v", err))
+	}
+	containers := obj.Spec.JobTemplate.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return apperror.BadRequest("未找到指定容器；请填写正确的 container_name")
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.JobTemplate.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("requests 无效: %v", err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return apperror.BadRequest(fmt.Sprintf("limits 无效: %v", err))
+	}
+	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return apperror.Internal(fmt.Sprintf("更新 CronJob 资源配额失败: %v", err))
 	}
 	return nil
 }

@@ -253,6 +253,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 
 	alerts.GET("/datasources", alertPlatformHandler.ListDatasources)
 	alerts.POST("/datasources", alertPlatformHandler.CreateDatasource)
+	alerts.GET("/datasources/:id/ping", alertPlatformHandler.PingDatasource)
 	alerts.GET("/datasources/:id/prometheus-alerts", alertPlatformHandler.PromActiveAlerts)
 	alerts.POST("/datasources/:id/query", alertPlatformHandler.PromQuery)
 	alerts.POST("/datasources/:id/query_range", alertPlatformHandler.PromQueryRange)
@@ -370,6 +371,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	deployments.GET("/detail", workloadHandler.DeploymentDetail)
 	deployments.POST("/apply", workloadHandler.Apply)
 	deployments.POST("/scale", workloadHandler.DeploymentScale)
+	deployments.POST("/container-resources", workloadHandler.DeploymentPatchContainerResources)
 	deployments.POST("/restart", workloadHandler.DeploymentRestart)
 	deployments.DELETE("", workloadHandler.DeleteDeployment)
 
@@ -379,6 +381,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	statefulsets.GET("/detail", workloadHandler.StatefulSetDetail)
 	statefulsets.POST("/apply", workloadHandler.Apply)
 	statefulsets.POST("/scale", workloadHandler.StatefulSetScale)
+	statefulsets.POST("/container-resources", workloadHandler.StatefulSetPatchContainerResources)
 	statefulsets.POST("/restart", workloadHandler.StatefulSetRestart)
 	statefulsets.DELETE("", workloadHandler.DeleteStatefulSet)
 
@@ -387,6 +390,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	daemonsets.GET("", workloadHandler.ListDaemonSets)
 	daemonsets.GET("/detail", workloadHandler.DaemonSetDetail)
 	daemonsets.POST("/apply", workloadHandler.Apply)
+	daemonsets.POST("/container-resources", workloadHandler.DaemonSetPatchContainerResources)
 	daemonsets.POST("/restart", workloadHandler.DaemonSetRestart)
 	daemonsets.DELETE("", workloadHandler.DeleteDaemonSet)
 
@@ -397,6 +401,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	cronjobs.GET("/detail", workloadHandler.CronJobDetail)
 	cronjobs.GET("/pods", workloadHandler.CronJobPods)
 	cronjobs.POST("/apply", workloadHandler.Apply)
+	cronjobs.POST("/container-resources", workloadHandler.CronJobPatchContainerResources)
 	cronjobs.POST("/suspend", workloadHandler.CronJobSuspend)
 	cronjobs.POST("/trigger", workloadHandler.CronJobTrigger)
 	cronjobs.DELETE("", workloadHandler.DeleteCronJob)
@@ -407,6 +412,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	jobs.GET("/detail", workloadHandler.JobDetail)
 	jobs.GET("/pods", workloadHandler.JobPods)
 	jobs.POST("/rerun", workloadHandler.JobRerun)
+	jobs.POST("/container-resources", workloadHandler.JobPatchContainerResources)
 	jobs.POST("/apply", workloadHandler.Apply)
 	jobs.DELETE("", workloadHandler.DeleteJob)
 

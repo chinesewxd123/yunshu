@@ -236,6 +236,7 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&model.AlertSubscriptionNode{},
 		&model.AlertReceiverGroup{},
 		&model.AlertSubscriptionMatch{},
+		&model.AlertFiringDelivery{},
 		&model.CloudExpiryRule{},
 		&model.Project{},
 		&model.ProjectMember{},

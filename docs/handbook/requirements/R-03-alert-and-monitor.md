@@ -4,6 +4,8 @@
 
 统一 **Prometheus 数据源**、**静默（含批量）**、**监控规则（PromQL）**、**订阅树路由**、**通知通道**、**处理人/部门**、**值班班次**；支持 Alertmanager Webhook 接入与历史事件查询。
 
+与实现对齐的详细需求与设计（模型、API、`ReceiveAlertmanager` 流水线、Redis key）：见 [R-alert-platform-detailed-design.md](../../requirements/R-alert-platform-detailed-design.md)。
+
 ## 2. 功能结构
 
 ```
