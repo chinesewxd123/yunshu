@@ -379,11 +379,58 @@ body {
   --overview-num-font: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   margin: -24px -24px 0 -24px;
   padding: 22px 24px 36px;
-  min-height: calc(100vh - 100px);
+  min-height: calc(100dvh - 88px);
+  display: flex;
+  flex-direction: column;
   background: radial-gradient(ellipse 120% 80% at 50% -30%, rgba(56, 189, 248, 0.14), transparent 52%),
     linear-gradient(165deg, #070f1a 0%, #0d2137 42%, #081018 100%);
   border-radius: 0 0 14px 14px;
   position: relative;
+  overflow-x: hidden;
+}
+
+.overview-big-screen__top {
+  flex: 0 0 auto;
+}
+
+.overview-big-screen__tables {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: clamp(320px, 46vh, 720px);
+  margin-top: 16px;
+}
+
+.overview-big-screen__tables-row {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.overview-big-screen__table-col {
+  display: flex;
+  min-height: 0;
+}
+
+.overview-big-screen__table-panel.ant-card {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-big-screen__table-panel .ant-card-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px !important;
+}
+
+.overview-big-screen__table-scroll {
+  flex: 1 1 auto;
+  min-height: 180px;
   overflow: hidden;
 }
 
@@ -488,13 +535,9 @@ body {
   font-weight: 600;
 }
 
-.overview-big-screen__table-card .ant-card-body {
-  padding-top: 8px;
-}
-
 .overview-big-screen .ant-table {
   background: transparent;
-  color: rgba(241, 245, 249, 0.92);
+  color: rgba(248, 250, 252, 0.96);
 }
 
 .overview-big-screen .ant-table-thead > tr > th {
@@ -504,12 +547,20 @@ body {
 }
 
 .overview-big-screen .ant-table-tbody > tr > td {
-  border-bottom: 1px solid rgba(56, 189, 248, 0.07);
-  background: transparent !important;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.1);
+  color: rgba(248, 250, 252, 0.94) !important;
+}
+
+.overview-big-screen .ant-table-tbody > tr:nth-child(odd) > td {
+  background: rgba(8, 17, 31, 0.42) !important;
+}
+
+.overview-big-screen .ant-table-tbody > tr:nth-child(even) > td {
+  background: rgba(15, 31, 53, 0.55) !important;
 }
 
 .overview-big-screen .ant-table-tbody > tr:hover > td {
-  background: rgba(56, 189, 248, 0.06) !important;
+  background: rgba(56, 189, 248, 0.12) !important;
 }
 
 .stats-card.ant-card,

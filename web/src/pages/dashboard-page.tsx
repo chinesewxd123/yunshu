@@ -18,7 +18,7 @@ import {
   WarningOutlined,
 } from "@ant-design/icons";
 import { Card, Col, Divider, Progress, Row, Space, Statistic, Table, Tag, Typography } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getHealth } from "../services/auth";
 import { getOverview, getOverviewTrends } from "../services/overview";
 import type { OverviewTrendsResponse } from "../services/overview";
@@ -167,6 +167,8 @@ function formatUptime(seconds: number): string {
   return `${hours}小时 ${minutes}分钟`;
 }
 
+const OVERVIEW_LOG_PAGE_SIZE = 14;
+
 export function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics>(defaultMetrics);
   const [health, setHealth] = useState<SystemHealth>({ status: "", version: "", uptime: 0, loading: true });
@@ -174,6 +176,8 @@ export function DashboardPage() {
   const [trends, setTrends] = useState<OverviewTrendsResponse | null>(null);
   const [recentOps, setRecentOps] = useState<OperationLogItem[]>([]);
   const [recentLogins, setRecentLogins] = useState<LoginLogItem[]>([]);
+  const tableScrollWrapRef = useRef<HTMLDivElement>(null);
+  const [tableScrollY, setTableScrollY] = useState(360);
 
   useEffect(() => {
     let active = true;
@@ -186,8 +190,8 @@ export function DashboardPage() {
           getOverview().catch(() => null),
           getHealth().catch(() => null),
           getOverviewTrends().catch(() => null),
-          getOperationLogs({ page: 1, page_size: 5 }).catch(() => null),
-          getLoginLogs({ page: 1, page_size: 5 }).catch(() => null),
+          getOperationLogs({ page: 1, page_size: OVERVIEW_LOG_PAGE_SIZE }).catch(() => null),
+          getLoginLogs({ page: 1, page_size: OVERVIEW_LOG_PAGE_SIZE }).catch(() => null),
         ]);
 
         if (!active) {
@@ -242,6 +246,21 @@ export function DashboardPage() {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    const el = tableScrollWrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = el.clientHeight;
+      if (h > 56) {
+        setTableScrollY(Math.max(140, Math.floor(h - 6)));
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [recentOps, recentLogins, loading]);
+
   const podTotal = metrics.podNormal + metrics.podAbnormal;
   const podHealthyPct = useMemo(() => {
     if (podTotal <= 0) return 0;
@@ -261,23 +280,26 @@ export function DashboardPage() {
 
   const uptimePct = Math.min(100, (health.uptime / 86400) * 100);
 
+  const cellTextStyle = { color: "rgba(248, 250, 252, 0.96)" };
+
   return (
     <div className="overview-big-screen">
-      <div className="overview-big-screen__hero">
-        <div>
-          <Typography.Title level={3} className="overview-big-screen__title">
-            <DashboardOutlined /> 运维运行总览
-          </Typography.Title>
-          <Typography.Text className="overview-big-screen__subtitle">
-            资产底座 · Kubernetes · 告警与日志采集 · 活跃趋势 · 健康状态
-          </Typography.Text>
+      <div className="overview-big-screen__top">
+        <div className="overview-big-screen__hero">
+          <div>
+            <Typography.Title level={3} className="overview-big-screen__title">
+              <DashboardOutlined /> 运维运行总览
+            </Typography.Title>
+            <Typography.Text className="overview-big-screen__subtitle">
+              资产底座 · Kubernetes · 告警与日志采集 · 活跃趋势 · 健康状态
+            </Typography.Text>
+          </div>
         </div>
-      </div>
 
-      <Typography.Text className="overview-big-screen__section-label">
-        <TeamOutlined /> 资产底座
-      </Typography.Text>
-      <Row gutter={[16, 16]} className="overview-big-screen__metrics">
+        <Typography.Text className="overview-big-screen__section-label">
+          <TeamOutlined /> 资产底座
+        </Typography.Text>
+        <Row gutter={[16, 16]} className="overview-big-screen__metrics">
         {assetStats.map((item) => (
           <Col xs={24} sm={12} xl={6} key={item.key}>
             <Card className="overview-big-screen__stat-card" loading={loading} bordered={false}>
@@ -300,12 +322,12 @@ export function DashboardPage() {
             </Card>
           </Col>
         ))}
-      </Row>
+        </Row>
 
-      <Typography.Text className="overview-big-screen__section-label">
-        <ClusterOutlined /> Kubernetes 运行态势
-      </Typography.Text>
-      <Row gutter={[16, 16]} className="overview-big-screen__metrics">
+        <Typography.Text className="overview-big-screen__section-label">
+          <ClusterOutlined /> Kubernetes 运行态势
+        </Typography.Text>
+        <Row gutter={[16, 16]} className="overview-big-screen__metrics">
         {k8sStats.map((item) => (
           <Col xs={24} sm={12} xl={6} key={item.key}>
             <Card className="overview-big-screen__stat-card overview-big-screen__stat-card--k8s" loading={loading} bordered={false}>
@@ -328,12 +350,12 @@ export function DashboardPage() {
             </Card>
           </Col>
         ))}
-      </Row>
+        </Row>
 
-      <Typography.Text className="overview-big-screen__section-label">
-        <AlertOutlined /> 告警与日志采集
-      </Typography.Text>
-      <Row gutter={[16, 16]} className="overview-big-screen__metrics">
+        <Typography.Text className="overview-big-screen__section-label">
+          <AlertOutlined /> 告警与日志采集
+        </Typography.Text>
+        <Row gutter={[16, 16]} className="overview-big-screen__metrics">
         {alertAndAgentStats.map((item) => (
           <Col xs={24} sm={12} xl={6} key={item.key}>
             <Card className="overview-big-screen__stat-card overview-big-screen__stat-card--alert" loading={loading} bordered={false}>
@@ -356,9 +378,9 @@ export function DashboardPage() {
             </Card>
           </Col>
         ))}
-      </Row>
+        </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
+        <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
         <Col xs={24} xl={15}>
           <Card
             className="overview-big-screen__panel"
@@ -475,78 +497,131 @@ export function DashboardPage() {
             </Card>
           </Space>
         </Col>
-      </Row>
+        </Row>
+      </div>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card
-            className="overview-big-screen__panel overview-big-screen__table-card"
-            title={
-              <Space>
-                <ProfileOutlined style={{ color: "#34d399" }} />
-                最近操作
-              </Space>
-            }
-            loading={loading}
-            bordered={false}
-          >
-            <Table<OperationLogItem>
-              size="small"
-              rowKey="id"
-              dataSource={recentOps}
-              pagination={false}
-              tableLayout="fixed"
-              columns={[
-                { title: "用户", dataIndex: "username", width: 88, render: (v: string) => v || "-" },
-                { title: "方法", dataIndex: "method", width: 72, render: (v: string) => <Tag bordered={false}>{v}</Tag> },
-                {
-                  title: "路径",
-                  dataIndex: "path",
-                  ellipsis: true,
-                  render: (v: string) => (
-                    <Typography.Text ellipsis={{ tooltip: v }} style={{ maxWidth: "100%", color: "rgba(241, 245, 249, 0.92)" }}>
-                      {v}
-                    </Typography.Text>
-                  ),
-                },
-                { title: "时间", dataIndex: "created_at", width: 152, render: formatDateTime },
-              ]}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card
-            className="overview-big-screen__panel overview-big-screen__table-card"
-            title={
-              <Space>
-                <LoginOutlined style={{ color: "#38bdf8" }} />
-                最近登录
-              </Space>
-            }
-            loading={loading}
-            bordered={false}
-          >
-            <Table<LoginLogItem>
-              size="small"
-              rowKey="id"
-              dataSource={recentLogins}
-              pagination={false}
-              tableLayout="fixed"
-              columns={[
-                { title: "用户", dataIndex: "username", width: 120, render: (v: string) => v || "-" },
-                {
-                  title: "状态",
-                  dataIndex: "status",
-                  width: 72,
-                  render: (v: number) => (v === 1 ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>),
-                },
-                { title: "来源", dataIndex: "source", width: 96, render: (v: string) => <Tag bordered={false}>{v || "-"}</Tag> },
-                { title: "时间", dataIndex: "created_at", width: 152, render: formatDateTime },
-              ]}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <div className="overview-big-screen__tables">
+        <Row gutter={[16, 16]} className="overview-big-screen__tables-row">
+          <Col xs={24} lg={12} className="overview-big-screen__table-col">
+            <Card
+              className="overview-big-screen__panel overview-big-screen__table-card overview-big-screen__table-panel"
+              title={
+                <Space>
+                  <ProfileOutlined style={{ color: "#34d399" }} />
+                  最近操作
+                  <Typography.Text type="secondary" style={{ fontSize: 12, color: "rgba(186, 214, 238, 0.55)" }}>
+                    最近 {OVERVIEW_LOG_PAGE_SIZE} 条
+                  </Typography.Text>
+                </Space>
+              }
+              loading={loading}
+              bordered={false}
+            >
+              <div ref={tableScrollWrapRef} className="overview-big-screen__table-scroll">
+                <Table<OperationLogItem>
+                  size="small"
+                  rowKey="id"
+                  dataSource={recentOps}
+                  pagination={false}
+                  tableLayout="fixed"
+                  scroll={{ y: tableScrollY }}
+                  columns={[
+                    {
+                      title: "用户",
+                      dataIndex: "username",
+                      width: 88,
+                      render: (v: string) => <span style={cellTextStyle}>{v || "-"}</span>,
+                    },
+                    {
+                      title: "方法",
+                      dataIndex: "method",
+                      width: 72,
+                      render: (v: string) => (
+                        <Tag bordered={false} color="processing">
+                          {v}
+                        </Tag>
+                      ),
+                    },
+                    {
+                      title: "路径",
+                      dataIndex: "path",
+                      ellipsis: true,
+                      render: (v: string) => (
+                        <Typography.Text ellipsis={{ tooltip: v }} style={{ maxWidth: "100%", ...cellTextStyle }}>
+                          {v}
+                        </Typography.Text>
+                      ),
+                    },
+                    {
+                      title: "时间",
+                      dataIndex: "created_at",
+                      width: 156,
+                      render: (v: string) => <span style={cellTextStyle}>{formatDateTime(v)}</span>,
+                    },
+                  ]}
+                />
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} lg={12} className="overview-big-screen__table-col">
+            <Card
+              className="overview-big-screen__panel overview-big-screen__table-card overview-big-screen__table-panel"
+              title={
+                <Space>
+                  <LoginOutlined style={{ color: "#38bdf8" }} />
+                  最近登录
+                  <Typography.Text type="secondary" style={{ fontSize: 12, color: "rgba(186, 214, 238, 0.55)" }}>
+                    最近 {OVERVIEW_LOG_PAGE_SIZE} 条
+                  </Typography.Text>
+                </Space>
+              }
+              loading={loading}
+              bordered={false}
+            >
+              <div className="overview-big-screen__table-scroll">
+                <Table<LoginLogItem>
+                  size="small"
+                  rowKey="id"
+                  dataSource={recentLogins}
+                  pagination={false}
+                  tableLayout="fixed"
+                  scroll={{ y: tableScrollY }}
+                  columns={[
+                    {
+                      title: "用户",
+                      dataIndex: "username",
+                      width: 120,
+                      render: (v: string) => <span style={cellTextStyle}>{v || "-"}</span>,
+                    },
+                    {
+                      title: "状态",
+                      dataIndex: "status",
+                      width: 72,
+                      render: (v: number) => (v === 1 ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>),
+                    },
+                    {
+                      title: "来源",
+                      dataIndex: "source",
+                      width: 96,
+                      render: (v: string) => (
+                        <Tag bordered={false} color="cyan">
+                          {v || "-"}
+                        </Tag>
+                      ),
+                    },
+                    {
+                      title: "时间",
+                      dataIndex: "created_at",
+                      width: 156,
+                      render: (v: string) => <span style={cellTextStyle}>{formatDateTime(v)}</span>,
+                    },
+                  ]}
+                />
+              </div>
+            </Card>
+          </Col>
+        </Row>
+      </div>
     </div>
   );
 }
