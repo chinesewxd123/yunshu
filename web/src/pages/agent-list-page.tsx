@@ -109,6 +109,7 @@ export function AgentListPage() {
       <Table
         rowKey="server_id"
         loading={loading}
+        scroll={{ x: "max-content" }}
         dataSource={list}
         rowSelection={{
           selectedRowKeys,
@@ -156,6 +157,37 @@ export function AgentListPage() {
             render: (v: boolean) => (v ? <Tag color="success">在线</Tag> : <Tag color="error">离线</Tag>),
           },
           {
+            title: (
+              <Tooltip title="最近一次从「离线判定」恢复为在线的时刻（心跳或健康上报触发）。">
+                <span>最新上线时间</span>
+              </Tooltip>
+            ),
+            dataIndex: "last_online_at",
+            width: 170,
+            render: (v: string) => (v ? formatDateTime(v) : "-"),
+          },
+          {
+            title: (
+              <Tooltip title="最近一次被平台判定为离线的时间（定时扫描根据心跳超时写入）。">
+                <span>最新离线时间</span>
+              </Tooltip>
+            ),
+            dataIndex: "last_offline_at",
+            width: 170,
+            render: (v: string) => (v ? formatDateTime(v) : "-"),
+          },
+          {
+            title: (
+              <Tooltip title="与离线归因一致：如 Agent 已停止、心跳超时（失联或进程僵死）、从未连接成功等。">
+                <span>最近离线原因</span>
+              </Tooltip>
+            ),
+            dataIndex: "last_offline_reason",
+            width: 220,
+            ellipsis: true,
+            render: (v: string) => v || "-",
+          },
+          {
             title: "上报",
             dataIndex: "recent_publishing",
             width: 90,
@@ -195,37 +227,6 @@ export function AgentListPage() {
           },
           { title: "最近心跳", dataIndex: "last_seen_at", width: 170, render: (v: string) => (v ? formatDateTime(v) : "-") },
           {
-            title: (
-              <Tooltip title="最近一次从「离线判定」恢复为在线的时刻（心跳或健康上报触发）。">
-                <span>最新上线</span>
-              </Tooltip>
-            ),
-            dataIndex: "last_online_at",
-            width: 170,
-            render: (v: string) => (v ? formatDateTime(v) : "-"),
-          },
-          {
-            title: (
-              <Tooltip title="最近一次被平台判定为离线的时间（定时扫描根据心跳超时写入）。">
-                <span>最新离线</span>
-              </Tooltip>
-            ),
-            dataIndex: "last_offline_at",
-            width: 170,
-            render: (v: string) => (v ? formatDateTime(v) : "-"),
-          },
-          {
-            title: (
-              <Tooltip title="与离线归因一致：如 Agent 已停止、心跳超时（失联或进程僵死）、从未连接成功等。">
-                <span>最近离线原因</span>
-              </Tooltip>
-            ),
-            dataIndex: "last_offline_reason",
-            width: 200,
-            ellipsis: true,
-            render: (v: string) => v || "-",
-          },
-          {
             title: "最近错误",
             dataIndex: "last_error",
             ellipsis: true,
@@ -256,6 +257,9 @@ export function AgentListPage() {
         <p><strong>服务器:</strong> {errorDetailRow?.server_name || "-"} ({errorDetailRow?.server_host || "-"})</p>
         <p><strong>Agent:</strong> {errorDetailRow?.name || "-"} / {errorDetailRow?.version || "-"}</p>
         <p><strong>运行状态:</strong> {errorDetailRow?.health_status || "-"}</p>
+        <p><strong>最新上线时间:</strong> {errorDetailRow?.last_online_at ? formatDateTime(errorDetailRow.last_online_at) : "-"}</p>
+        <p><strong>最新离线时间:</strong> {errorDetailRow?.last_offline_at ? formatDateTime(errorDetailRow.last_offline_at) : "-"}</p>
+        <p><strong>最近离线原因:</strong> {errorDetailRow?.last_offline_reason || "-"}</p>
         <p><strong>最近心跳:</strong> {errorDetailRow?.last_seen_at ? formatDateTime(errorDetailRow.last_seen_at) : "-"}</p>
         <p><strong>错误内容:</strong></p>
         <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", background: "#fafafa", padding: 12, borderRadius: 8 }}>
