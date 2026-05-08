@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
@@ -161,7 +161,7 @@ func (s *K8sNodeService) List(ctx context.Context, query NodeListQuery) ([]NodeL
 	}
 	var list []corev1.Node
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).List(&list).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Node 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6af6d441fc65, err))
 	}
 
 	// 统计每个 node 上的 pod 数
@@ -286,9 +286,9 @@ func (s *K8sNodeService) Detail(ctx context.Context, query NodeDetailQuery) (*No
 	var n corev1.Node
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Name(query.Name).Get(&n).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("节点不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg7b4519294b96)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 Node 详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt743663002376, err))
 	}
 	copyObj := n.DeepCopy()
 	copyObj.APIVersion = "v1"
@@ -402,7 +402,7 @@ func quantityPercent(usage, alloc resource.Quantity) float64 {
 func normalizeTaintEffect(s string) (corev1.TaintEffect, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "", apperror.BadRequest("污点 effect 不能为空（NoSchedule / PreferNoSchedule / NoExecute）")
+		return "", constants.ErrBadRequestWithMsg(constants.ErrMsg353da31eafa9)
 	}
 	lower := strings.ToLower(s)
 	switch lower {
@@ -417,7 +417,7 @@ func normalizeTaintEffect(s string) (corev1.TaintEffect, error) {
 	case corev1.TaintEffectNoSchedule, corev1.TaintEffectPreferNoSchedule, corev1.TaintEffectNoExecute:
 		return corev1.TaintEffect(s), nil
 	default:
-		return "", apperror.BadRequest("无效的 effect，需为 NoSchedule、PreferNoSchedule 或 NoExecute")
+		return "", constants.ErrBadRequestWithMsg(constants.ErrMsgdfbb6b0251fd)
 	}
 }
 
@@ -426,7 +426,7 @@ func nodeTaintsToCore(in []NodeTaint) ([]corev1.Taint, error) {
 	for _, t := range in {
 		key := strings.TrimSpace(t.Key)
 		if key == "" {
-			return nil, apperror.BadRequest("污点 key 不能为空")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgf545df0bc2cf)
 		}
 		eff, err := normalizeTaintEffect(t.Effect)
 		if err != nil {
@@ -445,7 +445,7 @@ func nodeTaintsToCore(in []NodeTaint) ([]corev1.Taint, error) {
 func (s *K8sNodeService) SetSchedulability(ctx context.Context, req NodeSchedulabilityRequest) error {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return apperror.BadRequest("节点名称不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg215d21a8863c)
 	}
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
@@ -454,14 +454,14 @@ func (s *K8sNodeService) SetSchedulability(ctx context.Context, req NodeSchedula
 	var n corev1.Node
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Name(name).Get(&n).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("节点不存在")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg7b4519294b96)
 		}
-		return apperror.Internal(fmt.Sprintf("获取 Node 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta293b9a12001, err))
 	}
 	updated := n.DeepCopy()
 	updated.Spec.Unschedulable = req.Unschedulable
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Update(updated).Error; err != nil {
-		return apperror.Internal(fmt.Sprintf("更新 Node 调度状态失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6f761b85c92e, err))
 	}
 	return nil
 }
@@ -470,7 +470,7 @@ func (s *K8sNodeService) SetSchedulability(ctx context.Context, req NodeSchedula
 func (s *K8sNodeService) ReplaceTaints(ctx context.Context, req NodeTaintsReplaceRequest) error {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return apperror.BadRequest("节点名称不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg215d21a8863c)
 	}
 	taints, err := nodeTaintsToCore(req.Taints)
 	if err != nil {
@@ -483,14 +483,14 @@ func (s *K8sNodeService) ReplaceTaints(ctx context.Context, req NodeTaintsReplac
 	var n corev1.Node
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Name(name).Get(&n).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("节点不存在")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg7b4519294b96)
 		}
-		return apperror.Internal(fmt.Sprintf("获取 Node 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta293b9a12001, err))
 	}
 	updated := n.DeepCopy()
 	updated.Spec.Taints = taints
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Update(updated).Error; err != nil {
-		return apperror.Internal(fmt.Sprintf("更新 Node 污点失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtac67aae65acc, err))
 	}
 	return nil
 }

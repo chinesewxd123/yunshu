@@ -3,13 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/pagination"
 
 	"gorm.io/gorm"
@@ -82,7 +83,7 @@ func ParseSilenceMatchersJSON(raw string) ([]SilenceMatcher, error) {
 	}
 	for _, m := range ms {
 		if strings.TrimSpace(m.Name) == "" {
-			return nil, apperror.BadRequest("matcher name 不能为空")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg3f8f3c7674a1)
 		}
 	}
 	return ms, nil
@@ -214,14 +215,14 @@ func (s *AlertSilenceService) Create(ctx context.Context, userID uint, req Alert
 		return nil, err
 	}
 	if !req.EndsAt.After(req.StartsAt) {
-		return nil, apperror.BadRequest("ends_at 必须晚于 starts_at")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc1f741f96c03)
 	}
 	dup, err := s.hasEnabledUnexpiredDuplicate(ctx, req.MatchersJSON, time.Now())
 	if err != nil {
 		return nil, err
 	}
 	if dup {
-		return nil, apperror.BadRequest("已存在启用且未过期的同类静默规则，无需重复创建；如需调整请编辑现有静默")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg612f94e277ef)
 	}
 	row := model.AlertSilence{
 		Name:         strings.TrimSpace(req.Name),
@@ -242,7 +243,7 @@ func (s *AlertSilenceService) Update(ctx context.Context, id uint, req AlertSile
 	var row model.AlertSilence
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("静默不存在")
+			return nil, constants.ErrAlertSilenceNotFound
 		}
 		return nil, err
 	}
@@ -262,7 +263,7 @@ func (s *AlertSilenceService) Update(ctx context.Context, id uint, req AlertSile
 		row.EndsAt = req.EndsAt
 	}
 	if row.EndsAt.Before(row.StartsAt) || row.EndsAt.Equal(row.StartsAt) {
-		return nil, apperror.BadRequest("ends_at 必须晚于 starts_at")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc1f741f96c03)
 	}
 	row.Comment = strings.TrimSpace(req.Comment)
 	if req.Enabled != nil {
@@ -280,7 +281,7 @@ func (s *AlertSilenceService) Delete(ctx context.Context, id uint) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return apperror.NotFound("静默不存在")
+		return constants.ErrAlertSilenceNotFound
 	}
 	return nil
 }
@@ -293,14 +294,14 @@ func (s *AlertSilenceService) CreateBatch(ctx context.Context, userID uint, req 
 				return err
 			}
 			if !it.EndsAt.After(it.StartsAt) {
-				return apperror.BadRequest("批量项 ends_at 必须晚于 starts_at: " + it.Name)
+				return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmtAlertSilenceBatchEndsAt, it.Name))
 			}
 			dup, err := s.hasEnabledUnexpiredDuplicate(ctx, it.MatchersJSON, time.Now())
 			if err != nil {
 				return err
 			}
 			if dup {
-				return apperror.BadRequest("已存在启用且未过期的同类静默规则，请勿重复创建（批量任务已中止）")
+				return constants.ErrBadRequestWithMsg(constants.ErrMsg76b99177ec58)
 			}
 			row := model.AlertSilence{
 				Name:         strings.TrimSpace(it.Name),

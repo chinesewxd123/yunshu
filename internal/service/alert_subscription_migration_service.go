@@ -22,8 +22,8 @@ type SubscriptionMigrationReport struct {
 
 // MigrateFromPoliciesOptions 迁移参数：DefaultProjectID 非 0 时，作为「未写 project_id」策略的目标项目；为 0 则取数据库中首个启用项目。
 type MigrateFromPoliciesOptions struct {
-	DisableOld         bool
-	DefaultProjectID   uint
+	DisableOld       bool
+	DefaultProjectID uint
 }
 
 func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, opts MigrateFromPoliciesOptions) (*SubscriptionMigrationReport, error) {
@@ -44,16 +44,16 @@ func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, opts
 	rep.ResolvedDefaultProjectID = fallbackProject
 	// 旧策略代码已剔除：迁移仅通过表读取历史数据（alert_policies）
 	type legacyPolicy struct {
-		ID            uint      `gorm:"column:id"`
-		Name          string    `gorm:"column:name"`
-		Description   string    `gorm:"column:description"`
-		Enabled       bool      `gorm:"column:enabled"`
-		MatchLabelsJSON string  `gorm:"column:match_labels_json"`
-		MatchRegexJSON  string  `gorm:"column:match_regex_json"`
-		ChannelsJSON    string  `gorm:"column:channels_json"`
-		NotifyResolved  bool    `gorm:"column:notify_resolved"`
-		SilenceSeconds  int     `gorm:"column:silence_seconds"`
-		CreatedAt     time.Time `gorm:"column:created_at"`
+		ID              uint      `gorm:"column:id"`
+		Name            string    `gorm:"column:name"`
+		Description     string    `gorm:"column:description"`
+		Enabled         bool      `gorm:"column:enabled"`
+		MatchLabelsJSON string    `gorm:"column:match_labels_json"`
+		MatchRegexJSON  string    `gorm:"column:match_regex_json"`
+		ChannelsJSON    string    `gorm:"column:channels_json"`
+		NotifyResolved  bool      `gorm:"column:notify_resolved"`
+		SilenceSeconds  int       `gorm:"column:silence_seconds"`
+		CreatedAt       time.Time `gorm:"column:created_at"`
 	}
 	var policies []legacyPolicy
 	if err := s.db.WithContext(ctx).Table("alert_policies").Find(&policies).Error; err != nil {
@@ -224,4 +224,3 @@ func (s *AlertSubscriptionService) firstEnabledProjectID(ctx context.Context) (u
 	}
 	return p.ID, nil
 }
-

@@ -4,8 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"time"
-
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -19,7 +18,7 @@ func (s *AlertService) shouldEnqueueAlertmanagerWebhook() bool {
 func (s *AlertService) enqueueAlertmanagerWebhook(ctx context.Context, payload AlertManagerPayload) error {
 	bs, err := json.Marshal(payload)
 	if err != nil {
-		return apperror.Internal("告警 webhook 入队失败：序列化错误")
+		return constants.ErrInternalWithMsg(constants.ErrMsg39d72e4b8516)
 	}
 	maxLen := s.cfg.WebhookQueueMaxLen
 	if maxLen <= 0 {
@@ -30,7 +29,7 @@ func (s *AlertService) enqueueAlertmanagerWebhook(ctx context.Context, payload A
 		return err
 	}
 	if n >= int64(maxLen) {
-		return apperror.Internal("告警 webhook 队列已满，请稍后重试")
+		return constants.ErrInternalWithMsg(constants.ErrMsgfd7c760c8d45)
 	}
 	if err := s.redis.RPush(ctx, redisKeyAlertWebhookQueue, bs).Err(); err != nil {
 		return err

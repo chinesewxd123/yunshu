@@ -2,9 +2,9 @@ package middleware
 
 import (
 	"strings"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
@@ -25,7 +25,7 @@ func WSAuth(secret string, redisClient *redis.Client, userRepo *repository.UserR
 			tokenString = strings.TrimSpace(c.Query("access_token"))
 		}
 		if tokenString == "" {
-			response.Error(c, apperror.Unauthorized("缺少 token 参数"))
+			response.Error(c, constants.ErrWSMissingTokenParam)
 			c.Abort()
 			return
 		}
@@ -35,14 +35,14 @@ func WSAuth(secret string, redisClient *redis.Client, userRepo *repository.UserR
 			if logger != nil {
 				logger.Info.Warn("parse ws token failed", "error", err)
 			}
-			response.Error(c, apperror.Unauthorized("Token 无效"))
+			response.Error(c, constants.ErrAccessTokenInvalid)
 			c.Abort()
 			return
 		}
 
 		if redisClient != nil {
 			if _, err = redisClient.Get(c.Request.Context(), store.AccessTokenKey(claims.TokenID)).Result(); err != nil {
-				response.Error(c, apperror.Unauthorized("登录已失效"))
+				response.Error(c, constants.ErrLoginSessionExpired)
 				c.Abort()
 				return
 			}
@@ -50,12 +50,12 @@ func WSAuth(secret string, redisClient *redis.Client, userRepo *repository.UserR
 
 		user, err := userRepo.GetByID(c.Request.Context(), claims.UserID)
 		if err != nil {
-			response.Error(c, apperror.Unauthorized("用户不存在"))
+			response.Error(c, constants.ErrAccountPrincipalNotFound)
 			c.Abort()
 			return
 		}
 		if user.Status != model.StatusEnabled {
-			response.Error(c, apperror.Forbidden("用户已被禁用"))
+			response.Error(c, constants.ErrAccountDisabled)
 			c.Abort()
 			return
 		}

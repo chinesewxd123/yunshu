@@ -9,9 +9,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 
 	"gorm.io/gorm"
@@ -29,22 +29,22 @@ type AlertSubscriptionService struct {
 
 // CachedSubscriptionNode 缓存的订阅树节点
 type CachedSubscriptionNode struct {
-	ID                 uint
-	ProjectID          uint
-	ParentID           *uint
-	Level              int
-	Path               string
-	Name               string
-	Code               string
-	Continue           bool
-	Enabled            bool
-	MatchLabels        map[string]string
-	MatchRegex         map[string]*regexp.Regexp
-	MatchSeverity      string
-	ReceiverGroupIDs   []uint
-	SilenceSeconds     int
-	NotifyResolved     bool
-	Children           []*CachedSubscriptionNode
+	ID               uint
+	ProjectID        uint
+	ParentID         *uint
+	Level            int
+	Path             string
+	Name             string
+	Code             string
+	Continue         bool
+	Enabled          bool
+	MatchLabels      map[string]string
+	MatchRegex       map[string]*regexp.Regexp
+	MatchSeverity    string
+	ReceiverGroupIDs []uint
+	SilenceSeconds   int
+	NotifyResolved   bool
+	Children         []*CachedSubscriptionNode
 }
 
 // NewAlertSubscriptionService 创建订阅服务
@@ -61,18 +61,18 @@ func NewAlertSubscriptionService(db *gorm.DB) *AlertSubscriptionService {
 
 // AlertSubscriptionNodeUpsertRequest 创建/更新请求
 type AlertSubscriptionNodeUpsertRequest struct {
-	ProjectID       uint               `json:"project_id" binding:"required"`
-	ParentID        *uint              `json:"parent_id"`
-	Name            string             `json:"name" binding:"required,max=128"`
-	Code            string             `json:"code" binding:"omitempty,max=64"`
-	MatchLabelsJSON string             `json:"match_labels_json"`
-	MatchRegexJSON  string             `json:"match_regex_json"`
-	MatchSeverity   string             `json:"match_severity" binding:"omitempty,max=128"`
-	Continue        bool               `json:"continue"`
-	Enabled         *bool              `json:"enabled"`
-	ReceiverGroupIDsJSON string        `json:"receiver_group_ids_json"`
-	SilenceSeconds  int                `json:"silence_seconds"`
-	NotifyResolved  *bool              `json:"notify_resolved"`
+	ProjectID            uint   `json:"project_id" binding:"required"`
+	ParentID             *uint  `json:"parent_id"`
+	Name                 string `json:"name" binding:"required,max=128"`
+	Code                 string `json:"code" binding:"omitempty,max=64"`
+	MatchLabelsJSON      string `json:"match_labels_json"`
+	MatchRegexJSON       string `json:"match_regex_json"`
+	MatchSeverity        string `json:"match_severity" binding:"omitempty,max=128"`
+	Continue             bool   `json:"continue"`
+	Enabled              *bool  `json:"enabled"`
+	ReceiverGroupIDsJSON string `json:"receiver_group_ids_json"`
+	SilenceSeconds       int    `json:"silence_seconds"`
+	NotifyResolved       *bool  `json:"notify_resolved"`
 }
 
 // AlertSubscriptionNodeListQuery 列表查询
@@ -207,10 +207,10 @@ func (s *AlertSubscriptionService) CreateNode(ctx context.Context, req AlertSubs
 	if req.ParentID != nil && *req.ParentID > 0 {
 		parent = &model.AlertSubscriptionNode{}
 		if err := s.db.WithContext(ctx).First(parent, *req.ParentID).Error; err != nil {
-			return nil, apperror.BadRequest("父节点不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgbe7758c9a279)
 		}
 		if parent.ProjectID != req.ProjectID {
-			return nil, apperror.BadRequest("父节点不属于该项目")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg5ddd2c9761c3)
 		}
 		level = parent.Level + 1
 		path = fmt.Sprintf("%s/%d", parent.Path, req.ParentID)
@@ -257,22 +257,22 @@ func (s *AlertSubscriptionService) CreateNode(ctx context.Context, req AlertSubs
 func (s *AlertSubscriptionService) UpdateNode(ctx context.Context, id uint, req AlertSubscriptionNodeUpsertRequest) (*model.AlertSubscriptionNode, error) {
 	var node model.AlertSubscriptionNode
 	if err := s.db.WithContext(ctx).First(&node, id).Error; err != nil {
-		return nil, apperror.NotFound("订阅节点不存在")
+		return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgb196d0c97d2f)
 	}
 
 	// 不允许修改所属项目
 	if req.ProjectID > 0 && req.ProjectID != node.ProjectID {
-		return nil, apperror.BadRequest("不能修改订阅节点所属项目")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg586f4a40fa8c)
 	}
 
 	// 不允许将自己设为自己的父节点，或造成循环依赖
 	if req.ParentID != nil && *req.ParentID > 0 {
 		if *req.ParentID == id {
-			return nil, apperror.BadRequest("不能将节点设为自身的父节点")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg657954176c7d)
 		}
 		// 检查是否会导致循环
 		if s.isDescendant(ctx, id, *req.ParentID) {
-			return nil, apperror.BadRequest("不能将节点移动到自己的子树下")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg431b9ea19dd4)
 		}
 	}
 
@@ -287,7 +287,7 @@ func (s *AlertSubscriptionService) UpdateNode(ctx context.Context, id uint, req 
 		if req.ParentID != nil && *req.ParentID > 0 {
 			parent := &model.AlertSubscriptionNode{}
 			if err := s.db.WithContext(ctx).First(parent, *req.ParentID).Error; err != nil {
-				return nil, apperror.BadRequest("父节点不存在")
+				return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgbe7758c9a279)
 			}
 			level = parent.Level + 1
 			path = fmt.Sprintf("%s/%d", parent.Path, *req.ParentID)
@@ -336,7 +336,7 @@ func (s *AlertSubscriptionService) DeleteNode(ctx context.Context, id uint) erro
 		return err
 	}
 	if childCount > 0 {
-		return apperror.BadRequest("该节点有子节点，请先删除子节点")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgbc5e76aacb41)
 	}
 
 	res := s.db.WithContext(ctx).Delete(&model.AlertSubscriptionNode{}, id)
@@ -344,7 +344,7 @@ func (s *AlertSubscriptionService) DeleteNode(ctx context.Context, id uint) erro
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return apperror.NotFound("订阅节点不存在")
+		return constants.ErrNotFoundWithMsg(constants.ErrMsgb196d0c97d2f)
 	}
 
 	s.InvalidateCache()
@@ -536,18 +536,18 @@ func (s *AlertSubscriptionService) updateDescendantsPath(ctx context.Context, pa
 // validateSubscriptionNode 验证订阅节点
 func validateSubscriptionNode(req AlertSubscriptionNodeUpsertRequest) error {
 	if strings.TrimSpace(req.Name) == "" {
-		return apperror.BadRequest("节点名称不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg215d21a8863c)
 	}
 
 	// 验证正则表达式合法
 	if raw := strings.TrimSpace(req.MatchRegexJSON); raw != "" && raw != "{}" {
 		var m map[string]string
 		if err := json.Unmarshal([]byte(raw), &m); err != nil {
-			return apperror.BadRequest("match_regex_json 格式错误")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsgdd9901e7c511)
 		}
 		for k, v := range m {
 			if _, err := regexp.Compile(v); err != nil {
-				return apperror.BadRequest(fmt.Sprintf("正则表达式错误 [%s]: %v", k, err))
+				return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmtc37306c826dc, k, err))
 			}
 		}
 	}

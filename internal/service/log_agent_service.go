@@ -14,7 +14,7 @@ import (
 
 	agentpkg "yunshu/internal/agent"
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/repository"
 
 	"gorm.io/gorm"
@@ -93,20 +93,20 @@ func randomToken() (string, error) {
 // Register 注册相关的业务逻辑。
 func (s *LogAgentService) Register(ctx context.Context, req LogAgentRegisterRequest) (*LogAgentRegisterResult, error) {
 	if strings.TrimSpace(req.Name) == "" {
-		return nil, apperror.BadRequest("名称不能为空")
+		return nil, constants.ErrNameRequired
 	}
 	sv, err := s.serverRepo.GetByID(ctx, req.ServerID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("服务器不存在")
+			return nil, constants.ErrLogSourceServerNotFound
 		}
 		return nil, err
 	}
 	if req.ProjectID > 0 && req.ProjectID != sv.ProjectID {
-		return nil, apperror.BadRequest("项目 ID 与服务器归属不匹配")
+		return nil, constants.ErrServerProjectMismatch
 	}
 	if sv.Status != model.StatusEnabled {
-		return nil, apperror.Forbidden("服务器已禁用")
+		return nil, constants.ErrServerDisabledForAgent
 	}
 	projectID := sv.ProjectID
 
@@ -150,10 +150,10 @@ func (s *LogAgentService) Register(ctx context.Context, req LogAgentRegisterRequ
 // PublicRegister 执行对应的业务逻辑。
 func (s *LogAgentService) PublicRegister(ctx context.Context, req LogAgentPublicRegisterRequest) (*LogAgentRegisterResult, error) {
 	if s.registerSecret == "" {
-		return nil, apperror.Forbidden("公共 Agent 注册已关闭")
+		return nil, constants.ErrAgentRegisterClosed
 	}
 	if strings.TrimSpace(req.RegisterSecret) != s.registerSecret {
-		return nil, apperror.Unauthorized("注册密钥无效")
+		return nil, constants.ErrAgentRegisterSecretInvalid
 	}
 	return s.Register(ctx, LogAgentRegisterRequest{
 		ProjectID: 0,
@@ -166,12 +166,12 @@ func (s *LogAgentService) PublicRegister(ctx context.Context, req LogAgentPublic
 // AuthenticateByToken 执行对应的业务逻辑。
 func (s *LogAgentService) AuthenticateByToken(ctx context.Context, token string) (*model.LogAgent, error) {
 	if token == "" {
-		return nil, apperror.Unauthorized("缺少 Agent 令牌")
+		return nil, constants.ErrAgentTokenMissing
 	}
 	it, err := s.repo.GetByTokenHash(ctx, hashToken(token))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.Unauthorized("Agent 令牌无效")
+			return nil, constants.ErrAgentTokenInvalid
 		}
 		return nil, err
 	}
@@ -233,13 +233,13 @@ func (s *LogAgentService) ReportHealthByToken(ctx context.Context, req LogAgentH
 func offlineReasonLabelForCode(code string) string {
 	switch strings.TrimSpace(strings.ToLower(code)) {
 	case "never_connected":
-		return "从未连接成功"
+		return constants.LogAgentOfflineNeverConnected
 	case "heartbeat_lost":
-		return "心跳超时（失联或进程僵死）"
+		return constants.LogAgentOfflineHeartbeatLost
 	case "agent_stopped":
-		return "Agent 已停止"
+		return constants.LogAgentOfflineAgentStopped
 	case "agent_error":
-		return "Agent 异常（上报 error）"
+		return constants.LogAgentOfflineAgentError
 	default:
 		if code == "" {
 			return ""
@@ -322,22 +322,22 @@ func (s *LogAgentService) RecordOfflineEpisodes(ctx context.Context) error {
 }
 
 type LogAgentStatusResult struct {
-	ServerID         uint    `json:"server_id"`
-	LogSourceID      uint    `json:"log_source_id"`
-	AgentID          *uint   `json:"agent_id,omitempty"`
-	Name             string  `json:"name,omitempty"`
-	Version          string  `json:"version,omitempty"`
-	LastSeenAt       *string `json:"last_seen_at,omitempty"`
-	Online           bool    `json:"online"`
-	RecentPublishing bool    `json:"recent_publishing"`
-	ModeHint         string  `json:"mode_hint"`
-	ListenPort       int     `json:"listen_port"`
-	InstallProgress  int     `json:"install_progress"`
-	HealthStatus     string  `json:"health_status"`
-	LastError        string  `json:"last_error,omitempty"`
-	LastOnlineAt     *string `json:"last_online_at,omitempty"`
-	LastOfflineAt    *string `json:"last_offline_at,omitempty"`
-	LastOfflineReason string `json:"last_offline_reason,omitempty"`
+	ServerID          uint    `json:"server_id"`
+	LogSourceID       uint    `json:"log_source_id"`
+	AgentID           *uint   `json:"agent_id,omitempty"`
+	Name              string  `json:"name,omitempty"`
+	Version           string  `json:"version,omitempty"`
+	LastSeenAt        *string `json:"last_seen_at,omitempty"`
+	Online            bool    `json:"online"`
+	RecentPublishing  bool    `json:"recent_publishing"`
+	ModeHint          string  `json:"mode_hint"`
+	ListenPort        int     `json:"listen_port"`
+	InstallProgress   int     `json:"install_progress"`
+	HealthStatus      string  `json:"health_status"`
+	LastError         string  `json:"last_error,omitempty"`
+	LastOnlineAt      *string `json:"last_online_at,omitempty"`
+	LastOfflineAt     *string `json:"last_offline_at,omitempty"`
+	LastOfflineReason string  `json:"last_offline_reason,omitempty"`
 }
 
 type LogAgentListQuery struct {
@@ -348,23 +348,23 @@ type LogAgentListQuery struct {
 }
 
 type LogAgentListItem struct {
-	ServerID         uint    `json:"server_id"`
-	ServerName       string  `json:"server_name"`
-	ServerHost       string  `json:"server_host"`
-	ProjectName      string  `json:"project_name,omitempty"`
-	AgentID          *uint   `json:"agent_id,omitempty"`
-	Name             string  `json:"name,omitempty"`
-	Version          string  `json:"version,omitempty"`
-	LastSeenAt       *string `json:"last_seen_at,omitempty"`
-	Online           bool    `json:"online"`
-	ListenPort       int     `json:"listen_port"`
-	InstallProgress  int     `json:"install_progress"`
-	HealthStatus     string  `json:"health_status"`
-	LastError        string  `json:"last_error,omitempty"`
-	RecentPublishing bool    `json:"recent_publishing"`
-	LastOnlineAt     *string `json:"last_online_at,omitempty"`
-	LastOfflineAt    *string `json:"last_offline_at,omitempty"`
-	LastOfflineReason string `json:"last_offline_reason,omitempty"`
+	ServerID          uint    `json:"server_id"`
+	ServerName        string  `json:"server_name"`
+	ServerHost        string  `json:"server_host"`
+	ProjectName       string  `json:"project_name,omitempty"`
+	AgentID           *uint   `json:"agent_id,omitempty"`
+	Name              string  `json:"name,omitempty"`
+	Version           string  `json:"version,omitempty"`
+	LastSeenAt        *string `json:"last_seen_at,omitempty"`
+	Online            bool    `json:"online"`
+	ListenPort        int     `json:"listen_port"`
+	InstallProgress   int     `json:"install_progress"`
+	HealthStatus      string  `json:"health_status"`
+	LastError         string  `json:"last_error,omitempty"`
+	RecentPublishing  bool    `json:"recent_publishing"`
+	LastOnlineAt      *string `json:"last_online_at,omitempty"`
+	LastOfflineAt     *string `json:"last_offline_at,omitempty"`
+	LastOfflineReason string  `json:"last_offline_reason,omitempty"`
 }
 
 func (s *LogAgentService) ListByProject(ctx context.Context, q LogAgentListQuery) ([]LogAgentListItem, error) {
@@ -456,7 +456,7 @@ type AgentBatchHeartbeatRefreshResult struct {
 
 func (s *LogAgentService) BatchRefreshHeartbeat(ctx context.Context, req AgentBatchHeartbeatRefreshRequest) (*AgentBatchHeartbeatRefreshResult, error) {
 	if req.ProjectID == 0 {
-		return nil, apperror.BadRequest("project_id 不能为空")
+		return nil, constants.ErrProjectIDRequired
 	}
 	serverIDSet := map[uint]struct{}{}
 	for _, id := range req.ServerIDs {
@@ -625,12 +625,12 @@ func (s *LogAgentService) Bootstrap(ctx context.Context, req AgentBootstrapReque
 	sv, err := s.serverRepo.GetByID(ctx, req.ServerID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("服务器不存在")
+			return nil, constants.ErrLogSourceServerNotFound
 		}
 		return nil, err
 	}
 	if sv.ProjectID != req.ProjectID {
-		return nil, apperror.BadRequest("服务器不在当前项目中")
+		return nil, constants.ErrServerNotInProject
 	}
 	reg, err := s.Register(ctx, LogAgentRegisterRequest{
 		ProjectID: req.ProjectID,

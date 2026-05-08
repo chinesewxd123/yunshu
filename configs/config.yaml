@@ -5,9 +5,10 @@ app:
 
 http:
   read_header_timeout_seconds: 5
-  read_timeout_seconds: 10
-  write_timeout_seconds: 10
-  idle_timeout_seconds: 60
+  # 日志流（SSE）为长连接：若 write/read 过短会导致浏览器 net::ERR_INCOMPLETE_CHUNKED_ENCODING
+  read_timeout_seconds: 0
+  write_timeout_seconds: 0
+  idle_timeout_seconds: 120
 
 grpc:
   listen_addr: 0.0.0.0:18080

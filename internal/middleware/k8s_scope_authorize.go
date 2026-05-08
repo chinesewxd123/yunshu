@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
@@ -103,7 +103,7 @@ func K8sScopeAuthorize(
 		}
 		user, ok := auth.CurrentUserFromContext(c)
 		if !ok {
-			response.Error(c, apperror.Unauthorized("未登录"))
+			response.Error(c, constants.ErrNotLoggedIn)
 			c.Abort()
 			return
 		}
@@ -153,7 +153,7 @@ func K8sScopeAuthorize(
 				ok, err := enforcer.Enforce(subject, res, act)
 				if err != nil {
 					logger.Error.Error("enforce scoped policy failed", "error", err, "resource", res, "action", act)
-					response.Error(c, apperror.Internal("权限校验失败"))
+					response.Error(c, constants.ErrInternal)
 					c.Abort()
 					return
 				}
@@ -168,7 +168,7 @@ func K8sScopeAuthorize(
 		}
 
 		if hasScopedPolicy && !allowed {
-			response.Error(c, apperror.Forbidden("无该集群/命名空间操作权限"))
+			response.Error(c, constants.ErrForbidden)
 			c.Abort()
 			return
 		}

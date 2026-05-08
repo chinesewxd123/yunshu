@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 
 	"gorm.io/gorm"
@@ -100,7 +100,7 @@ func (s *CloudExpiryRuleService) Update(ctx context.Context, id uint, req CloudE
 	var row model.CloudExpiryRule
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("云到期规则不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg34cc3b1e5427)
 		}
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (s *CloudExpiryRuleService) Delete(ctx context.Context, id uint) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return apperror.NotFound("云到期规则不存在")
+		return constants.ErrNotFoundWithMsg(constants.ErrMsg34cc3b1e5427)
 	}
 	return nil
 }

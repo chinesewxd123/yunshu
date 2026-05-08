@@ -20,7 +20,7 @@ export const API_CATALOG_GROUPS: { title: string; routes: ApiCatalogRow[] }[] = 
         method: "GET",
         path: "/api/v1/health",
         summary: "健康检查与进程运行信息",
-        ui: "资产总览 · 系统状态",
+        ui: "总览页面 · 系统状态",
         auth: false,
       },
     ],

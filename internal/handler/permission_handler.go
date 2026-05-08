@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"context"
-
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -33,7 +31,7 @@ func NewPermissionHandler(service *service.PermissionService) *PermissionHandler
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/permissions [post]
 func (h *PermissionHandler) Create(c *gin.Context) {
-	handleJSONCreated(c, h.service.Create)
+	ServeJSON201(c, h.service.Create)
 }
 
 // Update godoc
@@ -53,14 +51,7 @@ func (h *PermissionHandler) Create(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/permissions/{id} [put]
 func (h *PermissionHandler) Update(c *gin.Context) {
-	id, err := parseUintParam(c, "id")
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	handleJSON(c, func(ctx context.Context, req service.PermissionUpdateRequest) (*service.PermissionItem, error) {
-		return h.service.Update(ctx, id, req)
-	})
+	ServePatch(c, h.service.Update, "")
 }
 
 // Delete godoc
@@ -78,16 +69,7 @@ func (h *PermissionHandler) Update(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/permissions/{id} [delete]
 func (h *PermissionHandler) Delete(c *gin.Context) {
-	id, err := parseUintParam(c, "id")
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err = h.service.Delete(c.Request.Context(), id); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"message": "deleted"})
+	ServeDelete(c, h.service.Delete, "")
 }
 
 // Detail godoc
@@ -134,5 +116,5 @@ func (h *PermissionHandler) Detail(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/permissions [get]
 func (h *PermissionHandler) List(c *gin.Context) {
-	handleQuery(c, h.service.List)
+	ServeQuery(c, h.service.List)
 }

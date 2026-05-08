@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 
 	"github.com/redis/go-redis/v9"
@@ -103,7 +103,7 @@ func (s *AlertMonitorRuleService) Get(ctx context.Context, id uint) (*model.Aler
 	var row model.AlertMonitorRule
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("监控规则不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgdfcd891c9a94)
 		}
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (s *AlertMonitorRuleService) Create(ctx context.Context, req AlertMonitorRu
 	var ds model.AlertDatasource
 	if err := s.db.WithContext(ctx).First(&ds, req.DatasourceID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.BadRequest("数据源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgaf3782e3e26f)
 		}
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (s *AlertMonitorRuleService) Update(ctx context.Context, id uint, req Alert
 		var ds model.AlertDatasource
 		if err := s.db.WithContext(ctx).First(&ds, req.DatasourceID).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return nil, apperror.BadRequest("数据源不存在")
+				return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgaf3782e3e26f)
 			}
 			return nil, err
 		}
@@ -206,7 +206,7 @@ func (s *AlertMonitorRuleService) Delete(ctx context.Context, id uint) error {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
-			return apperror.NotFound("监控规则不存在")
+			return constants.ErrNotFoundWithMsg(constants.ErrMsgdfcd891c9a94)
 		}
 		return nil
 	})

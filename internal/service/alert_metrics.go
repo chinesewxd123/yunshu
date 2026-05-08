@@ -12,39 +12,39 @@ import (
 // AlertMetrics AlertService 的 Prometheus 自监控指标
 type AlertMetrics struct {
 	// 规则评估
-	RulesEvalTotal          *prometheus.CounterVec   // 规则评估总次数
-	RulesEvalDuration       *prometheus.HistogramVec   // 规则评估耗时
-	RulesEvalFailed         *prometheus.CounterVec     // 规则评估失败次数
-	RulesPendingDuration    *prometheus.HistogramVec   // 告警pending到触发的时间
+	RulesEvalTotal       *prometheus.CounterVec   // 规则评估总次数
+	RulesEvalDuration    *prometheus.HistogramVec // 规则评估耗时
+	RulesEvalFailed      *prometheus.CounterVec   // 规则评估失败次数
+	RulesPendingDuration *prometheus.HistogramVec // 告警pending到触发的时间
 
 	// 告警接收
-	AlertsReceivedTotal     prometheus.Counter       // 接收告警总数
-	AlertsDroppedTotal      prometheus.Counter       // 丢弃告警总数
+	AlertsReceivedTotal prometheus.Counter // 接收告警总数
+	AlertsDroppedTotal  prometheus.Counter // 丢弃告警总数
 
 	// 聚合与抑制
-	AggregateSuppressedTotal prometheus.Counter      // 聚合抑制总数
-	FingerprintDedupTotal    prometheus.Counter      // 指纹去重抑制总数
-	SilenceSuppressedTotal   prometheus.Counter      // 静默抑制总数
-	InhibitionSuppressedTotal prometheus.Counter     // 告警抑制抑制总数
+	AggregateSuppressedTotal  prometheus.Counter // 聚合抑制总数
+	FingerprintDedupTotal     prometheus.Counter // 指纹去重抑制总数
+	SilenceSuppressedTotal    prometheus.Counter // 静默抑制总数
+	InhibitionSuppressedTotal prometheus.Counter // 告警抑制抑制总数
 
 	// 通知发送
-	NotificationsTotal      *prometheus.CounterVec   // 通知发送总次数
-	NotificationsFailed     *prometheus.CounterVec   // 通知失败次数
-	NotificationsDuration   *prometheus.HistogramVec // 通知耗时
-	NotificationsQueued     prometheus.Gauge         // 队列中等待的通知数
+	NotificationsTotal    *prometheus.CounterVec   // 通知发送总次数
+	NotificationsFailed   *prometheus.CounterVec   // 通知失败次数
+	NotificationsDuration *prometheus.HistogramVec // 通知耗时
+	NotificationsQueued   prometheus.Gauge         // 队列中等待的通知数
 
 	// 通道状态
-	ChannelNotifications    *prometheus.CounterVec   // 按通道统计通知数
+	ChannelNotifications *prometheus.CounterVec // 按通道统计通知数
 
 	// 队列
-	EnrichQueueSize         prometheus.Gauge         // Prometheus增强队列大小
-	EnrichQueueProcessed    prometheus.Counter       // 队列处理数
-	EnrichQueueDropped      prometheus.Counter       // 队列丢弃数
+	EnrichQueueSize      prometheus.Gauge   // Prometheus增强队列大小
+	EnrichQueueProcessed prometheus.Counter // 队列处理数
+	EnrichQueueDropped   prometheus.Counter // 队列丢弃数
 
 	// 缓存
 	// 抑制
-	InhibitionRulesActive   prometheus.Gauge         // 活跃的抑制规则数
-	InhibitionEventsTotal   prometheus.Counter       // 抑制事件总数
+	InhibitionRulesActive prometheus.Gauge   // 活跃的抑制规则数
+	InhibitionEventsTotal prometheus.Counter // 抑制事件总数
 
 	// 数据源
 	DatasourceQueryTotal    *prometheus.CounterVec   // 数据源查询总数
@@ -347,10 +347,10 @@ func (m *AlertMetrics) RecordInhibitionEvent() {
 
 // AlertMetricsUpdater 用于定期更新指标
 type AlertMetricsUpdater struct {
-	metrics   *AlertMetrics
+	metrics       *AlertMetrics
 	inhibitionSvc *AlertInhibitionService
-	ctx       context.Context
-	cancel    context.CancelFunc
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 // NewAlertMetricsUpdater 创建指标更新器

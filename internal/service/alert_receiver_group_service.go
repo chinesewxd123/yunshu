@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 
 	"gorm.io/gorm"
@@ -56,38 +56,38 @@ func (s *AlertReceiverGroupService) List(ctx context.Context, q AlertReceiverGro
 }
 
 type AlertReceiverGroupUpsertRequest struct {
-	ProjectID uint    `json:"project_id" binding:"required"`
-	Name      string  `json:"name" binding:"required,max=128"`
+	ProjectID   uint   `json:"project_id" binding:"required"`
+	Name        string `json:"name" binding:"required,max=128"`
 	Description string `json:"description"`
 
-	ChannelIDsJSON       string `json:"channel_ids_json"`
-	EmailRecipientsJSON  string `json:"email_recipients_json"`
-	ActiveTimeStart      *string `json:"active_time_start"`
-	ActiveTimeEnd        *string `json:"active_time_end"`
-	WeekdaysJSON         string `json:"weekdays_json"`
-	EscalationLevel      int    `json:"escalation_level"`
-	Enabled              *bool  `json:"enabled"`
+	ChannelIDsJSON      string  `json:"channel_ids_json"`
+	EmailRecipientsJSON string  `json:"email_recipients_json"`
+	ActiveTimeStart     *string `json:"active_time_start"`
+	ActiveTimeEnd       *string `json:"active_time_end"`
+	WeekdaysJSON        string  `json:"weekdays_json"`
+	EscalationLevel     int     `json:"escalation_level"`
+	Enabled             *bool   `json:"enabled"`
 }
 
 func (s *AlertReceiverGroupService) Create(ctx context.Context, req AlertReceiverGroupUpsertRequest) (*model.AlertReceiverGroup, error) {
 	if strings.TrimSpace(req.Name) == "" {
-		return nil, apperror.BadRequest("name required")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg65788b1abed6)
 	}
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
 	row := &model.AlertReceiverGroup{
-		ProjectID:            req.ProjectID,
-		Name:                 strings.TrimSpace(req.Name),
-		Description:          strings.TrimSpace(req.Description),
-		ChannelIDsJSON:       strings.TrimSpace(req.ChannelIDsJSON),
-		EmailRecipientsJSON:  strings.TrimSpace(req.EmailRecipientsJSON),
-		ActiveTimeStart:      req.ActiveTimeStart,
-		ActiveTimeEnd:        req.ActiveTimeEnd,
-		WeekdaysJSON:         strings.TrimSpace(req.WeekdaysJSON),
-		EscalationLevel:      req.EscalationLevel,
-		Enabled:              enabled,
+		ProjectID:           req.ProjectID,
+		Name:                strings.TrimSpace(req.Name),
+		Description:         strings.TrimSpace(req.Description),
+		ChannelIDsJSON:      strings.TrimSpace(req.ChannelIDsJSON),
+		EmailRecipientsJSON: strings.TrimSpace(req.EmailRecipientsJSON),
+		ActiveTimeStart:     req.ActiveTimeStart,
+		ActiveTimeEnd:       req.ActiveTimeEnd,
+		WeekdaysJSON:        strings.TrimSpace(req.WeekdaysJSON),
+		EscalationLevel:     req.EscalationLevel,
+		Enabled:             enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, err
@@ -102,10 +102,10 @@ func (s *AlertReceiverGroupService) Create(ctx context.Context, req AlertReceive
 func (s *AlertReceiverGroupService) Update(ctx context.Context, id uint, req AlertReceiverGroupUpsertRequest) (*model.AlertReceiverGroup, error) {
 	var row model.AlertReceiverGroup
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
-		return nil, apperror.NotFound("receiver group not found")
+		return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg7628a50dd0ab)
 	}
 	if req.ProjectID > 0 && req.ProjectID != row.ProjectID {
-		return nil, apperror.BadRequest("cannot change project_id")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgd165b6af9d52)
 	}
 	if strings.TrimSpace(req.Name) != "" {
 		row.Name = strings.TrimSpace(req.Name)
@@ -136,7 +136,7 @@ func (s *AlertReceiverGroupService) Delete(ctx context.Context, id uint) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return apperror.NotFound("receiver group not found")
+		return constants.ErrNotFoundWithMsg(constants.ErrMsg7628a50dd0ab)
 	}
 	if s.cache != nil {
 		s.cache.Invalidate()
@@ -152,4 +152,3 @@ func hydrateReceiverGroup(it *model.AlertReceiverGroup) {
 	it.EmailRecipients = parseStringSliceJSON(it.EmailRecipientsJSON)
 	it.Weekdays = parseIntSliceJSON(it.WeekdaysJSON)
 }
-

@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/repository"
 
 	"gorm.io/gorm"
@@ -59,7 +59,7 @@ func (s *AlertRuleAssigneeService) UpsertPrimary(ctx context.Context, ruleID uin
 	var rule model.AlertMonitorRule
 	if err := s.db.WithContext(ctx).First(&rule, ruleID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("监控规则不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgdfcd891c9a94)
 		}
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (s *AlertRuleAssigneeService) Delete(ctx context.Context, id uint) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return apperror.NotFound("处理人配置不存在")
+		return constants.ErrNotFoundWithMsg(constants.ErrMsg8faff6dbdd1d)
 	}
 	return nil
 }

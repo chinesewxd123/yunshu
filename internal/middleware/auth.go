@@ -2,9 +2,9 @@ package middleware
 
 import (
 	"strings"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
@@ -19,7 +19,7 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if header == "" || !strings.HasPrefix(header, "Bearer ") {
-			response.Error(c, apperror.Unauthorized("缺少或非法授权请求头"))
+			response.Error(c, constants.ErrMissingAuthHeader)
 			c.Abort()
 			return
 		}
@@ -28,14 +28,14 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 		claims, err := auth.ParseToken(secret, tokenString)
 		if err != nil {
 			logger.Info.Warn("parse token failed", "error", err)
-			response.Error(c, apperror.Unauthorized("Token 无效"))
+			response.Error(c, constants.ErrAccessTokenInvalid)
 			c.Abort()
 			return
 		}
 
 		if redisClient != nil {
 			if _, err = redisClient.Get(c.Request.Context(), store.AccessTokenKey(claims.TokenID)).Result(); err != nil {
-				response.Error(c, apperror.Unauthorized("登录已失效"))
+				response.Error(c, constants.ErrLoginSessionExpired)
 				c.Abort()
 				return
 			}
@@ -43,12 +43,12 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 
 		user, err := userRepo.GetByID(c.Request.Context(), claims.UserID)
 		if err != nil {
-			response.Error(c, apperror.Unauthorized("用户不存在"))
+			response.Error(c, constants.ErrAccountPrincipalNotFound)
 			c.Abort()
 			return
 		}
 		if user.Status != model.StatusEnabled {
-			response.Error(c, apperror.Forbidden("用户已被禁用"))
+			response.Error(c, constants.ErrAccountDisabled)
 			c.Abort()
 			return
 		}

@@ -12,11 +12,11 @@ import (
 	"strings"
 	"text/template"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/alertdispatch"
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/alertnotify"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/parseutil"
 )
 
@@ -340,7 +340,7 @@ func (s *AlertService) notifyWeComApp(ctx context.Context, channel *model.AlertC
 	corpSecret := strings.TrimSpace(fmt.Sprintf("%v", settings["corpSecret"]))
 	agentID := strings.TrimSpace(fmt.Sprintf("%v", settings["agentId"]))
 	if corpID == "" || corpSecret == "" || agentID == "" {
-		return 0, "", apperror.BadRequest("企业微信应用模式需配置 corpID/corpSecret/agentId")
+		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsg5fcdf3f22c91)
 	}
 	atMobiles := parseutil.ParseStringList(settings["atMobiles"])
 	atUsers := parseutil.ParseStringList(settings["atUserIds"])
@@ -355,7 +355,7 @@ func (s *AlertService) notifyWeComApp(ctx context.Context, channel *model.AlertC
 		atUsers = append(atUsers, "@all")
 	}
 	if len(atUsers) == 0 {
-		return 0, "", apperror.BadRequest("企业微信应用模式至少需要配置 atMobiles/atUserIds/isAtAll")
+		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsg3963f2e4d87c)
 	}
 	token, err := s.getWeComAccessToken(ctx, corpID, corpSecret)
 	if err != nil {
@@ -379,7 +379,7 @@ func (s *AlertService) notifyDingTalkAppChat(ctx context.Context, channel *model
 	appSecret := strings.TrimSpace(fmt.Sprintf("%v", settings["appSecret"]))
 	chatID := strings.TrimSpace(fmt.Sprintf("%v", settings["chatId"]))
 	if appKey == "" || appSecret == "" || chatID == "" {
-		return 0, "", apperror.BadRequest("钉钉应用会话模式需配置 appKey/appSecret/chatId")
+		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsgf1768c17d51a)
 	}
 	token, err := s.getDingTalkAccessToken(ctx, appKey, appSecret)
 	if err != nil {
@@ -515,10 +515,10 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 		return code, respBody, reqErr
 	}
 	if code < 200 || code >= 300 {
-		return code, respBody, apperror.Internal(fmt.Sprintf("webhook 返回异常状态码: %d", code))
+		return code, respBody, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd0ae16233479, code))
 	}
 	if apiChecked && apiErr != "" {
-		return code, respBody, apperror.Internal(apiErr)
+		return code, respBody, constants.ErrInternalWithMsg(apiErr)
 	}
 	return code, respBody, nil
 }
@@ -762,10 +762,10 @@ func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.Aler
 	}
 	recipients = mergeAssigneeEmails(recipients, payload)
 	if len(recipients) == 0 {
-		return 0, "", apperror.BadRequest("邮件通道未配置收件人：请在邮件接收人或配置 JSON 中填写 to/recipients/emails；或由监控规则处理人 assignee_emails 提供")
+		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsgc47e8ed41463)
 	}
 	if s.mailer == nil || !s.mailer.Enabled() {
-		return 0, "", apperror.Internal("邮件通道未配置：请检查全局 SMTP（mail 相关配置）是否启用")
+		return 0, "", constants.ErrInternalWithMsg(constants.ErrMsg71c5fe1e9994)
 	}
 	settings, err := parseChannelSettings(channel.HeadersJSON)
 	if err != nil {

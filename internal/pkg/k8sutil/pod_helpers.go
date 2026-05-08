@@ -4,8 +4,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
-
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -21,7 +20,7 @@ var (
 func ValidateRFC1123Label(name string) error {
 	n := strings.TrimSpace(name)
 	if n == "" || !rfc1123LabelRe.MatchString(n) {
-		return apperror.BadRequest("容器名称不合法：必须为 RFC1123 label（小写字母/数字/短横线，且首尾为字母或数字）")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg819b22fb354c)
 	}
 	return nil
 }
@@ -29,7 +28,7 @@ func ValidateRFC1123Label(name string) error {
 func ValidateRFC1123Subdomain(name string) error {
 	n := strings.TrimSpace(name)
 	if n == "" || !rfc1123SubdomainRe.MatchString(n) {
-		return apperror.BadRequest("Pod 名称不合法：必须为 RFC1123 subdomain（小写字母/数字/短横线/点，且首尾为字母或数字）")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgb75b5021a60c)
 	}
 	return nil
 }

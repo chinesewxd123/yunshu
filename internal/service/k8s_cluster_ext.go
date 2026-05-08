@@ -12,8 +12,8 @@ import (
 
 	"yunshu/internal/repository"
 
-	"k8s.io/client-go/rest"
 	"gorm.io/gorm"
+	"k8s.io/client-go/rest"
 )
 
 // getDirectConfigFromDict 从数据字典读取直连配置

@@ -1,9 +1,11 @@
 package handler
 
 import (
-	"net/http"
+	"context"
 	"strconv"
 
+	"yunshu/internal/model"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -37,7 +39,7 @@ func NewAlertSubscriptionHandler(svc *service.AlertSubscriptionService) *AlertSu
 func (h *AlertSubscriptionHandler) ListNodes(c *gin.Context) {
 	var query service.AlertSubscriptionNodeListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 
@@ -79,25 +81,11 @@ func (h *AlertSubscriptionHandler) ListNodes(c *gin.Context) {
 // @Success 200 {object} []model.AlertSubscriptionNode
 // @Router /api/v1/alerts/subscriptions/tree [get]
 func (h *AlertSubscriptionHandler) GetNodeTree(c *gin.Context) {
-	projectIDStr := c.Query("project_id")
-	if projectIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "project_id is required"})
-		return
-	}
-
-	projectID, err := strconv.ParseUint(projectIDStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid project_id"})
-		return
-	}
-
-	tree, err := h.svc.GetNodeTree(c.Request.Context(), uint(projectID))
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-
-	response.Success(c, tree)
+	ServeQuery(c, func(ctx context.Context, q struct {
+		ProjectID uint `form:"project_id" binding:"required"`
+	}) ([]model.AlertSubscriptionNode, error) {
+		return h.svc.GetNodeTree(ctx, q.ProjectID)
+	})
 }
 
 // CreateNode godoc
@@ -110,19 +98,7 @@ func (h *AlertSubscriptionHandler) GetNodeTree(c *gin.Context) {
 // @Success 200 {object} model.AlertSubscriptionNode
 // @Router /api/v1/alerts/subscriptions [post]
 func (h *AlertSubscriptionHandler) CreateNode(c *gin.Context) {
-	var req service.AlertSubscriptionNodeUpsertRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	node, err := h.svc.CreateNode(c.Request.Context(), req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-
-	response.Success(c, node)
+	ServeJSON(c, h.svc.CreateNode)
 }
 
 // UpdateNode godoc
@@ -136,26 +112,7 @@ func (h *AlertSubscriptionHandler) CreateNode(c *gin.Context) {
 // @Success 200 {object} model.AlertSubscriptionNode
 // @Router /api/v1/alerts/subscriptions/{id} [put]
 func (h *AlertSubscriptionHandler) UpdateNode(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-
-	var req service.AlertSubscriptionNodeUpsertRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	node, err := h.svc.UpdateNode(c.Request.Context(), uint(id), req)
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-
-	response.Success(c, node)
+	ServePatch(c, h.svc.UpdateNode, "")
 }
 
 // DeleteNode godoc
@@ -168,19 +125,7 @@ func (h *AlertSubscriptionHandler) UpdateNode(c *gin.Context) {
 // @Success 200 {object} gin.H
 // @Router /api/v1/alerts/subscriptions/{id} [delete]
 func (h *AlertSubscriptionHandler) DeleteNode(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
-		return
-	}
-
-	if err := h.svc.DeleteNode(c.Request.Context(), uint(id)); err != nil {
-		response.Error(c, err)
-		return
-	}
-
-	response.Success(c, gin.H{"message": "deleted"})
+	ServeDelete(c, h.svc.DeleteNode, "")
 }
 
 // MoveNode godoc
@@ -201,13 +146,13 @@ func (h *AlertSubscriptionHandler) MoveNode(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 
 	var req MoveNodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 
@@ -219,17 +164,17 @@ func (h *AlertSubscriptionHandler) MoveNode(c *gin.Context) {
 	}
 
 	updateReq := service.AlertSubscriptionNodeUpsertRequest{
-		ProjectID:             node.ProjectID,
-		ParentID:              req.NewParentID,
-		Name:                  node.Name,
-		Code:                  node.Code,
-		MatchLabelsJSON:       node.MatchLabelsJSON,
-		MatchRegexJSON:        node.MatchRegexJSON,
-		MatchSeverity:         node.MatchSeverity,
-		Continue:              node.Continue,
+		ProjectID:            node.ProjectID,
+		ParentID:             req.NewParentID,
+		Name:                 node.Name,
+		Code:                 node.Code,
+		MatchLabelsJSON:      node.MatchLabelsJSON,
+		MatchRegexJSON:       node.MatchRegexJSON,
+		MatchSeverity:        node.MatchSeverity,
+		Continue:             node.Continue,
 		ReceiverGroupIDsJSON: node.ReceiverGroupIDsJSON,
-		SilenceSeconds:        node.SilenceSeconds,
-		NotifyResolved:        &node.NotifyResolved,
+		SilenceSeconds:       node.SilenceSeconds,
+		NotifyResolved:       &node.NotifyResolved,
 	}
 
 	updated, err := h.svc.UpdateNode(c.Request.Context(), uint(id), updateReq)
@@ -249,23 +194,18 @@ type migrateFromPoliciesBody struct {
 
 // MigrateFromPolicies 将旧告警策略迁移为订阅树节点 + 接收组。
 func (h *AlertSubscriptionHandler) MigrateFromPolicies(c *gin.Context) {
-	var body migrateFromPoliciesBody
-	_ = c.ShouldBindJSON(&body)
-	disableOld := true
-	if body.DisableOld != nil {
-		disableOld = *body.DisableOld
-	}
-	var defaultPID uint
-	if body.DefaultProjectID != nil {
-		defaultPID = *body.DefaultProjectID
-	}
-	rep, err := h.svc.MigrateFromPolicies(c.Request.Context(), service.MigrateFromPoliciesOptions{
-		DisableOld:       disableOld,
-		DefaultProjectID: defaultPID,
+	ServeJSON(c, func(ctx context.Context, body migrateFromPoliciesBody) (*service.SubscriptionMigrationReport, error) {
+		disableOld := true
+		if body.DisableOld != nil {
+			disableOld = *body.DisableOld
+		}
+		var defaultPID uint
+		if body.DefaultProjectID != nil {
+			defaultPID = *body.DefaultProjectID
+		}
+		return h.svc.MigrateFromPolicies(ctx, service.MigrateFromPoliciesOptions{
+			DisableOld:       disableOld,
+			DefaultProjectID: defaultPID,
+		})
 	})
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, rep)
 }

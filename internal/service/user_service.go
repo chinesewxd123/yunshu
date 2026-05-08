@@ -6,9 +6,9 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/pkg/password"
@@ -88,7 +88,7 @@ func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserD
 		return nil, err
 	}
 	if len(req.RoleIDs) > 0 && len(roles) != len(req.RoleIDs) {
-		return nil, apperror.BadRequest("部分角色不存在")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgbc90b8ad5f29)
 	}
 
 	hashedPassword, err := password.Hash(req.Password)
@@ -106,7 +106,7 @@ func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserD
 	if req.DepartmentID != nil && *req.DepartmentID > 0 {
 		if _, err = s.departmentRepo.GetByID(ctx, *req.DepartmentID); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, apperror.BadRequest("所属部门不存在")
+				return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg94d63d947b0e)
 			}
 			return nil, err
 		}
@@ -134,13 +134,13 @@ func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserD
 
 func (s *UserService) CreateByActor(ctx context.Context, actor *auth.CurrentUser, req UserCreateRequest) (*UserDetailResponse, error) {
 	if actor == nil {
-		return nil, apperror.Unauthorized("未登录或登录已失效")
+		return nil, constants.ErrUnauthorized
 	}
 	if isSuperAdmin(actor.RoleCodes) {
 		return s.Create(ctx, req)
 	}
 	if actor.DepartmentID == nil || *actor.DepartmentID == 0 {
-		return nil, apperror.Forbidden("当前账号未绑定部门，无法管理用户")
+		return nil, constants.ErrForbiddenWithMsg(constants.ErrMsgc8caf91c1d57)
 	}
 	allowedDepartmentIDs, err := s.accessibleDepartmentIDs(ctx, actor)
 	if err != nil {
@@ -150,7 +150,7 @@ func (s *UserService) CreateByActor(ctx context.Context, actor *auth.CurrentUser
 		deptID := *actor.DepartmentID
 		req.DepartmentID = &deptID
 	} else if *req.DepartmentID > 0 && !slices.Contains(allowedDepartmentIDs, *req.DepartmentID) {
-		return nil, apperror.Forbidden("无权在该部门下创建用户")
+		return nil, constants.ErrForbiddenWithMsg(constants.ErrMsgd672e80435d4)
 	}
 	return s.Create(ctx, req)
 }
@@ -160,7 +160,7 @@ func (s *UserService) Update(ctx context.Context, id uint, req UserUpdateRequest
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("用户不存在")
+			return nil, constants.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (s *UserService) Update(ctx context.Context, id uint, req UserUpdateRequest
 		} else {
 			if _, err = s.departmentRepo.GetByID(ctx, *req.DepartmentID); err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return nil, apperror.BadRequest("所属部门不存在")
+					return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg94d63d947b0e)
 				}
 				return nil, err
 			}
@@ -207,12 +207,12 @@ func (s *UserService) Update(ctx context.Context, id uint, req UserUpdateRequest
 
 func (s *UserService) UpdateByActor(ctx context.Context, actor *auth.CurrentUser, id uint, req UserUpdateRequest) (*UserDetailResponse, error) {
 	if actor == nil {
-		return nil, apperror.Unauthorized("未登录或登录已失效")
+		return nil, constants.ErrUnauthorized
 	}
 	target, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("用户不存在")
+			return nil, constants.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func (s *UserService) UpdateByActor(ctx context.Context, actor *auth.CurrentUser
 		return nil, err
 	}
 	if !ok {
-		return nil, apperror.Forbidden("无访问权限")
+		return nil, constants.ErrForbidden
 	}
 	if !isSuperAdmin(actor.RoleCodes) && req.DepartmentID != nil && *req.DepartmentID > 0 {
 		allowedDepartmentIDs, err := s.accessibleDepartmentIDs(ctx, actor)
@@ -229,7 +229,7 @@ func (s *UserService) UpdateByActor(ctx context.Context, actor *auth.CurrentUser
 			return nil, err
 		}
 		if !slices.Contains(allowedDepartmentIDs, *req.DepartmentID) {
-			return nil, apperror.Forbidden("无权将用户调整到目标部门")
+			return nil, constants.ErrForbiddenWithMsg(constants.ErrMsgc1305dfff708)
 		}
 	}
 	return s.Update(ctx, id, req)
@@ -240,7 +240,7 @@ func (s *UserService) Delete(ctx context.Context, id uint) error {
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("用户不存在")
+			return constants.ErrUserNotFound
 		}
 		return err
 	}
@@ -254,12 +254,12 @@ func (s *UserService) Delete(ctx context.Context, id uint) error {
 
 func (s *UserService) DeleteByActor(ctx context.Context, actor *auth.CurrentUser, id uint) error {
 	if actor == nil {
-		return apperror.Unauthorized("未登录或登录已失效")
+		return constants.ErrUnauthorized
 	}
 	target, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("用户不存在")
+			return constants.ErrUserNotFound
 		}
 		return err
 	}
@@ -268,7 +268,7 @@ func (s *UserService) DeleteByActor(ctx context.Context, actor *auth.CurrentUser
 		return err
 	}
 	if !ok {
-		return apperror.Forbidden("无访问权限")
+		return constants.ErrForbidden
 	}
 	return s.Delete(ctx, id)
 }
@@ -278,7 +278,7 @@ func (s *UserService) Detail(ctx context.Context, id uint) (*UserDetailResponse,
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("用户不存在")
+			return nil, constants.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -288,12 +288,12 @@ func (s *UserService) Detail(ctx context.Context, id uint) (*UserDetailResponse,
 
 func (s *UserService) DetailByActor(ctx context.Context, actor *auth.CurrentUser, id uint) (*UserDetailResponse, error) {
 	if actor == nil {
-		return nil, apperror.Unauthorized("未登录或登录已失效")
+		return nil, constants.ErrUnauthorized
 	}
 	target, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("用户不存在")
+			return nil, constants.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func (s *UserService) DetailByActor(ctx context.Context, actor *auth.CurrentUser
 		return nil, err
 	}
 	if !ok {
-		return nil, apperror.Forbidden("无访问权限")
+		return nil, constants.ErrForbidden
 	}
 	resp := NewUserDetailResponse(*target)
 	return &resp, nil
@@ -336,7 +336,7 @@ func (s *UserService) List(ctx context.Context, query UserListQuery) (*paginatio
 
 func (s *UserService) ListByActor(ctx context.Context, actor *auth.CurrentUser, query UserListQuery) (*pagination.Result[UserDetailResponse], error) {
 	if actor == nil {
-		return nil, apperror.Unauthorized("未登录或登录已失效")
+		return nil, constants.ErrUnauthorized
 	}
 	if isSuperAdmin(actor.RoleCodes) {
 		return s.List(ctx, query)
@@ -379,7 +379,7 @@ func (s *UserService) AssignRoles(ctx context.Context, id uint, req UserAssignRo
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("用户不存在")
+			return nil, constants.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -389,7 +389,7 @@ func (s *UserService) AssignRoles(ctx context.Context, id uint, req UserAssignRo
 		return nil, err
 	}
 	if len(req.RoleIDs) > 0 && len(roles) != len(req.RoleIDs) {
-		return nil, apperror.BadRequest("部分角色不存在")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgbc90b8ad5f29)
 	}
 
 	if err = s.userRepo.ReplaceRoles(ctx, user, roles); err != nil {
@@ -406,12 +406,12 @@ func (s *UserService) AssignRoles(ctx context.Context, id uint, req UserAssignRo
 
 func (s *UserService) AssignRolesByActor(ctx context.Context, actor *auth.CurrentUser, id uint, req UserAssignRolesRequest) (*UserDetailResponse, error) {
 	if actor == nil {
-		return nil, apperror.Unauthorized("未登录或登录已失效")
+		return nil, constants.ErrUnauthorized
 	}
 	target, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("用户不存在")
+			return nil, constants.ErrUserNotFound
 		}
 		return nil, err
 	}
@@ -420,7 +420,7 @@ func (s *UserService) AssignRolesByActor(ctx context.Context, actor *auth.Curren
 		return nil, err
 	}
 	if !ok {
-		return nil, apperror.Forbidden("无访问权限")
+		return nil, constants.ErrForbidden
 	}
 	return s.AssignRoles(ctx, id, req)
 }
@@ -429,7 +429,7 @@ func (s *UserService) ensureUserUnique(ctx context.Context, currentID uint, user
 	if strings.TrimSpace(username) != "" {
 		existing, err := s.userRepo.GetByUsername(ctx, strings.TrimSpace(username))
 		if err == nil && existing.ID != currentID {
-			return apperror.Conflict("用户名已存在")
+			return constants.ErrUsernameTaken
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -439,7 +439,7 @@ func (s *UserService) ensureUserUnique(ctx context.Context, currentID uint, user
 	if strings.TrimSpace(email) != "" {
 		existing, err := s.userRepo.GetByEmail(ctx, normalizeEmail(email))
 		if err == nil && existing.ID != currentID {
-			return apperror.Conflict("邮箱已存在")
+			return constants.ErrEmailAlreadyRegistered
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -456,7 +456,7 @@ func (s *UserService) ListAll(ctx context.Context) ([]model.User, error) {
 
 func (s *UserService) ListAllByActor(ctx context.Context, actor *auth.CurrentUser) ([]model.User, error) {
 	if actor == nil {
-		return nil, apperror.Unauthorized("未登录或登录已失效")
+		return nil, constants.ErrUnauthorized
 	}
 	if isSuperAdmin(actor.RoleCodes) {
 		return s.ListAll(ctx)

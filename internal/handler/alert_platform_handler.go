@@ -37,7 +37,7 @@ func alertPlatformUserID(c *gin.Context) uint {
 }
 
 func (h *AlertPlatformHandler) ListDatasources(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, q service.AlertDatasourceListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, q service.AlertDatasourceListQuery) (gin.H, error) {
 		list, total, page, pageSize, err := h.ds.List(ctx, q)
 		if err != nil {
 			return nil, err
@@ -47,7 +47,7 @@ func (h *AlertPlatformHandler) ListDatasources(c *gin.Context) {
 }
 
 func (h *AlertPlatformHandler) CreateDatasource(c *gin.Context) {
-	handleJSON(c, h.ds.Create)
+	ServeJSON(c, h.ds.Create)
 }
 
 func (h *AlertPlatformHandler) UpdateDatasource(c *gin.Context) {
@@ -56,7 +56,7 @@ func (h *AlertPlatformHandler) UpdateDatasource(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AlertDatasourceUpsertRequest) (any, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AlertDatasourceUpsertRequest) (any, error) {
 		return h.ds.Update(ctx, id, req)
 	})
 }
@@ -95,7 +95,7 @@ func (h *AlertPlatformHandler) PromQuery(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.PromQueryRequest) (any, error) {
+	ServeJSON(c, func(ctx context.Context, req service.PromQueryRequest) (any, error) {
 		raw, err := h.ds.PromQuery(ctx, id, req)
 		if err != nil {
 			return nil, err
@@ -110,7 +110,7 @@ func (h *AlertPlatformHandler) PromQueryRange(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.PromQueryRangeRequest) (any, error) {
+	ServeJSON(c, func(ctx context.Context, req service.PromQueryRangeRequest) (any, error) {
 		raw, err := h.ds.PromQueryRange(ctx, id, req)
 		if err != nil {
 			return nil, err
@@ -134,7 +134,7 @@ func (h *AlertPlatformHandler) PromActiveAlerts(c *gin.Context) {
 }
 
 func (h *AlertPlatformHandler) ListSilences(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, q service.AlertSilenceListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, q service.AlertSilenceListQuery) (gin.H, error) {
 		list, total, page, pageSize, err := h.silence.List(ctx, q)
 		if err != nil {
 			return nil, err
@@ -144,13 +144,13 @@ func (h *AlertPlatformHandler) ListSilences(c *gin.Context) {
 }
 
 func (h *AlertPlatformHandler) CreateSilence(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.AlertSilenceUpsertRequest) (any, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AlertSilenceUpsertRequest) (any, error) {
 		return h.silence.Create(ctx, alertPlatformUserID(c), req)
 	})
 }
 
 func (h *AlertPlatformHandler) CreateSilenceBatch(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.AlertSilenceBatchRequest) (gin.H, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AlertSilenceBatchRequest) (gin.H, error) {
 		n, err := h.silence.CreateBatch(ctx, alertPlatformUserID(c), req)
 		if err != nil {
 			return nil, err
@@ -165,7 +165,7 @@ func (h *AlertPlatformHandler) UpdateSilence(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AlertSilenceUpsertRequest) (any, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AlertSilenceUpsertRequest) (any, error) {
 		return h.silence.Update(ctx, id, req)
 	})
 }
@@ -184,7 +184,7 @@ func (h *AlertPlatformHandler) DeleteSilence(c *gin.Context) {
 }
 
 func (h *AlertPlatformHandler) ListMonitorRules(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, q service.AlertMonitorRuleListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, q service.AlertMonitorRuleListQuery) (gin.H, error) {
 		list, total, page, pageSize, err := h.rules.List(ctx, q)
 		if err != nil {
 			return nil, err
@@ -194,7 +194,7 @@ func (h *AlertPlatformHandler) ListMonitorRules(c *gin.Context) {
 }
 
 func (h *AlertPlatformHandler) CreateMonitorRule(c *gin.Context) {
-	handleJSON(c, h.rules.Create)
+	ServeJSON(c, h.rules.Create)
 }
 
 func (h *AlertPlatformHandler) UpdateMonitorRule(c *gin.Context) {
@@ -203,7 +203,7 @@ func (h *AlertPlatformHandler) UpdateMonitorRule(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AlertMonitorRuleUpsertRequest) (any, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AlertMonitorRuleUpsertRequest) (any, error) {
 		return h.rules.Update(ctx, id, req)
 	})
 }
@@ -241,13 +241,13 @@ func (h *AlertPlatformHandler) UpsertMonitorRuleAssignees(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AlertRuleAssigneeUpsertRequest) (any, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AlertRuleAssigneeUpsertRequest) (any, error) {
 		return h.assign.UpsertPrimary(ctx, id, req)
 	})
 }
 
 func (h *AlertPlatformHandler) ListDutyBlocks(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, q service.AlertDutyBlockListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, q service.AlertDutyBlockListQuery) (gin.H, error) {
 		list, total, page, pageSize, err := h.duty.ListBlocks(ctx, q)
 		if err != nil {
 			return nil, err
@@ -257,7 +257,7 @@ func (h *AlertPlatformHandler) ListDutyBlocks(c *gin.Context) {
 }
 
 func (h *AlertPlatformHandler) CreateDutyBlock(c *gin.Context) {
-	handleJSON(c, h.duty.CreateBlock)
+	ServeJSON(c, h.duty.CreateBlock)
 }
 
 func (h *AlertPlatformHandler) UpdateDutyBlock(c *gin.Context) {
@@ -266,7 +266,7 @@ func (h *AlertPlatformHandler) UpdateDutyBlock(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AlertDutyBlockUpsertRequest) (any, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AlertDutyBlockUpsertRequest) (any, error) {
 		return h.duty.UpdateBlock(ctx, id, req)
 	})
 }

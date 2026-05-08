@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/config"
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/mailer"
 	"yunshu/internal/pkg/password"
 	"yunshu/internal/repository"
@@ -106,10 +106,10 @@ func (s *RegistrationService) List(ctx context.Context, keyword string, status *
 func (s *RegistrationService) Review(ctx context.Context, id uint, reviewerID uint, req ReviewRequest) error {
 	regReq, err := s.regRepo.GetByID(ctx, id)
 	if err != nil {
-		return apperror.NotFound("注册申请不存在")
+		return constants.ErrRegistrationRequestNotFound
 	}
 	if regReq.Status != model.RegistrationPending {
-		return apperror.Conflict("该注册申请已审核，请勿重复操作")
+		return constants.ErrRegistrationAlreadyProcessed
 	}
 
 	newStatus := model.RegistrationRequestStatus(req.Status)
@@ -141,17 +141,17 @@ func (s *RegistrationService) ensureRegistrationDoesNotExist(ctx context.Context
 		return err
 	}
 	if count > 0 {
-		return apperror.Conflict("该用户名或邮箱已有待审核注册申请，请勿重复提交")
+		return constants.ErrRegistrationDuplicatePending
 	}
 
 	if _, err := s.userRepo.GetByUsername(ctx, username); err == nil {
-		return apperror.Conflict("用户名已存在")
+		return constants.ErrUsernameTaken
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
 
 	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
-		return apperror.Conflict("邮箱已注册")
+		return constants.ErrEmailAlreadyRegistered
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
@@ -167,12 +167,12 @@ func (s *RegistrationService) validateEmailCode(ctx context.Context, scene, emai
 	val, err := s.redis.Get(ctx, key).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return apperror.BadRequest("验证码已过期或未发送，请重新获取")
+			return constants.ErrCaptchaExpired
 		}
 		return err
 	}
 	if val != code {
-		return apperror.BadRequest("验证码错误，请检查后重试")
+		return constants.ErrCaptchaIncorrect
 	}
 	return nil
 }

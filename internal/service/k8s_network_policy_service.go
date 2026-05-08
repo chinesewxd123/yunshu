@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	networkingv1 "k8s.io/api/networking/v1"
@@ -56,7 +56,7 @@ func (s *K8sNetworkPolicyService) List(ctx context.Context, q NetworkPolicyListQ
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, networkPolicyGVK, q.Namespace)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 NetworkPolicy 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmte5f4df2bc9c2, err))
 	}
 
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
@@ -83,9 +83,9 @@ func (s *K8sNetworkPolicyService) Detail(ctx context.Context, q NetworkPolicyDet
 	u, err := s.dyn.GetByGVK(ctx, k, networkPolicyGVK, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("NetworkPolicy 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsge64b05879667)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 NetworkPolicy 详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd28ea35ac553, err))
 	}
 	var obj networkingv1.NetworkPolicy
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -103,10 +103,10 @@ func (s *K8sNetworkPolicyService) Apply(ctx context.Context, req NetworkPolicyAp
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }
@@ -120,7 +120,7 @@ func (s *K8sNetworkPolicyService) Delete(ctx context.Context, req NetworkPolicyD
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除 NetworkPolicy 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmteaaed344b27b, err))
 	}
 	return nil
 }

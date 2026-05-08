@@ -9,8 +9,8 @@ import (
 	"time"
 
 	pb "yunshu/internal/grpc/proto"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
@@ -31,17 +31,17 @@ func NewProjectHandler(svc *service.ProjectMgmtService, projectClient pb.Project
 
 // List 查询列表对应的 HTTP 接口处理逻辑。
 func (h *ProjectHandler) List(c *gin.Context) {
-	handleQuery(c, h.svc.ListProjects)
+	ServeQuery(c, h.svc.ListProjects)
 }
 
 // Create 创建对应的 HTTP 接口处理逻辑。
 func (h *ProjectHandler) Create(c *gin.Context) {
 	u, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录"))
+		response.Error(c, constants.ErrNotLoggedIn)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ProjectCreateRequest) (*service.ProjectItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ProjectCreateRequest) (*service.ProjectItem, error) {
 		return h.svc.CreateProject(ctx, u.ID, req)
 	})
 }
@@ -53,7 +53,7 @@ func (h *ProjectHandler) Update(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ProjectUpdateRequest) (*service.ProjectItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ProjectUpdateRequest) (*service.ProjectItem, error) {
 		return h.svc.UpdateProject(ctx, id, req)
 	})
 }
@@ -79,7 +79,7 @@ func (h *ProjectHandler) ListServers(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleQuery(c, func(ctx context.Context, q service.ServerListQuery) (*pagination.Result[service.ServerItem], error) {
+	ServeQuery(c, func(ctx context.Context, q service.ServerListQuery) (*pagination.Result[service.ServerItem], error) {
 		q.ProjectID = projectID
 		return h.svc.ListServers(ctx, q)
 	})
@@ -92,7 +92,7 @@ func (h *ProjectHandler) UpsertServer(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ServerUpsertRequest) (*service.ServerItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ServerUpsertRequest) (*service.ServerItem, error) {
 		req.ProjectID = projectID
 		return h.svc.UpsertServer(ctx, req)
 	})
@@ -130,7 +130,7 @@ func (h *ProjectHandler) ServerDetail(c *gin.Context) {
 		return
 	}
 	if data.ProjectID != projectID {
-		response.Error(c, apperror.BadRequest("服务器不属于当前项目"))
+		response.Error(c, constants.ErrServerNotInCurrentProject)
 		return
 	}
 	response.Success(c, data)
@@ -148,7 +148,7 @@ func (h *ProjectHandler) ExecServerCommand(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ServerExecRequest) (*service.ServerExecResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ServerExecRequest) (*service.ServerExecResult, error) {
 		req.ProjectID = projectID
 		req.ServerID = serverID
 		return h.svc.ExecServerCommand(ctx, req)
@@ -162,7 +162,7 @@ func (h *ProjectHandler) ListServerGroups(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleQuery(c, func(ctx context.Context, req service.ServerGroupTreeQuery) ([]service.ServerGroupItem, error) {
+	ServeQuery(c, func(ctx context.Context, req service.ServerGroupTreeQuery) ([]service.ServerGroupItem, error) {
 		req.ProjectID = projectID
 		return h.svc.ListServerGroupTree(ctx, req)
 	})
@@ -175,7 +175,7 @@ func (h *ProjectHandler) UpsertServerGroup(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ServerGroupUpsertRequest) (*service.ServerGroupItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ServerGroupUpsertRequest) (*service.ServerGroupItem, error) {
 		req.ProjectID = projectID
 		return h.svc.UpsertServerGroup(ctx, req)
 	})
@@ -193,7 +193,7 @@ func (h *ProjectHandler) UpdateServerGroup(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ServerGroupUpsertRequest) (*service.ServerGroupItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ServerGroupUpsertRequest) (*service.ServerGroupItem, error) {
 		req.ProjectID = projectID
 		req.ID = &groupID
 		return h.svc.UpsertServerGroup(ctx, req)
@@ -226,7 +226,7 @@ func (h *ProjectHandler) ListCloudAccounts(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleQuery(c, func(ctx context.Context, req service.CloudAccountListQuery) ([]service.CloudAccountItem, error) {
+	ServeQuery(c, func(ctx context.Context, req service.CloudAccountListQuery) ([]service.CloudAccountItem, error) {
 		req.ProjectID = projectID
 		return h.svc.ListCloudAccounts(ctx, req)
 	})
@@ -239,7 +239,7 @@ func (h *ProjectHandler) UpsertCloudAccount(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.CloudAccountUpsertRequest) (*service.CloudAccountItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.CloudAccountUpsertRequest) (*service.CloudAccountItem, error) {
 		req.ProjectID = projectID
 		return h.svc.UpsertCloudAccount(ctx, req)
 	})
@@ -257,7 +257,7 @@ func (h *ProjectHandler) UpdateCloudAccount(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.CloudAccountUpsertRequest) (*service.CloudAccountItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.CloudAccountUpsertRequest) (*service.CloudAccountItem, error) {
 		req.ProjectID = projectID
 		req.ID = &accountID
 		return h.svc.UpsertCloudAccount(ctx, req)
@@ -308,7 +308,7 @@ func (h *ProjectHandler) SyncCloudAccount(c *gin.Context) {
 
 // TestServer 测试对应的 HTTP 接口处理逻辑。
 func (h *ProjectHandler) TestServer(c *gin.Context) {
-	handleJSON(c, h.svc.TestServerConnectivity)
+	ServeJSON(c, h.svc.TestServerConnectivity)
 }
 
 // BatchTestServers 处理对应的 HTTP 请求并返回统一响应。
@@ -318,7 +318,7 @@ func (h *ProjectHandler) BatchTestServers(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.BatchServerTestRequest) (*service.BatchServerTestResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.BatchServerTestRequest) (*service.BatchServerTestResult, error) {
 		req.ProjectID = projectID
 		return h.svc.BatchTestServerConnectivity(ctx, req)
 	})
@@ -336,7 +336,7 @@ func (h *ProjectHandler) CloudServerAction(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.CloudServerActionRequest) (*service.CloudServerActionResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.CloudServerActionRequest) (*service.CloudServerActionResult, error) {
 		return h.svc.RunCloudServerAction(ctx, projectID, serverID, req)
 	})
 }
@@ -348,7 +348,7 @@ func (h *ProjectHandler) SyncServers(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ServerSyncRequest) (*service.ServerSyncResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ServerSyncRequest) (*service.ServerSyncResult, error) {
 		req.ProjectID = projectID
 		return h.svc.SyncProjectServers(ctx, req)
 	})
@@ -363,7 +363,7 @@ func (h *ProjectHandler) ImportServers(c *gin.Context) {
 	}
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
-		response.Error(c, apperror.BadRequest("文件上传失败"))
+		response.Error(c, constants.ErrUploadFailed)
 		return
 	}
 	defer file.Close()
@@ -417,12 +417,12 @@ func (h *ProjectHandler) ServersImportTemplate(c *gin.Context) {
 
 // ListServices 查询列表对应的 HTTP 接口处理逻辑。
 func (h *ProjectHandler) ListServices(c *gin.Context) {
-	handleQuery(c, h.svc.ListServices)
+	ServeQuery(c, h.svc.ListServices)
 }
 
 // UpsertService 处理对应的 HTTP 请求并返回统一响应。
 func (h *ProjectHandler) UpsertService(c *gin.Context) {
-	handleJSON(c, h.svc.UpsertService)
+	ServeJSON(c, h.svc.UpsertService)
 }
 
 // DeleteService 删除对应的 HTTP 接口处理逻辑。
@@ -441,7 +441,7 @@ func (h *ProjectHandler) DeleteService(c *gin.Context) {
 
 // ListLogSources 查询列表对应的 HTTP 接口处理逻辑。
 func (h *ProjectHandler) ListLogSources(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, q service.LogSourceListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, q service.LogSourceListQuery) (gin.H, error) {
 		req := &pb.ListLogSourcesRequest{
 			ProjectId: uint64(q.ProjectID),
 			Page:      &pb.PageRequest{Page: int32(q.Page), PageSize: int32(q.PageSize)},
@@ -481,7 +481,7 @@ func (h *ProjectHandler) ListLogSources(c *gin.Context) {
 
 // UpsertLogSource 处理对应的 HTTP 请求并返回统一响应。
 func (h *ProjectHandler) UpsertLogSource(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.LogSourceUpsertRequest) (service.LogSourceItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.LogSourceUpsertRequest) (service.LogSourceItem, error) {
 		r := &pb.UpsertLogSourceRequest{
 			ServiceId: uint64(req.ServiceID),
 			LogType:   req.LogType,
@@ -542,12 +542,6 @@ func (h *ProjectHandler) DeleteLogSource(c *gin.Context) {
 
 // StreamLogs 处理对应的 HTTP 请求并返回统一响应。
 func (h *ProjectHandler) StreamLogs(c *gin.Context) {
-	// SSE
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Writer.Flush()
-
 	projectID, err := parseUintParam(c, "id")
 	if err != nil {
 		response.Error(c, err)
@@ -565,7 +559,7 @@ func (h *ProjectHandler) StreamLogs(c *gin.Context) {
 	if q.Include != nil && strings.TrimSpace(*q.Include) != "" {
 		re, err := regexp.Compile(*q.Include)
 		if err != nil {
-			response.Error(c, apperror.BadRequest("包含正则表达式不合法"))
+			response.Error(c, constants.ErrIncludeRegexInvalid)
 			return
 		}
 		includeRe = re
@@ -574,7 +568,7 @@ func (h *ProjectHandler) StreamLogs(c *gin.Context) {
 	if q.Exclude != nil && strings.TrimSpace(*q.Exclude) != "" {
 		re, err := regexp.Compile(*q.Exclude)
 		if err != nil {
-			response.Error(c, apperror.BadRequest("排除正则表达式不合法"))
+			response.Error(c, constants.ErrExcludeRegexInvalid)
 			return
 		}
 		excludeRe = re
@@ -596,6 +590,12 @@ func (h *ProjectHandler) StreamLogs(c *gin.Context) {
 	defer cancelSub()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
+
+	// SSE：须在参数校验通过后再写头，避免非法请求返回 JSON 却已发送 event-stream。
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Writer.Flush()
 
 	for {
 		select {
@@ -655,7 +655,7 @@ func (h *ProjectHandler) ListLogFiles(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleQuery(c, func(ctx context.Context, q service.RemoteLogFileQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, q service.RemoteLogFileQuery) (gin.H, error) {
 		q.ProjectID = projectID
 		files, err := h.svc.ListRemoteLogFiles(ctx, q)
 		if err != nil {
@@ -672,7 +672,7 @@ func (h *ProjectHandler) ListLogUnits(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleQuery(c, func(ctx context.Context, q service.RemoteLogUnitQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, q service.RemoteLogUnitQuery) (gin.H, error) {
 		q.ProjectID = projectID
 		list, err := h.svc.ListRemoteLogUnits(ctx, q)
 		if err != nil {
@@ -704,7 +704,7 @@ func (h *ProjectHandler) AddProjectMember(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ProjectMemberAddRequest) (*service.ProjectMemberItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ProjectMemberAddRequest) (*service.ProjectMemberItem, error) {
 		return h.svc.AddProjectMember(ctx, projectID, req)
 	})
 }
@@ -721,7 +721,7 @@ func (h *ProjectHandler) UpdateProjectMember(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ProjectMemberUpdateRequest) (*service.ProjectMemberItem, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ProjectMemberUpdateRequest) (*service.ProjectMemberItem, error) {
 		return h.svc.UpdateProjectMember(ctx, projectID, memberID, req)
 	})
 }

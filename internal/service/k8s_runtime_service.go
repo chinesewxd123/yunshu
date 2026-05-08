@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/repository"
 
 	"github.com/weibaohui/kom/callbacks"
@@ -145,15 +145,15 @@ func (s *K8sRuntimeService) GetClusterKubectl(ctx context.Context, id uint) (*mo
 		return nil, nil, err
 	}
 	if cluster.Status != 1 {
-		return nil, nil, apperror.Forbidden("集群已停用")
+		return nil, nil, constants.ErrForbiddenWithMsg(constants.ErrMsgb0e556f1ccc5)
 	}
 	clusterID := strconv.FormatUint(uint64(id), 10)
 	if err := s.registerClusterIfNeeded(clusterID, cluster.Kubeconfig, false); err != nil {
-		return nil, nil, apperror.Internal(fmt.Sprintf("k8s 连接失败: %v", err))
+		return nil, nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtac130d1176b3, err))
 	}
 	k := kom.Cluster(clusterID)
 	if k == nil {
-		return nil, nil, apperror.Internal("K8s 集群实例不存在")
+		return nil, nil, constants.ErrInternalWithMsg(constants.ErrMsg5248c9e19a3f)
 	}
 	return cluster, k, nil
 }
@@ -201,16 +201,16 @@ func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) 
 	}
 	k := kom.Cluster(clusterID)
 	if k == nil {
-		return "", s.GetClusterConnState(id), apperror.Internal("K8s 集群实例不存在")
+		return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(constants.ErrMsg5248c9e19a3f)
 	}
 	gitVer, verr := serverGitVersionFromKubeconfig(cluster.Kubeconfig)
 	if verr != nil || gitVer == "" {
 		s.DeleteRegisterCache(id)
 		if e := s.registerClusterIfNeeded(clusterID, cluster.Kubeconfig, true); e != nil {
-			return "", s.GetClusterConnState(id), apperror.Internal(fmt.Sprintf("k8s 心跳失败: %v", e))
+			return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt8648d0eaa652, e))
 		}
 		if kom.Cluster(clusterID) == nil {
-			return "", s.GetClusterConnState(id), apperror.Internal("K8s 集群重连失败")
+			return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(constants.ErrMsgb9cf6d1a2c2e)
 		}
 		gitVer, verr = serverGitVersionFromKubeconfig(cluster.Kubeconfig)
 		if verr != nil || gitVer == "" {
@@ -226,7 +226,7 @@ func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) 
 			st.ConsecutiveFailures++
 			s.connState[clusterID] = st
 			s.komMu.Unlock()
-			return "", s.GetClusterConnState(id), apperror.Internal(fmt.Sprintf("K8s 心跳失败：%s", errMsg))
+			return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt5d75fe17f8ef, errMsg))
 		}
 	}
 	s.komMu.Lock()
@@ -260,11 +260,11 @@ func (s *K8sRuntimeService) GetClusterRestConfig(ctx context.Context, id uint) (
 		return nil, nil, err
 	}
 	if cluster.Status != 1 {
-		return nil, nil, apperror.Forbidden("集群已停用")
+		return nil, nil, constants.ErrForbiddenWithMsg(constants.ErrMsgb0e556f1ccc5)
 	}
 	cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(cluster.Kubeconfig))
 	if err != nil {
-		return nil, nil, apperror.Internal(fmt.Sprintf("解析 kubeconfig 失败: %v", err))
+		return nil, nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd7f0c3fe8497, err))
 	}
 	return cluster, cfg, nil
 }

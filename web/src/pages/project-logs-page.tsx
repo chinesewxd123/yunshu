@@ -270,7 +270,12 @@ export function ProjectLogsPage() {
       }
     } catch (e: any) {
       if (e?.name !== "AbortError") {
-        message.error(String(e?.message ?? e));
+        const raw = String(e?.message ?? e);
+        const hint =
+          /chunk|network|Failed to fetch|Load failed|ERR_/i.test(raw)
+            ? "日志流连接中断（常见于网关缓冲或后端写入超时）。请确认已部署最新配置并点击「开始」重试。"
+            : raw;
+        message.error(hint);
       }
     } finally {
       setStreaming(false);

@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/repository"
 
@@ -47,7 +47,7 @@ func (s *PermissionService) Update(ctx context.Context, id uint, req PermissionU
 	permission, err := s.permissionRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("权限不存在")
+			return nil, constants.ErrPermissionNotFound
 		}
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (s *PermissionService) Delete(ctx context.Context, id uint) error {
 	permission, err := s.permissionRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("权限不存在")
+			return constants.ErrPermissionNotFound
 		}
 		return err
 	}
@@ -101,7 +101,7 @@ func (s *PermissionService) Detail(ctx context.Context, id uint) (*PermissionIte
 	permission, err := s.permissionRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("权限不存在")
+			return nil, constants.ErrPermissionNotFound
 		}
 		return nil, err
 	}

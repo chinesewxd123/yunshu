@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -33,7 +33,7 @@ func NewLoginLogHandler(svc *service.LoginLogService) *LoginLogHandler {
 // @Success 200 {object} response.Body{data=pagination.Result[model.LoginLog]}
 // @Router /api/v1/login-logs [get]
 func (h *LoginLogHandler) List(c *gin.Context) {
-	handleQuery(c, h.svc.List)
+	ServeQuery(c, h.svc.List)
 }
 
 type idsRequest struct {
@@ -50,7 +50,7 @@ type idsRequest struct {
 // @Success 200 {object} response.Body{data=MessageData}
 // @Router /api/v1/login-logs/delete [post]
 func (h *LoginLogHandler) BatchDelete(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "deleted"}, func(ctx context.Context, req idsRequest) error {
+	ServeJSONOK(c, gin.H{"message": "deleted"}, func(ctx context.Context, req idsRequest) error {
 		return h.svc.DeleteBatch(ctx, req.IDs)
 	})
 }
@@ -88,7 +88,7 @@ func (h *LoginLogHandler) Delete(c *gin.Context) {
 func (h *LoginLogHandler) Export(c *gin.Context) {
 	var q service.LoginLogListQuery
 	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 	c.Header("Content-Type", "application/octet-stream")

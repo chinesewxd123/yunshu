@@ -4,7 +4,7 @@ import (
 	"context"
 
 	pb "yunshu/internal/grpc/proto"
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -23,7 +23,7 @@ func NewLogAgentHandler(svc *service.LogAgentService, agentClient pb.AgentRuntim
 
 // Register 注册对应的 HTTP 接口处理逻辑。
 func (h *LogAgentHandler) Register(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.LogAgentRegisterRequest) (*service.LogAgentRegisterResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.LogAgentRegisterRequest) (*service.LogAgentRegisterResult, error) {
 		out, err := h.agentClient.Register(ctx, &pb.RegisterRequest{
 			ProjectId: uint64(req.ProjectID),
 			ServerId:  uint64(req.ServerID),
@@ -43,7 +43,7 @@ func (h *LogAgentHandler) Register(c *gin.Context) {
 
 // PublicRegister 处理对应的 HTTP 请求并返回统一响应。
 func (h *LogAgentHandler) PublicRegister(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.LogAgentPublicRegisterRequest) (*service.LogAgentRegisterResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.LogAgentPublicRegisterRequest) (*service.LogAgentRegisterResult, error) {
 		out, err := h.agentClient.PublicRegister(ctx, &pb.PublicRegisterRequest{
 			ServerId:       uint64(req.ServerID),
 			Name:           req.Name,
@@ -63,7 +63,7 @@ func (h *LogAgentHandler) PublicRegister(c *gin.Context) {
 
 // ReportHealth 处理对应的 HTTP 请求并返回统一响应。
 func (h *LogAgentHandler) ReportHealth(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "ok"}, func(ctx context.Context, req service.LogAgentHealthReportRequest) error {
+	ServeJSONOK(c, gin.H{"message": "ok"}, func(ctx context.Context, req service.LogAgentHealthReportRequest) error {
 		return h.svc.ReportHealthByToken(ctx, req)
 	})
 }
@@ -111,7 +111,7 @@ func (h *LogAgentHandler) List(c *gin.Context) {
 	}
 	var q agentListQuery
 	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 	out, err := h.svc.ListByProject(c.Request.Context(), service.LogAgentListQuery{
@@ -134,7 +134,7 @@ func (h *LogAgentHandler) BatchRefreshHeartbeat(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AgentBatchHeartbeatRefreshRequest) (*service.AgentBatchHeartbeatRefreshResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AgentBatchHeartbeatRefreshRequest) (*service.AgentBatchHeartbeatRefreshResult, error) {
 		req.ProjectID = projectID
 		return h.svc.BatchRefreshHeartbeat(ctx, req)
 	})
@@ -149,7 +149,7 @@ func (h *LogAgentHandler) Status(c *gin.Context) {
 	}
 	var q agentStatusQuery
 	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 	out, err := h.svc.Status(c.Request.Context(), projectID, q.ServerID, q.LogSourceID)
@@ -167,7 +167,7 @@ func (h *LogAgentHandler) Bootstrap(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AgentBootstrapRequest) (*service.AgentBootstrapResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AgentBootstrapRequest) (*service.AgentBootstrapResult, error) {
 		req.ProjectID = projectID
 		data, err := h.agentClient.Bootstrap(ctx, &pb.AgentBootstrapRequest{
 			ProjectId:   uint64(req.ProjectID),
@@ -198,7 +198,7 @@ func (h *LogAgentHandler) RotateToken(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AgentBootstrapRequest) (*service.AgentBootstrapResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AgentBootstrapRequest) (*service.AgentBootstrapResult, error) {
 		req.ProjectID = projectID
 		data, err := h.agentClient.RotateToken(ctx, &pb.AgentBootstrapRequest{
 			ProjectId:   uint64(req.ProjectID),

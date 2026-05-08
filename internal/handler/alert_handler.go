@@ -2,9 +2,9 @@ package handler
 
 import (
 	"context"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -22,7 +22,7 @@ func NewAlertHandler(svc *service.AlertService) *AlertHandler {
 
 // ListChannels 查询列表对应的 HTTP 接口处理逻辑。
 func (h *AlertHandler) ListChannels(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, q service.AlertChannelListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, q service.AlertChannelListQuery) (gin.H, error) {
 		list, err := h.svc.ListChannels(ctx, q)
 		if err != nil {
 			return nil, err
@@ -33,7 +33,7 @@ func (h *AlertHandler) ListChannels(c *gin.Context) {
 
 // CreateChannel 创建对应的 HTTP 接口处理逻辑。
 func (h *AlertHandler) CreateChannel(c *gin.Context) {
-	handleJSON(c, h.svc.CreateChannel)
+	ServeJSON(c, h.svc.CreateChannel)
 }
 
 // UpdateChannel 更新对应的 HTTP 接口处理逻辑。
@@ -43,7 +43,7 @@ func (h *AlertHandler) UpdateChannel(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.AlertChannelUpsertRequest) (*model.AlertChannel, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AlertChannelUpsertRequest) (*model.AlertChannel, error) {
 		return h.svc.UpdateChannel(ctx, id, req)
 	})
 }
@@ -69,21 +69,21 @@ func (h *AlertHandler) TestChannel(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSONOK(c, gin.H{"message": "test sent"}, func(ctx context.Context, req service.AlertTestRequest) error {
+	ServeJSONOK(c, gin.H{"message": "test sent"}, func(ctx context.Context, req service.AlertTestRequest) error {
 		return h.svc.TestChannel(ctx, id, req)
 	})
 }
 
 // PreviewChannelTemplate 预览通道模板渲染结果。
 func (h *AlertHandler) PreviewChannelTemplate(c *gin.Context) {
-	handleJSON(c, h.svc.PreviewChannelTemplate)
+	ServeJSON(c, h.svc.PreviewChannelTemplate)
 }
 
 // ListEvents 查询列表对应的 HTTP 接口处理逻辑。
 func (h *AlertHandler) ListEvents(c *gin.Context) {
 	var q service.AlertEventListQuery
 	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 	list, total, page, pageSize, err := h.svc.ListEvents(c.Request.Context(), q)
@@ -123,8 +123,8 @@ func (h *AlertHandler) ReceiveAlertmanager(c *gin.Context) {
 		token = c.Query("token")
 	}
 	if !h.svc.ValidateWebhookToken(token) {
-		response.Error(c, apperror.Forbidden("告警回调令牌无效"))
+		response.Error(c, constants.ErrAlertWebhookTokenInvalid)
 		return
 	}
-	handleJSONOK(c, gin.H{"message": "accepted"}, h.svc.ReceiveAlertmanager)
+	ServeJSONOK(c, gin.H{"message": "accepted"}, h.svc.ReceiveAlertmanager)
 }

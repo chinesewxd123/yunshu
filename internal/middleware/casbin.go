@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"strings"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/constants"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
@@ -16,7 +16,7 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.Handler
 	return func(c *gin.Context) {
 		user, ok := auth.CurrentUserFromContext(c)
 		if !ok {
-			response.Error(c, apperror.Unauthorized("未登录"))
+			response.Error(c, constants.ErrNotLoggedIn)
 			c.Abort()
 			return
 		}
@@ -36,7 +36,7 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.Handler
 		allowed, err := enforcer.Enforce(service.UserSubject(user.ID), path, c.Request.Method)
 		if err != nil {
 			logger.Error.Error("casbin authorize failed", "error", err, "path", path, "method", c.Request.Method)
-			response.Error(c, apperror.Internal("权限校验失败"))
+			response.Error(c, constants.ErrInternal)
 			c.Abort()
 			return
 		}
@@ -47,7 +47,7 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.Handler
 				c.Next()
 				return
 			}
-			response.Error(c, apperror.Forbidden("无访问权限"))
+			response.Error(c, constants.ErrForbidden)
 			c.Abort()
 			return
 		}

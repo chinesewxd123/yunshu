@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -27,7 +27,7 @@ func NewPodHandler(svc *service.K8sPodService) *PodHandler {
 
 // List 查询列表对应的 HTTP 接口处理逻辑。
 func (h *PodHandler) List(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, query service.PodListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, query service.PodListQuery) (gin.H, error) {
 		list, err := h.svc.List(ctx, query)
 		if err != nil {
 			return nil, err
@@ -38,7 +38,7 @@ func (h *PodHandler) List(c *gin.Context) {
 
 // Logs 处理对应的 HTTP 请求并返回统一响应。
 func (h *PodHandler) Logs(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, query service.PodLogsQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, query service.PodLogsQuery) (gin.H, error) {
 		logs, err := h.svc.GetLogs(ctx, query)
 		if err != nil {
 			return nil, err
@@ -51,7 +51,7 @@ func (h *PodHandler) Logs(c *gin.Context) {
 func (h *PodHandler) LogsDownload(c *gin.Context) {
 	var query service.PodLogsQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 	logs, err := h.svc.GetLogs(c.Request.Context(), query)
@@ -69,7 +69,7 @@ func (h *PodHandler) LogsDownload(c *gin.Context) {
 func (h *PodHandler) LogsStream(c *gin.Context) {
 	var query service.PodLogsQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 
@@ -91,17 +91,17 @@ func (h *PodHandler) LogsStream(c *gin.Context) {
 
 // Delete 删除对应的 HTTP 接口处理逻辑。
 func (h *PodHandler) Delete(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "deleted"}, h.svc.Delete)
+	ServeJSONOK(c, gin.H{"message": "deleted"}, h.svc.Delete)
 }
 
 // Detail 查询详情对应的 HTTP 接口处理逻辑。
 func (h *PodHandler) Detail(c *gin.Context) {
-	handleQuery(c, h.svc.Detail)
+	ServeQuery(c, h.svc.Detail)
 }
 
 // Events 处理对应的 HTTP 请求并返回统一响应。
 func (h *PodHandler) Events(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, query service.PodEventQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, query service.PodEventQuery) (gin.H, error) {
 		list, err := h.svc.Events(ctx, query)
 		if err != nil {
 			return nil, err
@@ -112,7 +112,7 @@ func (h *PodHandler) Events(c *gin.Context) {
 
 // Exec 处理对应的 HTTP 请求并返回统一响应。
 func (h *PodHandler) Exec(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.PodExecRequest) (gin.H, error) {
+	ServeJSON(c, func(ctx context.Context, req service.PodExecRequest) (gin.H, error) {
 		out, err := h.svc.Exec(ctx, req)
 		if err != nil {
 			return nil, err
@@ -123,27 +123,27 @@ func (h *PodHandler) Exec(c *gin.Context) {
 
 // Restart 处理对应的 HTTP 请求并返回统一响应。
 func (h *PodHandler) Restart(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "restarted"}, h.svc.Restart)
+	ServeJSONOK(c, gin.H{"message": "restarted"}, h.svc.Restart)
 }
 
 // CreateByYAML 创建对应的 HTTP 接口处理逻辑。
 func (h *PodHandler) CreateByYAML(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "created"}, h.svc.CreateByYAML)
+	ServeJSONOK(c, gin.H{"message": "created"}, h.svc.CreateByYAML)
 }
 
 // CreateSimple 创建对应的 HTTP 接口处理逻辑。
 func (h *PodHandler) CreateSimple(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "created"}, h.svc.CreateSimple)
+	ServeJSONOK(c, gin.H{"message": "created"}, h.svc.CreateSimple)
 }
 
 // UpdateSimple 更新对应的 HTTP 接口处理逻辑。
 func (h *PodHandler) UpdateSimple(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "updated"}, h.svc.UpdateSimple)
+	ServeJSONOK(c, gin.H{"message": "updated"}, h.svc.UpdateSimple)
 }
 
 // ListFiles 查询列表对应的 HTTP 接口处理逻辑。
 func (h *PodHandler) ListFiles(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, query service.PodFileQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, query service.PodFileQuery) (gin.H, error) {
 		list, err := h.svc.ListFiles(ctx, query)
 		if err != nil {
 			return nil, err
@@ -154,7 +154,7 @@ func (h *PodHandler) ListFiles(c *gin.Context) {
 
 // ReadFile 处理对应的 HTTP 请求并返回统一响应。
 func (h *PodHandler) ReadFile(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, query service.PodFileQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, query service.PodFileQuery) (gin.H, error) {
 		data, err := h.svc.ReadFile(ctx, query)
 		if err != nil {
 			return nil, err
@@ -167,7 +167,7 @@ func (h *PodHandler) ReadFile(c *gin.Context) {
 func (h *PodHandler) DownloadFile(c *gin.Context) {
 	var query service.PodFileQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 	data, err := h.svc.ReadFile(c.Request.Context(), query)
@@ -186,14 +186,14 @@ func (h *PodHandler) DownloadFile(c *gin.Context) {
 
 // DeleteFile 删除对应的 HTTP 接口处理逻辑。
 func (h *PodHandler) DeleteFile(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "deleted"}, h.svc.DeleteFile)
+	ServeJSONOK(c, gin.H{"message": "deleted"}, h.svc.DeleteFile)
 }
 
 // UploadFile 处理对应的 HTTP 请求并返回统一响应。
 func (h *PodHandler) UploadFile(c *gin.Context) {
 	clusterID, err := strconv.ParseUint(strings.TrimSpace(c.PostForm("cluster_id")), 10, 64)
 	if err != nil || clusterID == 0 {
-		response.Error(c, apperror.BadRequest("集群 ID 不合法"))
+		response.Error(c, constants.ErrBadRequestWithMsg(constants.ErrMsgba2a155d1253))
 		return
 	}
 	query := service.PodFileQuery{
@@ -204,17 +204,17 @@ func (h *PodHandler) UploadFile(c *gin.Context) {
 		Path:      strings.TrimSpace(c.PostForm("path")),
 	}
 	if query.Namespace == "" || query.Name == "" {
-		response.Error(c, apperror.BadRequest("命名空间和名称不能为空"))
+		response.Error(c, constants.ErrBadRequestWithMsg(constants.ErrMsgd7d6f9e01fb2))
 		return
 	}
 	fh, err := c.FormFile("file")
 	if err != nil {
-		response.Error(c, apperror.BadRequest("请上传文件"))
+		response.Error(c, constants.ErrBadRequestWithMsg(constants.ErrMsg1e16294a3214))
 		return
 	}
 	file, err := fh.Open()
 	if err != nil {
-		response.Error(c, apperror.BadRequest("读取上传文件失败"))
+		response.Error(c, constants.ErrBadRequestWithMsg(constants.ErrMsgc281d4dd7902))
 		return
 	}
 	defer file.Close()

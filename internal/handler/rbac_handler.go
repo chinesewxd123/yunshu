@@ -19,7 +19,7 @@ func NewRBACHandler(svc *service.K8sRBACService) *RBACHandler {
 
 // ListRoles 查询列表对应的 HTTP 接口处理逻辑。
 func (h *RBACHandler) ListRoles(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
 		list, err := h.svc.ListRoles(ctx, query)
 		return gin.H{"list": list}, err
 	})
@@ -27,7 +27,7 @@ func (h *RBACHandler) ListRoles(c *gin.Context) {
 
 // ListRoleBindings 查询列表对应的 HTTP 接口处理逻辑。
 func (h *RBACHandler) ListRoleBindings(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
 		list, err := h.svc.ListRoleBindings(ctx, query)
 		return gin.H{"list": list}, err
 	})
@@ -35,7 +35,7 @@ func (h *RBACHandler) ListRoleBindings(c *gin.Context) {
 
 // ListClusterRoles 查询列表对应的 HTTP 接口处理逻辑。
 func (h *RBACHandler) ListClusterRoles(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
 		list, err := h.svc.ListClusterRoles(ctx, query)
 		return gin.H{"list": list}, err
 	})
@@ -43,7 +43,7 @@ func (h *RBACHandler) ListClusterRoles(c *gin.Context) {
 
 // ListClusterRoleBindings 查询列表对应的 HTTP 接口处理逻辑。
 func (h *RBACHandler) ListClusterRoleBindings(c *gin.Context) {
-	handleQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
+	ServeQuery(c, func(ctx context.Context, query service.RbacListQuery) (gin.H, error) {
 		list, err := h.svc.ListClusterRoleBindings(ctx, query)
 		return gin.H{"list": list}, err
 	})
@@ -51,15 +51,15 @@ func (h *RBACHandler) ListClusterRoleBindings(c *gin.Context) {
 
 // Detail 查询详情对应的 HTTP 接口处理逻辑。
 func (h *RBACHandler) Detail(c *gin.Context) {
-	handleQueryWithKind(c, h.svc.Detail)
+	ServeQueryWithKind(c, h.svc.Detail)
 }
 
 // Apply 提交申请对应的 HTTP 接口处理逻辑。
 func (h *RBACHandler) Apply(c *gin.Context) {
-	handleJSONOK(c, true, h.svc.Apply)
+	ServeJSONOK(c, true, h.svc.Apply)
 }
 
 // Delete 删除对应的 HTTP 接口处理逻辑。
 func (h *RBACHandler) Delete(c *gin.Context) {
-	handleQueryWithKindOK(c, true, h.svc.Delete)
+	ServeQueryWithKindOK(c, true, h.svc.Delete)
 }

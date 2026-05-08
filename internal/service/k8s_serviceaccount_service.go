@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
@@ -24,11 +24,11 @@ type ServiceAccountApplyRequest = ClusterManifestApplyRequest
 type ServiceAccountDeleteRequest = ClusterNamespaceNameQuery
 
 type ServiceAccountListItem struct {
-	Name                 string `json:"name"`
-	Namespace            string `json:"namespace"`
-	SecretsCount         int    `json:"secrets_count"`
-	ImagePullSecretsCount int   `json:"image_pull_secrets_count"`
-	CreationTime         string `json:"creation_time"`
+	Name                  string `json:"name"`
+	Namespace             string `json:"namespace"`
+	SecretsCount          int    `json:"secrets_count"`
+	ImagePullSecretsCount int    `json:"image_pull_secrets_count"`
+	CreationTime          string `json:"creation_time"`
 }
 
 type ServiceAccountBindingRef struct {
@@ -65,7 +65,7 @@ func (s *K8sServiceAccountService) List(ctx context.Context, q ServiceAccountLis
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, serviceAccountGVK, q.Namespace)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 ServiceAccount 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtf425dc675e3d, err))
 	}
 
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
@@ -104,9 +104,9 @@ func (s *K8sServiceAccountService) Detail(ctx context.Context, q ServiceAccountD
 	u, err := s.dyn.GetByGVK(ctx, k, serviceAccountGVK, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("ServiceAccount 不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg510ffa989afc)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 ServiceAccount 详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtc9a14a0f8fc2, err))
 	}
 	var obj corev1.ServiceAccount
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -152,14 +152,14 @@ func (s *K8sServiceAccountService) Apply(ctx context.Context, req ServiceAccount
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 
 	refs := extractServiceAccountRefs(req.Manifest)
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
 		return serviceAccountRefsAllExist(c, s.dyn, k, refs)
 	}); err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func (s *K8sServiceAccountService) Delete(ctx context.Context, req ServiceAccoun
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除 ServiceAccount 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtc85e19e5cfec, err))
 	}
 	return nil
 }
@@ -184,7 +184,7 @@ func (s *K8sServiceAccountService) collectBindings(ctx context.Context, k *kom.K
 
 	rbList, err := s.dyn.ListByGVK(ctx, k, roleBindingGVK, namespace)
 	if err != nil {
-		return nil, nil, apperror.Internal(fmt.Sprintf("获取 RoleBinding 列表失败: %v", err))
+		return nil, nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt3489b1e268aa, err))
 	}
 	for _, u := range rbList {
 		var rb rbacv1.RoleBinding
@@ -209,7 +209,7 @@ func (s *K8sServiceAccountService) collectBindings(ctx context.Context, k *kom.K
 
 	crbList, err := s.dyn.ListByGVK(ctx, k, clusterRoleBindingGVK, "")
 	if err != nil {
-		return nil, nil, apperror.Internal(fmt.Sprintf("获取 ClusterRoleBinding 列表失败: %v", err))
+		return nil, nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt05b921e3a64d, err))
 	}
 	for _, u := range crbList {
 		var crb rbacv1.ClusterRoleBinding

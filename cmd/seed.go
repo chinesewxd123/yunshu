@@ -237,7 +237,7 @@ func defaultPermissions() []model.Permission {
 		{Name: "批量删除操作历史", Resource: "/api/v1/operation-logs/delete", Action: "POST", Description: "Batch delete operation logs"},
 		{Name: "查看封禁 IP 列表", Resource: "/api/v1/security/banned-ips", Action: "GET", Description: "View banned IPs list"},
 		{Name: "解除封禁 IP", Resource: "/api/v1/security/banned-ips/unban", Action: "POST", Description: "Unban IP"},
-		{Name: "资产总览", Resource: "/api/v1/overview", Action: "GET", Description: "Get system overview metrics"},
+		{Name: "总览页面", Resource: "/api/v1/overview", Action: "GET", Description: "Get system overview metrics"},
 		{Name: "集群列表", Resource: "/api/v1/clusters", Action: "GET", Description: "View k8s clusters"},
 		{Name: "创建集群", Resource: "/api/v1/clusters", Action: "POST", Description: "Create k8s cluster"},
 		{Name: "更新集群", Resource: "/api/v1/clusters/:id", Action: "PUT", Description: "Update k8s cluster"},
@@ -578,9 +578,9 @@ func upsertMenu(ctx context.Context, db *gorm.DB, menu *model.Menu, parentID uin
 func defaultMenus() []model.Menu {
 	return []model.Menu{
 		{
-			Name:      "资产总览",
+			Name:      "总览页面",
 			Path:      "/",
-			Icon:      "DatabaseOutlined",
+			Icon:      "PieChartOutlined",
 			Sort:      1,
 			Component: "",
 			Status:    1,

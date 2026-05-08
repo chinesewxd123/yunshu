@@ -106,10 +106,12 @@ export function AgentListPage() {
         </Space>
       }
     >
-      <Table
+      <div style={{ width: "100%", overflowX: "auto", overflowY: "hidden", paddingBottom: 8 }}>
+        <Table
         rowKey="server_id"
         loading={loading}
-        scroll={{ x: "max-content" }}
+        scroll={{ x: 2850 }}
+        tableLayout="fixed"
         dataSource={list}
         rowSelection={{
           selectedRowKeys,
@@ -183,9 +185,16 @@ export function AgentListPage() {
               </Tooltip>
             ),
             dataIndex: "last_offline_reason",
-            width: 220,
-            ellipsis: true,
-            render: (v: string) => v || "-",
+            width: 260,
+            ellipsis: { showTitle: false },
+            render: (v: string) =>
+              v ? (
+                <Tooltip title={v}>
+                  <span style={{ cursor: "help" }}>{v}</span>
+                </Tooltip>
+              ) : (
+                "-"
+              ),
           },
           {
             title: "上报",
@@ -248,6 +257,7 @@ export function AgentListPage() {
           },
         ]}
       />
+      </div>
       <Drawer
         title={`错误详情 - ${errorDetailRow?.server_name || "-"}`}
         open={errorDrawerOpen}

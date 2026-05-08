@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/apperror"
@@ -63,7 +64,7 @@ func (h *AuthHandler) recordLogin(c *gin.Context, username, source string, succe
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/verification-code [post]
 func (h *AuthHandler) SendEmailCode(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.SendEmailCodeRequest) (*service.SendEmailCodeResponse, error) {
+	ServeJSON(c, func(ctx context.Context, req service.SendEmailCodeRequest) (*service.SendEmailCodeResponse, error) {
 		return h.service.SendEmailCodeWithIP(ctx, service.SendEmailCodeWithIPRequest{
 			SendEmailCodeRequest: req,
 			ClientIP:             c.ClientIP(),
@@ -84,7 +85,7 @@ func (h *AuthHandler) SendEmailCode(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/login-code [post]
 func (h *AuthHandler) SendLoginCodeByUsername(c *gin.Context) {
-	handleJSON(c, h.service.SendLoginCodeByUsername)
+	ServeJSON(c, h.service.SendLoginCodeByUsername)
 }
 
 // SendPasswordLoginCode godoc
@@ -101,7 +102,7 @@ func (h *AuthHandler) SendLoginCodeByUsername(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/password-login-code [post]
 func (h *AuthHandler) SendPasswordLoginCode(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.SendPasswordLoginCodeRequest) (*service.SendPasswordLoginCodeResponse, error) {
+	ServeJSON(c, func(ctx context.Context, req service.SendPasswordLoginCodeRequest) (*service.SendPasswordLoginCodeResponse, error) {
 		return h.service.SendPasswordLoginCode(ctx, req.Username)
 	})
 }
@@ -120,7 +121,7 @@ func (h *AuthHandler) SendPasswordLoginCode(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.LoginRequest) (*service.LoginResponse, error) {
+	ServeJSON(c, func(ctx context.Context, req service.LoginRequest) (*service.LoginResponse, error) {
 		data, err := h.service.Login(ctx, req)
 		if err != nil {
 			h.recordLogin(c, req.Username, model.LoginSourcePassword, false, loginErrMessage(err), nil)
@@ -146,7 +147,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/email-login [post]
 func (h *AuthHandler) EmailLogin(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.EmailLoginRequest) (*service.LoginResponse, error) {
+	ServeJSON(c, func(ctx context.Context, req service.EmailLoginRequest) (*service.LoginResponse, error) {
 		data, err := h.service.EmailLogin(ctx, req)
 		if err != nil {
 			h.recordLogin(c, req.Email, model.LoginSourceEmail, false, loginErrMessage(err), nil)
@@ -171,7 +172,7 @@ func (h *AuthHandler) EmailLogin(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
-	handleJSONCreated(c, h.service.Register)
+	ServeJSON201(c, h.service.Register)
 }
 
 // Logout godoc
@@ -187,7 +188,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 func (h *AuthHandler) Logout(c *gin.Context) {
 	claims, ok := auth.ClaimsFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 
@@ -212,7 +213,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 func (h *AuthHandler) Me(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 
@@ -241,10 +242,10 @@ func (h *AuthHandler) Me(c *gin.Context) {
 func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.UpdateProfileRequest) (*service.UserDetailResponse, error) {
+	ServeJSON(c, func(ctx context.Context, req service.UpdateProfileRequest) (*service.UserDetailResponse, error) {
 		return h.service.UpdateProfile(ctx, user.ID, req)
 	})
 }
@@ -265,10 +266,10 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
-	handleJSONOK(c, gin.H{"message": "密码修改成功"}, func(ctx context.Context, req service.ChangePasswordRequest) error {
+	ServeJSONOK(c, gin.H{"message": "密码修改成功"}, func(ctx context.Context, req service.ChangePasswordRequest) error {
 		return h.service.ChangePassword(ctx, user.ID, req)
 	})
 }

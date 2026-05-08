@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
@@ -232,7 +232,7 @@ func (s *K8sPodService) Detail(ctx context.Context, query PodDetailQuery) (*PodD
 	}
 	var pod corev1.Pod
 	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(query.Namespace).Name(query.Name).Get(&pod).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Pod 详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtc52b9130d74c, err))
 	}
 	containers := make([]PodContainerInfo, 0, len(pod.Status.ContainerStatuses))
 	for _, c := range pod.Status.ContainerStatuses {
@@ -295,7 +295,7 @@ func (s *K8sPodService) Events(ctx context.Context, query PodEventQuery) ([]PodE
 		Namespace(query.Namespace).
 		WithFieldSelector(fmt.Sprintf("involvedObject.name=%s,involvedObject.kind=Pod", query.Name)).
 		List(&list).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Pod 事件失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtbf8c73dd9a9e, err))
 	}
 	out := make([]PodEventItem, 0, len(list))
 	for _, e := range list {
@@ -318,7 +318,7 @@ func (s *K8sPodService) Delete(ctx context.Context, req PodDeleteRequest) error 
 		return err
 	}
 	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Name(req.Name).Delete().Error; err != nil {
-		return apperror.Internal(fmt.Sprintf("删除 Pod 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt0b1419934c9b, err))
 	}
 	return nil
 }
@@ -339,13 +339,13 @@ func (s *K8sPodService) Exec(ctx context.Context, req PodExecRequest) (string, e
 	}
 	cmd := strings.Fields(strings.TrimSpace(req.Command))
 	if len(cmd) == 0 {
-		return "", apperror.BadRequest("命令不能为空")
+		return "", constants.ErrBadRequestWithMsg(constants.ErrMsgeddb4f63e4c7)
 	}
 
 	var out []byte
 	err = k.Namespace(req.Namespace).Name(req.Name).Ctl().Pod().ContainerName(container).Command(cmd[0], cmd[1:]...).Execute(&out).Error
 	if err != nil {
-		return "", apperror.Internal(fmt.Sprintf("Pod Exec 失败: %v", err))
+		return "", constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt1493bc1ea07a, err))
 	}
 	return string(out), nil
 }
@@ -379,7 +379,7 @@ func (s *K8sPodService) ExecTTYStream(
 	}
 
 	if strings.TrimSpace(namespace) == "" || strings.TrimSpace(podName) == "" {
-		return apperror.BadRequest("namespace/name 不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsge278df185255)
 	}
 
 	req := k.Client().CoreV1().RESTClient().
@@ -402,7 +402,7 @@ func (s *K8sPodService) ExecTTYStream(
 	req.VersionedParams(execOpts, scheme.ParameterCodec)
 	exec, err := remotecommand.NewSPDYExecutor(restCfg, "POST", req.URL())
 	if err != nil {
-		return apperror.Internal(fmt.Sprintf("创建 exec 通道失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt1104a0b42122, err))
 	}
 
 	return exec.StreamWithContext(ctx, remotecommand.StreamOptions{
@@ -437,15 +437,15 @@ func (s *K8sPodService) GetLogs(ctx context.Context, query PodLogsQuery) (string
 		ContainerName(strings.TrimSpace(query.Container)).
 		GetLogs(&stream, opts).Error
 	if err != nil {
-		return "", apperror.Internal(fmt.Sprintf("获取 Pod 日志失败: %v", err))
+		return "", constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd868fafc39ca, err))
 	}
 	if stream == nil {
-		return "", apperror.Internal("获取 Pod 日志失败: 日志流为空")
+		return "", constants.ErrInternalWithMsg(constants.ErrMsgf53aee0dab26)
 	}
 	defer stream.Close()
 	var buf bytes.Buffer
 	if _, err = io.Copy(&buf, stream); err != nil {
-		return "", apperror.Internal(fmt.Sprintf("读取 Pod 日志失败: %v", err))
+		return "", constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt8e15ae24a3a1, err))
 	}
 	return k8sutil.FilterLogLines(buf.String(), query.Keyword, query.StartTime, query.EndTime), nil
 }
@@ -474,10 +474,10 @@ func (s *K8sPodService) StreamLogs(ctx context.Context, query PodLogsQuery, onLi
 		ContainerName(strings.TrimSpace(query.Container)).
 		GetLogs(&stream, opts).Error
 	if err != nil {
-		return apperror.Internal(fmt.Sprintf("获取 Pod 流日志失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt43046963a139, err))
 	}
 	if stream == nil {
-		return apperror.Internal("获取 Pod 流日志失败: 日志流为空")
+		return constants.ErrInternalWithMsg(constants.ErrMsgf59e8e01bf0d)
 	}
 	defer stream.Close()
 
@@ -511,7 +511,7 @@ func (s *K8sPodService) Restart(ctx context.Context, req PodRestartRequest) erro
 		return err
 	}
 	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Name(req.Name).Delete().Error; err != nil {
-		return apperror.Internal(fmt.Sprintf("重启 Pod 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtf802a81a6173, err))
 	}
 	return nil
 }
@@ -534,7 +534,7 @@ func (s *K8sPodService) ListFiles(ctx context.Context, query PodFileQuery) ([]Po
 		ContainerName(strings.TrimSpace(query.Container)).
 		ListAllFiles(path)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Pod 文件列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt85e9441edd38, err))
 	}
 	out := make([]PodFileItem, 0, len(files))
 	for _, f := range files {
@@ -564,7 +564,7 @@ func (s *K8sPodService) ReadFile(ctx context.Context, query PodFileQuery) ([]byt
 	}
 	path := strings.TrimSpace(query.Path)
 	if path == "" {
-		return nil, apperror.BadRequest("路径不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg72b2ecec3b64)
 	}
 	data, err := k.WithContext(ctx).
 		Namespace(query.Namespace).
@@ -574,7 +574,7 @@ func (s *K8sPodService) ReadFile(ctx context.Context, query PodFileQuery) ([]byt
 		ContainerName(strings.TrimSpace(query.Container)).
 		DownloadFile(path)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("读取 Pod 文件失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt2b7dfae8ff2c, err))
 	}
 	return data, nil
 }
@@ -587,7 +587,7 @@ func (s *K8sPodService) DeleteFile(ctx context.Context, query PodFileQuery) erro
 	}
 	path := strings.TrimSpace(query.Path)
 	if path == "" {
-		return apperror.BadRequest("路径不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg72b2ecec3b64)
 	}
 	if _, err := k.WithContext(ctx).
 		Namespace(query.Namespace).
@@ -596,7 +596,7 @@ func (s *K8sPodService) DeleteFile(ctx context.Context, query PodFileQuery) erro
 		Pod().
 		ContainerName(strings.TrimSpace(query.Container)).
 		DeleteFile(path); err != nil {
-		return apperror.Internal(fmt.Sprintf("删除 Pod 文件失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt94ef8ec4508c, err))
 	}
 	return nil
 }
@@ -613,15 +613,15 @@ func (s *K8sPodService) UploadFile(ctx context.Context, query PodFileQuery, file
 	}
 	tmp, err := os.CreateTemp("", "pod-upload-*"+filepath.Ext(filename))
 	if err != nil {
-		return apperror.Internal(fmt.Sprintf("创建临时文件失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt577d2b9acbc8, err))
 	}
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
 	if _, err := io.Copy(tmp, r); err != nil {
-		return apperror.Internal(fmt.Sprintf("保存上传文件失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt7e1c46be3a1e, err))
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		return apperror.Internal(fmt.Sprintf("处理上传文件失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt0881c0a79240, err))
 	}
 	if err := k.WithContext(ctx).
 		Namespace(query.Namespace).
@@ -630,7 +630,7 @@ func (s *K8sPodService) UploadFile(ctx context.Context, query PodFileQuery, file
 		Pod().
 		ContainerName(strings.TrimSpace(query.Container)).
 		UploadFile(dest, tmp); err != nil {
-		return apperror.Internal(fmt.Sprintf("上传文件到 Pod 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt3a46eb93a86d, err))
 	}
 	return nil
 }
@@ -666,7 +666,7 @@ func (s *K8sPodService) CreateSimple(ctx context.Context, req PodCreateSimpleReq
 	}
 	pod := buildSimplePod(req)
 	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Create(pod).Error; err != nil {
-		return apperror.Internal(fmt.Sprintf("快捷创建 Pod 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtdd4b4f8c2bd6, err))
 	}
 	return nil
 }
@@ -693,21 +693,21 @@ func (s *K8sPodService) UpdateSimple(ctx context.Context, req PodCreateSimpleReq
 	var existing corev1.Pod
 	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Name(req.Name).Get(&existing).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("Pod 不存在，无法编辑")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg86c3cb5f9474)
 		}
-		return apperror.Internal(fmt.Sprintf("获取 Pod 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmte69166988489, err))
 	}
 
 	desired := buildSimplePod(req)
 	if msg := workloadManagedPodHint(ctx, k, &existing); msg != "" {
-		return apperror.BadRequest(msg)
+		return constants.ErrBadRequestWithMsg(msg)
 	}
 	if k8sutil.CanUpdateImageOnly(&existing, desired) {
 		// Kubernetes 生态做法：仅更新镜像时，不删除重建 Pod
 		copyPod := existing.DeepCopy()
 		copyPod.Spec.Containers[0].Image = desired.Spec.Containers[0].Image
 		if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Update(copyPod).Error; err != nil {
-			return apperror.Internal(fmt.Sprintf("更新 Pod 镜像失败: %v", err))
+			return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta70db4595e64, err))
 		}
 		return nil
 	}
@@ -722,16 +722,16 @@ func (s *K8sPodService) UpdateSimple(ctx context.Context, req PodCreateSimpleReq
 			if apierrors.IsNotFound(err) {
 				break
 			}
-			return apperror.Internal(fmt.Sprintf("等待 Pod 删除失败: %v", err))
+			return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtbca6d25dcb71, err))
 		}
 		if time.Now().After(deadline) {
-			return apperror.BadRequest("Pod 正在删除中（Terminating），请稍后再试")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsgcc094caf1644)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 
 	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(req.Namespace).Create(desired).Error; err != nil {
-		return apperror.Internal(fmt.Sprintf("编辑并重建 Pod 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt57c6f6e7ba6b, err))
 	}
 	return nil
 }

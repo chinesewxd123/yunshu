@@ -13,12 +13,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/alertdispatch"
 	"yunshu/internal/config"
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/alertnotify"
-	"yunshu/internal/pkg/apperror"
 	cryptox "yunshu/internal/pkg/crypto"
 	"yunshu/internal/pkg/mailer"
 	"yunshu/internal/pkg/pagination"
@@ -100,9 +100,9 @@ type AlertService struct {
 	cloudExpiryState  map[string]bool
 
 	// 可选依赖：告警抑制、订阅树路由
-	inhibitionSvc   *AlertInhibitionService   // 告警抑制服务
-	subscriptionSvc *AlertSubscriptionService // 订阅树服务
-	receiverGroupCache *ReceiverGroupCache    // 接收组缓存
+	inhibitionSvc      *AlertInhibitionService   // 告警抑制服务
+	subscriptionSvc    *AlertSubscriptionService // 订阅树服务
+	receiverGroupCache *ReceiverGroupCache       // 接收组缓存
 
 	metrics        *AlertMetrics // Prometheus自监控指标
 	metricsUpdater *AlertMetricsUpdater
@@ -167,15 +167,15 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 		cfg.PlatformLimits.GenericMaxChars = 8000
 	}
 	svc := &AlertService{
-		db:               db,
-		redis:            redisClient,
-		mailer:           sender,
-		cfg:              cfg,
-		cloudExpiryState: make(map[string]bool),
-		inhibitionSvc:    NewAlertInhibitionService(db, redisClient),
-		subscriptionSvc:  NewAlertSubscriptionService(db),
+		db:                 db,
+		redis:              redisClient,
+		mailer:             sender,
+		cfg:                cfg,
+		cloudExpiryState:   make(map[string]bool),
+		inhibitionSvc:      NewAlertInhibitionService(db, redisClient),
+		subscriptionSvc:    NewAlertSubscriptionService(db),
 		receiverGroupCache: NewReceiverGroupCache(db),
-		metrics:          NewAlertMetrics(),
+		metrics:            NewAlertMetrics(),
 	}
 
 	// 初始化指标更新器并启动
@@ -338,12 +338,12 @@ type AlertChannelPreviewRequest struct {
 }
 
 type AlertChannelPreviewResponse struct {
-	Rendered           string                             `json:"rendered"`
-	SamplePayload      map[string]interface{}             `json:"sample_payload"`
-	AvailableFields    []string                           `json:"available_fields"`
-	RawPayloadFields   []string                           `json:"raw_payload_fields"`
-	CombinedFields     []string                           `json:"combined_fields"`
-	SuggestedLabelKeys []string                           `json:"suggested_label_keys"`
+	Rendered           string                                     `json:"rendered"`
+	SamplePayload      map[string]interface{}                     `json:"sample_payload"`
+	AvailableFields    []string                                   `json:"available_fields"`
+	RawPayloadFields   []string                                   `json:"raw_payload_fields"`
+	CombinedFields     []string                                   `json:"combined_fields"`
+	SuggestedLabelKeys []string                                   `json:"suggested_label_keys"`
 	TemplateVariables  []alertdispatch.ChannelTemplateVariableDoc `json:"template_variables"`
 }
 
@@ -466,7 +466,7 @@ func (s *AlertService) CreateChannel(ctx context.Context, req AlertChannelUpsert
 		ch.Type = "generic_webhook"
 	}
 	if requiresWebhookURL(ch.Type, ch.HeadersJSON) && strings.TrimSpace(ch.URL) == "" {
-		return nil, apperror.BadRequest("非邮件通道必须填写 Webhook 地址")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgaae2bd7c8c91)
 	}
 	if ch.TimeoutMS <= 0 {
 		ch.TimeoutMS = s.cfg.DefaultTimeoutMS
@@ -503,7 +503,7 @@ func (s *AlertService) UpdateChannel(ctx context.Context, id uint, req AlertChan
 		ch.Type = "generic_webhook"
 	}
 	if requiresWebhookURL(ch.Type, ch.HeadersJSON) && strings.TrimSpace(ch.URL) == "" {
-		return nil, apperror.BadRequest("非邮件通道必须填写 Webhook 地址")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgaae2bd7c8c91)
 	}
 	if req.TimeoutMS > 0 {
 		ch.TimeoutMS = req.TimeoutMS

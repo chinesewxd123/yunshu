@@ -91,7 +91,7 @@ func (s *AlertService) logSuppressedGroupAggregateBySpec(ctx context.Context, sp
 
 func (s *AlertService) resolvedGroupAggregateSpec() groupAggregateSpec {
 	return groupAggregateSpec{
-		keyPrefix: "alert:group:resolved:",
+		keyPrefix:      "alert:group:resolved:",
 		titleSuffix:    " (resolved aggregate suppressed)",
 		channelName:    "（未外发·恢复抑制）",
 		errorMessage:   "resolved_aggregate_suppressed",
@@ -101,7 +101,7 @@ func (s *AlertService) resolvedGroupAggregateSpec() groupAggregateSpec {
 
 func (s *AlertService) firingGroupAggregateSpec() groupAggregateSpec {
 	return groupAggregateSpec{
-		keyPrefix: "alert:group:",
+		keyPrefix:      "alert:group:",
 		titleSuffix:    " (aggregate suppressed)",
 		channelName:    "（未外发·分组节流抑制）",
 		errorMessage:   "group_throttled",
@@ -371,7 +371,7 @@ func (s *AlertService) logResolvedSuppressedNoPriorFiringDelivery(ctx context.Co
 		HTTPStatusCode:     200,
 		ErrorMessage:       "resolved_no_prior_firing_delivery",
 		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload:  "firing 未成功投递到任何通道（可能为分组节流抑制或通道失败），已抑制恢复外发",
+		ResponsePayload:    "firing 未成功投递到任何通道（可能为分组节流抑制或通道失败），已抑制恢复外发",
 	}
 	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 
 	"github.com/redis/go-redis/v9"
@@ -118,7 +118,7 @@ func (s *AlertInhibitionService) Create(ctx context.Context, req AlertInhibition
 		SourceMatchRegexJSON:  strings.TrimSpace(req.SourceMatchRegexJSON),
 		TargetMatchLabelsJSON: strings.TrimSpace(req.TargetMatchLabelsJSON),
 		TargetMatchRegexJSON:  strings.TrimSpace(req.TargetMatchRegexJSON),
-		EqualLabelsJSON:      strings.TrimSpace(req.EqualLabelsJSON),
+		EqualLabelsJSON:       strings.TrimSpace(req.EqualLabelsJSON),
 		DurationSeconds:       req.DurationSeconds,
 	}
 	if req.Priority <= 0 {
@@ -189,7 +189,7 @@ func (s *AlertInhibitionService) Delete(ctx context.Context, id uint) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return apperror.NotFound("抑制规则不存在")
+		return constants.ErrNotFoundWithMsg(constants.ErrMsge4f20d76fd0d)
 	}
 	s.InvalidateCache()
 	return nil
@@ -336,7 +336,7 @@ func (s *AlertInhibitionService) CheckInhibition(ctx context.Context, targetLabe
 				SourceFingerprint: sourceFP,
 				TargetFingerprint: extractFingerprint(targetLabels),
 				SourceAlertName:   sourceLabels["alertname"],
-				TargetAlertName: targetLabels["alertname"],
+				TargetAlertName:   targetLabels["alertname"],
 				StartedAt:         now.Add(-time.Duration(ttl)), // 估算
 				EndedAt:           now.Add(ttl),
 			}
@@ -516,24 +516,24 @@ func validateInhibitionRule(req AlertInhibitionRuleUpsertRequest) error {
 	hasSource := strings.TrimSpace(req.SourceMatchLabelsJSON) != "" &&
 		req.SourceMatchLabelsJSON != "{}" ||
 		strings.TrimSpace(req.SourceMatchRegexJSON) != "" &&
-		req.SourceMatchRegexJSON != "{}"
+			req.SourceMatchRegexJSON != "{}"
 	hasTarget := strings.TrimSpace(req.TargetMatchLabelsJSON) != "" &&
 		req.TargetMatchLabelsJSON != "{}" ||
 		strings.TrimSpace(req.TargetMatchRegexJSON) != "" &&
-		req.TargetMatchRegexJSON != "{}"
+			req.TargetMatchRegexJSON != "{}"
 
 	if !hasSource {
-		return apperror.BadRequest("源告警匹配条件不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg5ca65f4bf6c2)
 	}
 	if !hasTarget {
-		return apperror.BadRequest("目标告警匹配条件不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg56384429bd38)
 	}
 
 	// 验证equal_labels是有效的JSON数组
 	if raw := strings.TrimSpace(req.EqualLabelsJSON); raw != "" && raw != "[]" {
 		var arr []string
 		if err := json.Unmarshal([]byte(raw), &arr); err != nil {
-			return apperror.BadRequest("equal_labels_json 必须是字符串数组JSON")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg814a89cb6d8c)
 		}
 	}
 
@@ -541,12 +541,12 @@ func validateInhibitionRule(req AlertInhibitionRuleUpsertRequest) error {
 	if m := compileRegexMapSafe(req.SourceMatchRegexJSON); len(m) == 0 &&
 		strings.TrimSpace(req.SourceMatchRegexJSON) != "" &&
 		req.SourceMatchRegexJSON != "{}" {
-		return apperror.BadRequest("源告警正则表达式不合法")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgc655c39dcf10)
 	}
 	if m := compileRegexMapSafe(req.TargetMatchRegexJSON); len(m) == 0 &&
 		strings.TrimSpace(req.TargetMatchRegexJSON) != "" &&
 		req.TargetMatchRegexJSON != "{}" {
-		return apperror.BadRequest("目标告警正则表达式不合法")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgc225462d5b41)
 	}
 
 	return nil

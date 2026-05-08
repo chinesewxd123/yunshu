@@ -17,6 +17,7 @@ import {
 } from "../services/projects";
 import { useDictOptions } from "../hooks/use-dict-options";
 import { DictFillSelect } from "../components/dict-fill-select";
+import { copyToClipboard } from "../utils/clipboard";
 
 export function ProjectLogSourcesPage() {
   const [projects, setProjects] = useState<ProjectItem[]>([]);
@@ -355,7 +356,11 @@ export function ProjectLogSourcesPage() {
             <Input.TextArea rows={2} value={bootstrapResult.token} readOnly />
             <Button
               icon={<CopyOutlined />}
-              onClick={() => navigator.clipboard.writeText(bootstrapResult.token).then(() => message.success("Token已复制"))}
+              onClick={() =>
+                void copyToClipboard(bootstrapResult.token)
+                  .then(() => message.success("Token 已复制"))
+                  .catch(() => message.error("复制失败，请手动选中复制"))
+              }
               style={{ width: 140 }}
             >
               复制Token
@@ -367,7 +372,11 @@ export function ProjectLogSourcesPage() {
             <Input.TextArea rows={4} value={bootstrapResult.run_command} readOnly />
             <Button
               icon={<CopyOutlined />}
-              onClick={() => navigator.clipboard.writeText(bootstrapResult.run_command).then(() => message.success("命令已复制"))}
+              onClick={() =>
+                void copyToClipboard(bootstrapResult.run_command)
+                  .then(() => message.success("命令已复制"))
+                  .catch(() => message.error("复制失败，请手动选中复制"))
+              }
               style={{ width: 140 }}
             >
               复制命令
@@ -376,7 +385,11 @@ export function ProjectLogSourcesPage() {
             <Input.TextArea rows={12} value={bootstrapResult.systemd_service} readOnly />
             <Button
               icon={<CopyOutlined />}
-              onClick={() => navigator.clipboard.writeText(bootstrapResult.systemd_service).then(() => message.success("systemd配置已复制"))}
+              onClick={() =>
+                void copyToClipboard(bootstrapResult.systemd_service)
+                  .then(() => message.success("systemd 配置已复制"))
+                  .catch(() => message.error("复制失败，请手动选中复制"))
+              }
               style={{ width: 180 }}
             >
               复制systemd配置

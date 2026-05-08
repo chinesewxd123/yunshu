@@ -61,4 +61,3 @@ func NormalizeRecipientList(v any) []string {
 		return SplitRecipientString(fmt.Sprintf("%v", v))
 	}
 }
-

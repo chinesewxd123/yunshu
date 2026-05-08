@@ -39,4 +39,3 @@ func compileRegexMapSafe(raw string) map[string]*regexp.Regexp {
 	}
 	return out
 }
-

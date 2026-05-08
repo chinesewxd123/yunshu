@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/pkg/promapi"
 
@@ -110,7 +110,7 @@ func (s *AlertDatasourceService) Get(ctx context.Context, id uint) (*model.Alert
 	var row model.AlertDatasource
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("告警数据源不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
 		}
 		return nil, err
 	}
@@ -132,10 +132,10 @@ func (s *AlertDatasourceService) Create(ctx context.Context, req AlertDatasource
 		t = "prometheus"
 	}
 	if t != "prometheus" {
-		return nil, apperror.BadRequest("暂仅支持 type=prometheus")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg480bba83b97b)
 	}
 	if req.ProjectID == 0 {
-		return nil, apperror.BadRequest("project_id 必填")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg9a7f154a70af)
 	}
 	row := model.AlertDatasource{
 		ProjectID:     req.ProjectID,
@@ -160,12 +160,12 @@ func (s *AlertDatasourceService) Update(ctx context.Context, id uint, req AlertD
 	row, err := s.getRaw(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("告警数据源不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
 		}
 		return nil, err
 	}
 	if req.ProjectID == 0 {
-		return nil, apperror.BadRequest("project_id 必填")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg9a7f154a70af)
 	}
 	if req.ProjectID != row.ProjectID {
 		row.ProjectID = req.ProjectID
@@ -212,7 +212,7 @@ func (s *AlertDatasourceService) Delete(ctx context.Context, id uint) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return apperror.NotFound("告警数据源不存在")
+		return constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
 	}
 	return nil
 }
@@ -221,15 +221,15 @@ func (s *AlertDatasourceService) clientFor(ctx context.Context, id uint) (*proma
 	row, err := s.getRaw(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, nil, apperror.NotFound("告警数据源不存在")
+			return nil, nil, constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
 		}
 		return nil, nil, err
 	}
 	if !row.Enabled {
-		return nil, nil, apperror.BadRequest("数据源已停用")
+		return nil, nil, constants.ErrBadRequestWithMsg(constants.ErrMsgfa357d889ce0)
 	}
 	if row.Type != "prometheus" {
-		return nil, nil, apperror.BadRequest("仅 prometheus 数据源支持查询")
+		return nil, nil, constants.ErrBadRequestWithMsg(constants.ErrMsg9a8a590cfc72)
 	}
 	return &promapi.Client{
 		BaseURL:       row.BaseURL,
@@ -282,7 +282,7 @@ func (s *AlertDatasourceService) PingDatasource(ctx context.Context, id uint) (*
 	row, err := s.getRaw(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("告警数据源不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
 		}
 		return nil, err
 	}

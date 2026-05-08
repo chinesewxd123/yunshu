@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 	cryptox "yunshu/internal/pkg/crypto"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/pkg/sshclient"
@@ -149,7 +149,7 @@ func (s *ProjectMgmtService) UpdateProject(ctx context.Context, id uint, req Pro
 	p, err := s.projectRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("项目不存在")
+			return nil, constants.ErrProjectNotFound
 		}
 		return nil, err
 	}
@@ -231,7 +231,7 @@ func toProjectMemberItems(rows []repository.ProjectMemberListRow) []ProjectMembe
 func (s *ProjectMgmtService) ListProjectMembers(ctx context.Context, projectID uint) ([]ProjectMemberItem, error) {
 	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("项目不存在")
+			return nil, constants.ErrProjectNotFound
 		}
 		return nil, err
 	}
@@ -252,21 +252,21 @@ type ProjectMemberAddRequest struct {
 func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uint, req ProjectMemberAddRequest) (*ProjectMemberItem, error) {
 	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("项目不存在")
+			return nil, constants.ErrProjectNotFound
 		}
 		return nil, err
 	}
 	if s.userRepo == nil {
-		return nil, apperror.Internal("用户仓储未初始化")
+		return nil, constants.ErrInternalWithMsg(constants.ErrMsgcc60c2c3c788)
 	}
 	if _, err := s.userRepo.GetByID(ctx, req.UserID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("用户不存在")
+			return nil, constants.ErrUserNotFound
 		}
 		return nil, err
 	}
 	if _, err := s.memberRepo.GetByProjectAndUser(ctx, projectID, req.UserID); err == nil {
-		return nil, apperror.BadRequest("该用户已在项目中")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsga802e1b5e9e2)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
@@ -288,7 +288,7 @@ func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uin
 			return &it[0], nil
 		}
 	}
-	return nil, apperror.Internal("成员创建后查询失败")
+	return nil, constants.ErrInternalWithMsg(constants.ErrMsg1fe0209f952f)
 }
 
 // ProjectMemberUpdateRequest 更新成员角色。
@@ -300,19 +300,19 @@ type ProjectMemberUpdateRequest struct {
 func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID, memberID uint, req ProjectMemberUpdateRequest) (*ProjectMemberItem, error) {
 	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("项目不存在")
+			return nil, constants.ErrProjectNotFound
 		}
 		return nil, err
 	}
 	m, err := s.memberRepo.GetByID(ctx, memberID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("成员记录不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsge7773625bf8b)
 		}
 		return nil, err
 	}
 	if m.ProjectID != projectID {
-		return nil, apperror.BadRequest("成员不属于该项目")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg461337ef3f89)
 	}
 	m.Role = normalizeProjectMemberRole(req.Role)
 	if err := s.memberRepo.Save(ctx, m); err != nil {
@@ -328,26 +328,26 @@ func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID,
 			return &it[0], nil
 		}
 	}
-	return nil, apperror.Internal("成员更新后查询失败")
+	return nil, constants.ErrInternalWithMsg(constants.ErrMsg2940a3d4007c)
 }
 
 // RemoveProjectMember 移除项目成员。
 func (s *ProjectMgmtService) RemoveProjectMember(ctx context.Context, projectID, memberID uint) error {
 	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("项目不存在")
+			return constants.ErrProjectNotFound
 		}
 		return err
 	}
 	m, err := s.memberRepo.GetByID(ctx, memberID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("成员记录不存在")
+			return constants.ErrNotFoundWithMsg(constants.ErrMsge7773625bf8b)
 		}
 		return err
 	}
 	if m.ProjectID != projectID {
-		return apperror.BadRequest("成员不属于该项目")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg461337ef3f89)
 	}
 	return s.memberRepo.DeleteByID(ctx, memberID)
 }
@@ -464,7 +464,7 @@ func (s *ProjectMgmtService) ListServers(ctx context.Context, q ServerListQuery)
 			return nil, err
 		}
 		if acc.ProjectID != q.ProjectID {
-			return nil, apperror.BadRequest("云账号不属于当前项目")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg053a6a395b16)
 		}
 		gid := acc.GroupID
 		groupID = &gid
@@ -537,7 +537,7 @@ func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertR
 		sv, err = s.serverRepo.GetByID(ctx, *req.ID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, apperror.NotFound("服务器不存在")
+				return nil, constants.ErrLogSourceServerNotFound
 			}
 			return nil, err
 		}
@@ -621,7 +621,7 @@ func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req Ser
 		} else if existing != nil && existing.EncPassword != nil && strings.TrimSpace(*existing.EncPassword) != "" {
 			cred.EncPassword = existing.EncPassword
 		} else {
-			return nil, apperror.BadRequest("密码不能为空")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg3aa7a9e035a4)
 		}
 	case "key":
 		if req.PrivateKey != nil && strings.TrimSpace(*req.PrivateKey) != "" {
@@ -633,7 +633,7 @@ func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req Ser
 		} else if existing != nil && existing.EncPrivateKey != nil && strings.TrimSpace(*existing.EncPrivateKey) != "" {
 			cred.EncPrivateKey = existing.EncPrivateKey
 		} else {
-			return nil, apperror.BadRequest("私钥不能为空")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg6bd217c30983)
 		}
 		if req.Passphrase != nil && strings.TrimSpace(*req.Passphrase) != "" {
 			encPP, err := cryptox.EncryptString(s.aead, *req.Passphrase)
@@ -645,7 +645,7 @@ func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req Ser
 			cred.EncPassphrase = existing.EncPassphrase
 		}
 	default:
-		return nil, apperror.BadRequest("认证类型不合法")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgb6ada5b863ef)
 	}
 	return cred, nil
 }
@@ -660,7 +660,7 @@ func (s *ProjectMgmtService) GetServer(ctx context.Context, id uint) (*ServerDet
 	sv, err := s.serverRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("服务器不存在")
+			return nil, constants.ErrLogSourceServerNotFound
 		}
 		return nil, err
 	}
@@ -716,17 +716,17 @@ func (s *ProjectMgmtService) ExecServerCommand(ctx context.Context, req ServerEx
 	sv, err := s.serverRepo.GetByID(ctx, req.ServerID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("服务器不存在")
+			return nil, constants.ErrLogSourceServerNotFound
 		}
 		return nil, err
 	}
 	if sv.ProjectID != req.ProjectID {
-		return nil, apperror.BadRequest("服务器不属于当前项目")
+		return nil, constants.ErrServerNotInCurrentProject
 	}
 	cred, err := s.serverRepo.GetCredentialByServerID(ctx, sv.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.BadRequest("服务器凭据未配置")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgfeb33ee7c48c)
 		}
 		return nil, err
 	}
@@ -748,14 +748,14 @@ func (s *ProjectMgmtService) ExecServerCommand(ctx context.Context, req ServerEx
 
 	cli, err := sshclient.Dial(cctx, sshCfg)
 	if err != nil {
-		return nil, apperror.BadRequest("ssh connect failed: " + err.Error())
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgSSHConnectFailedPrefix + err.Error())
 	}
 	defer cli.Close()
 
 	cmd := strings.TrimSpace(req.Command)
 	result, err := cli.Exec(cctx, cmd, 256*1024)
 	if err != nil {
-		return nil, apperror.BadRequest("command exec failed: " + err.Error())
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgSSHExecFailedPrefix + err.Error())
 	}
 	return &ServerExecResult{
 		ServerID:   sv.ID,
@@ -773,17 +773,17 @@ func (s *ProjectMgmtService) StreamServerTerminal(ctx context.Context, projectID
 	sv, err := s.serverRepo.GetByID(ctx, serverID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("服务器不存在")
+			return constants.ErrLogSourceServerNotFound
 		}
 		return err
 	}
 	if sv.ProjectID != projectID {
-		return apperror.BadRequest("服务器不属于当前项目")
+		return constants.ErrServerNotInCurrentProject
 	}
 	cred, err := s.serverRepo.GetCredentialByServerID(ctx, sv.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.BadRequest("服务器凭据未配置")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsgfeb33ee7c48c)
 		}
 		return err
 	}
@@ -793,7 +793,7 @@ func (s *ProjectMgmtService) StreamServerTerminal(ctx context.Context, projectID
 	}
 	cli, err := sshclient.Dial(ctx, sshCfg)
 	if err != nil {
-		return apperror.BadRequest("ssh connect failed: " + err.Error())
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgSSHConnectFailedPrefix + err.Error())
 	}
 	defer cli.Close()
 	return cli.ShellStream(ctx, stdin, stdout, stderr, sizes)
@@ -887,7 +887,7 @@ func (s *ProjectMgmtService) UpsertServerGroup(ctx context.Context, req ServerGr
 		item, err = s.serverGroupRepo.GetByID(ctx, *req.ID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, apperror.NotFound("服务器分组不存在")
+				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg97c4c24a4cdf)
 			}
 			return nil, err
 		}
@@ -920,12 +920,12 @@ func (s *ProjectMgmtService) DeleteServerGroup(ctx context.Context, projectID, g
 	group, err := s.serverGroupRepo.GetByID(ctx, groupID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("服务器分组不存在")
+			return constants.ErrNotFoundWithMsg(constants.ErrMsg97c4c24a4cdf)
 		}
 		return err
 	}
 	if group.ProjectID != projectID {
-		return apperror.BadRequest("分组不属于当前项目")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg757ed9cbc3d5)
 	}
 	return s.serverGroupRepo.DeleteByID(ctx, groupID)
 }
@@ -994,7 +994,7 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 		item, err = s.cloudAccountRepo.GetByID(ctx, *req.ID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, apperror.NotFound("云账号不存在")
+				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgd19fc495559f)
 			}
 			return nil, err
 		}
@@ -1031,7 +1031,7 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 				continue
 			}
 			if strings.TrimSpace(dec) == strings.TrimSpace(req.AK) {
-				return nil, apperror.BadRequest("相同 AK 的云账号已存在")
+				return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg74ea54455bb4)
 			}
 		}
 	}
@@ -1114,7 +1114,7 @@ func (s *ProjectMgmtService) providerFor(name string) (CloudProvider, error) {
 	case "jd", "jingdong":
 		return &JdCloudProvider{}, nil
 	default:
-		return nil, apperror.BadRequest("不支持的云厂商")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg4e7f045ccd87)
 	}
 }
 
@@ -1123,15 +1123,15 @@ func (s *ProjectMgmtService) SyncCloudAccount(ctx context.Context, req CloudSync
 	acc, err := s.cloudAccountRepo.GetByID(ctx, req.AccountID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("云账号不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgd19fc495559f)
 		}
 		return nil, err
 	}
 	if acc.ProjectID != req.ProjectID {
-		return nil, apperror.BadRequest("云账号不属于当前项目")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg053a6a395b16)
 	}
 	if acc.EncAK == nil || acc.EncSK == nil {
-		return nil, apperror.BadRequest("AK/SK 未配置")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg2a88bfc17d34)
 	}
 	ak, err := cryptox.DecryptString(s.aead, *acc.EncAK)
 	if err != nil {
@@ -1240,12 +1240,12 @@ func (s *ProjectMgmtService) DeleteCloudAccount(ctx context.Context, projectID, 
 	acc, err := s.cloudAccountRepo.GetByID(ctx, accountID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("云账号不存在")
+			return constants.ErrNotFoundWithMsg(constants.ErrMsgd19fc495559f)
 		}
 		return err
 	}
 	if acc.ProjectID != projectID {
-		return apperror.BadRequest("云账号不属于当前项目")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg053a6a395b16)
 	}
 	return s.cloudAccountRepo.DeleteByID(ctx, accountID)
 }
@@ -1548,7 +1548,7 @@ func (s *ProjectMgmtService) runServerConnectivityTests(ctx context.Context, ser
 func (s *ProjectMgmtService) testSelfHostedServerConnectivityByTCP(ctx context.Context, sv *model.Server) (*ServerTestResult, error) {
 	host := strings.TrimSpace(sv.Host)
 	if host == "" {
-		return nil, apperror.BadRequest("服务器地址不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgf2664ad99ec4)
 	}
 	port := sv.Port
 	if port <= 0 {
@@ -1706,23 +1706,23 @@ type CloudServerActionResult struct {
 
 func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID, serverID uint, req CloudServerActionRequest) (*CloudServerActionResult, error) {
 	if strings.TrimSpace(req.Action) == "" {
-		return nil, apperror.BadRequest("action 不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg62812cadd1e4)
 	}
 	sv, err := s.serverRepo.GetByID(ctx, serverID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("服务器不存在")
+			return nil, constants.ErrLogSourceServerNotFound
 		}
 		return nil, err
 	}
 	if sv.ProjectID != projectID {
-		return nil, apperror.BadRequest("服务器不属于当前项目")
+		return nil, constants.ErrServerNotInCurrentProject
 	}
 	if strings.TrimSpace(sv.SourceType) != model.ServerGroupCategoryCloud && strings.TrimSpace(sv.SourceType) != "cloud" {
-		return nil, apperror.BadRequest("仅支持云服务器操作")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg1f9244d53fae)
 	}
 	if sv.GroupID == nil {
-		return nil, apperror.BadRequest("云服务器缺少 group_id")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg5f86cac1154b)
 	}
 	groupID := *sv.GroupID
 	accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, sv.ProjectID, &groupID)
@@ -1742,10 +1742,10 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 		}
 	}
 	if account == nil {
-		return nil, apperror.BadRequest("未找到可用云账号（请先配置并同步云账号）")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg38ffb6c1fcca)
 	}
 	if account.EncAK == nil || account.EncSK == nil {
-		return nil, apperror.BadRequest("云账号 AK/SK 未配置")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgedfdf2d93904)
 	}
 	ak, err := cryptox.DecryptString(s.aead, *account.EncAK)
 	if err != nil {
@@ -1762,7 +1762,7 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 
 	instances, err := provider.ListInstances(ctx, ak, sk, account.RegionScope)
 	if err != nil {
-		return nil, apperror.BadRequest("[SDK] " + err.Error())
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgCloudSDKPrefix + err.Error())
 	}
 	// Ensure instance id and region present.
 	instanceID := strings.TrimSpace(sv.CloudInstanceID)
@@ -1785,10 +1785,10 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 		}
 	}
 	if instanceID == "" {
-		return nil, apperror.BadRequest("cloud_instance_id 为空：请先通过「同步云账号」导入云服务器，或在服务器编辑里补充实例ID")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg7d2f738475f2)
 	}
 	if region == "" {
-		return nil, apperror.BadRequest("cloud_region 为空：请先同步云账号或在服务器编辑里补充地域")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgd5a14bd7dce0)
 	}
 	// Persist inferred fields for later operations.
 	changed := false
@@ -1809,24 +1809,24 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 	case "reset_password":
 		pw := strings.TrimSpace(req.NewPassword)
 		if pw == "" {
-			return nil, apperror.BadRequest("new_password 不能为空")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgaef828b00100)
 		}
 		if err := provider.ResetInstancePassword(ctx, ak, sk, region, instanceID, pw); err != nil {
-			return nil, apperror.BadRequest("[SDK] " + err.Error())
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgCloudSDKPrefix + err.Error())
 		}
 		return &CloudServerActionResult{ServerID: serverID, Action: action, Message: "密码重置请求已提交"}, nil
 	case "reboot":
 		if err := provider.RebootInstance(ctx, ak, sk, region, instanceID); err != nil {
-			return nil, apperror.BadRequest("[SDK] " + err.Error())
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgCloudSDKPrefix + err.Error())
 		}
 		return &CloudServerActionResult{ServerID: serverID, Action: action, Message: "重启请求已提交"}, nil
 	case "shutdown":
 		if err := provider.ShutdownInstance(ctx, ak, sk, region, instanceID); err != nil {
-			return nil, apperror.BadRequest("[SDK] " + err.Error())
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgCloudSDKPrefix + err.Error())
 		}
 		return &CloudServerActionResult{ServerID: serverID, Action: action, Message: "关机请求已提交"}, nil
 	default:
-		return nil, apperror.BadRequest("不支持的 action")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg1707715d174a)
 	}
 }
 
@@ -1874,7 +1874,7 @@ func (s *ProjectMgmtService) decryptCredentialToSSHConfig(sv model.Server, cred 
 	switch strings.ToLower(strings.TrimSpace(cred.AuthType)) {
 	case "password":
 		if cred.EncPassword == nil {
-			return sshclient.Config{}, apperror.BadRequest("缺少密码凭据")
+			return sshclient.Config{}, constants.ErrBadRequestWithMsg(constants.ErrMsg666b6d7186e5)
 		}
 		pw, err := cryptox.DecryptString(s.aead, *cred.EncPassword)
 		if err != nil {
@@ -1884,7 +1884,7 @@ func (s *ProjectMgmtService) decryptCredentialToSSHConfig(sv model.Server, cred 
 		cfg.Password = pw
 	case "key":
 		if cred.EncPrivateKey == nil {
-			return sshclient.Config{}, apperror.BadRequest("缺少私钥凭据")
+			return sshclient.Config{}, constants.ErrBadRequestWithMsg(constants.ErrMsg298c7d5f0d54)
 		}
 		pk, err := cryptox.DecryptString(s.aead, *cred.EncPrivateKey)
 		if err != nil {
@@ -1900,7 +1900,7 @@ func (s *ProjectMgmtService) decryptCredentialToSSHConfig(sv model.Server, cred 
 			cfg.Passphrase = pp
 		}
 	default:
-		return sshclient.Config{}, apperror.BadRequest("凭据认证类型不合法")
+		return sshclient.Config{}, constants.ErrBadRequestWithMsg(constants.ErrMsge9e731f82ff9)
 	}
 	return cfg, nil
 }
@@ -1910,7 +1910,7 @@ func (s *ProjectMgmtService) decryptCredentialToSSHConfig(sv model.Server, cred 
 func (s *ProjectMgmtService) ImportServersFromExcel(ctx context.Context, projectID uint, r io.Reader) (int, error) {
 	f, err := excelize.OpenReader(r)
 	if err != nil {
-		return 0, apperror.BadRequest("Excel 文件不合法")
+		return 0, constants.ErrBadRequestWithMsg(constants.ErrMsg04d13e805997)
 	}
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
@@ -2155,7 +2155,7 @@ func (s *ProjectMgmtService) UpsertService(ctx context.Context, req ServiceUpser
 		it, err = s.serviceRepo.GetByID(ctx, *req.ID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, apperror.NotFound("服务不存在")
+				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgac7e51a53391)
 			}
 			return nil, err
 		}
@@ -2266,7 +2266,7 @@ func (s *ProjectMgmtService) UpsertLogSource(ctx context.Context, req LogSourceU
 		it, err = s.logRepo.GetByID(ctx, *req.ID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, apperror.NotFound("日志源不存在")
+				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
 			}
 			return nil, err
 		}
@@ -2315,7 +2315,7 @@ type logStreamPlan struct{}
 
 // BuildLogStreamPlan 构建相关的业务逻辑。
 func (s *ProjectMgmtService) BuildLogStreamPlan(ctx context.Context, q LogStreamQuery) (*logStreamPlan, error) {
-	return nil, apperror.BadRequest("已移除 SSH 日志流，请使用 Agent 日志流")
+	return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgb399afd1b3b2)
 }
 
 type LogExportQuery struct {
@@ -2340,59 +2340,59 @@ type RemoteLogUnitQuery struct {
 
 // ListRemoteLogFiles 查询列表相关的业务逻辑。
 func (s *ProjectMgmtService) ListRemoteLogFiles(ctx context.Context, q RemoteLogFileQuery) ([]string, error) {
-	return nil, apperror.BadRequest("已移除 SSH 文件扫描，请手动配置路径并使用 Agent 模式")
+	return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg36453c419629)
 }
 
 // ListRemoteLogUnits 查询列表相关的业务逻辑。
 func (s *ProjectMgmtService) ListRemoteLogUnits(ctx context.Context, q RemoteLogUnitQuery) ([]string, error) {
-	return nil, apperror.BadRequest("已移除 SSH 单元扫描，请手动配置 systemd 单元并使用 Agent 模式")
+	return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg255ca1122356)
 }
 
 // ExportLogs 导出相关的业务逻辑。
 func (s *ProjectMgmtService) ExportLogs(ctx context.Context, q LogExportQuery) ([]byte, string, error) {
 	if q.ProjectID == 0 {
-		return nil, "", apperror.BadRequest("project_id 不能为空")
+		return nil, "", constants.ErrProjectIDRequired
 	}
 	sv, err := s.serverRepo.GetByID(ctx, q.ServerID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", apperror.NotFound("服务器不存在")
+			return nil, "", constants.ErrLogSourceServerNotFound
 		}
 		return nil, "", err
 	}
 	if sv.ProjectID != q.ProjectID {
-		return nil, "", apperror.BadRequest("服务器不属于当前项目")
+		return nil, "", constants.ErrServerNotInCurrentProject
 	}
 	src, err := s.logRepo.GetByIDInProject(ctx, q.ProjectID, q.LogSourceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", apperror.NotFound("日志源不存在")
+			return nil, "", constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
 		}
 		return nil, "", err
 	}
 	svcRow, err := s.serviceRepo.GetByID(ctx, src.ServiceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", apperror.NotFound("日志源对应服务不存在")
+			return nil, "", constants.ErrNotFoundWithMsg(constants.ErrMsgce1b3b846df9)
 		}
 		return nil, "", err
 	}
 	if svcRow.ServerID != q.ServerID {
-		return nil, "", apperror.BadRequest("日志源不属于当前服务器")
+		return nil, "", constants.ErrBadRequestWithMsg(constants.ErrMsgf528977ae67a)
 	}
 
 	var includeRe *regexp.Regexp
 	if q.Include != nil && strings.TrimSpace(*q.Include) != "" {
 		includeRe, err = regexp.Compile(strings.TrimSpace(*q.Include))
 		if err != nil {
-			return nil, "", apperror.BadRequest("包含正则表达式不合法")
+			return nil, "", constants.ErrBadRequestWithMsg(constants.ErrMsg1e7f0cdb6585)
 		}
 	}
 	var excludeRe *regexp.Regexp
 	if q.Exclude != nil && strings.TrimSpace(*q.Exclude) != "" {
 		excludeRe, err = regexp.Compile(strings.TrimSpace(*q.Exclude))
 		if err != nil {
-			return nil, "", apperror.BadRequest("排除正则表达式不合法")
+			return nil, "", constants.ErrBadRequestWithMsg(constants.ErrMsg9bbaf0815790)
 		}
 	}
 

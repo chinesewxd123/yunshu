@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"context"
-
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -33,7 +31,7 @@ func NewRoleHandler(service *service.RoleService) *RoleHandler {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/roles [post]
 func (h *RoleHandler) Create(c *gin.Context) {
-	handleJSONCreated(c, h.service.Create)
+	ServeJSON201(c, h.service.Create)
 }
 
 // Update godoc
@@ -53,14 +51,7 @@ func (h *RoleHandler) Create(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/roles/{id} [put]
 func (h *RoleHandler) Update(c *gin.Context) {
-	id, err := parseUintParam(c, "id")
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	handleJSON(c, func(ctx context.Context, req service.RoleUpdateRequest) (*service.RoleItem, error) {
-		return h.service.Update(ctx, id, req)
-	})
+	ServePatch(c, h.service.Update, "")
 }
 
 // Delete godoc
@@ -78,16 +69,7 @@ func (h *RoleHandler) Update(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/roles/{id} [delete]
 func (h *RoleHandler) Delete(c *gin.Context) {
-	id, err := parseUintParam(c, "id")
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err = h.service.Delete(c.Request.Context(), id); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"message": "deleted"})
+	ServeDelete(c, h.service.Delete, "")
 }
 
 // Detail godoc
@@ -134,5 +116,5 @@ func (h *RoleHandler) Detail(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/roles [get]
 func (h *RoleHandler) List(c *gin.Context) {
-	handleQuery(c, h.service.List)
+	ServeQuery(c, h.service.List)
 }

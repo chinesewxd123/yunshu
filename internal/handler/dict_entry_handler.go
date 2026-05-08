@@ -1,9 +1,6 @@
 package handler
 
 import (
-	"context"
-
-	"yunshu/internal/model"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -19,39 +16,19 @@ func NewDictEntryHandler(svc *service.DictEntryService) *DictEntryHandler {
 }
 
 func (h *DictEntryHandler) List(c *gin.Context) {
-	handleQuery(c, h.svc.List)
+	ServeQuery(c, h.svc.List)
 }
 
 func (h *DictEntryHandler) Create(c *gin.Context) {
-	handleJSONCreated(c, h.svc.Create)
+	ServeJSON201(c, h.svc.Create)
 }
 
 func (h *DictEntryHandler) Update(c *gin.Context) {
-	id, err := parseUintParam(c, "id")
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	handleJSON(c, func(ctx context.Context, req service.DictEntryUpdateRequest) (*model.DictEntry, error) {
-		item, err := h.svc.Update(ctx, id, req)
-		if err != nil {
-			return nil, err
-		}
-		return item, nil
-	})
+	ServePatch(c, h.svc.Update, "")
 }
 
 func (h *DictEntryHandler) Delete(c *gin.Context) {
-	id, err := parseUintParam(c, "id")
-	if err != nil {
-		response.Error(c, err)
-		return
-	}
-	if err = h.svc.Delete(c.Request.Context(), id); err != nil {
-		response.Error(c, err)
-		return
-	}
-	response.Success(c, gin.H{"message": "deleted"})
+	ServeDelete(c, h.svc.Delete, "")
 }
 
 func (h *DictEntryHandler) Options(c *gin.Context) {

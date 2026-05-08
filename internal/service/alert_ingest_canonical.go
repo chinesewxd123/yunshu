@@ -13,16 +13,16 @@ import (
 
 // CanonicalIngressAlert 统一入站模型：由 Alertmanager Webhook 载荷或内置评估路径构造。
 type CanonicalIngressAlert struct {
-	Source              string
-	PayloadReceiver     string
-	PayloadStatus       string
-	GroupLabels         map[string]string
-	CommonLabels        map[string]string
-	CommonAnnotations   map[string]string
-	Version             string
-	ExternalURL         string
-	TruncatedAlerts     int
-	Alert               AlertManagerAlert
+	Source            string
+	PayloadReceiver   string
+	PayloadStatus     string
+	GroupLabels       map[string]string
+	CommonLabels      map[string]string
+	CommonAnnotations map[string]string
+	Version           string
+	ExternalURL       string
+	TruncatedAlerts   int
+	Alert             AlertManagerAlert
 }
 
 // CanonicalAlertsFromAlertmanagerPayload 将 Alertmanager Webhook 形态转为统一入站切片。
@@ -38,16 +38,16 @@ func CanonicalAlertsFromAlertmanagerPayload(p AlertManagerPayload) []CanonicalIn
 	out := make([]CanonicalIngressAlert, 0, len(p.Alerts))
 	for i := range p.Alerts {
 		out = append(out, CanonicalIngressAlert{
-			Source:              src,
-			PayloadReceiver:     p.Receiver,
-			PayloadStatus:       p.Status,
-			GroupLabels:         p.GroupLabels,
-			CommonLabels:        p.CommonLabels,
-			CommonAnnotations:   p.CommonAnnotations,
-			Version:             p.Version,
-			ExternalURL:         p.ExternalURL,
-			TruncatedAlerts:     p.TruncatedAlerts,
-			Alert:               p.Alerts[i],
+			Source:            src,
+			PayloadReceiver:   p.Receiver,
+			PayloadStatus:     p.Status,
+			GroupLabels:       p.GroupLabels,
+			CommonLabels:      p.CommonLabels,
+			CommonAnnotations: p.CommonAnnotations,
+			Version:           p.Version,
+			ExternalURL:       p.ExternalURL,
+			TruncatedAlerts:   p.TruncatedAlerts,
+			Alert:             p.Alerts[i],
 		})
 	}
 	return out

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -57,7 +57,7 @@ func (s *K8sCRDService) List(ctx context.Context, q CRDListQuery) ([]CRDItem, er
 	}
 	ul, err := s.dyn.ListByGVK(ctx, k, crdGVK, "")
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 CRD 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtcf9172f6e822, err))
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	out := make([]CRDItem, 0, len(ul))
@@ -87,9 +87,9 @@ func (s *K8sCRDService) Detail(ctx context.Context, q CRDDetailQuery) (*CRDDetai
 	u, err := s.dyn.GetByGVK(ctx, k, crdGVK, "", q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("CRD 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgfc34c3a3e621)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 CRD 详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt48ec32249aa2, err))
 	}
 	var obj apiextv1.CustomResourceDefinition
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -112,7 +112,7 @@ func (s *K8sCRDService) Apply(ctx context.Context, req CRDApplyRequest) error {
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	refs := extractCRDRefs(req.Manifest)
 	err = s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -128,7 +128,7 @@ func (s *K8sCRDService) Apply(ctx context.Context, req CRDApplyRequest) error {
 		return true
 	})
 	if err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }
@@ -143,7 +143,7 @@ func (s *K8sCRDService) Delete(ctx context.Context, req CRDDeleteRequest) error 
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除 CRD 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt233eb5aeea78, err))
 	}
 	return nil
 }

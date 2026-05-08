@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
@@ -114,7 +114,7 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 
 	listU, err := s.dyn.ListByGVK(ctx, k, namespaceGVK, "")
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取命名空间失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt8d60c2040f20, err))
 	}
 	list := make([]corev1.Namespace, 0, len(listU))
 	for _, item := range listU {
@@ -172,9 +172,9 @@ func (s *K8sNamespaceService) Detail(ctx context.Context, query NamespaceDetailQ
 	u, err := s.dyn.GetByGVK(ctx, k, namespaceGVK, "", query.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("命名空间不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg52d9e6e7f573)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取命名空间详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt059d07c698fe, err))
 	}
 	var ns corev1.Namespace
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &ns)
@@ -287,7 +287,7 @@ func (s *K8sNamespaceService) Apply(ctx context.Context, req NamespaceApplyReque
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	refs := extractNamespaceRefs(req.Manifest)
 	err = s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -302,7 +302,7 @@ func (s *K8sNamespaceService) Apply(ctx context.Context, req NamespaceApplyReque
 		return true
 	})
 	if err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }
@@ -346,7 +346,7 @@ func (s *K8sNamespaceService) Delete(ctx context.Context, req NamespaceDeleteReq
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除命名空间失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmte323e75e3bb3, err))
 	}
 	return nil
 }

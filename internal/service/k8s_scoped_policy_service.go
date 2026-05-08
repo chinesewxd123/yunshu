@@ -4,8 +4,8 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/repository"
 
 	"github.com/casbin/casbin/v2"
@@ -94,7 +94,7 @@ func (s *K8sScopedPolicyService) Grant(ctx context.Context, req K8sScopedPolicyG
 	roleCode := role.Code
 
 	if len(req.Actions) == 0 || len(req.Paths) == 0 {
-		return nil, apperror.BadRequest("actions 与 paths 不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg316eb6f964a1)
 	}
 
 	namespaces := req.Namespaces

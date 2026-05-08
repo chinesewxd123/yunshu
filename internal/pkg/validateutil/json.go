@@ -2,9 +2,10 @@ package validateutil
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 )
 
 func ValidateJSONObjectString(v string, fieldName string) error {
@@ -17,7 +18,7 @@ func ValidateJSONObjectString(v string, fieldName string) error {
 		if strings.TrimSpace(fieldName) == "" {
 			fieldName = "字段"
 		}
-		return apperror.BadRequest(fieldName + " 必须是 JSON 对象字符串")
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmtJSONFieldMustBeObject, fieldName))
 	}
 	return nil
 }
