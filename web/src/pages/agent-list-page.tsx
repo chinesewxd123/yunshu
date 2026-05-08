@@ -1,9 +1,10 @@
 import { ExclamationCircleOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Drawer, Progress, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Card, Drawer, Popconfirm, Progress, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useDictOptions } from "../hooks/use-dict-options";
 import { useEffect, useMemo, useState } from "react";
 import {
   batchRefreshProjectAgentHeartbeat,
+  deleteProjectAgent,
   getProjects,
   listProjectAgents,
   type ProjectAgentListItem,
@@ -22,6 +23,7 @@ export function AgentListPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<Array<string | number>>([]);
   const [errorDrawerOpen, setErrorDrawerOpen] = useState(false);
   const [errorDetailRow, setErrorDetailRow] = useState<ProjectAgentListItem | null>(null);
+  const [deletingAgentId, setDeletingAgentId] = useState<number | undefined>(undefined);
 
   const projectOptions = useMemo(() => projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` })), [projects]);
   const healthDictOptions = useDictOptions("log_agent_health_status");
@@ -61,6 +63,18 @@ export function AgentListPage() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, onlineFilter, healthStatusFilter]);
+
+  async function handleDeleteAgent(agentId: number) {
+    if (!projectId) return;
+    setDeletingAgentId(agentId);
+    try {
+      await deleteProjectAgent(projectId, agentId);
+      message.success("已删除 Agent 登记");
+      await load();
+    } finally {
+      setDeletingAgentId(undefined);
+    }
+  }
 
   async function batchRefreshHeartbeat() {
     if (!projectId) return;
@@ -110,7 +124,7 @@ export function AgentListPage() {
         <Table
         rowKey="server_id"
         loading={loading}
-        scroll={{ x: 2850 }}
+        scroll={{ x: 2920 }}
         tableLayout="fixed"
         dataSource={list}
         rowSelection={{
@@ -236,24 +250,48 @@ export function AgentListPage() {
           },
           { title: "最近心跳", dataIndex: "last_seen_at", width: 170, render: (v: string) => (v ? formatDateTime(v) : "-") },
           {
-            title: "最近错误",
-            dataIndex: "last_error",
-            ellipsis: true,
-            render: (v: string, row: ProjectAgentListItem) =>
-              v ? (
-                <Button
-                  type="link"
-                  icon={<ExclamationCircleOutlined />}
-                  onClick={() => {
-                    setErrorDetailRow(row);
-                    setErrorDrawerOpen(true);
-                  }}
-                >
-                  查看错误
-                </Button>
-              ) : (
-                "-"
-              ),
+            title: "操作",
+            key: "actions",
+            width: 200,
+            fixed: "right",
+            render: (_: unknown, row: ProjectAgentListItem) => {
+              const aid = row.agent_id;
+              return (
+                <Space size={4} wrap>
+                  {row.last_error ? (
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<ExclamationCircleOutlined />}
+                      onClick={() => {
+                        setErrorDetailRow(row);
+                        setErrorDrawerOpen(true);
+                      }}
+                    >
+                      错误详情
+                    </Button>
+                  ) : null}
+                  {aid != null && aid > 0 ? (
+                    <Popconfirm
+                      title="确定删除该 Agent？"
+                      description="将移除平台上的登记与令牌；侧端进程需重新引导安装后才能再次接入。"
+                      okText="删除"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true, loading: deletingAgentId === aid }}
+                      onConfirm={() => void handleDeleteAgent(aid)}
+                    >
+                      <Button type="link" danger size="small" loading={deletingAgentId === aid}>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  ) : (
+                    <Tooltip title="该服务器尚未完成 Agent 注册，无可删除记录">
+                      <Typography.Text type="secondary">—</Typography.Text>
+                    </Tooltip>
+                  )}
+                </Space>
+              );
+            },
           },
         ]}
       />

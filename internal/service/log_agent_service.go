@@ -708,6 +708,23 @@ func (s *LogAgentService) RotateToken(ctx context.Context, req AgentBootstrapReq
 	return s.Bootstrap(ctx, req)
 }
 
+// DeleteForProject 软删除指定项目下的 Agent 登记记录（按 log_agents 主键）。
+func (s *LogAgentService) DeleteForProject(ctx context.Context, projectID, agentID uint) error {
+	if _, err := s.repo.GetByIDAndProject(ctx, agentID, projectID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrNotFound
+		}
+		return err
+	}
+	if err := s.repo.DeleteByIDAndProject(ctx, agentID, projectID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrNotFound
+		}
+		return err
+	}
+	return nil
+}
+
 // BuildLogStreamKey 构建相关逻辑。
 func BuildLogStreamKey(projectID, serverID, logSourceID uint) string {
 	return fmt.Sprintf("%d:%d:%d", projectID, serverID, logSourceID)

@@ -486,6 +486,10 @@ export async function listProjectAgents(projectId: number, params?: { keyword?: 
   return await getData(http.get<any, ApiResponse<{ list: ProjectAgentListItem[] }>>(`/projects/${projectId}/agents/list`, { params }));
 }
 
+export async function deleteProjectAgent(projectId: number, agentId: number) {
+  return await getData(http.delete<any, ApiResponse<{ message: string }>>(`/projects/${projectId}/agents/${agentId}`));
+}
+
 export async function batchRefreshProjectAgentHeartbeat(projectId: number, payload: { server_ids?: number[] }) {
   return await getData(
     http.post<any, ApiResponse<{ refreshed: number; list: ProjectAgentListItem[] }>>(

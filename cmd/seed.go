@@ -407,6 +407,7 @@ func defaultPermissions() []model.Permission {
 		{Name: "项目日志源保存", Resource: "/api/v1/projects/:id/log-sources", Action: "POST", Description: "Upsert log source"},
 		{Name: "删除项目日志源", Resource: "/api/v1/projects/:id/log-sources/:logSourceId", Action: "DELETE", Description: "Delete log source"},
 		{Name: "项目 Agent 列表", Resource: "/api/v1/projects/:id/agents/list", Action: "GET", Description: "List agents"},
+		{Name: "删除项目 Agent", Resource: "/api/v1/projects/:id/agents/:agentId", Action: "DELETE", Description: "Delete project agent registration"},
 		{Name: "项目 Agent 心跳刷新", Resource: "/api/v1/projects/:id/agents/heartbeat-refresh", Action: "POST", Description: "Batch refresh agent heartbeat"},
 		{Name: "项目 Agent 状态", Resource: "/api/v1/projects/:id/agents/status", Action: "GET", Description: "Agent status"},
 		{Name: "项目 Agent 引导", Resource: "/api/v1/projects/:id/agents/bootstrap", Action: "POST", Description: "Agent bootstrap"},

@@ -90,3 +90,24 @@ func (r *LogAgentRepository) UpdateOfflineMarker(ctx context.Context, id uint, o
 		"offline_sweep_seen_at":    sweepSeen,
 	}).Error
 }
+
+// GetByIDAndProject 按主键与项目查询 Agent（不含已软删记录）。
+func (r *LogAgentRepository) GetByIDAndProject(ctx context.Context, id, projectID uint) (*model.LogAgent, error) {
+	var it model.LogAgent
+	if err := r.db.WithContext(ctx).Where("id = ? AND project_id = ?", id, projectID).First(&it).Error; err != nil {
+		return nil, err
+	}
+	return &it, nil
+}
+
+// DeleteByIDAndProject 软删除指定项目下的 Agent。
+func (r *LogAgentRepository) DeleteByIDAndProject(ctx context.Context, id, projectID uint) error {
+	res := r.db.WithContext(ctx).Where("id = ? AND project_id = ?", id, projectID).Delete(&model.LogAgent{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}

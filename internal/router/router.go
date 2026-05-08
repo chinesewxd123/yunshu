@@ -556,6 +556,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	projects.POST("/:id/log-sources", projectHandler.UpsertLogSource)
 	projects.DELETE("/:id/log-sources/:logSourceId", projectHandler.DeleteLogSource)
 	projects.GET("/:id/agents/list", logAgentHandler.List)
+	projects.DELETE("/:id/agents/:agentId", logAgentHandler.Delete)
 	projects.POST("/:id/agents/heartbeat-refresh", logAgentHandler.BatchRefreshHeartbeat)
 	projects.GET("/:id/agents/status", logAgentHandler.Status)
 	projects.POST("/:id/agents/bootstrap", logAgentHandler.Bootstrap)

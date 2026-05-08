@@ -191,6 +191,25 @@ func (h *LogAgentHandler) Bootstrap(c *gin.Context) {
 	})
 }
 
+// Delete 删除当前项目下已登记的 Agent 记录（软删除）。
+func (h *LogAgentHandler) Delete(c *gin.Context) {
+	projectID, err := parseUintParam(c, "id")
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	agentID, err := parseUintParam(c, "agentId")
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	if err := h.svc.DeleteForProject(c.Request.Context(), projectID, agentID); err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "deleted"})
+}
+
 // RotateToken 处理对应的 HTTP 请求并返回统一响应。
 func (h *LogAgentHandler) RotateToken(c *gin.Context) {
 	projectID, err := parseUintParam(c, "id")

@@ -209,6 +209,7 @@ export const API_CATALOG_GROUPS: { title: string; routes: ApiCatalogRow[] }[] = 
       { method: "POST", path: "/api/v1/projects/:id/log-sources", summary: "创建/更新日志源", ui: "日志源配置", auth: true },
       { method: "DELETE", path: "/api/v1/projects/:id/log-sources/:logSourceId", summary: "删除日志源", ui: "日志源配置", auth: true },
       { method: "GET", path: "/api/v1/projects/:id/agents/list", summary: "Agent 列表", ui: "Agent 列表", auth: true },
+      { method: "DELETE", path: "/api/v1/projects/:id/agents/:agentId", summary: "删除 Agent 登记", ui: "Agent 列表", auth: true },
       { method: "POST", path: "/api/v1/projects/:id/agents/heartbeat-refresh", summary: "批量刷新 Agent 心跳", ui: "Agent 列表", auth: true },
       { method: "GET", path: "/api/v1/projects/:id/agents/status", summary: "Agent 状态", ui: "日志平台", auth: true },
       { method: "POST", path: "/api/v1/projects/:id/agents/bootstrap", summary: "Agent 引导", ui: "日志平台", auth: true },
