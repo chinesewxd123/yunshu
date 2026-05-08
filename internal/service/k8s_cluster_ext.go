@@ -61,6 +61,30 @@ func mergeDirectConfig(base, override *DirectConfig) {
 	base.InsecureSkipTLSVerify = override.InsecureSkipTLSVerify || base.InsecureSkipTLSVerify
 }
 
+// preserveDirectAuthFromStored 编辑集群时前端常不回传已保存的 token/密码/证书（JSON 省略或空串），
+// 若直接生成 kubeconfig 会丢失 Bearer，表现为：心跳能拿到版本（部分集群允许匿名 /version）、List Namespace 等返回 401 Unauthorized。
+func preserveDirectAuthFromStored(storedJSON string, next *DirectConfig) {
+	if next == nil || strings.TrimSpace(storedJSON) == "" {
+		return
+	}
+	var prev DirectConfig
+	if err := json.Unmarshal([]byte(storedJSON), &prev); err != nil {
+		return
+	}
+	if strings.TrimSpace(next.Token) == "" && strings.TrimSpace(prev.Token) != "" {
+		next.Token = prev.Token
+	}
+	if strings.TrimSpace(next.Password) == "" && strings.TrimSpace(prev.Password) != "" {
+		next.Password = prev.Password
+	}
+	if strings.TrimSpace(next.ClientCertData) == "" && strings.TrimSpace(prev.ClientCertData) != "" {
+		next.ClientCertData = prev.ClientCertData
+	}
+	if strings.TrimSpace(next.ClientKeyData) == "" && strings.TrimSpace(prev.ClientKeyData) != "" {
+		next.ClientKeyData = prev.ClientKeyData
+	}
+}
+
 // buildKubeconfigFromDirectConfig 从直连配置生成kubeconfig
 func buildKubeconfigFromDirectConfig(config *DirectConfig) (string, error) {
 	serverRaw := strings.TrimSpace(config.Server)
@@ -122,6 +146,13 @@ func buildKubeconfigFromDirectConfig(config *DirectConfig) (string, error) {
 		}
 		restConfig.CertData = certData
 		restConfig.KeyData = keyData
+	}
+
+	hasAuth := strings.TrimSpace(restConfig.BearerToken) != "" ||
+		(strings.TrimSpace(restConfig.Username) != "" && strings.TrimSpace(restConfig.Password) != "") ||
+		(len(restConfig.CertData) > 0 && len(restConfig.KeyData) > 0)
+	if !hasAuth {
+		return "", fmt.Errorf("直连未配置有效认证：请填写 Token、或用户名+密码、或客户端证书+私钥（部分集群匿名可读版本信息，但无法列举命名空间）")
 	}
 
 	// 将REST配置转换为kubeconfig格式

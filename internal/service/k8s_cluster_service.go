@@ -215,6 +215,7 @@ func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterU
 
 	// 处理直连配置更新
 	if cluster.ConnectionMode == "direct" && req.DirectConfig != nil {
+		preserveDirectAuthFromStored(cluster.DirectConfig, req.DirectConfig)
 		// 如果从字典读取配置
 		if req.DirectConfig.DictConfigKey != "" && s.dictRepo != nil {
 			dictConfig, err := getDirectConfigFromDict(ctx, s.dictRepo, req.DirectConfig.DictConfigKey)
