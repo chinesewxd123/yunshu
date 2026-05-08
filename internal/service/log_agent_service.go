@@ -20,6 +20,21 @@ import (
 	"gorm.io/gorm"
 )
 
+// logAgentHeartbeatTimeout 与 Agent 侧上报间隔一起决定「在线」判断；超时后列表/API 不再沿用 DB 中陈旧的上报 health（例如仍为 running）。
+const logAgentHeartbeatTimeout = 90 * time.Second
+
+// effectiveLogAgentHealth 列表与详情展示用：离线时统一展示 offline，避免进程上次上报的 running 残留在库裏误导。
+func effectiveLogAgentHealth(online bool, reported string) string {
+	if !online {
+		return "offline"
+	}
+	s := strings.TrimSpace(reported)
+	if s == "" {
+		return "unknown"
+	}
+	return s
+}
+
 type LogAgentService struct {
 	repo           *repository.LogAgentRepository
 	serverRepo     *repository.ServerRepository
@@ -165,7 +180,7 @@ func (s *LogAgentService) AuthenticateByToken(ctx context.Context, token string)
 
 // TouchSeen 执行对应的业务逻辑。
 func (s *LogAgentService) TouchSeen(ctx context.Context, id uint) {
-	_ = s.repo.TouchSeen(ctx, id)
+	_ = s.repo.TouchSeen(ctx, id, logAgentHeartbeatTimeout)
 }
 
 // TouchSeenByProjectServer refreshes agent heartbeat by project/server pair.
@@ -175,7 +190,7 @@ func (s *LogAgentService) TouchSeenByProjectServer(ctx context.Context, projectI
 	if err != nil || it == nil {
 		return
 	}
-	_ = s.repo.TouchSeen(ctx, it.ID)
+	_ = s.repo.TouchSeen(ctx, it.ID, logAgentHeartbeatTimeout)
 }
 
 // ReportHealthByToken 上报 Agent 健康状态（对齐 go-ops 可观测字段）。
@@ -185,7 +200,12 @@ func (s *LogAgentService) ReportHealthByToken(ctx context.Context, req LogAgentH
 		return err
 	}
 	now := time.Now()
+	wasOffline := agent.LastSeenAt == nil || now.Sub(*agent.LastSeenAt) > logAgentHeartbeatTimeout
 	agent.LastSeenAt = &now
+	if wasOffline {
+		agent.LastOnlineAt = &now
+		agent.OfflineSweepSeenAt = nil
+	}
 	// 与 Agent 上报一致：0 表示未在本机监听端口（仅出站）
 	agent.ListenPort = req.ListenPort
 	if req.InstallProgress < 0 {
@@ -209,6 +229,98 @@ func (s *LogAgentService) ReportHealthByToken(ctx context.Context, req LogAgentH
 	return s.repo.Save(ctx, agent)
 }
 
+// offlineReasonLabelForCode 产品话术：与 log_agent_offline_reason 字典可对齐。
+func offlineReasonLabelForCode(code string) string {
+	switch strings.TrimSpace(strings.ToLower(code)) {
+	case "never_connected":
+		return "从未连接成功"
+	case "heartbeat_lost":
+		return "心跳超时（失联或进程僵死）"
+	case "agent_stopped":
+		return "Agent 已停止"
+	case "agent_error":
+		return "Agent 异常（上报 error）"
+	default:
+		if code == "" {
+			return ""
+		}
+		return code
+	}
+}
+
+func deriveStaleOfflineReasonCode(healthStatus string) string {
+	switch strings.ToLower(strings.TrimSpace(healthStatus)) {
+	case "stopped":
+		return "agent_stopped"
+	case "error":
+		return "agent_error"
+	default:
+		return "heartbeat_lost"
+	}
+}
+
+func effectiveOfflineReasonCode(agent *model.LogAgent, online bool) string {
+	if online {
+		return ""
+	}
+	if strings.TrimSpace(agent.LastOfflineReasonCode) != "" {
+		return strings.TrimSpace(agent.LastOfflineReasonCode)
+	}
+	if agent.LastSeenAt == nil {
+		return "never_connected"
+	}
+	return deriveStaleOfflineReasonCode(agent.HealthStatus)
+}
+
+func formatRFC3339Ptr(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.Format(time.RFC3339)
+	return &s
+}
+
+// lastOfflineReasonDisplay 列表/详情展示：优先库中归因码；否则离线时用推导码。
+func lastOfflineReasonDisplay(agent *model.LogAgent, online bool) string {
+	if agent == nil {
+		return ""
+	}
+	if c := strings.TrimSpace(agent.LastOfflineReasonCode); c != "" {
+		return offlineReasonLabelForCode(c)
+	}
+	return offlineReasonLabelForCode(effectiveOfflineReasonCode(agent, online))
+}
+
+// RecordOfflineEpisodes 定时扫描：心跳超时后写入最新离线时间与原因（同一静默窗口去重）。
+func (s *LogAgentService) RecordOfflineEpisodes(ctx context.Context) error {
+	agents, err := s.repo.ListAll(ctx)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	for i := range agents {
+		ag := &agents[i]
+		online := ag.LastSeenAt != nil && now.Sub(*ag.LastSeenAt) <= logAgentHeartbeatTimeout
+		if online {
+			continue
+		}
+		if ag.LastSeenAt == nil {
+			if strings.TrimSpace(ag.LastOfflineReasonCode) == "never_connected" {
+				continue
+			}
+			_ = s.repo.UpdateOfflineMarker(ctx, ag.ID, now, "never_connected", nil)
+			continue
+		}
+		if ag.OfflineSweepSeenAt != nil && ag.LastSeenAt != nil && ag.OfflineSweepSeenAt.Equal(*ag.LastSeenAt) {
+			continue
+		}
+		reason := deriveStaleOfflineReasonCode(ag.HealthStatus)
+		seenCopy := *ag.LastSeenAt
+		_ = s.repo.UpdateOfflineMarker(ctx, ag.ID, now, reason, &seenCopy)
+	}
+	return nil
+}
+
 type LogAgentStatusResult struct {
 	ServerID         uint    `json:"server_id"`
 	LogSourceID      uint    `json:"log_source_id"`
@@ -223,6 +335,9 @@ type LogAgentStatusResult struct {
 	InstallProgress  int     `json:"install_progress"`
 	HealthStatus     string  `json:"health_status"`
 	LastError        string  `json:"last_error,omitempty"`
+	LastOnlineAt     *string `json:"last_online_at,omitempty"`
+	LastOfflineAt    *string `json:"last_offline_at,omitempty"`
+	LastOfflineReason string `json:"last_offline_reason,omitempty"`
 }
 
 type LogAgentListQuery struct {
@@ -247,6 +362,9 @@ type LogAgentListItem struct {
 	HealthStatus     string  `json:"health_status"`
 	LastError        string  `json:"last_error,omitempty"`
 	RecentPublishing bool    `json:"recent_publishing"`
+	LastOnlineAt     *string `json:"last_online_at,omitempty"`
+	LastOfflineAt    *string `json:"last_offline_at,omitempty"`
+	LastOfflineReason string `json:"last_offline_reason,omitempty"`
 }
 
 func (s *LogAgentService) ListByProject(ctx context.Context, q LogAgentListQuery) ([]LogAgentListItem, error) {
@@ -289,6 +407,7 @@ func (s *LogAgentService) buildListItem(ctx context.Context, projectID uint, sv 
 		LastError:       "",
 		InstallProgress: 0,
 	}
+	reportedHealth := ""
 	agent, err := s.repo.GetByProjectAndServer(ctx, projectID, sv.ID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -298,15 +417,18 @@ func (s *LogAgentService) buildListItem(ctx context.Context, projectID uint, sv 
 		item.Version = agent.Version
 		item.ListenPort = agent.ListenPort
 		item.InstallProgress = agent.InstallProgress
-		item.HealthStatus = agent.HealthStatus
+		reportedHealth = agent.HealthStatus
 		item.LastError = agent.LastError
 		id := agent.ID
 		item.AgentID = &id
 		if agent.LastSeenAt != nil {
 			x := agent.LastSeenAt.Format(time.RFC3339)
 			item.LastSeenAt = &x
-			item.Online = time.Since(*agent.LastSeenAt) <= 90*time.Second
+			item.Online = time.Since(*agent.LastSeenAt) <= logAgentHeartbeatTimeout
 		}
+		item.LastOnlineAt = formatRFC3339Ptr(agent.LastOnlineAt)
+		item.LastOfflineAt = formatRFC3339Ptr(agent.LastOfflineAt)
+		item.LastOfflineReason = lastOfflineReasonDisplay(agent, item.Online)
 	}
 	sources, err := s.logRepo.ListByProjectAndServer(ctx, projectID, sv.ID)
 	if err == nil {
@@ -318,6 +440,7 @@ func (s *LogAgentService) buildListItem(ctx context.Context, projectID uint, sv 
 			}
 		}
 	}
+	item.HealthStatus = effectiveLogAgentHealth(item.Online, reportedHealth)
 	return item, nil
 }
 
@@ -363,12 +486,18 @@ func (s *LogAgentService) BatchRefreshHeartbeat(ctx context.Context, req AgentBa
 		}
 		item.ProjectName = projectName
 		if item.RecentPublishing && item.AgentID != nil {
-			_ = s.repo.TouchSeen(ctx, *item.AgentID)
+			_ = s.repo.TouchSeen(ctx, *item.AgentID, logAgentHeartbeatTimeout)
 			agent, aerr := s.repo.GetByProjectAndServer(ctx, req.ProjectID, sv.ID)
-			if aerr == nil && agent.LastSeenAt != nil {
-				x := agent.LastSeenAt.Format(time.RFC3339)
-				item.LastSeenAt = &x
-				item.Online = true
+			if aerr == nil && agent != nil {
+				if agent.LastSeenAt != nil {
+					x := agent.LastSeenAt.Format(time.RFC3339)
+					item.LastSeenAt = &x
+					item.Online = time.Since(*agent.LastSeenAt) <= logAgentHeartbeatTimeout
+				}
+				item.HealthStatus = effectiveLogAgentHealth(item.Online, agent.HealthStatus)
+				item.LastOnlineAt = formatRFC3339Ptr(agent.LastOnlineAt)
+				item.LastOfflineAt = formatRFC3339Ptr(agent.LastOfflineAt)
+				item.LastOfflineReason = lastOfflineReasonDisplay(agent, item.Online)
 			}
 		}
 		list = append(list, *item)
@@ -392,21 +521,26 @@ func (s *LogAgentService) Status(ctx context.Context, projectID, serverID, logSo
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
+	reported := ""
 	if err == nil && agent != nil {
 		out.Name = agent.Name
 		out.Version = agent.Version
 		out.ListenPort = agent.ListenPort
 		out.InstallProgress = agent.InstallProgress
-		out.HealthStatus = agent.HealthStatus
+		reported = agent.HealthStatus
 		out.LastError = agent.LastError
 		id := agent.ID
 		out.AgentID = &id
 		if agent.LastSeenAt != nil {
 			x := agent.LastSeenAt.Format(time.RFC3339)
 			out.LastSeenAt = &x
-			out.Online = time.Since(*agent.LastSeenAt) <= 90*time.Second
+			out.Online = time.Since(*agent.LastSeenAt) <= logAgentHeartbeatTimeout
 		}
+		out.LastOnlineAt = formatRFC3339Ptr(agent.LastOnlineAt)
+		out.LastOfflineAt = formatRFC3339Ptr(agent.LastOfflineAt)
+		out.LastOfflineReason = lastOfflineReasonDisplay(agent, out.Online)
 	}
+	out.HealthStatus = effectiveLogAgentHealth(out.Online, reported)
 	if logSourceID > 0 {
 		key := BuildLogStreamKey(projectID, serverID, logSourceID)
 		out.RecentPublishing = AgentLogBroker.HasRecentPublisher(key, 30*time.Second)

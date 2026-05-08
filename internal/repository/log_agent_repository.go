@@ -55,10 +55,38 @@ func (r *LogAgentRepository) Save(ctx context.Context, it *model.LogAgent) error
 	return r.db.WithContext(ctx).Save(it).Error
 }
 
-func (r *LogAgentRepository) TouchSeen(ctx context.Context, id uint) error {
+func (r *LogAgentRepository) TouchSeen(ctx context.Context, id uint, heartbeatTimeout time.Duration) error {
+	var agent model.LogAgent
+	if err := r.db.WithContext(ctx).First(&agent, id).Error; err != nil {
+		return err
+	}
 	now := time.Now()
-	return r.db.WithContext(ctx).Model(&model.LogAgent{}).Where("id = ?", id).Updates(map[string]any{
+	wasOffline := agent.LastSeenAt == nil || now.Sub(*agent.LastSeenAt) > heartbeatTimeout
+	up := map[string]any{
 		"last_seen_at": now,
 		"status":       model.StatusEnabled,
+	}
+	if wasOffline {
+		up["last_online_at"] = now
+		up["offline_sweep_seen_at"] = nil
+	}
+	return r.db.WithContext(ctx).Model(&model.LogAgent{}).Where("id = ?", id).Updates(up).Error
+}
+
+// ListAll 扫描离线归因（全表 Agent，数据量按部署可控）。
+func (r *LogAgentRepository) ListAll(ctx context.Context) ([]model.LogAgent, error) {
+	var list []model.LogAgent
+	if err := r.db.WithContext(ctx).Order("id ASC").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// UpdateOfflineMarker 记录离线时刻与原因（定时扫描调用）。
+func (r *LogAgentRepository) UpdateOfflineMarker(ctx context.Context, id uint, offlineAt time.Time, reason string, sweepSeen *time.Time) error {
+	return r.db.WithContext(ctx).Model(&model.LogAgent{}).Where("id = ?", id).Updates(map[string]any{
+		"last_offline_at":          offlineAt,
+		"last_offline_reason_code": reason,
+		"offline_sweep_seen_at":    sweepSeen,
 	}).Error
 }

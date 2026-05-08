@@ -24,6 +24,15 @@ type LogAgent struct {
 	HealthStatus    string     `json:"health_status" gorm:"size:32;default:unknown;comment:健康状态"`
 	LastError       string     `json:"last_error" gorm:"size:1024;comment:最近错误"`
 
+	// LastOnlineAt 最近一次从「离线判定」恢复为在线的时刻（心跳/健康上报触发）。
+	LastOnlineAt *time.Time `json:"last_online_at" gorm:"comment:最新上线时间"`
+	// LastOfflineAt 最近一次被平台判定为离线的时间（定时扫描写入）。
+	LastOfflineAt *time.Time `json:"last_offline_at" gorm:"comment:最新离线时间"`
+	// LastOfflineReasonCode 离线原因码：never_connected / heartbeat_lost / agent_stopped / agent_error（产品话术由接口映射）。
+	LastOfflineReasonCode string `json:"last_offline_reason_code" gorm:"size:32;comment:最近离线原因码"`
+	// OfflineSweepSeenAt 与 LastSeenAt 对齐的一次离线归因快照，用于扫描去重。
+	OfflineSweepSeenAt *time.Time `json:"-" gorm:"comment:离线扫描去重锚点"`
+
 	CreatedAt time.Time      `json:"created_at" gorm:"comment:创建时间"`
 	UpdatedAt time.Time      `json:"updated_at" gorm:"comment:更新时间"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index;comment:删除时间"`

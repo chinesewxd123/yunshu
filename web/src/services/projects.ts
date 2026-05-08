@@ -432,6 +432,12 @@ export interface ProjectAgentStatus {
   install_progress?: number;
   health_status?: string;
   last_error?: string;
+  /** 最近一次从离线判定恢复在线（RFC3339） */
+  last_online_at?: string | null;
+  /** 最近一次被判定离线（RFC3339） */
+  last_offline_at?: string | null;
+  /** 最近离线原因（产品话术） */
+  last_offline_reason?: string;
 }
 
 export interface ProjectAgentListItem {
@@ -450,6 +456,9 @@ export interface ProjectAgentListItem {
   health_status: string;
   last_error?: string;
   recent_publishing?: boolean;
+  last_online_at?: string | null;
+  last_offline_at?: string | null;
+  last_offline_reason?: string;
 }
 
 export interface ProjectAgentBootstrapPayload {

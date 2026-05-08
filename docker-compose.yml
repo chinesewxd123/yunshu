@@ -83,8 +83,8 @@ services:
     mem_limit: 384m
     cpus: 0.6
     ports:
-      - "8080:8080"      # 改为监听所有接口
-      - "127.0.0.1:18080:18080"    # gRPC 仍本地
+      - "8080:8080"
+      - "18080:18080" # gRPC：对外暴露（原 127.0.0.1 仅本机；去掉后局域网/公网可连，请配合防火墙与鉴权）
     environment:
       - GIN_MODE=release
       - APP_ENV=prod
