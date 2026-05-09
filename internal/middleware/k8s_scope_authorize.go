@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
@@ -84,11 +84,13 @@ func (c *k8sScopeCatalogCache) refresh() {
 // K8sScopeAuthorize:
 // 1) 仅对纳入三元目录的 K8s 接口启用（来自 permissions 动态构建）
 // 2) 支持 cluster + namespace + action 三元权限
-// 3) 兼容旧权限：当未配置任何三元策略时默认放行
+// 3) 命名空间黑名单（对齐 k8m）：先于三元判定；含 super-admin，避免误操作生产命名空间
+// 4) 兼容旧权限：当未配置任何三元策略时默认放行（非 super-admin）
 func K8sScopeAuthorize(
 	enforcer *casbin.SyncedEnforcer,
 	logger *logx.Logger,
 	permRepo *repository.PermissionRepository,
+	nsDenyRepo *repository.K8sNamespaceDenyRepository,
 ) gin.HandlerFunc {
 	catalog := newK8sScopeCatalogCache(permRepo)
 	return func(c *gin.Context) {
@@ -103,15 +105,9 @@ func K8sScopeAuthorize(
 		}
 		user, ok := auth.CurrentUserFromContext(c)
 		if !ok {
-			response.Error(c, apperror.Unauthorized("未登录"))
+			response.Error(c, constants.ErrNotLoggedIn)
 			c.Abort()
 			return
-		}
-		for _, rc := range user.RoleCodes {
-			if strings.TrimSpace(rc) == "super-admin" {
-				c.Next()
-				return
-			}
 		}
 
 		clusterID, namespace := extractClusterNamespaceFromRequest(c)
@@ -122,6 +118,29 @@ func K8sScopeAuthorize(
 		}
 		if strings.TrimSpace(namespace) == "" {
 			namespace = "_cluster"
+		}
+
+		// 命名空间黑名单：对齐 k8m「黑名单优先」；含 super-admin，避免平台账号误入生产命名空间
+		if nsDenyRepo != nil && namespace != "" && namespace != "_cluster" {
+			denied, err := nsDenyRepo.IsDenied(c.Request.Context(), user.RoleCodes, clusterID, namespace)
+			if err != nil {
+				logger.Error.Error("k8s namespace deny check failed", "error", err)
+				response.Error(c, constants.ErrInternal)
+				c.Abort()
+				return
+			}
+			if denied {
+				response.Error(c, constants.ErrForbiddenWithMsg("当前角色在此集群下禁止访问命名空间「"+namespace+"」"))
+				c.Abort()
+				return
+			}
+		}
+
+		for _, rc := range user.RoleCodes {
+			if strings.TrimSpace(rc) == "super-admin" {
+				c.Next()
+				return
+			}
 		}
 
 		path := routePath
@@ -153,7 +172,7 @@ func K8sScopeAuthorize(
 				ok, err := enforcer.Enforce(subject, res, act)
 				if err != nil {
 					logger.Error.Error("enforce scoped policy failed", "error", err, "resource", res, "action", act)
-					response.Error(c, apperror.Internal("权限校验失败"))
+					response.Error(c, constants.ErrInternal)
 					c.Abort()
 					return
 				}
@@ -168,7 +187,7 @@ func K8sScopeAuthorize(
 		}
 
 		if hasScopedPolicy && !allowed {
-			response.Error(c, apperror.Forbidden("无该集群/命名空间操作权限"))
+			response.Error(c, constants.ErrForbidden)
 			c.Abort()
 			return
 		}

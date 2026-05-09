@@ -52,6 +52,17 @@ type ClusterNamespaceNameScaleRequest struct {
 	Replicas  int32  `json:"replicas" binding:"required"`
 }
 
+// WorkloadContainerResourcesRequest 垂直扩缩：更新 Pod 模板中某一容器的 resources（requests/limits）。
+// ContainerName 为空时默认第一个容器；Requests/Limits 的 key 为 Kubernetes 资源名（如 cpu、memory），空字符串表示删除该键。
+type WorkloadContainerResourcesRequest struct {
+	ClusterID     uint              `json:"cluster_id" binding:"required"`
+	Namespace     string            `json:"namespace" binding:"required"`
+	Name          string            `json:"name" binding:"required"`
+	ContainerName string            `json:"container_name"`
+	Requests      map[string]string `json:"requests"`
+	Limits        map[string]string `json:"limits"`
+}
+
 type ClusterNamespaceNameSuspendRequest struct {
 	ClusterID uint   `json:"cluster_id" binding:"required"`
 	Namespace string `json:"namespace" binding:"required"`

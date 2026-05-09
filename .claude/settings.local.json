@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "Bash(head -85 internal/service/alert_service.go)",
+      "Bash(tail -n +120 internal/service/alert_service.go)",
+      "Bash(go run *)"
+    ]
+  }
+}

@@ -107,7 +107,7 @@ func (s *AlertService) evaluateMonitorRuleWithRedis(ctx context.Context, rule *m
 					"pending_since": "",
 				}).Err()
 				_ = s.redis.Expire(ctx, key, 7*24*time.Hour).Err()
-				_ = s.ReceiveAlertmanager(ctx, AlertManagerPayload{
+				_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
 					Receiver:     "platform-monitor",
 					Status:       "firing",
 					GroupLabels:  map[string]string{"alertname": rule.Name},
@@ -138,7 +138,7 @@ func (s *AlertService) evaluateMonitorRuleWithRedis(ctx context.Context, rule *m
 				"active_firing": "1",
 				"pending_since": "",
 			}).Err()
-			_ = s.ReceiveAlertmanager(ctx, AlertManagerPayload{
+			_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
 				Receiver:     "platform-monitor",
 				Status:       "firing",
 				GroupLabels:  map[string]string{"alertname": rule.Name},
@@ -163,7 +163,7 @@ func (s *AlertService) evaluateMonitorRuleWithRedis(ctx context.Context, rule *m
 			"active_firing": "0",
 			"pending_since": "",
 		}).Err()
-		_ = s.ReceiveAlertmanager(ctx, AlertManagerPayload{
+		_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
 			Receiver:     "platform-monitor",
 			Status:       "resolved",
 			GroupLabels:  map[string]string{"alertname": rule.Name},

@@ -15,7 +15,7 @@ services:
       - "3306:3306"
     volumes:
       - /export/mysql_data:/var/lib/mysql
-      - ./configs/dump-permission_system-202604231146.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./configs/yunshu_full_20260507.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -45,6 +45,8 @@ services:
     restart: unless-stopped
     mem_limit: 128m
     cpus: 0.3
+    environment:
+      - TZ=Asia/Shanghai
     command:
       - redis-server
       - --requirepass
@@ -83,12 +85,13 @@ services:
     mem_limit: 384m
     cpus: 0.6
     ports:
-      - "8080:8080"      # 改为监听所有接口
-      - "127.0.0.1:18080:18080"    # gRPC 仍本地
+      - "8080:8080"
+      - "18080:18080" # gRPC：对外暴露（原 127.0.0.1 仅本机；去掉后局域网/公网可连，请配合防火墙与鉴权）
     environment:
       - GIN_MODE=release
       - APP_ENV=prod
-      - TZ=UTC
+      # 与宿主机/业务常用时区一致；勿用 UTC，否则 slog 等本地时间日志会差 8 小时
+      - TZ=Asia/Shanghai
       - MYSQL_HOST=yunshu-mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=root
@@ -117,6 +120,8 @@ services:
     restart: unless-stopped
     mem_limit: 64m
     cpus: 0.2
+    environment:
+      - TZ=Asia/Shanghai
     ports:
       - "80:80"
     depends_on:

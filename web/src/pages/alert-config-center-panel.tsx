@@ -1,23 +1,28 @@
 import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, InputNumber, Popconfirm, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, message } from "antd";
+import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, InputNumber, Popconfirm, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tree, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  createAlertPolicy,
-  deleteAlertPolicy,
   getAlertHistoryStats,
   listAlertChannels,
   listAlertEvents,
-  listAlertPolicies,
   sendAlertmanagerWebhook,
   type AlertEventItem,
-  type AlertPolicyItem,
-  updateAlertPolicy,
 } from "../services/alerts";
 import { stringifyPrettyJSON } from "../services/alert-mappers";
 import { useDictOptions } from "../hooks/use-dict-options";
 import { formatDateTime } from "../utils/format";
+import { getProjects } from "../services/projects";
+import {
+  createSubscriptionNode,
+  deleteSubscriptionNode,
+  getSubscriptionTree,
+  listReceiverGroups,
+  updateSubscriptionNode,
+  type AlertReceiverGroup,
+  type AlertSubscriptionNode,
+} from "../services/alert-subscriptions";
 
-export type AlertConfigTab = "policies" | "history";
+export type AlertConfigTab = "subscriptions" | "history";
 
 export type AlertConfigCenterPanelProps = {
   /** 当前子 Tab（策略 / 历史 / 模板） */
@@ -104,124 +109,42 @@ const webhookPayloadTemplates: Record<string, Record<string, unknown>> = {
   },
 };
 
-type PolicyTemplateKey = "prod_critical_all" | "prod_warning_wecom_email" | "prod_info_email";
-type MatcherPair = { key: string; value: string };
-const policyTemplates: Record<
-  PolicyTemplateKey,
-  {
-    name: string;
-    description: string;
-    enabled: boolean;
-    priority: number;
-    notify_resolved: boolean;
-    silence_seconds: number;
-    match_labels_json: string;
-    match_regex_json: string;
-    channelKeywords: string[];
-  }
-> = {
-  prod_critical_all: {
-    name: "prod-critical-all",
-    description: "生产 critical 告警发送到钉钉+企业微信+邮件",
-    enabled: true,
-    priority: 10,
-    notify_resolved: true,
-    silence_seconds: 60,
-    match_labels_json: JSON.stringify({ cluster: "prodK8s", severity: "critical" }, null, 2),
-    match_regex_json: JSON.stringify({}, null, 2),
-    channelKeywords: ["ding", "钉钉", "wecom", "企微", "企业微信", "email", "邮件", "mail"],
-  },
-  prod_warning_wecom_email: {
-    name: "prod-warning-wecom-email",
-    description: "生产 warning 告警发送到企业微信+邮件",
-    enabled: true,
-    priority: 20,
-    notify_resolved: true,
-    silence_seconds: 120,
-    match_labels_json: JSON.stringify({ cluster: "prodK8s", severity: "warning" }, null, 2),
-    match_regex_json: JSON.stringify({}, null, 2),
-    channelKeywords: ["wecom", "企微", "企业微信", "email", "邮件", "mail"],
-  },
-  prod_info_email: {
-    name: "prod-info-email",
-    description: "生产 info 告警仅发送邮件",
-    enabled: true,
-    priority: 30,
-    notify_resolved: true,
-    silence_seconds: 180,
-    match_labels_json: JSON.stringify({ cluster: "prodK8s", severity: "info" }, null, 2),
-    match_regex_json: JSON.stringify({}, null, 2),
-    channelKeywords: ["email", "邮件", "mail"],
-  },
-};
-
 function describeAlertEvent(row: AlertEventItem): string {
-  const reason = String(row.error_message || "").trim();
-  const channelText = String(row.channel_name || "").trim() || "未匹配通道";
-  const receiverText = row.receiver_list?.length ? row.receiver_list.join(", ") : "-";
-  const hasMatchedPolicy = !!row.matched_policy_name_list?.length;
+  const reason = String(row.errorMessage || "").trim();
+  const channelText = String(row.channelName || "").trim() || "未匹配通道";
+  const receiverText = row.receiverList?.length ? row.receiverList.join(", ") : "-";
+  const hasMatchedPolicy = !!row.matchedPolicyNameList?.length;
   if (row.success) {
     if (reason === "silence_suppressed") return "已命中平台静默，告警写入历史但未向通道发送。";
-    if (reason === "policy_suppressed") return "已命中策略静默窗口，本次不再重复外发。";
+    if (reason === "subscription_suppressed") return "已命中订阅静默窗口，本次不再重复外发。";
     if (reason === "dedup_suppressed") return "已命中指纹去重，本次告警被去重抑制。";
-    if (reason === "aggregate_suppressed") return "已命中 firing 聚合窗口，本次被汇总抑制。";
-    if (reason === "resolved_aggregate_suppressed") return "已命中恢复聚合窗口，本次恢复通知被汇总抑制。";
-    if (row.channel_name?.includes("静默抑制")) return "平台在分发前拦截了本次告警。";
-    if (!hasMatchedPolicy) {
-      return `未命中策略，按通道匹配直连发送；通道[${channelText}]，接收人[${receiverText}]。`;
-    }
+    if (reason === "group_wait_suppressed") return "已进入 group_wait 收集窗口，稍后会统一发送。";
+    if (reason === "group_interval_suppressed") return "组内发生新变化但仍处于 group_interval 窗口，本次暂不外发。";
+    if (reason === "repeat_suppressed") return "处于 repeat_interval 窗口，本次重复提醒被抑制。";
+    if (reason === "resolved_aggregate_suppressed") return "同一告警实例的重复恢复事件已抑制（恢复仅发送一次）。";
+    if (row.channelName?.includes("静默抑制")) return "平台在分发前拦截了本次告警。";
     return `通道[${channelText}] 已发送，接收人[${receiverText}]。`;
   }
   if (reason === "no_enabled_channels") return "当前没有启用的通知通道，因此仅记录历史。";
-  if (reason === "no_policy_matched") return "未命中任何告警策略，已按策略门禁拦截，不会发送到通道。";
+  if (reason === "no_policy_matched") return "未命中任何订阅节点，已按订阅树门禁拦截，不会发送到通道。";
   if (reason === "no_channel_matched") return "有通道存在，但本次告警未匹配到可发送通道。";
-  if (reason === "no_channel_matched_policy") return "命中了策略，但策略绑定的通道未命中或不可用。";
   if (reason) return `通道[${channelText}] 发送失败，接收人[${receiverText}]，原因：${reason}`;
   return "告警进入了平台链路，但未获取到更多说明。";
 }
 
 function summarizeAlertHint(row: AlertEventItem): string {
-  const reason = String(row.error_message || "").trim();
+  const reason = String(row.errorMessage || "").trim();
   if (!row.success) return "-";
   if (!reason) return "-";
   if (reason === "silence_suppressed") return "已命中平台静默，通知已拦截";
-  if (reason === "policy_suppressed") return "已命中策略静默窗口，本次未外发";
+  if (reason === "subscription_suppressed") return "已命中订阅静默窗口，本次未外发";
   if (reason === "dedup_suppressed") return "已触发去重策略，本次不再重复发送";
-  if (reason === "aggregate_suppressed") return "已命中 firing 聚合窗口";
-  if (reason === "resolved_aggregate_suppressed") return "已命中恢复聚合窗口";
+  if (reason === "group_wait_suppressed") return "group_wait 收集窗口";
+  if (reason === "group_interval_suppressed") return "group_interval 窗口";
+  if (reason === "repeat_suppressed") return "repeat_interval 窗口";
+  if (reason === "resolved_aggregate_suppressed") return "重复恢复事件已抑制（恢复仅发送一次）";
   if (/suppressed/i.test(reason)) return "已被系统策略抑制，本次未发送";
   return reason;
-}
-
-function parseMatcherJSONToPairs(raw?: string): MatcherPair[] {
-  const s = String(raw || "").trim();
-  if (!s) return [];
-  try {
-    const parsed = JSON.parse(s) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
-    return Object.entries(parsed)
-      .map(([key, value]) => ({ key: String(key || "").trim(), value: String(value ?? "").trim() }))
-      .filter((it) => it.key && it.value);
-  } catch {
-    return [];
-  }
-}
-
-function normalizeMatcherPairs(raw: unknown): MatcherPair[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((it) => {
-      const row = it as Partial<MatcherPair>;
-      return { key: String(row?.key || "").trim(), value: String(row?.value || "").trim() };
-    })
-    .filter((it) => it.key && it.value);
-}
-
-function matcherPairsToJSON(raw: unknown): string {
-  const pairs = normalizeMatcherPairs(raw);
-  const obj: Record<string, string> = {};
-  for (const it of pairs) obj[it.key] = it.value;
-  return stringifyPrettyJSON(obj, "{}");
 }
 
 export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, embedded, hideTabs }: AlertConfigCenterPanelProps) {
@@ -234,17 +157,19 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     today_created: number;
     cluster_values?: string[];
     monitor_pipeline_values?: string[];
+    datasource_filter_options?: Array<{ id: number; name: string }>;
   }>();
 
   const [channels, setChannels] = useState<Array<{ id: number; name: string }>>([]);
 
-  const [policyLoading, setPolicyLoading] = useState(false);
-  const [policyList, setPolicyList] = useState<AlertPolicyItem[]>([]);
-  const [policyEditorOpen, setPolicyEditorOpen] = useState(false);
-  const [policySubmitting, setPolicySubmitting] = useState(false);
-  const [currentPolicy, setCurrentPolicy] = useState<AlertPolicyItem | null>(null);
-  const [policyForm] = Form.useForm();
-  const [policyTemplate, setPolicyTemplate] = useState<PolicyTemplateKey>("prod_warning_wecom_email");
+  // subscriptions (新策略)
+  const [projects, setProjects] = useState<Array<{ id: number; name: string }>>([]);
+  const [subProjectID, setSubProjectID] = useState<number>(0);
+  const [subTree, setSubTree] = useState<AlertSubscriptionNode[]>([]);
+  const [subSelectedID, setSubSelectedID] = useState<number>(0);
+  const [subLoading, setSubLoading] = useState(false);
+  const [receiverGroups, setReceiverGroups] = useState<AlertReceiverGroup[]>([]);
+  const [subForm] = Form.useForm();
 
   const [eventsLoading, setEventsLoading] = useState(false);
   const [events, setEvents] = useState<AlertEventItem[]>([]);
@@ -254,7 +179,8 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
   const [eventKeyword, setEventKeyword] = useState("");
   const [eventAlertIP, setEventAlertIP] = useState("");
   const [eventStatus, setEventStatus] = useState("");
-  const [eventMonitorPipeline, setEventMonitorPipeline] = useState("");
+  /** 格式：`ds:<数据源ID>` 或 `mp:<monitor_pipeline slug>`（兼容历史 prometheus/platform） */
+  const [eventSourceFilter, setEventSourceFilter] = useState("");
   const [eventGroupKey, setEventGroupKey] = useState("");
   const eventsPageSizeRef = useRef(eventsPageSize);
   eventsPageSizeRef.current = eventsPageSize;
@@ -286,32 +212,48 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     },
     [promqlLabelKeyOptions],
   );
-  const policyTemplateOptions = useMemo(
-    () => [
-      { label: "prod-critical-all（钉钉+企微+邮件）", value: "prod_critical_all" },
-      { label: "prod-warning-wecom-email（企微+邮件）", value: "prod_warning_wecom_email" },
-      { label: "prod-info-email（仅邮件）", value: "prod_info_email" },
-    ],
-    [],
-  );
 
   const alertIPOptions = useMemo(() => {
     const fromPage = (events ?? [])
-      .map((it) => String(it.alert_ip || "").trim())
+      .map((it) => String(it.alertIP || "").trim())
       .filter(Boolean);
     const merged = Array.from(new Set([...fromPage])).sort((a, b) => a.localeCompare(b, "zh-CN"));
     return merged.map((v) => ({ label: v, value: v }));
   }, [events]);
 
-  const pipelineOptions = useMemo(() => {
+  const sourceFilterOptions = useMemo(() => {
+    const opts: { label: string; value: string }[] = [];
+    const seen = new Set<string>();
+    for (const row of stats?.datasource_filter_options ?? []) {
+      const id = Number(row?.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const name = String(row?.name ?? "").trim();
+      const value = `ds:${id}`;
+      if (seen.has(value)) continue;
+      seen.add(value);
+      opts.push({
+        label: name ? `${name}（数据源 #${id}）` : `数据源 #${id}`,
+        value,
+      });
+    }
+    const slugLabels: Record<string, string> = {
+      alertmanager: "Alertmanager（未绑定数据源）",
+      platform_monitor: "平台监控规则（无数据源记录）",
+      cloud_expiry: "云资源到期",
+      prometheus: "历史：Prometheus + Alertmanager",
+      platform: "历史：平台监控链路",
+    };
+    const slugFromPage = (events ?? []).map((it) => String(it.monitorPipeline ?? "").trim()).filter(Boolean);
     const fromStats = (stats?.monitor_pipeline_values ?? []).map((v) => String(v).trim()).filter(Boolean);
-    const fromPage = (events ?? []).map((it) => (it.monitor_pipeline || "").trim()).filter(Boolean);
-    const merged = Array.from(new Set([...fromStats, ...fromPage])).sort((a, b) => a.localeCompare(b, "zh-CN"));
-    return merged.map((v) => ({
-      label: v === "platform" ? `${v}（平台规则）` : v === "prometheus" ? `${v}（Prometheus+YAML）` : v,
-      value: v,
-    }));
-  }, [stats?.monitor_pipeline_values, events]);
+    for (const slug of Array.from(new Set([...fromStats, ...slugFromPage])).sort((a, b) => a.localeCompare(b, "zh-CN"))) {
+      if (!slug || slug.startsWith("ds:")) continue;
+      const value = `mp:${slug}`;
+      if (seen.has(value)) continue;
+      seen.add(value);
+      opts.push({ label: slugLabels[slug] ?? `来源：${slug}`, value });
+    }
+    return opts.sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
+  }, [stats?.datasource_filter_options, stats?.monitor_pipeline_values, events]);
   const webhookTemplateOptions = useMemo(
     () => [
       { label: "warning（prod）", value: "warning_prod" },
@@ -332,28 +274,209 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     setChannels((channelRes.list ?? []).map((c) => ({ id: c.id, name: c.name })));
   }
 
-  async function loadPolicies() {
-    setPolicyLoading(true);
-    try {
-      const res = await listAlertPolicies({ page: 1, page_size: 100 });
-      setPolicyList(res.list ?? []);
-    } finally {
-      setPolicyLoading(false);
+  async function loadProjects() {
+    const res = await getProjects({ page: 1, page_size: 200 });
+    const list = (res?.list ?? []) as Array<{ id: number; name: string }>;
+    const normalized = list.map((it) => ({ id: Number((it as any).id), name: String((it as any).name || "") })).filter((it) => it.id > 0);
+    setProjects(normalized);
+    if (!subProjectID && normalized.length) setSubProjectID(normalized[0].id);
+  }
+
+  /** 同名接收组只展示一条，保留 id 较大者（通常为最近迁移/创建），避免下拉重复 */
+  const receiverGroupOptions = useMemo(() => {
+    const byNameKey = new Map<string, { label: string; value: number }>();
+    for (const g of receiverGroups) {
+      const id = Number(g.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const label = String(g.name ?? "").trim() || `#${id}`;
+      const key = label.toLowerCase();
+      const prev = byNameKey.get(key);
+      if (!prev || id > prev.value) {
+        byNameKey.set(key, { label, value: id });
+      }
     }
+    return Array.from(byNameKey.values()).sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
+  }, [receiverGroups]);
+
+  const subscriptionSeverityOptions = useMemo(
+    () =>
+      ["critical", "warning", "info", "error", "none"].map((v) => ({
+        label: v,
+        value: v,
+      })),
+    [],
+  );
+
+  type SubscriptionAntTreeNode = { key: string; title: string; children?: SubscriptionAntTreeNode[] };
+
+  const subscriptionTreeData = useMemo(() => {
+    const toTree = (nodes: AlertSubscriptionNode[]): SubscriptionAntTreeNode[] =>
+      (nodes ?? []).map((n) => {
+        const ch = toTree(n.children ?? []);
+        const row: SubscriptionAntTreeNode = {
+          key: String(n.id),
+          title: `${n.name}${n.enabled ? "" : "（停用）"}`,
+        };
+        if (ch.length > 0) row.children = ch;
+        return row;
+      });
+    return toTree(subTree);
+  }, [subTree]);
+
+  const selectedSubscriptionNode = useMemo(() => {
+    const walk = (nodes: AlertSubscriptionNode[]): AlertSubscriptionNode | null => {
+      for (const n of nodes ?? []) {
+        if (n.id === subSelectedID) return n;
+        const hit = walk(n.children ?? []);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    return walk(subTree);
+  }, [subTree, subSelectedID]);
+
+  const loadSubscriptions = useCallback(async (overrideProjectId?: number) => {
+    const pid = overrideProjectId ?? subProjectID;
+    if (!pid) return;
+    setSubLoading(true);
+    try {
+      const [tree, groups] = await Promise.all([
+        getSubscriptionTree({ project_id: pid }),
+        listReceiverGroups({ project_id: pid, page: 1, page_size: 200 }),
+      ]);
+      setSubTree(tree ?? []);
+      setReceiverGroups(groups.list ?? groups.items ?? []);
+    } finally {
+      setSubLoading(false);
+    }
+  }, [subProjectID]);
+
+  async function onSelectSubscriptionNode(id: number) {
+    setSubSelectedID(id);
+    const node = (() => {
+      const walk = (nodes: AlertSubscriptionNode[]): AlertSubscriptionNode | null => {
+        for (const n of nodes ?? []) {
+          if (n.id === id) return n;
+          const hit = walk(n.children ?? []);
+          if (hit) return hit;
+        }
+        return null;
+      };
+      return walk(subTree);
+    })();
+    if (!node) return;
+    subForm.setFieldsValue({
+      id: node.id,
+      project_id: node.project_id,
+      parent_id: node.parent_id ?? null,
+      name: node.name,
+      code: node.code,
+      enabled: node.enabled,
+      continue: node.continue,
+      match_labels_json: node.match_labels_json ?? "{}",
+      match_regex_json: node.match_regex_json ?? "{}",
+      match_severity: node.match_severity
+        ? String(node.match_severity)
+            .split(/[,，;|]/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [],
+      receiver_group_ids: node.receiver_group_ids ?? [],
+      silence_seconds: node.silence_seconds ?? 0,
+      notify_resolved: node.notify_resolved,
+    });
+  }
+
+  async function createSubscription(parentID?: number | null) {
+    if (!subProjectID) return;
+    const payload: any = {
+      project_id: subProjectID,
+      parent_id: parentID ?? null,
+      name: "新节点",
+      code: "",
+      enabled: true,
+      continue: false,
+      match_labels_json: "{}",
+      match_regex_json: "{}",
+      match_severity: "",
+      receiver_group_ids_json: "[]",
+      silence_seconds: 0,
+      notify_resolved: true,
+    };
+    const created = await createSubscriptionNode(payload);
+    message.success("已创建");
+    await loadSubscriptions();
+    await onSelectSubscriptionNode(created.id);
+  }
+
+  async function saveSubscription() {
+    const v = await subForm.validateFields();
+    const id = Number(v.id || 0);
+    const payload: any = {
+      project_id: subProjectID,
+      parent_id: v.parent_id ?? null,
+      name: String(v.name || "").trim(),
+      code: String(v.code || "").trim(),
+      enabled: !!v.enabled,
+      continue: !!v.continue,
+      match_labels_json: String(v.match_labels_json || "{}"),
+      match_regex_json: String(v.match_regex_json || "{}"),
+      match_severity: Array.isArray(v.match_severity)
+        ? (v.match_severity as string[]).map((x) => String(x).trim()).filter(Boolean).join(",")
+        : String(v.match_severity || "")
+            .trim()
+            .split(/[,，;|]/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .join(","),
+      receiver_group_ids_json: JSON.stringify((v.receiver_group_ids ?? []).map((x: any) => Number(x)).filter((x: number) => x > 0)),
+      silence_seconds: Number(v.silence_seconds || 0),
+      notify_resolved: !!v.notify_resolved,
+    };
+    if (!id) {
+      const created = await createSubscriptionNode(payload);
+      message.success("已保存");
+      await loadSubscriptions();
+      await onSelectSubscriptionNode(created.id);
+      return;
+    }
+    await updateSubscriptionNode(id, payload);
+    message.success("已保存");
+    await loadSubscriptions();
+  }
+
+  async function removeSubscription() {
+    if (!subSelectedID) return;
+    await deleteSubscriptionNode(subSelectedID);
+    message.success("已删除");
+    setSubSelectedID(0);
+    subForm.resetFields();
+    await loadSubscriptions();
   }
 
   const loadEvents = useCallback(
     async (page: number, pageSize: number) => {
       setEventsLoading(true);
       try {
+        const src = String(eventSourceFilter || "").trim();
+        let datasourceId: number | undefined;
+        let monitorPipeline: string | undefined;
+        if (src.startsWith("ds:")) {
+          const id = Number(src.slice(3));
+          if (Number.isFinite(id) && id > 0) datasourceId = id;
+        } else if (src.startsWith("mp:")) {
+          const slug = src.slice(3).trim();
+          if (slug) monitorPipeline = slug;
+        }
         const res = await listAlertEvents({
           page,
           page_size: pageSize,
           keyword: eventKeyword.trim() || undefined,
-          alert_ip: eventAlertIP.trim() || undefined,
+          alertIP: eventAlertIP.trim() || undefined,
           status: eventStatus.trim() || undefined,
-          monitor_pipeline: eventMonitorPipeline.trim() || undefined,
-          group_key: eventGroupKey.trim() || undefined,
+          monitorPipeline,
+          datasourceId,
+          groupKey: eventGroupKey.trim() || undefined,
         });
         setEvents(res.list ?? []);
         setEventsTotal(res.total ?? 0);
@@ -363,115 +486,31 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
         setEventsLoading(false);
       }
     },
-    [eventKeyword, eventAlertIP, eventStatus, eventMonitorPipeline, eventGroupKey],
+    [eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey],
   );
 
   useEffect(() => {
     void loadBase();
-    void loadPolicies();
+    void loadProjects();
   }, []);
 
   useEffect(() => {
     if (tab !== "history") {
       return;
     }
-    const delay = eventKeyword || eventAlertIP || eventStatus || eventGroupKey ? 300 : 0;
+    const delay = eventKeyword || eventAlertIP || eventStatus || eventSourceFilter || eventGroupKey ? 300 : 0;
     const timer = window.setTimeout(() => {
       void loadEvents(1, eventsPageSizeRef.current);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [tab, eventKeyword, eventAlertIP, eventStatus, eventMonitorPipeline, eventGroupKey, loadEvents]);
+  }, [tab, eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey, loadEvents]);
 
-  function openCreatePolicy() {
-    setCurrentPolicy(null);
-    setPolicyTemplate("prod_warning_wecom_email");
-    policyForm.setFieldsValue({
-      name: "",
-      description: "",
-      enabled: true,
-      priority: 100,
-      notify_resolved: true,
-      silence_seconds: 0,
-      match_labels_json: "{}",
-      match_regex_json: "{}",
-      match_labels_pairs: [],
-      match_regex_pairs: [],
-      channels_json_array: [],
-    });
-    setPolicyEditorOpen(true);
-  }
-
-  function openEditPolicy(row: AlertPolicyItem) {
-    setCurrentPolicy(row);
-    setPolicyTemplate("prod_warning_wecom_email");
-    policyForm.setFieldsValue({
-      ...row,
-      channels_json_array: row.channel_ids ?? [],
-      match_labels_json: stringifyPrettyJSON(row.match_labels ?? {}, "{}"),
-      match_regex_json: stringifyPrettyJSON(row.match_regex ?? {}, "{}"),
-      match_labels_pairs: parseMatcherJSONToPairs(row.match_labels_json),
-      match_regex_pairs: parseMatcherJSONToPairs(row.match_regex_json),
-    });
-    setPolicyEditorOpen(true);
-  }
-
-  function applyPolicyTemplate(key: PolicyTemplateKey) {
-    const tpl = policyTemplates[key];
-    if (!tpl) return;
-    const selectedChannelIDs = channelOptions
-      .filter((opt) => {
-        const name = String(opt.label || "").toLowerCase();
-        return tpl.channelKeywords.some((kw) => name.includes(String(kw).toLowerCase()));
-      })
-      .map((opt) => Number(opt.value));
-    policyForm.setFieldsValue({
-      name: tpl.name,
-      description: tpl.description,
-      enabled: tpl.enabled,
-      priority: tpl.priority,
-      notify_resolved: tpl.notify_resolved,
-      silence_seconds: tpl.silence_seconds,
-      match_labels_json: tpl.match_labels_json,
-      match_regex_json: tpl.match_regex_json,
-      match_labels_pairs: parseMatcherJSONToPairs(tpl.match_labels_json),
-      match_regex_pairs: parseMatcherJSONToPairs(tpl.match_regex_json),
-      channels_json_array: selectedChannelIDs,
-    });
-    if (selectedChannelIDs.length > 0) {
-      message.success(`已套用策略模板，并匹配到 ${selectedChannelIDs.length} 个通道`);
+  useEffect(() => {
+    if (tab !== "subscriptions") {
       return;
     }
-    message.warning("已套用策略模板，但未自动匹配到通道，请手动选择通知通道");
-  }
-
-  async function submitPolicy() {
-    const v = await policyForm.validateFields();
-    setPolicySubmitting(true);
-    try {
-      const payload = {
-        name: String(v.name || "").trim(),
-        description: String(v.description || "").trim(),
-        enabled: !!v.enabled,
-        priority: Number(v.priority || 100),
-        notify_resolved: !!v.notify_resolved,
-        silence_seconds: Number(v.silence_seconds || 0),
-        match_labels_json: matcherPairsToJSON(v.match_labels_pairs),
-        match_regex_json: matcherPairsToJSON(v.match_regex_pairs),
-        channels_json: JSON.stringify(v.channels_json_array ?? []),
-      };
-      if (currentPolicy) {
-        await updateAlertPolicy(currentPolicy.id, payload);
-        message.success("策略已更新");
-      } else {
-        await createAlertPolicy(payload);
-        message.success("策略已创建");
-      }
-      setPolicyEditorOpen(false);
-      await loadPolicies();
-    } finally {
-      setPolicySubmitting(false);
-    }
-  }
+    void loadSubscriptions();
+  }, [tab, loadSubscriptions]);
 
   async function sendWebhookDemo() {
     let payloadObj: Record<string, unknown>;
@@ -494,40 +533,116 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
 
   const tabItems = [
     {
-      key: "policies",
-      label: "告警策略配置",
+      key: "subscriptions",
+      label: "订阅树（新策略）",
       children: (
         <>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-            <Space />
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreatePolicy}>新增策略</Button>
+          <Space style={{ width: "100%", marginBottom: 12 }} wrap>
+            <Select
+              style={{ width: 260 }}
+              placeholder="选择项目"
+              value={subProjectID || undefined}
+              options={projects.map((p) => ({ label: p.name, value: p.id }))}
+              onChange={(v) => setSubProjectID(Number(v) || 0)}
+              showSearch
+              filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+            />
+            <Button icon={<ReloadOutlined />} loading={subLoading} onClick={() => void loadSubscriptions()}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => void createSubscription(null)}>
+              新增根节点
+            </Button>
+            <Button disabled={!subSelectedID} icon={<PlusOutlined />} onClick={() => void createSubscription(subSelectedID)}>
+              新增子节点
+            </Button>
+            <Popconfirm title="确认删除节点？（有子节点会失败）" onConfirm={() => void removeSubscription()}>
+              <Button danger disabled={!subSelectedID} icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+            <Button type="primary" disabled={!subProjectID} onClick={() => void saveSubscription()}>
+              保存
+            </Button>
+          </Space>
+          <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 12, alignItems: "start" }}>
+            <Card size="small" title="订阅树" loading={subLoading} styles={{ body: { padding: 8 } }}>
+              <Tree
+                treeData={subscriptionTreeData}
+                selectedKeys={subSelectedID ? [String(subSelectedID)] : []}
+                onSelect={(keys) => {
+                  const id = Number(keys?.[0] ?? 0);
+                  if (id > 0) void onSelectSubscriptionNode(id);
+                }}
+                defaultExpandAll
+              />
+            </Card>
+            <Card size="small" title={selectedSubscriptionNode ? `编辑节点：${selectedSubscriptionNode.name}` : "选择节点进行编辑"}>
+              <Form form={subForm} layout="vertical">
+                <Form.Item name="id" hidden>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="parent_id" hidden>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="name" label="节点名称" rules={[{ required: true }]}>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="code" label="节点编码">
+                  <Input />
+                </Form.Item>
+                <Space wrap style={{ width: "100%" }}>
+                  <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item name="continue" label="继续匹配子节点" valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item name="notify_resolved" label="恢复通知" valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item name="silence_seconds" label="静默(s)" style={{ marginBottom: 0 }}>
+                    <InputNumber min={0} />
+                  </Form.Item>
+                </Space>
+                <Form.Item name="match_severity" label="匹配级别（可选，多选）" extra="告警 labels.severity 命中任一即通过；不选表示不按级别过滤。">
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="不选则不限级别"
+                    options={subscriptionSeverityOptions}
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="receiver_group_ids"
+                  label="接收组"
+                  dependencies={["parent_id"]}
+                  rules={[
+                    {
+                      validator: async (_, value) => {
+                        const pid = subForm.getFieldValue("parent_id");
+                        const isRoot = pid === null || pid === undefined || pid === "";
+                        if (isRoot) return;
+                        const ids = Array.isArray(value) ? value : [];
+                        if (ids.length === 0) {
+                          throw new Error("非根节点须至少选择一个接收组");
+                        }
+                      },
+                    },
+                  ]}
+                  extra="根节点可留空：仅作路由分流，通知由子节点上的接收组发出。"
+                >
+                  <Select mode="multiple" options={receiverGroupOptions} placeholder="选择接收组（先在接收组里配置通道）" allowClear />
+                </Form.Item>
+                <Form.Item name="match_labels_json" label="match_labels_json（精确匹配 JSON）">
+                  <Input.TextArea rows={4} />
+                </Form.Item>
+                <Form.Item name="match_regex_json" label="match_regex_json（正则匹配 JSON）">
+                  <Input.TextArea rows={4} />
+                </Form.Item>
+              </Form>
+            </Card>
           </div>
-          <Table
-            rowKey="id"
-            loading={policyLoading}
-            dataSource={policyList}
-            pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100], showQuickJumper: true }}
-            columns={[
-              { title: "策略名", dataIndex: "name", width: 180 },
-              { title: "优先级", dataIndex: "priority", width: 90 },
-              { title: "描述", dataIndex: "description", ellipsis: true },
-              { title: "恢复通知", dataIndex: "notify_resolved", width: 100, render: (v: boolean) => (v ? <Tag color="success">是</Tag> : <Tag>否</Tag>) },
-              { title: "静默(s)", dataIndex: "silence_seconds", width: 90 },
-              { title: "状态", dataIndex: "enabled", width: 90, render: (v: boolean) => (v ? <Tag color="success">启用</Tag> : <Tag>停用</Tag>) },
-              {
-                title: "操作",
-                width: 180,
-                render: (_: unknown, row: AlertPolicyItem) => (
-                  <Space>
-                    <Button type="link" icon={<EditOutlined />} onClick={() => openEditPolicy(row)}>编辑</Button>
-                    <Popconfirm title="确认删除策略？" onConfirm={() => void deleteAlertPolicy(row.id).then(() => { message.success("已删除"); void loadPolicies(); })}>
-                      <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
-                    </Popconfirm>
-                  </Space>
-                ),
-              },
-            ]}
-          />
         </>
       ),
     },
@@ -536,6 +651,31 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
       label: "历史告警记录",
       children: (
         <>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="历史告警与「当前活跃」说明"
+            description={
+              <>
+                <p style={{ marginBottom: 8 }}>
+                  本表为<strong>通知投递审计</strong>（每次向通道外发或抑制链路写入的记录），对应 WatchAlert
+                  文档中的<strong>历史告警 / 推送结果查询</strong>语义；可按 firing / resolved、监控链路、订阅命中等筛选。
+                </p>
+                <p style={{ marginBottom: 0 }}>
+                  <strong>Prometheus 当前仍在触发的活跃告警</strong>请在「告警监控平台 → PromQL」使用数据源联查（如「活跃告警」）或自建
+                  PromQL；平台内规则触发明细见「监控规则」与下方统计卡片。
+                </p>
+                <p style={{ marginTop: 8, marginBottom: 0 }}>
+                  设计参考：{" "}
+                  <Typography.Link href="https://cairry.github.io/docs/" target="_blank" rel="noreferrer">
+                    WatchAlert 功能介绍
+                  </Typography.Link>
+                  。
+                </p>
+              </>
+            }
+          />
           <Space style={{ width: "100%", marginBottom: 12 }} wrap>
             <Input
               style={{ width: 260 }}
@@ -556,13 +696,13 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
             />
             <Select
-              style={{ width: 240 }}
-              placeholder="监控链路（区分双来源）"
-              value={eventMonitorPipeline || undefined}
-              options={pipelineOptions}
+              style={{ width: 280 }}
+              placeholder="数据源 / 来源（WatchAlert 式）"
+              value={eventSourceFilter || undefined}
+              options={sourceFilterOptions}
               showSearch
               allowClear
-              onChange={(v) => setEventMonitorPipeline((v as string) || "")}
+              onChange={(v) => setEventSourceFilter((v as string) || "")}
               filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
             />
             <Select
@@ -578,7 +718,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
             />
             <Input
               style={{ width: 220 }}
-              placeholder="group_key"
+              placeholder="groupKey"
               value={eventGroupKey}
               onChange={(e) => setEventGroupKey(e.target.value)}
               allowClear
@@ -613,18 +753,35 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                   </Typography.Text>
                 ),
               },
-              { title: "告警IP", dataIndex: "alert_ip", width: 160, ellipsis: true, render: (v: string) => v || "-" },
+              { title: "告警IP", dataIndex: "alertIP", width: 160, ellipsis: true, render: (v: string) => v || "-" },
               {
-                title: "监控链路",
-                dataIndex: "monitor_pipeline",
-                width: 130,
-                render: (v: string) => {
-                  if (v === "platform") return <Tag color="purple">platform</Tag>;
-                  if (v === "prometheus") return <Tag color="blue">prometheus</Tag>;
-                  return v ? <Tag>{v}</Tag> : <span>-</span>;
+                title: "数据源 / 来源",
+                key: "datasourceDisplay",
+                width: 200,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const name = String(row.datasourceName ?? "").trim();
+                  const typ = String(row.datasourceType ?? "").trim();
+                  const slug = String(row.monitorPipeline ?? "").trim();
+                  if (name) {
+                    return (
+                      <Space align="start" size={4} wrap>
+                        <Typography.Text style={{ maxWidth: 160 }} ellipsis={{ tooltip: name }}>
+                          {name}
+                        </Typography.Text>
+                        {typ ? <Tag>{typ}</Tag> : null}
+                      </Space>
+                    );
+                  }
+                  if (slug === "alertmanager") return <Tag color="blue">Alertmanager</Tag>;
+                  if (slug === "cloud_expiry") return <Tag color="volcano">云到期</Tag>;
+                  if (slug === "platform_monitor") return <Tag color="purple">平台规则</Tag>;
+                  if (slug === "platform") return <Tag color="purple">platform（历史）</Tag>;
+                  if (slug === "prometheus") return <Tag color="blue">prometheus（历史）</Tag>;
+                  if (slug.startsWith("ds:")) return <Tag>{slug}</Tag>;
+                  return slug ? <Tag>{slug}</Tag> : <span>-</span>;
                 },
               },
-              { title: "GroupKey", dataIndex: "group_key", width: 140, ellipsis: true, render: (v: string) => v || "-" },
+              { title: "GroupKey", dataIndex: "groupKey", width: 140, ellipsis: true, render: (v: string) => v || "-" },
               {
                 title: "级别",
                 dataIndex: "severity",
@@ -636,22 +793,22 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               { title: "状态", dataIndex: "status", width: 90, render: (v: string) => <Tag>{v || "-"}</Tag> },
               {
                 title: "命中策略",
-                dataIndex: "matched_policy_names",
+                dataIndex: "matchedPolicyNames",
                 width: 200,
                 ellipsis: true,
-                render: (_: string, row: AlertEventItem) => (row.matched_policy_name_list?.length ? row.matched_policy_name_list.join(", ") : "-"),
+                render: (_: string, row: AlertEventItem) => (row.matchedPolicyNameList?.length ? row.matchedPolicyNameList.join(", ") : "-"),
               },
-              { title: "通道", dataIndex: "channel_name", width: 160, ellipsis: true },
+              { title: "通道", dataIndex: "channelName", width: 160, ellipsis: true },
               {
                 title: "接收人",
-                dataIndex: "receiver_list",
+                dataIndex: "receiverList",
                 width: 220,
                 ellipsis: true,
                 render: (_: unknown, row: AlertEventItem) => {
-                  if (!row.receiver_list?.length) return "-";
+                  if (!row.receiverList?.length) return "-";
                   return (
                     <Space size={[4, 4]} wrap>
-                      {row.receiver_list.map((one) => (
+                      {row.receiverList.map((one) => (
                         <Tag key={`${row.id}-${one}`}>{one}</Tag>
                       ))}
                     </Space>
@@ -664,10 +821,10 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                 width: 100,
                 render: (v: boolean) => (v ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>),
               },
-              { title: "HTTP", dataIndex: "http_status_code", width: 80 },
+              { title: "HTTP", dataIndex: "httpStatusCode", width: 80 },
               {
                 title: "告警产生时间",
-                dataIndex: "alert_started_at",
+                dataIndex: "alertStartedAt",
                 width: 170,
                 render: (v: string) => (v ? formatDateTime(v) : "-"),
               },
@@ -685,7 +842,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                   );
                 },
               },
-              { title: "发送/记录时间", dataIndex: "created_at", width: 170, render: (v: string) => formatDateTime(v) },
+              { title: "发送/记录时间", dataIndex: "createdAt", width: 170, render: (v: string) => formatDateTime(v) },
             ]}
           />
         </>
@@ -695,7 +852,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
 
   const activeContent = tabItems.find((item) => item.key === tab)?.children ?? null;
 
-  const showOverviewAndDebug = !(embedded && hideTabs && tab === "policies");
+  const showOverviewAndDebug = !(embedded && hideTabs && tab === "subscriptions");
 
   const body = (
     <>
@@ -782,118 +939,6 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
       ) : (
         <Tabs activeKey={tab} onChange={(k) => setTab(k as AlertConfigTab)} items={tabItems as never} />
       )}
-
-      <Drawer
-        title={currentPolicy ? "编辑告警策略" : "新增告警策略"}
-        placement="right"
-        width={860}
-        open={policyEditorOpen}
-        onClose={() => setPolicyEditorOpen(false)}
-        destroyOnClose
-        styles={{ body: { paddingBottom: 24 } }}
-        extra={
-          <Space>
-            <Button onClick={() => setPolicyEditorOpen(false)}>取消</Button>
-            <Button type="primary" loading={policySubmitting} onClick={() => void submitPolicy()}>
-              确定
-            </Button>
-          </Space>
-        }
-      >
-        <Form form={policyForm} layout="vertical">
-          <Card size="small" title="策略模板（可选）" style={{ marginBottom: 12 }}>
-            <Space wrap>
-              <Select
-                style={{ width: 280 }}
-                value={policyTemplate}
-                options={policyTemplateOptions}
-                onChange={(v) => setPolicyTemplate(v as PolicyTemplateKey)}
-              />
-              <Button onClick={() => applyPolicyTemplate(policyTemplate)}>套用模板</Button>
-            </Space>
-          </Card>
-          <Form.Item name="name" label="策略名称" rules={[{ required: true, message: "请输入策略名称" }]}><Input /></Form.Item>
-          <Form.Item name="description" label="描述"><Input /></Form.Item>
-          <Space style={{ width: "100%" }} size="large">
-            <Form.Item name="priority" label="优先级"><InputNumber min={1} max={9999} /></Form.Item>
-            <Form.Item name="silence_seconds" label="静默窗口(s)"><InputNumber min={0} max={86400} /></Form.Item>
-            <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
-            <Form.Item name="notify_resolved" label="恢复通知" valuePropName="checked"><Switch /></Form.Item>
-          </Space>
-          <Form.Item name="channels_json_array" label="通知通道">
-            <Select mode="multiple" allowClear options={channelOptions} placeholder="选择命中的通知通道" />
-          </Form.Item>
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="关于 monitor_pipeline（避免策略误匹配）"
-            description={
-              <span>
-                平台会把告警标记为 <Typography.Text code>monitor_pipeline</Typography.Text>：
-                <Typography.Text code>prometheus</Typography.Text> 表示来自 Alertmanager Webhook 入站，
-                <Typography.Text code>platform</Typography.Text> 表示来自平台监控规则评估。通常策略无需强制写该字段；
-                如果在 <Typography.Text code>match_labels_json</Typography.Text> 写了 <Typography.Text code>{`{\"monitor_pipeline\":\"platform\"}`}</Typography.Text>，
-                则只会命中平台规则告警，Webhook 入站告警会匹配不到。
-              </span>
-            }
-          />
-          <Card size="small" title="match labels（精确匹配）" style={{ marginBottom: 12 }}>
-            <Form.List name="match_labels_pairs">
-              {(fields, { add, remove }) => (
-                <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                  {fields.map((field) => (
-                    <Space key={field.key} align="start" wrap style={{ width: "100%" }}>
-                      <Form.Item name={[field.name, "key"]} style={{ minWidth: 240, marginBottom: 0 }}>
-                        <AutoComplete
-                          options={labelKeyAutoCompleteOptions}
-                          placeholder="标签键（可选可输）"
-                          filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
-                          allowClear
-                        />
-                      </Form.Item>
-                      <Form.Item name={[field.name, "value"]} style={{ minWidth: 260, marginBottom: 0 }}>
-                        <Input placeholder="值（精确匹配）" />
-                      </Form.Item>
-                      <Button icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} />
-                    </Space>
-                  ))}
-                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ key: "", value: "" })}>
-                    新增精确匹配项
-                  </Button>
-                </Space>
-              )}
-            </Form.List>
-          </Card>
-          <Card size="small" title="match regex（正则匹配）" style={{ marginBottom: 12 }}>
-            <Form.List name="match_regex_pairs">
-              {(fields, { add, remove }) => (
-                <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                  {fields.map((field) => (
-                    <Space key={field.key} align="start" wrap style={{ width: "100%" }}>
-                      <Form.Item name={[field.name, "key"]} style={{ minWidth: 240, marginBottom: 0 }}>
-                        <AutoComplete
-                          options={labelKeyAutoCompleteOptions}
-                          placeholder="标签键（可选可输）"
-                          filterOption={(input, option) => String(option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
-                          allowClear
-                        />
-                      </Form.Item>
-                      <Form.Item name={[field.name, "value"]} style={{ minWidth: 260, marginBottom: 0 }}>
-                        <Input placeholder='值（正则），例如 ^(prod|stg)-.*$' />
-                      </Form.Item>
-                      <Button icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} />
-                    </Space>
-                  ))}
-                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ key: "", value: "" })}>
-                    新增正则匹配项
-                  </Button>
-                </Space>
-              )}
-            </Form.List>
-          </Card>
-        </Form>
-      </Drawer>
 
     </>
   );

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -48,7 +48,7 @@ var wsUpgrader = websocket.Upgrader{
 func (h *PodHandler) ExecWS(c *gin.Context) {
 	clusterID64, err := strconv.ParseUint(c.Query("cluster_id"), 10, 64)
 	if err != nil || clusterID64 == 0 {
-		response.Error(c, apperror.BadRequest("集群 ID 不合法"))
+		response.Error(c, constants.ErrBadRequestWithMsg(constants.ErrMsgba2a155d1253))
 		return
 	}
 	namespace := c.Query("namespace")

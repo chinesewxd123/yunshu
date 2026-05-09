@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/repository"
 
@@ -19,7 +19,7 @@ const dictEntryValueMaxBytes = 16 << 20 // 16 MiB
 
 func validateDictEntryValueBytes(v string) error {
 	if len(v) > dictEntryValueMaxBytes {
-		return apperror.BadRequest(fmt.Sprintf("字典值过大（当前约 %d 字节，上限 %d 字节）", len(v), dictEntryValueMaxBytes))
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmtd1b9788a27bb, len(v), dictEntryValueMaxBytes))
 	}
 	return nil
 }
@@ -74,8 +74,8 @@ type DictEntryService struct {
 }
 
 const (
-	dictTypeAlertPromQLLabelKey      = "alert_promql_label_key"
-	dictTypeAlertSilenceMatcherName  = "alert_silence_matcher_name"
+	dictTypeAlertPromQLLabelKey     = "alert_promql_label_key"
+	dictTypeAlertSilenceMatcherName = "alert_silence_matcher_name"
 )
 
 func canonicalDictType(dictType string) string {
@@ -281,13 +281,13 @@ func (s *DictEntryService) Create(ctx context.Context, req DictEntryCreateReques
 		Remark:   strings.TrimSpace(req.Remark),
 	}
 	if item.DictType == "" || item.Label == "" || item.Value == "" {
-		return nil, apperror.BadRequest("字典类型、标签和值不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg0adab830348f)
 	}
 	if exists, err := s.repo.ExistsByTypeLabel(ctx, item.DictType, item.Label, 0); err == nil && exists {
-		return nil, apperror.BadRequest("同字典类型下该标签已存在，请勿重复创建")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg7e043b9a81af)
 	}
 	if exists, err := s.repo.ExistsByTypeValue(ctx, item.DictType, item.Value, 0); err == nil && exists {
-		return nil, apperror.BadRequest("同字典类型下该值已存在，请勿重复创建")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg9ea86777037d)
 	}
 	if err := s.repo.Create(ctx, &item); err != nil {
 		return nil, err
@@ -299,7 +299,7 @@ func (s *DictEntryService) Update(ctx context.Context, id uint, req DictEntryUpd
 	item, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("字典条目不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg094b285159a4)
 		}
 		return nil, err
 	}
@@ -315,13 +315,13 @@ func (s *DictEntryService) Update(ctx context.Context, id uint, req DictEntryUpd
 	item.Status = req.Status
 	item.Remark = strings.TrimSpace(req.Remark)
 	if item.DictType == "" || item.Label == "" || item.Value == "" {
-		return nil, apperror.BadRequest("字典类型、标签和值不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg0adab830348f)
 	}
 	if exists, err2 := s.repo.ExistsByTypeLabel(ctx, item.DictType, item.Label, item.ID); err2 == nil && exists {
-		return nil, apperror.BadRequest("同字典类型下该标签已存在，请勿重复保存")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg47f29b52ac8f)
 	}
 	if exists, err2 := s.repo.ExistsByTypeValue(ctx, item.DictType, item.Value, item.ID); err2 == nil && exists {
-		return nil, apperror.BadRequest("同字典类型下该值已存在，请勿重复保存")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg1ffcbfd43034)
 	}
 	if err = s.repo.Update(ctx, item); err != nil {
 		return nil, err
@@ -333,7 +333,7 @@ func (s *DictEntryService) Delete(ctx context.Context, id uint) error {
 	_, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return apperror.NotFound("字典条目不存在")
+			return constants.ErrNotFoundWithMsg(constants.ErrMsg094b285159a4)
 		}
 		return err
 	}

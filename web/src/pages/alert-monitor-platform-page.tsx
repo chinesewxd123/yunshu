@@ -1,4 +1,5 @@
 import {
+  ApiOutlined,
   DeleteOutlined,
   EditOutlined,
   CalendarOutlined,
@@ -64,6 +65,7 @@ import {
   listAlertSilences,
   listCloudExpiryRules,
   listDutyBlocks,
+  pingAlertDatasource,
   promActiveAlerts,
   promInstantQuery,
   promRangeQuery,
@@ -427,6 +429,7 @@ export function AlertMonitorPlatformPage() {
   const [dsCurrent, setDsCurrent] = useState<AlertDatasourceItem | null>(null);
   const [dsForm] = Form.useForm();
   const [dsSubmitting, setDsSubmitting] = useState(false);
+  const [dsPingId, setDsPingId] = useState<number | null>(null);
 
   const [silModalOpen, setSilModalOpen] = useState(false);
   const [silCurrent, setSilCurrent] = useState<AlertSilenceItem | null>(null);
@@ -921,6 +924,22 @@ export function AlertMonitorPlatformPage() {
     setPromStep("30s");
   }
 
+  async function runDsPing(id: number) {
+    setDsPingId(id);
+    try {
+      const res = await pingAlertDatasource(id);
+      if (res.ok) {
+        message.success(`连通正常，耗时 ${res.latency_ms} ms`);
+      } else {
+        message.error(res.message || "连通失败");
+      }
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDsPingId(null);
+    }
+  }
+
   const dsColumns = [
     { title: "ID", dataIndex: "id", width: 70 },
     { title: "项目", dataIndex: "project_name", width: 160, render: (v: string, r: AlertDatasourceItem) => v || String(r.project_id || "-") },
@@ -929,9 +948,18 @@ export function AlertMonitorPlatformPage() {
     { title: "启用", dataIndex: "enabled", width: 80, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
     {
       title: "操作",
-      width: 160,
+      width: 240,
       render: (_: unknown, r: AlertDatasourceItem) => (
-        <Space>
+        <Space wrap>
+          <Button
+            type="link"
+            size="small"
+            icon={<ApiOutlined />}
+            loading={dsPingId === r.id}
+            onClick={() => void runDsPing(r.id)}
+          >
+            连通检测
+          </Button>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openDsEdit(r)}>
             编辑
           </Button>
@@ -1316,6 +1344,7 @@ export function AlertMonitorPlatformPage() {
       eval_interval_seconds: 30,
       severity: "warning",
       threshold_unit: "percent",
+      labels_json: "{}",
       summary_template: "{{$labels.instance}}: {{.RuleName}} 告警触发，当前值 {{$value}}",
       description_template: "规则 {{.RuleName}} 触发，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
       rule_template_preset: "generic",
@@ -1490,6 +1519,7 @@ export function AlertMonitorPlatformPage() {
       eval_interval_seconds: r.eval_interval_seconds,
       severity: r.severity,
       threshold_unit: r.threshold_unit || "raw",
+      labels_json: stringifyPrettyJSON(r.labels ?? {}, "{}"),
       summary_template: summaryTemplate || "{{$labels.instance}}: {{.RuleName}} 告警触发，当前值 {{$value}}",
       description_template: descriptionTemplate || "规则 {{.RuleName}} 触发，PromQL={{.Expr}}，实例={{$labels.instance}}，当前值={{$value}}",
       rule_template_preset: presetKey,
@@ -1648,10 +1678,15 @@ export function AlertMonitorPlatformPage() {
     try {
       const v = await ruleForm.validateFields();
       const normalizedUnit = String(v.threshold_unit || "raw").trim().toLowerCase() === "precent" ? "percent" : v.threshold_unit;
+      const labelsNorm = normalizeCloudExpiryLabelsJSON(String(v.labels_json ?? "{}"));
+      if (labelsNorm === null) {
+        message.error("附加 Labels 须为合法 JSON 对象");
+        return;
+      }
       const payload = {
         ...v,
         threshold_unit: normalizedUnit,
-        labels_json: stringifyPrettyJSON(ruleCurrent?.labels ?? {}, "{}"),
+        labels_json: labelsNorm,
         annotations_json: JSON.stringify({
           summary: String(v.summary_template || "").trim(),
           description: String(v.description_template || "").trim(),
@@ -2105,16 +2140,16 @@ export function AlertMonitorPlatformPage() {
           },
           {
             key: "policies",
-            label: "告警策略",
+            label: "订阅树路由",
             children: (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
                 <Alert
                   type="info"
                   showIcon
-                  message="告警策略只处理 Webhook 入站告警"
+                  message="订阅树统一处理 Webhook 入站告警与平台规则告警"
                   description={
                     <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                      <span>策略负责按 labels / regex 命中通道、静默窗口与恢复通知；它不等于 Prometheus 规则，也不直接改 Alertmanager 的静默状态。</span>
+                      <span>订阅节点按 labels / regex 命中接收组与通道，并执行节点静默窗口与恢复通知；它不等于 Prometheus 规则，也不直接改 Alertmanager 的静默状态。</span>
                       <Space wrap>
                         <Button size="small" onClick={openHistoryTab}>查看历史记录</Button>
                       </Space>
@@ -2131,7 +2166,7 @@ export function AlertMonitorPlatformPage() {
                         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                           <ul style={{ margin: 0, paddingLeft: 18 }}>
                             <li>
-                              <strong>告警策略</strong>：只对 Alertmanager Webhook 入站告警生效，决定命中哪些通道以及是否进入策略静默窗口。
+                              <strong>订阅树</strong>：对 Alertmanager Webhook 入站告警和平台规则告警统一生效，决定命中节点、接收组与通道，并执行订阅静默窗口。
                             </li>
                             <li>
                               <strong>监控规则与值班</strong>：平台定时向已登记数据源执行 PromQL，命中后走同一套通知链路。
@@ -2145,7 +2180,7 @@ export function AlertMonitorPlatformPage() {
                     },
                   ]}
                 />
-                <AlertConfigCenterPanel embedded hideTabs activeTab="policies" onTabChange={() => undefined} />
+                <AlertConfigCenterPanel embedded hideTabs activeTab="subscriptions" onTabChange={() => undefined} />
               </Space>
             ),
           },
@@ -2953,6 +2988,43 @@ export function AlertMonitorPlatformPage() {
           </Form.Item>
           <Form.Item name="severity" label="级别" rules={[{ required: true, message: "请选择级别" }]}>
             <Select placeholder="选择级别" options={ruleSeverityOptions} />
+          </Form.Item>
+          <Form.Item
+            name="labels_json"
+            label="附加 Labels（JSON）"
+            rules={[
+              {
+                validator: async (_, value) => {
+                  const normalized = normalizeCloudExpiryLabelsJSON(String(value ?? ""));
+                  if (normalized === null) {
+                    throw new Error("须为合法 JSON 对象，例如 {\"route\":\"prod-warning-email\",\"biz\":\"core\"}");
+                  }
+                },
+              },
+            ]}
+            extra={
+              "写入后会与 PromQL 样本标签等合并到告警 labels；订阅树节点可按 match_labels_json 分流。可与数据源侧 Prometheus 规则告警共用同一套标签维度（如 severity、cluster、route）。勿在此处填写 alertname / datasource_id，规则会自动填充。"
+            }
+          >
+            <Input.TextArea rows={4} placeholder='{"route":"prod-critical-all"}' />
+          </Form.Item>
+          <Form.Item>
+            <Button
+              type="link"
+              style={{ paddingLeft: 0 }}
+              onClick={() => {
+                const raw = String(ruleForm.getFieldValue("labels_json") || "");
+                const normalized = normalizeCloudExpiryLabelsJSON(raw);
+                if (normalized === null) {
+                  message.error("JSON 格式错误，无法格式化");
+                  return;
+                }
+                ruleForm.setFieldValue("labels_json", normalized);
+                message.success("已格式化 JSON");
+              }}
+            >
+              格式化 labels JSON
+            </Button>
           </Form.Item>
           <Form.Item
             label="告警文案预设（新手推荐）"

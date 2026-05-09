@@ -20,7 +20,9 @@ erDiagram
   alert_monitor_rules }o--|| projects : derived
   alert_monitor_rules ||--o{ alert_rule_assignees : notify
   alert_monitor_rules ||--o{ alert_duty_blocks : duty
-  alert_policies ||--o{ alert_events : matches
+  alert_subscription_nodes ||--o{ alert_subscription_matches : matches
+  alert_receiver_groups ||--o{ alert_subscription_nodes : routed_by
+  alert_subscription_nodes ||--o{ alert_events : dispatches
 ```
 
 ## 2. 核心表分组
@@ -55,7 +57,9 @@ erDiagram
 | 表 | 说明 |
 |----|------|
 | `alert_channels` | 通知通道 |
-| `alert_policies` | 路由策略 |
+| `alert_subscription_nodes` | 订阅树节点（匹配与路由） |
+| `alert_receiver_groups` | 接收组（绑定通道与接收人） |
+| `alert_subscription_matches` | 订阅命中审计记录 |
 | `alert_datasources` | Prometheus 等（绑定 `project_id`） |
 | `alert_silences` | 静默规则 |
 | `alert_monitor_rules` | 监控规则（`project_id` 从数据源推导） |

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
@@ -93,7 +93,7 @@ func (s *K8sIngressService) List(ctx context.Context, q IngressListQuery) ([]Ing
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, ingressGVK, q.Namespace)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Ingress 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt7f0818fd6f52, err))
 	}
 	list := make([]networkingv1.Ingress, 0, len(listU))
 	for _, item := range listU {
@@ -124,9 +124,9 @@ func (s *K8sIngressService) Detail(ctx context.Context, q IngressDetailQuery) (*
 	u, err := s.dyn.GetByGVK(ctx, k, ingressGVK, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Ingress 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg82a55c47e927)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 Ingress 详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd0e7b9970841, err))
 	}
 	var obj networkingv1.Ingress
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -145,7 +145,7 @@ func (s *K8sIngressService) Apply(ctx context.Context, req IngressApplyRequest) 
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	refs := extractIngressRefs(req.Manifest)
 	err = s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -167,7 +167,7 @@ func (s *K8sIngressService) Apply(ctx context.Context, req IngressApplyRequest) 
 		return true
 	})
 	if err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }
@@ -182,7 +182,7 @@ func (s *K8sIngressService) Delete(ctx context.Context, req IngressDeleteRequest
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除 Ingress 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt0f7a7a13ca99, err))
 	}
 	return nil
 }
@@ -195,11 +195,11 @@ func (s *K8sIngressService) ListClasses(ctx context.Context, q IngressClassListQ
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, ingressClassGVK, "")
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 IngressClass 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6c250f47f18b, err))
 	}
 	ingsU, err := s.dyn.ListByGVK(ctx, k, ingressGVK, "")
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Ingress 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt7f0818fd6f52, err))
 	}
 	classCounter := map[string]int{}
 	for _, item := range ingsU {
@@ -241,9 +241,9 @@ func (s *K8sIngressService) DetailClass(ctx context.Context, q IngressClassDetai
 	u, err := s.dyn.GetByGVK(ctx, k, ingressClassGVK, "", q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("IngressClass 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgeb6e8490034b)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 IngressClass 详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt829d798aa9fb, err))
 	}
 	var obj networkingv1.IngressClass
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -262,7 +262,7 @@ func (s *K8sIngressService) ApplyClass(ctx context.Context, req IngressClassAppl
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	refs := extractIngressClassRefs(req.Manifest)
 	err = s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -280,7 +280,7 @@ func (s *K8sIngressService) ApplyClass(ctx context.Context, req IngressClassAppl
 		return true
 	})
 	if err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }
@@ -295,7 +295,7 @@ func (s *K8sIngressService) DeleteClass(ctx context.Context, req IngressClassDel
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除 IngressClass 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt94bd2693979f, err))
 	}
 	return nil
 }
@@ -320,7 +320,7 @@ func (s *K8sIngressService) RestartIngressNginxPods(ctx context.Context, req Ing
 	var pods []corev1.Pod
 	q := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(ns).WithLabelSelector(selector)
 	if err := q.List(&pods).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 ingress-nginx Pods 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt0cbe9766f7af, err))
 	}
 	// 兜底：如果 selector 太严格导致空，再尝试兼容历史 label
 	if len(pods) == 0 && strings.TrimSpace(req.Selector) == "" {

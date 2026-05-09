@@ -1,9 +1,10 @@
 import { ExclamationCircleOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Drawer, Progress, Select, Space, Table, Tag, message } from "antd";
+import { Button, Card, Drawer, Popconfirm, Progress, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useDictOptions } from "../hooks/use-dict-options";
 import { useEffect, useMemo, useState } from "react";
 import {
   batchRefreshProjectAgentHeartbeat,
+  deleteProjectAgent,
   getProjects,
   listProjectAgents,
   type ProjectAgentListItem,
@@ -22,6 +23,7 @@ export function AgentListPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<Array<string | number>>([]);
   const [errorDrawerOpen, setErrorDrawerOpen] = useState(false);
   const [errorDetailRow, setErrorDetailRow] = useState<ProjectAgentListItem | null>(null);
+  const [deletingAgentId, setDeletingAgentId] = useState<number | undefined>(undefined);
 
   const projectOptions = useMemo(() => projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` })), [projects]);
   const healthDictOptions = useDictOptions("log_agent_health_status");
@@ -62,6 +64,18 @@ export function AgentListPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, onlineFilter, healthStatusFilter]);
 
+  async function handleDeleteAgent(agentId: number) {
+    if (!projectId) return;
+    setDeletingAgentId(agentId);
+    try {
+      await deleteProjectAgent(projectId, agentId);
+      message.success("已删除 Agent 登记");
+      await load();
+    } finally {
+      setDeletingAgentId(undefined);
+    }
+  }
+
   async function batchRefreshHeartbeat() {
     if (!projectId) return;
     setBatchRefreshing(true);
@@ -92,7 +106,11 @@ export function AgentListPage() {
               { label: "离线", value: "offline" },
             ]}
           />
-          <Select style={{ width: 170 }} value={healthStatusFilter} onChange={setHealthStatusFilter} options={healthFilterOptions} />
+          <Tooltip title="筛选的是列表「运行状态」（已与在线联动）。可选数据字典 log_agent_health_status；含「离线」。">
+            <span>
+              <Select style={{ width: 190 }} value={healthStatusFilter} onChange={setHealthStatusFilter} options={healthFilterOptions} />
+            </span>
+          </Tooltip>
           <Button onClick={() => void batchRefreshHeartbeat()} loading={batchRefreshing} disabled={!projectId}>
             批量刷新心跳
           </Button>
@@ -102,9 +120,16 @@ export function AgentListPage() {
         </Space>
       }
     >
-      <Table
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16, fontSize: 13 }}>
+        本页按<strong>项目内服务器</strong>逐行展示（并非「仅有 Agent 的机器」）。删除 Agent 仅移除平台上的<strong>登记与令牌</strong>，不会删除服务器资产，因此该行仍会保留，Agent 相关列变为「—」；
+        从未完成注册的行本就没有「删除」。若需整行从项目中消失，请到<strong>服务器管理</strong>删除该服务器。
+      </Typography.Paragraph>
+      <div style={{ width: "100%", overflowX: "auto", overflowY: "hidden", paddingBottom: 8 }}>
+        <Table
         rowKey="server_id"
         loading={loading}
+        scroll={{ x: 2920 }}
+        tableLayout="fixed"
         dataSource={list}
         rowSelection={{
           selectedRowKeys,
@@ -123,21 +148,71 @@ export function AgentListPage() {
           { title: "Agent", dataIndex: "name", width: 170, render: (v: string) => v || "-" },
           { title: "版本", dataIndex: "version", width: 120, render: (v: string) => v || "-" },
           {
-            title: "健康状态",
+            title: (
+              <Tooltip title="与「在线」一致：进程上报 running 且心跳在窗口内才显示运行中；超时未上报则显示离线（不再沿用库裏陈旧的 running）。">
+                <span>运行状态</span>
+              </Tooltip>
+            ),
             dataIndex: "health_status",
             width: 130,
-            render: (v: string) => {
-              if (v === "running") return <Tag color="success">running</Tag>;
-              if (v === "starting") return <Tag color="processing">starting</Tag>;
-              if (v === "stopped" || v === "error") return <Tag color="error">{v || "error"}</Tag>;
-              return <Tag>{v || "unknown"}</Tag>;
+            render: (v: string, row: ProjectAgentListItem) => {
+              const label =
+                healthDictOptions.find((o) => String(o.value) === String(v || "").trim())?.label ||
+                (v === "offline" ? "离线" : v || "unknown");
+              if (v === "running") return <Tag color="success">{label}</Tag>;
+              if (v === "starting") return <Tag color="processing">{label}</Tag>;
+              if (v === "offline") return <Tag color="default">{label}</Tag>;
+              if (v === "stopped" || v === "error") return <Tag color="error">{label}</Tag>;
+              return <Tag>{label}</Tag>;
             },
           },
           {
-            title: "在线",
+            title: (
+              <Tooltip title={`最近心跳在 ${90}s 内视为在线（与运行状态联动）。`}>
+                <span>在线</span>
+              </Tooltip>
+            ),
             dataIndex: "online",
             width: 90,
             render: (v: boolean) => (v ? <Tag color="success">在线</Tag> : <Tag color="error">离线</Tag>),
+          },
+          {
+            title: (
+              <Tooltip title="最近一次从「离线判定」恢复为在线的时刻（心跳或健康上报触发）。">
+                <span>最新上线时间</span>
+              </Tooltip>
+            ),
+            dataIndex: "last_online_at",
+            width: 170,
+            render: (v: string) => (v ? formatDateTime(v) : "-"),
+          },
+          {
+            title: (
+              <Tooltip title="最近一次被平台判定为离线的时间（定时扫描根据心跳超时写入）。">
+                <span>最新离线时间</span>
+              </Tooltip>
+            ),
+            dataIndex: "last_offline_at",
+            width: 170,
+            render: (v: string) => (v ? formatDateTime(v) : "-"),
+          },
+          {
+            title: (
+              <Tooltip title="与离线归因一致：如 Agent 已停止、心跳超时（失联或进程僵死）、从未连接成功等。">
+                <span>最近离线原因</span>
+              </Tooltip>
+            ),
+            dataIndex: "last_offline_reason",
+            width: 260,
+            ellipsis: { showTitle: false },
+            render: (v: string) =>
+              v ? (
+                <Tooltip title={v}>
+                  <span style={{ cursor: "help" }}>{v}</span>
+                </Tooltip>
+              ) : (
+                "-"
+              ),
           },
           {
             title: "上报",
@@ -146,45 +221,85 @@ export function AgentListPage() {
             render: (v?: boolean) => (v ? <Tag color="success">最近有</Tag> : <Tag>无</Tag>),
           },
           {
-            title: "安装进度",
+            title: (
+              <Tooltip title="Agent 通过 HTTP 健康上报的 0～100 就绪度：启动阶段约 60，进入采集主循环后为 100。非安装步骤百分比；离线时不更新。">
+                <span>就绪进度</span>
+              </Tooltip>
+            ),
             dataIndex: "install_progress",
-            width: 180,
-            render: (v: number) => <Progress percent={Math.max(0, Math.min(100, Number(v || 0)))} size="small" />,
+            width: 160,
+            render: (v: number, row: ProjectAgentListItem) =>
+              row.online ? (
+                <Progress percent={Math.max(0, Math.min(100, Number(v || 0)))} size="small" />
+              ) : (
+                <Typography.Text type="secondary">—</Typography.Text>
+              ),
           },
           {
-            title: "本机端口",
+            title: (
+              <Tooltip title="Agent 是否在本地监听 TCP 端口。为 0 时表示不向本机对外监听，仅以客户端身份连接平台 gRPC（出站），属正常部署方式。">
+                <span>本机监听</span>
+              </Tooltip>
+            ),
             dataIndex: "listen_port",
             width: 120,
             render: (v: number) =>
               v > 0 ? (
                 v
               ) : (
-                <span title="当前 Agent 不监听本地端口，仅主动连接平台 gRPC（出站）">无（仅出站）</span>
+                <Tooltip title="未监听本地端口，仅主动连接平台（出站 gRPC）">
+                  <span style={{ cursor: "help" }}>出站模式</span>
+                </Tooltip>
               ),
           },
           { title: "最近心跳", dataIndex: "last_seen_at", width: 170, render: (v: string) => (v ? formatDateTime(v) : "-") },
           {
-            title: "最近错误",
-            dataIndex: "last_error",
-            ellipsis: true,
-            render: (v: string, row: ProjectAgentListItem) =>
-              v ? (
-                <Button
-                  type="link"
-                  icon={<ExclamationCircleOutlined />}
-                  onClick={() => {
-                    setErrorDetailRow(row);
-                    setErrorDrawerOpen(true);
-                  }}
-                >
-                  查看错误
-                </Button>
-              ) : (
-                "-"
-              ),
+            title: "操作",
+            key: "actions",
+            width: 200,
+            fixed: "right",
+            render: (_: unknown, row: ProjectAgentListItem) => {
+              const aid = row.agent_id;
+              return (
+                <Space size={4} wrap>
+                  {row.last_error ? (
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<ExclamationCircleOutlined />}
+                      onClick={() => {
+                        setErrorDetailRow(row);
+                        setErrorDrawerOpen(true);
+                      }}
+                    >
+                      错误详情
+                    </Button>
+                  ) : null}
+                  {aid != null && aid > 0 ? (
+                    <Popconfirm
+                      title="确定删除该 Agent？"
+                      description="将移除平台上的登记与令牌；侧端进程需重新引导安装后才能再次接入。"
+                      okText="删除"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true, loading: deletingAgentId === aid }}
+                      onConfirm={() => void handleDeleteAgent(aid)}
+                    >
+                      <Button type="link" danger size="small" loading={deletingAgentId === aid}>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  ) : (
+                    <Tooltip title="该服务器尚未完成 Agent 注册，无可删除记录">
+                      <Typography.Text type="secondary">—</Typography.Text>
+                    </Tooltip>
+                  )}
+                </Space>
+              );
+            },
           },
         ]}
       />
+      </div>
       <Drawer
         title={`错误详情 - ${errorDetailRow?.server_name || "-"}`}
         open={errorDrawerOpen}
@@ -193,7 +308,10 @@ export function AgentListPage() {
       >
         <p><strong>服务器:</strong> {errorDetailRow?.server_name || "-"} ({errorDetailRow?.server_host || "-"})</p>
         <p><strong>Agent:</strong> {errorDetailRow?.name || "-"} / {errorDetailRow?.version || "-"}</p>
-        <p><strong>健康状态:</strong> {errorDetailRow?.health_status || "-"}</p>
+        <p><strong>运行状态:</strong> {errorDetailRow?.health_status || "-"}</p>
+        <p><strong>最新上线时间:</strong> {errorDetailRow?.last_online_at ? formatDateTime(errorDetailRow.last_online_at) : "-"}</p>
+        <p><strong>最新离线时间:</strong> {errorDetailRow?.last_offline_at ? formatDateTime(errorDetailRow.last_offline_at) : "-"}</p>
+        <p><strong>最近离线原因:</strong> {errorDetailRow?.last_offline_reason || "-"}</p>
         <p><strong>最近心跳:</strong> {errorDetailRow?.last_seen_at ? formatDateTime(errorDetailRow.last_seen_at) : "-"}</p>
         <p><strong>错误内容:</strong></p>
         <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", background: "#fafafa", padding: 12, borderRadius: 8 }}>

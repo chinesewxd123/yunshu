@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/repository"
 
@@ -65,12 +65,12 @@ func (s *AlertDutyService) ListBlocks(ctx context.Context, q AlertDutyBlockListQ
 
 func (s *AlertDutyService) CreateBlock(ctx context.Context, req AlertDutyBlockUpsertRequest) (*model.AlertDutyBlock, error) {
 	if !req.EndsAt.After(req.StartsAt) {
-		return nil, apperror.BadRequest("ends_at 必须晚于 starts_at")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc1f741f96c03)
 	}
 	var rule model.AlertMonitorRule
 	if err := s.db.WithContext(ctx).First(&rule, req.MonitorRuleID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.BadRequest("监控规则不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgdfcd891c9a94)
 		}
 		return nil, err
 	}
@@ -94,14 +94,14 @@ func (s *AlertDutyService) UpdateBlock(ctx context.Context, id uint, req AlertDu
 	var row model.AlertDutyBlock
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("班次块不存在")
+			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgde63e900b907)
 		}
 		return nil, err
 	}
 	if req.MonitorRuleID > 0 && req.MonitorRuleID != row.MonitorRuleID {
 		var rule model.AlertMonitorRule
 		if err := s.db.WithContext(ctx).First(&rule, req.MonitorRuleID).Error; err != nil {
-			return nil, apperror.BadRequest("监控规则不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgdfcd891c9a94)
 		}
 		row.MonitorRuleID = req.MonitorRuleID
 	}
@@ -112,7 +112,7 @@ func (s *AlertDutyService) UpdateBlock(ctx context.Context, id uint, req AlertDu
 		row.EndsAt = req.EndsAt
 	}
 	if !row.EndsAt.After(row.StartsAt) {
-		return nil, apperror.BadRequest("ends_at 必须晚于 starts_at")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc1f741f96c03)
 	}
 	row.Title = strings.TrimSpace(req.Title)
 	row.UserIDsJSON = strings.TrimSpace(req.UserIDsJSON)
@@ -131,7 +131,7 @@ func (s *AlertDutyService) DeleteBlock(ctx context.Context, id uint) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return apperror.NotFound("班次块不存在")
+		return constants.ErrNotFoundWithMsg(constants.ErrMsgde63e900b907)
 	}
 	return nil
 }

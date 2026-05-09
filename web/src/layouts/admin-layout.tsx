@@ -11,6 +11,7 @@ import {
   FullscreenOutlined,
   KubernetesOutlined,
   DatabaseOutlined,
+  PieChartOutlined,
   HistoryOutlined,
   LoginOutlined,
   MenuOutlined,
@@ -64,7 +65,7 @@ function loadUIPreferences(): UIPreferences {
 }
 
 const FALLBACK_MENU_ITEMS: MenuProps["items"] = [
-  { key: "/", icon: <DatabaseOutlined />, label: <Link to="/">资产总览</Link> },
+  { key: "/", icon: <PieChartOutlined />, label: <Link to="/">总览页面</Link> },
   { key: "/clusters", icon: <KubernetesOutlined />, label: <Link to="/clusters">集群管理</Link> },
   { key: "/pods", icon: <KubernetesOutlined />, label: <Link to="/pods">Pod 管理</Link> },
   { key: "/users", icon: <TeamOutlined />, label: <Link to="/users">账号管理</Link> },
@@ -160,7 +161,7 @@ export function AdminLayout() {
 
   const pageTitle = useMemo(() => {
     const titleMap: Record<string, string> = {
-      "/": "分析页",
+      "/": "总览页面",
       "/users": "租户列表",
       "/departments": "组织架构",
       "/dict-entries": "数据字典",

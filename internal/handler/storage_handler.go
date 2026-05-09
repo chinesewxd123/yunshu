@@ -17,30 +17,30 @@ func NewStorageHandler(svc *service.K8sStorageService) *StorageHandler {
 
 // ListPVs 查询列表对应的 HTTP 接口处理逻辑。
 func (h *StorageHandler) ListPVs(c *gin.Context) {
-	handleQuery(c, h.svc.ListPVs)
+	ServeQuery(c, h.svc.ListPVs)
 }
 
 // ListPVCs 查询列表对应的 HTTP 接口处理逻辑。
 func (h *StorageHandler) ListPVCs(c *gin.Context) {
-	handleQuery(c, h.svc.ListPVCs)
+	ServeQuery(c, h.svc.ListPVCs)
 }
 
 // ListStorageClasses 查询列表对应的 HTTP 接口处理逻辑。
 func (h *StorageHandler) ListStorageClasses(c *gin.Context) {
-	handleQuery(c, h.svc.ListStorageClasses)
+	ServeQuery(c, h.svc.ListStorageClasses)
 }
 
 // Detail 查询详情对应的 HTTP 接口处理逻辑。
 func (h *StorageHandler) Detail(c *gin.Context) {
-	handleQueryWithKind(c, h.svc.Detail)
+	ServeQueryWithKind(c, h.svc.Detail)
 }
 
 // Apply 提交申请对应的 HTTP 接口处理逻辑。
 func (h *StorageHandler) Apply(c *gin.Context) {
-	handleJSONOK(c, true, h.svc.Apply)
+	ServeJSONOK(c, true, h.svc.Apply)
 }
 
 // Delete 删除对应的 HTTP 接口处理逻辑。
 func (h *StorageHandler) Delete(c *gin.Context) {
-	handleQueryWithKindOK(c, true, h.svc.Delete)
+	ServeQueryWithKindOK(c, true, h.svc.Delete)
 }

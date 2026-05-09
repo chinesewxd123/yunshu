@@ -6,9 +6,9 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	"yunshu/internal/repository"
 
@@ -110,7 +110,7 @@ func (s *DepartmentService) Tree(ctx context.Context) ([]DepartmentDetailRespons
 
 func (s *DepartmentService) TreeByActor(ctx context.Context, actor *auth.CurrentUser) ([]DepartmentDetailResponse, error) {
 	if actor == nil {
-		return nil, apperror.Unauthorized("未登录或登录已失效")
+		return nil, constants.ErrUnauthorized
 	}
 	all, err := s.Tree(ctx)
 	if err != nil {
@@ -149,7 +149,7 @@ func (s *DepartmentService) Detail(ctx context.Context, id uint) (*DepartmentDet
 	item, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("部门不存在")
+			return nil, constants.ErrDepartmentNotFound
 		}
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func (s *DepartmentService) DetailByActor(ctx context.Context, actor *auth.Curre
 		return nil, err
 	}
 	if !ok {
-		return nil, apperror.Forbidden("无访问权限")
+		return nil, constants.ErrForbidden
 	}
 	return s.Detail(ctx, id)
 }
@@ -172,7 +172,7 @@ func (s *DepartmentService) Create(ctx context.Context, req DepartmentCreateRequ
 	name := strings.TrimSpace(req.Name)
 	code := strings.TrimSpace(req.Code)
 	if name == "" || code == "" {
-		return nil, apperror.BadRequest("部门名称和编码不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsga784a6e1674f)
 	}
 	if err := s.ensureLeaderExists(ctx, req.LeaderID); err != nil {
 		return nil, err
@@ -180,12 +180,12 @@ func (s *DepartmentService) Create(ctx context.Context, req DepartmentCreateRequ
 	if exists, err := s.repo.ExistsByCode(ctx, code, 0); err != nil {
 		return nil, err
 	} else if exists {
-		return nil, apperror.Conflict("部门编码已存在")
+		return nil, constants.ErrConflictWithMsg(constants.ErrMsgf5ccd8b73cf5)
 	}
 	if exists, err := s.repo.ExistsByNameInParent(ctx, req.ParentID, name, 0); err != nil {
 		return nil, err
 	} else if exists {
-		return nil, apperror.Conflict("同级部门名称已存在")
+		return nil, constants.ErrConflictWithMsg(constants.ErrMsg6719d7537f54)
 	}
 
 	ancestors, level, err := s.resolveAncestorsAndLevel(ctx, req.ParentID)
@@ -218,20 +218,20 @@ func (s *DepartmentService) Create(ctx context.Context, req DepartmentCreateRequ
 
 func (s *DepartmentService) CreateByActor(ctx context.Context, actor *auth.CurrentUser, req DepartmentCreateRequest) (*DepartmentDetailResponse, error) {
 	if actor == nil {
-		return nil, apperror.Unauthorized("未登录或登录已失效")
+		return nil, constants.ErrUnauthorized
 	}
 	if isSuperAdmin(actor.RoleCodes) {
 		return s.Create(ctx, req)
 	}
 	if req.ParentID == nil {
-		return nil, apperror.Forbidden("无权创建根部门")
+		return nil, constants.ErrForbiddenWithMsg(constants.ErrMsg685603d6807c)
 	}
 	ok, err := s.hasDepartmentAccess(ctx, actor, *req.ParentID)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, apperror.Forbidden("无权在目标上级部门下创建")
+		return nil, constants.ErrForbiddenWithMsg(constants.ErrMsg099012ab5b6c)
 	}
 	return s.Create(ctx, req)
 }
@@ -240,7 +240,7 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 	item, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, apperror.NotFound("部门不存在")
+			return nil, constants.ErrDepartmentNotFound
 		}
 		return nil, err
 	}
@@ -248,10 +248,10 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 	name := strings.TrimSpace(req.Name)
 	code := strings.TrimSpace(req.Code)
 	if name == "" || code == "" {
-		return nil, apperror.BadRequest("部门名称和编码不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsga784a6e1674f)
 	}
 	if req.ParentID != nil && *req.ParentID == id {
-		return nil, apperror.BadRequest("上级部门不能选择自己")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg0915d23f388b)
 	}
 	if err := s.ensureLeaderExists(ctx, req.LeaderID); err != nil {
 		return nil, err
@@ -259,12 +259,12 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 	if exists, err := s.repo.ExistsByCode(ctx, code, id); err != nil {
 		return nil, err
 	} else if exists {
-		return nil, apperror.Conflict("部门编码已存在")
+		return nil, constants.ErrConflictWithMsg(constants.ErrMsgf5ccd8b73cf5)
 	}
 	if exists, err := s.repo.ExistsByNameInParent(ctx, req.ParentID, name, id); err != nil {
 		return nil, err
 	} else if exists {
-		return nil, apperror.Conflict("同级部门名称已存在")
+		return nil, constants.ErrConflictWithMsg(constants.ErrMsg6719d7537f54)
 	}
 
 	oldParentID := item.ParentID
@@ -278,13 +278,13 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 		parent, err := s.repo.GetByID(ctx, *req.ParentID)
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return nil, apperror.BadRequest("上级部门不存在")
+				return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg1e390c7912c1)
 			}
 			return nil, err
 		}
 		selfPath := fmt.Sprintf("%s%d/", oldAncestors, item.ID)
 		if strings.HasPrefix(parent.Ancestors, selfPath) {
-			return nil, apperror.BadRequest("不能将部门移动到其子级部门下")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg29de0c2b961b)
 		}
 	}
 
@@ -334,7 +334,7 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 
 func (s *DepartmentService) UpdateByActor(ctx context.Context, actor *auth.CurrentUser, id uint, req DepartmentUpdateRequest) (*DepartmentDetailResponse, error) {
 	if actor == nil {
-		return nil, apperror.Unauthorized("未登录或登录已失效")
+		return nil, constants.ErrUnauthorized
 	}
 	if !isSuperAdmin(actor.RoleCodes) {
 		ok, err := s.hasDepartmentAccess(ctx, actor, id)
@@ -342,7 +342,7 @@ func (s *DepartmentService) UpdateByActor(ctx context.Context, actor *auth.Curre
 			return nil, err
 		}
 		if !ok {
-			return nil, apperror.Forbidden("无访问权限")
+			return nil, constants.ErrForbidden
 		}
 		if req.ParentID != nil {
 			ok, err = s.hasDepartmentAccess(ctx, actor, *req.ParentID)
@@ -350,7 +350,7 @@ func (s *DepartmentService) UpdateByActor(ctx context.Context, actor *auth.Curre
 				return nil, err
 			}
 			if !ok {
-				return nil, apperror.Forbidden("无权迁移到目标上级部门")
+				return nil, constants.ErrForbiddenWithMsg(constants.ErrMsgc23b85234e2a)
 			}
 		}
 	}
@@ -361,7 +361,7 @@ func (s *DepartmentService) Delete(ctx context.Context, id uint) error {
 	item, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return apperror.NotFound("部门不存在")
+			return constants.ErrDepartmentNotFound
 		}
 		return err
 	}
@@ -370,21 +370,21 @@ func (s *DepartmentService) Delete(ctx context.Context, id uint) error {
 		return err
 	}
 	if children > 0 {
-		return apperror.BadRequest("请先删除子部门后再删除当前部门")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgc22172530052)
 	}
 	users, err := s.repo.CountUsers(ctx, id)
 	if err != nil {
 		return err
 	}
 	if users > 0 {
-		return apperror.BadRequest("该部门下仍有关联用户，请先调整用户归属")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsga110c1191380)
 	}
 	return s.repo.DeleteByID(ctx, item.ID)
 }
 
 func (s *DepartmentService) DeleteByActor(ctx context.Context, actor *auth.CurrentUser, id uint) error {
 	if actor == nil {
-		return apperror.Unauthorized("未登录或登录已失效")
+		return constants.ErrUnauthorized
 	}
 	if !isSuperAdmin(actor.RoleCodes) {
 		ok, err := s.hasDepartmentAccess(ctx, actor, id)
@@ -392,7 +392,7 @@ func (s *DepartmentService) DeleteByActor(ctx context.Context, actor *auth.Curre
 			return err
 		}
 		if !ok {
-			return apperror.Forbidden("无访问权限")
+			return constants.ErrForbidden
 		}
 	}
 	return s.Delete(ctx, id)
@@ -405,7 +405,7 @@ func (s *DepartmentService) resolveAncestorsAndLevel(ctx context.Context, parent
 	parent, err := s.repo.GetByID(ctx, *parentID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return "", 0, apperror.BadRequest("上级部门不存在")
+			return "", 0, constants.ErrBadRequestWithMsg(constants.ErrMsg1e390c7912c1)
 		}
 		return "", 0, err
 	}
@@ -420,7 +420,7 @@ func (s *DepartmentService) ensureLeaderExists(ctx context.Context, leaderID *ui
 	_, err := s.userRepo.GetByID(ctx, *leaderID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return apperror.BadRequest("部门负责人不存在")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsgdccca82abd43)
 		}
 		return err
 	}

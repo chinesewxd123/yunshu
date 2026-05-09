@@ -102,6 +102,26 @@ var serverCmd = &cobra.Command{
 
 		router.Register(app, runtimeClient)
 
+		sweepCtx, sweepCancel := context.WithCancel(context.Background())
+		defer sweepCancel()
+		go func() {
+			ticker := time.NewTicker(45 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-sweepCtx.Done():
+					return
+				case <-ticker.C:
+					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+					err := agentSvc.RecordOfflineEpisodes(ctx)
+					cancel()
+					if err != nil {
+						app.Logger.Info.Warn("record offline episodes failed", slog.Any("error", err))
+					}
+				}
+			}
+		}()
+
 		server := &http.Server{
 			Addr:              fmt.Sprintf(":%d", app.Config.App.Port),
 			Handler:           app.Engine,

@@ -1,5 +1,5 @@
 import { getData, http } from "./http";
-import { normalizePagedPayload, parseCommaSeparatedList, parseCommaSeparatedNumbers, parseNumberArray, parseStringMap } from "./alert-mappers";
+import { normalizePagedPayload, parseCommaSeparatedList, parseCommaSeparatedNumbers } from "./alert-mappers";
 
 export interface AlertChannelItem {
   id: number;
@@ -21,44 +21,28 @@ export interface AlertEventItem {
   severity: string;
   status: string;
   cluster?: string;
-  alert_ip?: string;
-  alert_started_at?: string;
-  /** prometheus = Prometheus 规则+Alertmanager Webhook；platform = 平台内监控规则 */
-  monitor_pipeline?: string;
-  group_key?: string;
-  labels_digest?: string;
-  matched_policy_ids?: string;
-  matched_policy_names?: string;
-  matched_policy_id_list?: number[];
-  matched_policy_name_list?: string[];
-  receiver_list?: string[];
-  channel_id: number;
-  channel_name: string;
+  alertIP?: string;
+  alertStartedAt?: string;
+  /** 路由 slug：ds:<id>、alertmanager、platform_monitor、cloud_expiry；历史可能为 prometheus/platform */
+  monitorPipeline?: string;
+  datasourceId?: number;
+  datasourceName?: string;
+  datasourceType?: string;
+  groupKey?: string;
+  labelsDigest?: string;
+  matchedPolicyIds?: string;
+  matchedPolicyNames?: string;
+  matchedPolicyIdList?: number[];
+  matchedPolicyNameList?: string[];
+  receiverList?: string[];
+  channelId: number;
+  channelName: string;
   success: boolean;
-  http_status_code: number;
-  error_message?: string;
-  request_payload?: string;
-  response_payload?: string;
-  created_at: string;
-}
-
-export interface AlertPolicyItem {
-  id: number;
-  name: string;
-  description?: string;
-  enabled: boolean;
-  priority: number;
-  match_labels_json?: string;
-  match_regex_json?: string;
-  channels_json?: string;
-  match_labels?: Record<string, string>;
-  match_regex?: Record<string, string>;
-  channel_ids?: number[];
-  template_id?: number;
-  notify_resolved: boolean;
-  silence_seconds: number;
-  created_at: string;
-  updated_at: string;
+  httpStatusCode: number;
+  errorMessage?: string;
+  requestPayload?: string;
+  responsePayload?: string;
+  createdAt: string;
 }
 
 export function listAlertChannels(params?: { keyword?: string }) {
@@ -103,6 +87,12 @@ export function testAlertChannel(
   return getData<void>(http.post(`/alerts/channels/${id}/test`, payload ?? {}));
 }
 
+/** 与后端 alertdispatch 模板变量说明一致（通道 Go template {{.Name}}） */
+export interface AlertTemplateVariableDoc {
+  name: string;
+  description: string;
+}
+
 export interface AlertTemplatePreviewResult {
   rendered: string;
   sample_payload: Record<string, unknown>;
@@ -110,6 +100,8 @@ export interface AlertTemplatePreviewResult {
   raw_payload_fields: string[];
   combined_fields: string[];
   suggested_label_keys: string[];
+  /** 固定模板变量及含义（WatchAlert 式「通知模板」文档化） */
+  template_variables?: AlertTemplateVariableDoc[];
 }
 
 export function previewAlertChannelTemplate(payload: {
@@ -130,18 +122,20 @@ export function listAlertEvents(params: {
   page_size: number;
   keyword?: string;
   cluster?: string;
-  alert_ip?: string;
+  alertIP?: string;
   status?: string;
-  monitor_pipeline?: string;
-  group_key?: string;
+  monitorPipeline?: string;
+  /** 与后端 datasourceId 一致，按已配置 Prometheus 数据源筛选 */
+  datasourceId?: number;
+  groupKey?: string;
 }) {
   return getData<{ list?: AlertEventItem[]; items?: AlertEventItem[]; total: number; page: number; page_size: number }>(
     http.get("/alerts/events", { params }),
   ).then((payload) =>
     normalizePagedPayload(payload, (item) => ({
       ...item,
-      matched_policy_id_list: parseCommaSeparatedNumbers(item.matched_policy_ids),
-      matched_policy_name_list: parseCommaSeparatedList(item.matched_policy_names),
+      matchedPolicyIdList: parseCommaSeparatedNumbers(item.matchedPolicyIds),
+      matchedPolicyNameList: parseCommaSeparatedList(item.matchedPolicyNames),
     })),
   );
 }
@@ -156,8 +150,10 @@ export function getAlertHistoryStats() {
     today_created: number;
     /** K8s / Prometheus external_labels.cluster 等（历史记录中去重） */
     cluster_values?: string[];
-    /** prometheus、platform（历史记录中去重） */
+    /** 历史 monitor_pipeline slug 去重（含 ds:N、alertmanager 等） */
     monitor_pipeline_values?: string[];
+    /** 历史事件中已出现的数据源，用于筛选下拉 */
+    datasource_filter_options?: Array<{ id: number; name: string }>;
   }>(http.get("/alerts/history/stats"));
 }
 
@@ -167,28 +163,4 @@ export function sendAlertmanagerWebhook(payload: Record<string, unknown>, token?
     headers["X-Webhook-Token"] = String(token).trim();
   }
   return getData<{ message: string }>(http.post("/alerts/webhook/alertmanager", payload, { headers }));
-}
-
-export function listAlertPolicies(params: { page: number; page_size: number; keyword?: string; enabled?: boolean }) {
-  return getData<{ list?: AlertPolicyItem[]; items?: AlertPolicyItem[]; total: number; page: number; page_size: number }>(http.get("/alerts/policies", { params })).then(
-    (payload) =>
-      normalizePagedPayload(payload, (item) => ({
-        ...item,
-        match_labels: parseStringMap(item.match_labels_json),
-        match_regex: parseStringMap(item.match_regex_json),
-        channel_ids: parseNumberArray(item.channels_json),
-      })),
-  );
-}
-
-export function createAlertPolicy(payload: Partial<AlertPolicyItem> & { name: string }) {
-  return getData<AlertPolicyItem>(http.post("/alerts/policies", payload));
-}
-
-export function updateAlertPolicy(id: number, payload: Partial<AlertPolicyItem> & { name: string }) {
-  return getData<AlertPolicyItem>(http.put(`/alerts/policies/${id}`, payload));
-}
-
-export function deleteAlertPolicy(id: number) {
-  return getData<void>(http.delete(`/alerts/policies/${id}`));
 }

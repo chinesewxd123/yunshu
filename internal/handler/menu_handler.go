@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/apperror"
@@ -29,7 +30,7 @@ func NewMenuHandler(svc *service.MenuService) *MenuHandler {
 func (h *MenuHandler) Tree(c *gin.Context) {
 	list, err := h.service.Tree(c.Request.Context())
 	if err != nil {
-		response.Error(c, apperror.Internal(err.Error()))
+		response.Error(c, constants.ErrInternalWithMsg(err.Error()))
 		return
 	}
 	// 如果不是 super-admin，需要从菜单树中移除仅管理员可见项
@@ -74,10 +75,10 @@ func (h *MenuHandler) Tree(c *gin.Context) {
 
 // Create 创建菜单项。
 func (h *MenuHandler) Create(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.MenuCreatePayload) (*model.Menu, error) {
+	ServeJSON(c, func(ctx context.Context, req service.MenuCreatePayload) (*model.Menu, error) {
 		data, err := h.service.Create(ctx, req)
 		if err != nil {
-			return nil, apperror.Internal(err.Error())
+			return nil, constants.ErrInternalWithMsg(err.Error())
 		}
 		return data, nil
 	})
@@ -90,13 +91,13 @@ func (h *MenuHandler) Update(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.MenuUpdatePayload) (*model.Menu, error) {
+	ServeJSON(c, func(ctx context.Context, req service.MenuUpdatePayload) (*model.Menu, error) {
 		data, err := h.service.Update(ctx, id, req)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, apperror.NotFound("菜单不存在")
+				return nil, constants.ErrMenuNotFound
 			}
-			return nil, apperror.Internal(err.Error())
+			return nil, constants.ErrInternalWithMsg(err.Error())
 		}
 		return data, nil
 	})
@@ -111,10 +112,10 @@ func (h *MenuHandler) Delete(c *gin.Context) {
 	}
 	if err := h.service.Delete(c.Request.Context(), id); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, apperror.NotFound("菜单不存在"))
+			response.Error(c, constants.ErrMenuNotFound)
 			return
 		}
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 	response.Success(c, gin.H{"message": "deleted"})
@@ -122,12 +123,12 @@ func (h *MenuHandler) Delete(c *gin.Context) {
 
 // BatchStatus 批量设置菜单状态（启用/停用）。
 func (h *MenuHandler) BatchStatus(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "updated"}, func(ctx context.Context, req service.MenuBatchStatusPayload) error {
+	ServeJSONOK(c, gin.H{"message": "updated"}, func(ctx context.Context, req service.MenuBatchStatusPayload) error {
 		if err := h.service.BatchSetStatus(ctx, req); err != nil {
 			if _, ok := apperror.IsAppError(err); ok {
 				return err
 			}
-			return apperror.Internal(err.Error())
+			return constants.ErrInternalWithMsg(err.Error())
 		}
 		return nil
 	})

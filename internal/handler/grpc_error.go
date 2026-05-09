@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,16 +17,16 @@ func grpcToAppError(err error) error {
 	}
 	switch st.Code() {
 	case codes.InvalidArgument:
-		return apperror.BadRequest(st.Message())
+		return constants.ErrBadRequestWithMsg(st.Message())
 	case codes.Unauthenticated:
-		return apperror.Unauthorized(st.Message())
+		return constants.ErrUnauthorizedWithMsg(st.Message())
 	case codes.PermissionDenied:
-		return apperror.Forbidden(st.Message())
+		return constants.ErrForbiddenWithMsg(st.Message())
 	case codes.NotFound:
-		return apperror.NotFound(st.Message())
+		return constants.ErrNotFoundWithMsg(st.Message())
 	case codes.AlreadyExists:
-		return apperror.Conflict(st.Message())
+		return constants.ErrConflictWithMsg(st.Message())
 	default:
-		return apperror.Internal(st.Message())
+		return constants.ErrInternalWithMsg(st.Message())
 	}
 }

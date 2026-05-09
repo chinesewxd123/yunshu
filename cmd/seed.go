@@ -64,6 +64,7 @@ var seedCmd = &cobra.Command{
 			} else {
 				permission.Name = item.Name
 				permission.Description = item.Description
+				permission.K8sScopeEnabled = item.K8sScopeEnabled
 				if err = app.DB.WithContext(ctx).Save(&permission).Error; err != nil {
 					return err
 				}
@@ -186,6 +187,10 @@ func defaultPermissions() []model.Permission {
 		{Name: "K8s 三元策略路径目录", Resource: "/api/v1/k8s-policies/paths", Action: "GET", Description: "List k8s scoped paths"},
 		{Name: "K8s 三元策略列表", Resource: "/api/v1/k8s-policies", Action: "GET", Description: "List k8s scoped policies by role"},
 		{Name: "K8s 三元策略下发", Resource: "/api/v1/k8s-policies/grant", Action: "POST", Description: "Grant k8s scoped policies"},
+		{Name: "K8s 三元策略预设下发", Resource: "/api/v1/k8s-policies/grant-preset", Action: "POST", Description: "Grant k8s scoped policies by preset (readonly/exec/admin)"},
+		{Name: "K8s 命名空间黑名单列表", Resource: "/api/v1/k8s-namespace-deny-rules", Action: "GET", Description: "List k8s namespace deny rules"},
+		{Name: "K8s 命名空间黑名单新增", Resource: "/api/v1/k8s-namespace-deny-rules", Action: "POST", Description: "Create k8s namespace deny rule"},
+		{Name: "K8s 命名空间黑名单删除", Resource: "/api/v1/k8s-namespace-deny-rules/:id", Action: "DELETE", Description: "Delete k8s namespace deny rule"},
 		{Name: "注册审核列表", Resource: "/api/v1/registrations", Action: "GET", Description: "View registration requests"},
 		{Name: "审核注册申请", Resource: "/api/v1/registrations/:id/review", Action: "POST", Description: "Review registration request"},
 		{Name: "菜单树", Resource: "/api/v1/menus/tree", Action: "GET", Description: "View menu tree"},
@@ -199,11 +204,8 @@ func defaultPermissions() []model.Permission {
 		{Name: "测试告警通道", Resource: "/api/v1/alerts/channels/:id/test", Action: "POST", Description: "Send test alert to channel"},
 		{Name: "告警事件列表", Resource: "/api/v1/alerts/events", Action: "GET", Description: "List alert events"},
 		{Name: "接收 Alertmanager Webhook", Resource: "/api/v1/alerts/webhook/alertmanager", Action: "POST", Description: "Receive alertmanager webhook"},
-		{Name: "告警策略列表", Resource: "/api/v1/alerts/policies", Action: "GET", Description: "List alert policies"},
-		{Name: "创建告警策略", Resource: "/api/v1/alerts/policies", Action: "POST", Description: "Create alert policy"},
-		{Name: "更新告警策略", Resource: "/api/v1/alerts/policies/:id", Action: "PUT", Description: "Update alert policy"},
-		{Name: "删除告警策略", Resource: "/api/v1/alerts/policies/:id", Action: "DELETE", Description: "Delete alert policy"},
 		{Name: "告警数据源列表", Resource: "/api/v1/alerts/datasources", Action: "GET", Description: "List alert datasources"},
+		{Name: "告警数据源连通性检测", Resource: "/api/v1/alerts/datasources/:id/ping", Action: "GET", Description: "Ping Prometheus datasource"},
 		{Name: "创建告警数据源", Resource: "/api/v1/alerts/datasources", Action: "POST", Description: "Create alert datasource"},
 		{Name: "更新告警数据源", Resource: "/api/v1/alerts/datasources/:id", Action: "PUT", Description: "Update alert datasource"},
 		{Name: "删除告警数据源", Resource: "/api/v1/alerts/datasources/:id", Action: "DELETE", Description: "Delete alert datasource"},
@@ -240,7 +242,7 @@ func defaultPermissions() []model.Permission {
 		{Name: "批量删除操作历史", Resource: "/api/v1/operation-logs/delete", Action: "POST", Description: "Batch delete operation logs"},
 		{Name: "查看封禁 IP 列表", Resource: "/api/v1/security/banned-ips", Action: "GET", Description: "View banned IPs list"},
 		{Name: "解除封禁 IP", Resource: "/api/v1/security/banned-ips/unban", Action: "POST", Description: "Unban IP"},
-		{Name: "资产总览", Resource: "/api/v1/overview", Action: "GET", Description: "Get system overview metrics"},
+		{Name: "总览页面", Resource: "/api/v1/overview", Action: "GET", Description: "Get system overview metrics"},
 		{Name: "集群列表", Resource: "/api/v1/clusters", Action: "GET", Description: "View k8s clusters"},
 		{Name: "创建集群", Resource: "/api/v1/clusters", Action: "POST", Description: "Create k8s cluster"},
 		{Name: "更新集群", Resource: "/api/v1/clusters/:id", Action: "PUT", Description: "Update k8s cluster"},
@@ -249,6 +251,8 @@ func defaultPermissions() []model.Permission {
 		{Name: "集群连接状态", Resource: "/api/v1/clusters/:id/status", Action: "GET", Description: "Check k8s cluster status"},
 		{Name: "集群命名空间", Resource: "/api/v1/clusters/:id/namespaces", Action: "GET", Description: "List cluster namespaces"},
 		{Name: "组件状态列表", Resource: "/api/v1/clusters/:id/component-statuses", Action: "GET", Description: "List control plane component statuses"},
+		{Name: "集群 API 资源发现", Resource: "/api/v1/clusters/:id/api-resources", Action: "GET", Description: "Discovery API resources like kubectl api-resources"},
+		{Name: "K8s 资源 Watch（SSE）", Resource: "/api/v1/k8s/resource-watch/stream", Action: "GET", Description: "Kubernetes watch streamed as Server-Sent Events [k8s-scope=on]", K8sScopeEnabled: true},
 		{Name: "Pod 列表", Resource: "/api/v1/pods", Action: "GET", Description: "List pods"},
 		{Name: "Pod 详情", Resource: "/api/v1/pods/detail", Action: "GET", Description: "Get pod detail"},
 		{Name: "Pod 事件", Resource: "/api/v1/pods/events", Action: "GET", Description: "List pod events"},
@@ -292,6 +296,7 @@ func defaultPermissions() []model.Permission {
 		{Name: "Deployment 详情", Resource: "/api/v1/deployments/detail", Action: "GET", Description: "Get deployment detail"},
 		{Name: "Deployment 应用 YAML", Resource: "/api/v1/deployments/apply", Action: "POST", Description: "Apply deployment yaml"},
 		{Name: "Deployment 扩缩容", Resource: "/api/v1/deployments/scale", Action: "POST", Description: "Scale deployment"},
+		{Name: "Deployment 垂直扩缩", Resource: "/api/v1/deployments/container-resources", Action: "POST", Description: "Patch deployment container resources"},
 		{Name: "Deployment 重启", Resource: "/api/v1/deployments/restart", Action: "POST", Description: "Restart deployment"},
 		{Name: "Deployment 关联 Pods", Resource: "/api/v1/deployments/pods", Action: "GET", Description: "List deployment related pods"},
 		{Name: "删除 Deployment", Resource: "/api/v1/deployments", Action: "DELETE", Description: "Delete deployment"},
@@ -300,10 +305,12 @@ func defaultPermissions() []model.Permission {
 		{Name: "StatefulSet 详情", Resource: "/api/v1/statefulsets/detail", Action: "GET", Description: "Get statefulset detail"},
 		{Name: "StatefulSet 应用 YAML", Resource: "/api/v1/statefulsets/apply", Action: "POST", Description: "Apply statefulset yaml"},
 		{Name: "StatefulSet 扩缩容", Resource: "/api/v1/statefulsets/scale", Action: "POST", Description: "Scale statefulset"},
+		{Name: "StatefulSet 垂直扩缩", Resource: "/api/v1/statefulsets/container-resources", Action: "POST", Description: "Patch statefulset container resources"},
 		{Name: "StatefulSet 重启", Resource: "/api/v1/statefulsets/restart", Action: "POST", Description: "Restart statefulset"},
 		{Name: "StatefulSet 关联 Pods", Resource: "/api/v1/statefulsets/pods", Action: "GET", Description: "List statefulset related pods"},
 		{Name: "删除 StatefulSet", Resource: "/api/v1/statefulsets", Action: "DELETE", Description: "Delete statefulset"},
 
+		{Name: "DaemonSet 垂直扩缩", Resource: "/api/v1/daemonsets/container-resources", Action: "POST", Description: "Patch daemonset container resources"},
 		{Name: "DaemonSet 列表", Resource: "/api/v1/daemonsets", Action: "GET", Description: "List daemonsets"},
 		{Name: "DaemonSet 详情", Resource: "/api/v1/daemonsets/detail", Action: "GET", Description: "Get daemonset detail"},
 		{Name: "DaemonSet 应用 YAML", Resource: "/api/v1/daemonsets/apply", Action: "POST", Description: "Apply daemonset yaml"},
@@ -315,6 +322,7 @@ func defaultPermissions() []model.Permission {
 		{Name: "Job 详情", Resource: "/api/v1/jobs/detail", Action: "GET", Description: "Get job detail"},
 		{Name: "Job 关联 Pods", Resource: "/api/v1/jobs/pods", Action: "GET", Description: "List job related pods"},
 		{Name: "Job 重新执行", Resource: "/api/v1/jobs/rerun", Action: "POST", Description: "Rerun a job"},
+		{Name: "Job 垂直扩缩", Resource: "/api/v1/jobs/container-resources", Action: "POST", Description: "Patch job container resources"},
 		{Name: "Job 应用 YAML", Resource: "/api/v1/jobs/apply", Action: "POST", Description: "Apply job yaml"},
 		{Name: "删除 Job", Resource: "/api/v1/jobs", Action: "DELETE", Description: "Delete job"},
 
@@ -323,6 +331,7 @@ func defaultPermissions() []model.Permission {
 		{Name: "CronJob 详情", Resource: "/api/v1/cronjobs/detail", Action: "GET", Description: "Get cronjob detail"},
 		{Name: "CronJob 关联 Pods", Resource: "/api/v1/cronjobs/pods", Action: "GET", Description: "List cronjob related pods"},
 		{Name: "CronJob 应用 YAML", Resource: "/api/v1/cronjobs/apply", Action: "POST", Description: "Apply cronjob yaml"},
+		{Name: "CronJob 垂直扩缩", Resource: "/api/v1/cronjobs/container-resources", Action: "POST", Description: "Patch cronjob container resources"},
 		{Name: "CronJob 暂停/恢复", Resource: "/api/v1/cronjobs/suspend", Action: "POST", Description: "Suspend/resume cronjob"},
 		{Name: "CronJob 触发执行", Resource: "/api/v1/cronjobs/trigger", Action: "POST", Description: "Trigger cronjob once"},
 		{Name: "删除 CronJob", Resource: "/api/v1/cronjobs", Action: "DELETE", Description: "Delete cronjob"},
@@ -366,6 +375,10 @@ func defaultPermissions() []model.Permission {
 		{Name: "删除 IngressClass", Resource: "/api/v1/ingresses/classes", Action: "DELETE", Description: "Delete ingress class"},
 		{Name: "重启 Ingress-Nginx Pods", Resource: "/api/v1/ingresses/nginx/restart", Action: "POST", Description: "Restart ingress-nginx controller pods to refresh cert"},
 		{Name: "删除 Ingress", Resource: "/api/v1/ingresses", Action: "DELETE", Description: "Delete ingress"},
+		{Name: "HPA 列表", Resource: "/api/v1/horizontal-pod-autoscalers", Action: "GET", Description: "List HorizontalPodAutoscaler"},
+		{Name: "HPA 详情", Resource: "/api/v1/horizontal-pod-autoscalers/detail", Action: "GET", Description: "Get HPA YAML"},
+		{Name: "HPA 应用 YAML", Resource: "/api/v1/horizontal-pod-autoscalers/apply", Action: "POST", Description: "Apply HPA yaml"},
+		{Name: "删除 HPA", Resource: "/api/v1/horizontal-pod-autoscalers", Action: "DELETE", Description: "Delete HPA"},
 		{Name: "网络策略列表", Resource: "/api/v1/network-policies", Action: "GET", Description: "List network policies"},
 		{Name: "网络策略详情", Resource: "/api/v1/network-policies/detail", Action: "GET", Description: "Get network policy detail"},
 		{Name: "网络策略应用 YAML", Resource: "/api/v1/network-policies/apply", Action: "POST", Description: "Apply network policy yaml"},
@@ -405,6 +418,7 @@ func defaultPermissions() []model.Permission {
 		{Name: "项目日志源保存", Resource: "/api/v1/projects/:id/log-sources", Action: "POST", Description: "Upsert log source"},
 		{Name: "删除项目日志源", Resource: "/api/v1/projects/:id/log-sources/:logSourceId", Action: "DELETE", Description: "Delete log source"},
 		{Name: "项目 Agent 列表", Resource: "/api/v1/projects/:id/agents/list", Action: "GET", Description: "List agents"},
+		{Name: "删除项目 Agent", Resource: "/api/v1/projects/:id/agents/:agentId", Action: "DELETE", Description: "Delete project agent registration"},
 		{Name: "项目 Agent 心跳刷新", Resource: "/api/v1/projects/:id/agents/heartbeat-refresh", Action: "POST", Description: "Batch refresh agent heartbeat"},
 		{Name: "项目 Agent 状态", Resource: "/api/v1/projects/:id/agents/status", Action: "GET", Description: "Agent status"},
 		{Name: "项目 Agent 引导", Resource: "/api/v1/projects/:id/agents/bootstrap", Action: "POST", Description: "Agent bootstrap"},
@@ -576,9 +590,9 @@ func upsertMenu(ctx context.Context, db *gorm.DB, menu *model.Menu, parentID uin
 func defaultMenus() []model.Menu {
 	return []model.Menu{
 		{
-			Name:      "资产总览",
+			Name:      "总览页面",
 			Path:      "/",
-			Icon:      "DatabaseOutlined",
+			Icon:      "PieChartOutlined",
 			Sort:      1,
 			Component: "",
 			Status:    1,
@@ -657,6 +671,8 @@ func defaultMenus() []model.Menu {
 				{Name: "网络策略管理", Path: "/network-policies", Icon: "DeploymentUnitOutlined", Sort: 19, Component: "network-policies-page", Status: 1},
 				{Name: "Event 事件", Path: "/events", Icon: "FileSearchOutlined", Sort: 20, Component: "events-page", Status: 1},
 				{Name: "ServiceAccount 管理", Path: "/serviceaccounts", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "serviceaccounts-page", Status: 1},
+				{Name: "API 资源发现", Path: "/cluster-api-resources", Icon: "UnorderedListOutlined", Sort: 22, Component: "cluster-api-resources-page", Status: 1},
+				{Name: "HPA 弹性伸缩", Path: "/horizontal-pod-autoscalers", Icon: "LineChartOutlined", Sort: 23, Component: "horizontal-pod-autoscalers-page", Status: 1},
 			},
 		},
 		{

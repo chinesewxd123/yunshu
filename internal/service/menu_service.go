@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/repository"
 )
 
@@ -925,7 +925,7 @@ func (s *MenuService) Delete(ctx context.Context, id uint) error {
 		return err
 	}
 	if count > 0 {
-		return apperror.BadRequest("请先删除子菜单后再删除当前菜单")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsga70ebaf6959d)
 	}
 	if err := s.menuRepo.Delete(ctx, id); err != nil {
 		return err
@@ -937,7 +937,7 @@ func (s *MenuService) Delete(ctx context.Context, id uint) error {
 // BatchSetStatus 批量启用/停用菜单。
 func (s *MenuService) BatchSetStatus(ctx context.Context, payload MenuBatchStatusPayload) error {
 	if len(payload.IDs) == 0 {
-		return apperror.BadRequest("请选择需要批量操作的菜单")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg83ecd70cfd99)
 	}
 	if err := s.menuRepo.BatchUpdateStatus(ctx, payload.IDs, payload.Status); err != nil {
 		return err

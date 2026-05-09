@@ -17,5 +17,5 @@ func NewEventHandler(svc *service.K8sEventService) *EventHandler {
 
 // List 查询列表对应的 HTTP 接口处理逻辑。
 func (h *EventHandler) List(c *gin.Context) {
-	handleQuery(c, h.svc.List)
+	ServeQuery(c, h.svc.List)
 }

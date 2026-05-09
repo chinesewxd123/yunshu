@@ -144,6 +144,17 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
+// QueryResponseStatusSuccess 判断 Prometheus HTTP API 返回的 JSON 中 status 是否为 success（适用于 query / query_range 等）。
+func QueryResponseStatusSuccess(body json.RawMessage) bool {
+	var w struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(body, &w); err != nil {
+		return false
+	}
+	return w.Status == "success"
+}
+
 // VectorResultNonEmpty 解析 instant query 响应：vector 且 result 非空则认为「有告警样本」。
 func VectorResultNonEmpty(body json.RawMessage) (bool, error) {
 	var wrap struct {

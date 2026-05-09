@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -91,7 +91,7 @@ func validationMessage(field string, fe validator.FieldError) string {
 func handleQuery[T any, R any](c *gin.Context, call func(context.Context, T) (R, error)) {
 	var req T
 	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, apperror.BadRequest(bindErrorMessage(err)))
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 	data, err := call(c.Request.Context(), req)
@@ -105,7 +105,7 @@ func handleQuery[T any, R any](c *gin.Context, call func(context.Context, T) (R,
 func bindQuery[T any](c *gin.Context) (T, bool) {
 	var req T
 	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, apperror.BadRequest(bindErrorMessage(err)))
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return req, false
 	}
 	return req, true
@@ -114,7 +114,7 @@ func bindQuery[T any](c *gin.Context) (T, bool) {
 func handleJSON[T any, R any](c *gin.Context, call func(context.Context, T) (R, error)) {
 	var req T
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(bindErrorMessage(err)))
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 	data, err := call(c.Request.Context(), req)
@@ -128,7 +128,7 @@ func handleJSON[T any, R any](c *gin.Context, call func(context.Context, T) (R, 
 func handleJSONCreated[T any, R any](c *gin.Context, call func(context.Context, T) (R, error)) {
 	var req T
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(bindErrorMessage(err)))
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 	data, err := call(c.Request.Context(), req)
@@ -142,7 +142,7 @@ func handleJSONCreated[T any, R any](c *gin.Context, call func(context.Context, 
 func handleQueryOK[T any](c *gin.Context, okData any, call func(context.Context, T) error) {
 	var req T
 	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, apperror.BadRequest(bindErrorMessage(err)))
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 	if err := call(c.Request.Context(), req); err != nil {
@@ -155,7 +155,7 @@ func handleQueryOK[T any](c *gin.Context, okData any, call func(context.Context,
 func handleJSONOK[T any](c *gin.Context, okData any, call func(context.Context, T) error) {
 	var req T
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, apperror.BadRequest(bindErrorMessage(err)))
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 	if err := call(c.Request.Context(), req); err != nil {
@@ -169,7 +169,7 @@ func handleQueryWithKind[T any, R any](c *gin.Context, call func(context.Context
 	kind := c.Query("kind")
 	var req T
 	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, apperror.BadRequest(bindErrorMessage(err)))
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 	data, err := call(c.Request.Context(), kind, req)
@@ -184,7 +184,7 @@ func handleQueryWithKindOK[T any](c *gin.Context, okData any, call func(context.
 	kind := c.Query("kind")
 	var req T
 	if err := c.ShouldBindQuery(&req); err != nil {
-		response.Error(c, apperror.BadRequest(bindErrorMessage(err)))
+		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 	if err := call(c.Request.Context(), kind, req); err != nil {

@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/repository"
 )
 
@@ -41,7 +41,7 @@ type AgentDiscoveryReportResult struct {
 func (s *AgentDiscoveryService) Report(ctx context.Context, req AgentDiscoveryReportRequest) (*AgentDiscoveryReportResult, error) {
 	token := strings.TrimSpace(req.Token)
 	if token == "" {
-		return nil, apperror.BadRequest("令牌不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg488a8dce8ef5)
 	}
 	agentSvc := NewLogAgentService(s.agentRepo, s.serverRepo, nil, "")
 	agent, err := agentSvc.AuthenticateByToken(ctx, token)
@@ -105,7 +105,7 @@ func (s *AgentDiscoveryService) List(ctx context.Context, q AgentDiscoveryListQu
 		return nil, err
 	}
 	if sv.ProjectID != q.ProjectID {
-		return nil, apperror.Forbidden("服务器不在当前项目中")
+		return nil, constants.ErrServerNotInProjectForbidden
 	}
 	list, err := s.repo.List(ctx, q.ProjectID, q.ServerID, q.Kind, q.Limit)
 	if err != nil {

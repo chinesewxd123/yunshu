@@ -2,6 +2,7 @@ import { Button, Drawer, Form, Input, InputNumber, Select, Space, Switch, Typogr
 import type { FormInstance } from "antd/es/form";
 import { useState } from "react";
 import YAML from "yaml";
+import { extractApiErrorMessage } from "../../services/http";
 import { applyNamespace } from "../../services/namespaces";
 import { applyConfigMap, applySecret } from "../../services/configs";
 import { applyIngress } from "../../services/ingresses";
@@ -91,12 +92,12 @@ export function NamespaceFormCreateDrawer(props: {
     };
     setLoading(true);
     try {
-      await applyNamespace(clusterId, YAML.stringify(doc));
+      await applyNamespace(clusterId, YAML.stringify(doc), { failIfExists: true, silentErrorToast: true });
       message.success("命名空间已创建");
       onSuccess();
       onClose();
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : "创建失败");
+    } catch (e: unknown) {
+      message.error(extractApiErrorMessage(e, "创建失败"));
     } finally {
       setLoading(false);
     }

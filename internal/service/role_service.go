@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/repository"
 
@@ -51,7 +51,7 @@ func (s *RoleService) Update(ctx context.Context, id uint, req RoleUpdateRequest
 	role, err := s.roleRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("角色不存在")
+			return nil, constants.ErrRoleNotFound
 		}
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (s *RoleService) Delete(ctx context.Context, id uint) error {
 	role, err := s.roleRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("角色不存在")
+			return constants.ErrRoleNotFound
 		}
 		return err
 	}
@@ -101,7 +101,7 @@ func (s *RoleService) Detail(ctx context.Context, id uint) (*RoleItem, error) {
 	role, err := s.roleRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, apperror.NotFound("角色不存在")
+			return nil, constants.ErrRoleNotFound
 		}
 		return nil, err
 	}

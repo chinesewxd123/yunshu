@@ -14,9 +14,11 @@ interface LineChartProps {
   labels?: string[];
   height?: number;
   showLegend?: boolean;
+  /** 深色背景大屏：网格与图例使用高对比浅色线条/文字 */
+  darkMode?: boolean;
 }
 
-export function LineChart({ data, series, labels, height = 220, showLegend = true }: LineChartProps) {
+export function LineChart({ data, series, labels, height = 220, showLegend = true, darkMode = false }: LineChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewWidth, setViewWidth] = useState(700);
   const w = viewWidth;
@@ -91,7 +93,10 @@ export function LineChart({ data, series, labels, height = 220, showLegend = tru
           {normalizedSeries.map((s, idx) => {
             const color = s.color || ["#2563eb", "#10b981", "#f59e0b", "#ef4444"][idx % 4];
             return (
-              <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#475569" }}>
+              <div
+                key={idx}
+                style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: darkMode ? "#94a3b8" : "#475569" }}
+              >
                 <span style={{ width: 10, height: 10, borderRadius: 999, background: color, boxShadow: "0 0 0 2px rgba(37,99,235,0.08)" }} />
                 <span>{s.name || `Series ${idx + 1}`}</span>
               </div>
@@ -107,8 +112,8 @@ export function LineChart({ data, series, labels, height = 220, showLegend = tru
             top: hoverClient.y - 8,
             transform: "translateY(-100%)",
             pointerEvents: "none",
-            background: "rgba(255,255,255,0.95)",
-            border: "1px solid #e6eefc",
+            background: darkMode ? "rgba(15, 23, 42, 0.92)" : "rgba(255,255,255,0.95)",
+            border: darkMode ? "1px solid rgba(56, 189, 248, 0.25)" : "1px solid #e6eefc",
             borderRadius: 10,
             padding: "10px 12px",
             boxShadow: "0 10px 30px rgba(15, 23, 42, 0.12)",
@@ -117,7 +122,7 @@ export function LineChart({ data, series, labels, height = 220, showLegend = tru
             WebkitBackdropFilter: "blur(6px)",
           }}
         >
-          <div style={{ fontSize: 12, color: "#475569", marginBottom: 6, fontWeight: 600 }}>
+          <div style={{ fontSize: 12, color: darkMode ? "#cbd5e1" : "#475569", marginBottom: 6, fontWeight: 600 }}>
             {safeLabels?.[Math.min(hoverIndex, (safeLabels?.length ?? 1) - 1)] ?? `#${hoverIndex + 1}`}
           </div>
           <div style={{ display: "grid", gap: 6 }}>
@@ -128,9 +133,11 @@ export function LineChart({ data, series, labels, height = 220, showLegend = tru
                 <div key={sIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 120 }}>
                     <span style={{ width: 8, height: 8, borderRadius: 999, background: color }} />
-                    <span style={{ fontSize: 12, color: "#334155" }}>{s.name || `Series ${sIdx + 1}`}</span>
+                    <span style={{ fontSize: 12, color: darkMode ? "#94a3b8" : "#334155" }}>{s.name || `Series ${sIdx + 1}`}</span>
                   </div>
-                  <span style={{ fontSize: 12, color: "#0f172a", fontWeight: 700 }}>{typeof v === "number" ? v : "-"}</span>
+                  <span style={{ fontSize: 12, color: darkMode ? "#f1f5f9" : "#0f172a", fontWeight: 700 }}>
+                    {typeof v === "number" ? v : "-"}
+                  </span>
                 </div>
               );
             })}
@@ -170,7 +177,7 @@ export function LineChart({ data, series, labels, height = 220, showLegend = tru
             x2={w - padding}
             y1={padding + t * (h - padding * 2)}
             y2={padding + t * (h - padding * 2)}
-            stroke="#eef3fb"
+            stroke={darkMode ? "rgba(56, 189, 248, 0.14)" : "#eef3fb"}
             strokeWidth={1}
           />
         ))}
@@ -182,7 +189,7 @@ export function LineChart({ data, series, labels, height = 220, showLegend = tru
               x2={hoverX}
               y1={padding}
               y2={h - padding}
-              stroke="#c7d7f7"
+              stroke={darkMode ? "rgba(56, 189, 248, 0.35)" : "#c7d7f7"}
               strokeWidth={1}
               strokeDasharray="4 4"
             />

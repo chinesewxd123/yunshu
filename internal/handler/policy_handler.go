@@ -52,7 +52,7 @@ func (h *PolicyHandler) List(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/policies [post]
 func (h *PolicyHandler) Grant(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "granted"}, h.service.Grant)
+	ServeJSONOK(c, gin.H{"message": "granted"}, h.service.Grant)
 }
 
 // Revoke godoc
@@ -71,5 +71,5 @@ func (h *PolicyHandler) Grant(c *gin.Context) {
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/policies [delete]
 func (h *PolicyHandler) Revoke(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "revoked"}, h.service.Revoke)
+	ServeJSONOK(c, gin.H{"message": "revoked"}, h.service.Revoke)
 }

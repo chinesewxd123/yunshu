@@ -4,7 +4,7 @@ import (
 	"context"
 
 	pb "yunshu/internal/grpc/proto"
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -23,7 +23,7 @@ func NewAgentDiscoveryHandler(svc *service.AgentDiscoveryService, agentClient pb
 
 // Report is called by log-agent (public; uses agent token inside payload).
 func (h *AgentDiscoveryHandler) Report(c *gin.Context) {
-	handleJSON(c, func(ctx context.Context, req service.AgentDiscoveryReportRequest) (*service.AgentDiscoveryReportResult, error) {
+	ServeJSON(c, func(ctx context.Context, req service.AgentDiscoveryReportRequest) (*service.AgentDiscoveryReportResult, error) {
 		items := make([]*pb.AgentDiscoveryItem, 0, len(req.Items))
 		for _, it := range req.Items {
 			extra := map[string]string{}
@@ -58,7 +58,7 @@ func (h *AgentDiscoveryHandler) List(c *gin.Context) {
 	}
 	var q service.AgentDiscoveryListQuery
 	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 	q.ProjectID = projectID

@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/repository"
 
@@ -152,7 +152,7 @@ func (s *K8sClusterService) Create(ctx context.Context, req K8sClusterCreateRequ
 		if req.DirectConfig.DictConfigKey != "" && s.dictRepo != nil {
 			dictConfig, err := getDirectConfigFromDict(ctx, s.dictRepo, req.DirectConfig.DictConfigKey)
 			if err != nil {
-				return nil, apperror.BadRequest(fmt.Sprintf("从数据字典读取配置失败: %v", err))
+				return nil, constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmte5d845e17676, err))
 			}
 			// 合并字典配置和用户配置（用户配置优先）
 			mergeDirectConfig(dictConfig, req.DirectConfig)
@@ -161,13 +161,13 @@ func (s *K8sClusterService) Create(ctx context.Context, req K8sClusterCreateRequ
 
 		directConfigJSON, err := json.Marshal(req.DirectConfig)
 		if err != nil {
-			return nil, apperror.Internal("序列化直连配置失败")
+			return nil, constants.ErrInternalWithMsg(constants.ErrMsg2569b002d990)
 		}
 		c.DirectConfig = string(directConfigJSON)
 		// 为直连模式生成兼容的kubeconfig
 		kubeconfig, err := buildKubeconfigFromDirectConfig(req.DirectConfig)
 		if err != nil {
-			return nil, apperror.BadRequest(fmt.Sprintf("生成kubeconfig失败: %v", err))
+			return nil, constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt92e759c1fa53, err))
 		}
 		c.Kubeconfig = kubeconfig
 	} else {
@@ -215,11 +215,12 @@ func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterU
 
 	// 处理直连配置更新
 	if cluster.ConnectionMode == "direct" && req.DirectConfig != nil {
+		preserveDirectAuthFromStored(cluster.DirectConfig, req.DirectConfig)
 		// 如果从字典读取配置
 		if req.DirectConfig.DictConfigKey != "" && s.dictRepo != nil {
 			dictConfig, err := getDirectConfigFromDict(ctx, s.dictRepo, req.DirectConfig.DictConfigKey)
 			if err != nil {
-				return nil, apperror.BadRequest(fmt.Sprintf("从数据字典读取配置失败: %v", err))
+				return nil, constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmte5d845e17676, err))
 			}
 			// 合并字典配置和用户配置（用户配置优先）
 			mergeDirectConfig(dictConfig, req.DirectConfig)
@@ -228,14 +229,14 @@ func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterU
 
 		directConfigJSON, err := json.Marshal(req.DirectConfig)
 		if err != nil {
-			return nil, apperror.Internal("序列化直连配置失败")
+			return nil, constants.ErrInternalWithMsg(constants.ErrMsg2569b002d990)
 		}
 		cluster.DirectConfig = string(directConfigJSON)
 
 		// 为直连模式生成兼容的kubeconfig
 		kubeconfig, err := buildKubeconfigFromDirectConfig(req.DirectConfig)
 		if err != nil {
-			return nil, apperror.BadRequest(fmt.Sprintf("生成kubeconfig失败: %v", err))
+			return nil, constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt92e759c1fa53, err))
 		}
 		cluster.Kubeconfig = kubeconfig
 		s.runtime.DeleteRegisterCache(cluster.ID)
@@ -270,7 +271,7 @@ func (s *K8sClusterService) SetStatus(ctx context.Context, id uint, status int) 
 		return nil, err
 	}
 	if status != 0 && status != 1 {
-		return nil, apperror.BadRequest("status 只能为 0 或 1")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg394db01d16f3)
 	}
 	if cluster.Status != status {
 		cluster.Status = status
@@ -352,7 +353,7 @@ func (s *K8sClusterService) ListComponentStatuses(ctx context.Context, id uint) 
 	probedAt := time.Now().Format(time.RFC3339)
 	var list []corev1.ComponentStatus
 	if err := k.Resource(&corev1.ComponentStatus{}).List(&list).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取组件状态失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt559cb56d5b9d, err))
 	}
 	out := make([]ComponentStatusItem, 0, len(list))
 	for _, item := range list {

@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/repository"
 
 	"github.com/casbin/casbin/v2"
@@ -76,7 +76,7 @@ func (s *PolicyService) Grant(ctx context.Context, req PolicyGrantRequest) error
 	role, err := s.roleRepo.GetByID(ctx, req.RoleID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("角色不存在")
+			return constants.ErrRoleNotFound
 		}
 		return err
 	}
@@ -84,7 +84,7 @@ func (s *PolicyService) Grant(ctx context.Context, req PolicyGrantRequest) error
 	permission, err := s.permissionRepo.GetByID(ctx, req.PermissionID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("权限不存在")
+			return constants.ErrPermissionNotFound
 		}
 		return err
 	}
@@ -98,7 +98,7 @@ func (s *PolicyService) Revoke(ctx context.Context, req PolicyGrantRequest) erro
 	role, err := s.roleRepo.GetByID(ctx, req.RoleID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("角色不存在")
+			return constants.ErrRoleNotFound
 		}
 		return err
 	}
@@ -106,7 +106,7 @@ func (s *PolicyService) Revoke(ctx context.Context, req PolicyGrantRequest) erro
 	permission, err := s.permissionRepo.GetByID(ctx, req.PermissionID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.NotFound("权限不存在")
+			return constants.ErrPermissionNotFound
 		}
 		return err
 	}

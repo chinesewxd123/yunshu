@@ -29,7 +29,7 @@ func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force b
 			interval = 3600
 		}
 		syntheticID := uint(1000000) + rule.ID
-		if !force && !s.shouldEvalRule(syntheticID, interval, now) {
+		if !force && !s.shouldEvalRuleRedis(ctx, syntheticID, interval, now) {
 			continue
 		}
 		s.evaluateOneCloudExpiryRule(ctx, rule, now)
@@ -140,7 +140,7 @@ func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firi
 		}
 		s.cloudExpiryState[fp] = true
 		s.monitorEvalMu.Unlock()
-		_ = s.ReceiveAlertmanager(ctx, AlertManagerPayload{
+		_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
 			Receiver:     "cloud-expiry",
 			Status:       "firing",
 			GroupLabels:  map[string]string{"alertname": labels["alertname"]},
@@ -163,7 +163,7 @@ func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firi
 	}
 	delete(s.cloudExpiryState, fp)
 	s.monitorEvalMu.Unlock()
-	_ = s.ReceiveAlertmanager(ctx, AlertManagerPayload{
+	_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
 		Receiver:     "cloud-expiry",
 		Status:       "resolved",
 		GroupLabels:  map[string]string{"alertname": labels["alertname"]},

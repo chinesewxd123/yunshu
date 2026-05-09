@@ -1,7 +1,7 @@
-import { DownOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, TagsOutlined } from "@ant-design/icons";
-import { Button, Dropdown, Form, Input, Progress, Space, Switch, Tag, Typography, message } from "antd";
+import { ColumnHeightOutlined, DownOutlined, EyeOutlined, FileTextOutlined, PlayCircleOutlined, TagsOutlined } from "@ant-design/icons";
+import { Alert, Button, Dropdown, Form, Input, Modal, Progress, Space, Switch, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
 import { useRelatedPodsDrawer } from "../components/k8s/related-pods-drawer";
 import { useWorkloadFormActions } from "../components/k8s/workload-form-actions";
@@ -9,10 +9,12 @@ import { YamlCrudPage } from "../components/k8s/yaml-crud-page";
 import { listNamespaces as listClusterNamespaces } from "../services/clusters";
 import {
   applyCronJob,
+  buildCpuMemoryResourceMaps,
   deleteCronJob,
   getCronJobDetail,
   listCronJobPods,
   listCronJobsV2,
+  patchCronJobContainerResources,
   suspendCronJob,
   triggerCronJob,
   type CronJobItemV2,
@@ -93,6 +95,15 @@ function CronJobDetailQuickEdit({
 
 export function CronjobsPage() {
   const listReloadRef = useRef<() => void>(() => {});
+  const [verticalOpen, setVerticalOpen] = useState(false);
+  const [verticalTarget, setVerticalTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
+  const [verticalForm] = Form.useForm<{
+    container_name?: string;
+    requests_cpu?: string;
+    requests_memory?: string;
+    limits_cpu?: string;
+    limits_memory?: string;
+  }>();
   const [form] = Form.useForm<CronJobFormValues>();
   const formActions = useWorkloadFormActions<CronJobFormValues>({
     form,
@@ -278,6 +289,16 @@ spec:
                     onClick: () => openPods({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name }),
                   },
                   {
+                    key: "vertical",
+                    label: "垂直扩缩（resources · VPA 类）",
+                    icon: <ColumnHeightOutlined />,
+                    onClick: () => {
+                      setVerticalTarget({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
+                      verticalForm.resetFields();
+                      setVerticalOpen(true);
+                    },
+                  },
+                  {
                     key: "trigger",
                     label: "触发",
                     icon: <PlayCircleOutlined />,
@@ -311,6 +332,60 @@ spec:
           </Space>
         )}
       />
+
+      <Modal
+        title={`CronJob 垂直扩缩（jobTemplate resources · VPA 类）${verticalTarget ? `：${verticalTarget.name}` : ""}`}
+        open={verticalOpen}
+        onCancel={() => setVerticalOpen(false)}
+        destroyOnClose
+        width={560}
+        onOk={() => {
+          if (!verticalTarget) return;
+          void verticalForm.validateFields().then(async (values) => {
+            const { requests, limits } = buildCpuMemoryResourceMaps(values);
+            if (Object.keys(requests).length === 0 && Object.keys(limits).length === 0) {
+              message.warning("请至少填写一项 requests 或 limits（如 cpu/memory）");
+              return;
+            }
+            await patchCronJobContainerResources(verticalTarget.clusterId, verticalTarget.namespace, verticalTarget.name, {
+              container_name: values.container_name,
+              requests,
+              limits,
+            });
+            message.success("已更新容器资源");
+            setVerticalOpen(false);
+            listReloadRef.current();
+          });
+        }}
+      >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="CronJob 无 HPA 式水平副本扩缩；修改 jobTemplate 内 resources 主要影响后续调度创建的 Job。若使用 VPA，Job/CronJob 场景常在 Initial / Off 模式下更安全。"
+        />
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          留空容器名则修改第一个容器。示例：CPU <Typography.Text code>100m</Typography.Text>，内存{" "}
+          <Typography.Text code>256Mi</Typography.Text>。
+        </Typography.Paragraph>
+        <Form form={verticalForm} layout="vertical">
+          <Form.Item label="容器名（可选）" name="container_name">
+            <Input placeholder="默认第一个容器" allowClear />
+          </Form.Item>
+          <Form.Item label="requests.cpu" name="requests_cpu">
+            <Input placeholder="如 100m" allowClear />
+          </Form.Item>
+          <Form.Item label="requests.memory" name="requests_memory">
+            <Input placeholder="如 256Mi" allowClear />
+          </Form.Item>
+          <Form.Item label="limits.cpu" name="limits_cpu">
+            <Input placeholder="如 500m" allowClear />
+          </Form.Item>
+          <Form.Item label="limits.memory" name="limits_memory">
+            <Input placeholder="如 512Mi" allowClear />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       {viewer}
 

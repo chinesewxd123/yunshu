@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -103,11 +103,11 @@ func (s *K8sRBACService) ListRoles(ctx context.Context, query RbacListQuery) ([]
 	}
 	ns := strings.TrimSpace(query.Namespace)
 	if ns == "" {
-		return nil, apperror.BadRequest("命名空间不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc67b07d6cf4d)
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, roleGVK, ns)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Role 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt951c7ad77bce, err))
 	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]RoleListItem, 0, len(listU))
@@ -138,11 +138,11 @@ func (s *K8sRBACService) ListRoleBindings(ctx context.Context, query RbacListQue
 	}
 	ns := strings.TrimSpace(query.Namespace)
 	if ns == "" {
-		return nil, apperror.BadRequest("命名空间不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc67b07d6cf4d)
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, roleBindingGVK, ns)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 RoleBinding 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt3489b1e268aa, err))
 	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]RoleBindingListItem, 0, len(listU))
@@ -183,7 +183,7 @@ func (s *K8sRBACService) ListClusterRoles(ctx context.Context, query RbacListQue
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, clusterRoleGVK, "")
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 ClusterRole 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt5f9235a5cff6, err))
 	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]ClusterRoleListItem, 0, len(listU))
@@ -213,7 +213,7 @@ func (s *K8sRBACService) ListClusterRoleBindings(ctx context.Context, query Rbac
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, clusterRoleBindingGVK, "")
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 ClusterRoleBinding 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt05b921e3a64d, err))
 	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]ClusterRoleBindingListItem, 0, len(listU))
@@ -255,7 +255,7 @@ func (s *K8sRBACService) Detail(ctx context.Context, kind string, query RbacName
 	name := strings.TrimSpace(query.Name)
 	ns := strings.TrimSpace(query.Namespace)
 	if kind == "" || name == "" {
-		return nil, apperror.BadRequest("kind/name 不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg462a4f71f455)
 	}
 
 	var gvk schema.GroupVersionKind
@@ -272,18 +272,18 @@ func (s *K8sRBACService) Detail(ctx context.Context, kind string, query RbacName
 		gvk = clusterRoleBindingGVK
 		clusterScoped = true
 	default:
-		return nil, apperror.BadRequest("不支持的 RBAC 类型")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgf5e00f884bae)
 	}
 	if !clusterScoped && ns == "" {
-		return nil, apperror.BadRequest("命名空间不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc67b07d6cf4d)
 	}
 
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, ns, name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg4aefbe3428ef)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt0aa6043acdf6, err))
 	}
 
 	obj := u.DeepCopy()
@@ -299,7 +299,7 @@ func (s *K8sRBACService) Apply(ctx context.Context, req RbacApplyRequest) error 
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	// Apply 成功但返回 strings 的兼容逻辑已在 dyn.ApplyManifest 中处理
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
@@ -312,7 +312,7 @@ func (s *K8sRBACService) Apply(ctx context.Context, req RbacApplyRequest) error 
 		}
 		return len(refs) > 0
 	}); err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }
@@ -340,16 +340,16 @@ func (s *K8sRBACService) Delete(ctx context.Context, kind string, req RbacDelete
 		gvk = clusterRoleBindingGVK
 		clusterScoped = true
 	default:
-		return apperror.BadRequest("不支持的 RBAC 类型")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgf5e00f884bae)
 	}
 	if !clusterScoped && ns == "" {
-		return apperror.BadRequest("命名空间不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgc67b07d6cf4d)
 	}
 	if err := s.dyn.DeleteByGVK(ctx, k, gvk, ns, name); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd0193a5555ab, err))
 	}
 	return nil
 }

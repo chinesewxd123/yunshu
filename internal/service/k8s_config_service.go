@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
@@ -68,7 +68,7 @@ func (s *K8sConfigService) ListConfigMaps(ctx context.Context, q ConfigListQuery
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, configMapGVK, q.Namespace)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 ConfigMaps 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtf8a8a793f3c6, err))
 	}
 	list := make([]corev1.ConfigMap, 0, len(listU))
 	for _, item := range listU {
@@ -104,9 +104,9 @@ func (s *K8sConfigService) ConfigMapDetail(ctx context.Context, q ConfigDetailQu
 	u, err := s.dyn.GetByGVK(ctx, k, configMapGVK, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("ConfigMap 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgd42231f0a030)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 ConfigMap 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtbfbd3990363e, err))
 	}
 	var obj corev1.ConfigMap
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -128,7 +128,7 @@ func (s *K8sConfigService) DeleteConfigMap(ctx context.Context, req ConfigDelete
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除 ConfigMap 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt90788f2314d8, err))
 	}
 	return nil
 }
@@ -141,7 +141,7 @@ func (s *K8sConfigService) ListSecrets(ctx context.Context, q ConfigListQuery) (
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, secretGVK, q.Namespace)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Secrets 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta2182ce2ddcd, err))
 	}
 	list := make([]corev1.Secret, 0, len(listU))
 	for _, item := range listU {
@@ -178,9 +178,9 @@ func (s *K8sConfigService) SecretDetail(ctx context.Context, q ConfigDetailQuery
 	u, err := s.dyn.GetByGVK(ctx, k, secretGVK, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Secret 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg2859a961fa4c)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 Secret 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtb450a71bd00f, err))
 	}
 	var obj corev1.Secret
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -222,7 +222,7 @@ func (s *K8sConfigService) DeleteSecret(ctx context.Context, req ConfigDeleteReq
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除 Secret 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt931c82f11039, err))
 	}
 	return nil
 }
@@ -234,7 +234,7 @@ func (s *K8sConfigService) Apply(ctx context.Context, req ConfigApplyRequest) er
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 
 	cfgRefs := extractConfigRefs(req.Manifest)
@@ -253,7 +253,7 @@ func (s *K8sConfigService) Apply(ctx context.Context, req ConfigApplyRequest) er
 		return configRefsAllExist(c, s.dyn, k, cfgRefs)
 	})
 	if err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }

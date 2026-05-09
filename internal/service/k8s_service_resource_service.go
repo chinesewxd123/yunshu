@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
@@ -65,11 +65,11 @@ func (s *K8sServiceResourceService) List(ctx context.Context, q K8sServiceListQu
 	}
 	ns := strings.TrimSpace(q.Namespace)
 	if ns == "" {
-		return nil, apperror.BadRequest("命名空间不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc67b07d6cf4d)
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, k8sServiceGVK, ns)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Service 列表失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt38cc1640ac12, err))
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	out := make([]K8sServiceItem, 0, len(listU))
@@ -129,14 +129,14 @@ func (s *K8sServiceResourceService) Detail(ctx context.Context, q K8sServiceDeta
 	}
 	ns := strings.TrimSpace(q.Namespace)
 	if ns == "" {
-		return nil, apperror.BadRequest("命名空间不能为空")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc67b07d6cf4d)
 	}
 	u, err := s.dyn.GetByGVK(ctx, k, k8sServiceGVK, ns, strings.TrimSpace(q.Name))
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Service 不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg951c363660f3)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 Service 详情失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt42eaecf6d979, err))
 	}
 	obj := u.DeepCopy()
 	obj.SetManagedFields(nil)
@@ -151,10 +151,10 @@ func (s *K8sServiceResourceService) Apply(ctx context.Context, req K8sServiceApp
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }
@@ -167,13 +167,13 @@ func (s *K8sServiceResourceService) Delete(ctx context.Context, req K8sServiceDe
 	}
 	ns := strings.TrimSpace(req.Namespace)
 	if ns == "" {
-		return apperror.BadRequest("命名空间不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgc67b07d6cf4d)
 	}
 	if err := s.dyn.DeleteByGVK(ctx, k, k8sServiceGVK, ns, strings.TrimSpace(req.Name)); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除 Service 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd89543e517f1, err))
 	}
 	return nil
 }

@@ -3,8 +3,8 @@ package handler
 import (
 	"context"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/store"
@@ -38,13 +38,13 @@ func isSuperAdmin(u *auth.CurrentUser) bool {
 func (h *AdminHandler) ListBannedIPs(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok || !isSuperAdmin(user) {
-		response.Error(c, apperror.Forbidden("无访问权限"))
+		response.Error(c, constants.ErrForbidden)
 		return
 	}
 	ctx := c.Request.Context()
 	keys, err := h.rdb.Keys(ctx, "ban:ip:*").Result()
 	if err != nil {
-		response.Error(c, apperror.Internal(err.Error()))
+		response.Error(c, constants.ErrInternalWithMsg(err.Error()))
 		return
 	}
 	result := make([]gin.H, 0, len(keys))
@@ -64,13 +64,13 @@ type unbanRequest struct {
 func (h *AdminHandler) UnbanIP(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok || !isSuperAdmin(user) {
-		response.Error(c, apperror.Forbidden("无访问权限"))
+		response.Error(c, constants.ErrForbidden)
 		return
 	}
-	handleJSONOK(c, gin.H{"message": "unbanned"}, func(ctx context.Context, req unbanRequest) error {
+	ServeJSONOK(c, gin.H{"message": "unbanned"}, func(ctx context.Context, req unbanRequest) error {
 		key := store.BanIPKey(req.IP)
 		if err := h.rdb.Del(ctx, key).Err(); err != nil {
-			return apperror.Internal(err.Error())
+			return constants.ErrInternalWithMsg(err.Error())
 		}
 		return nil
 	})

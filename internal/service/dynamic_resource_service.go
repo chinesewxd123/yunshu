@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
@@ -93,7 +93,7 @@ func (s *DynamicResourceService) ResolveCRKindFromCRD(ctx context.Context, k *ko
 	version = strings.TrimSpace(version)
 	resource = strings.TrimSpace(resource)
 	if group == "" || version == "" || resource == "" {
-		return "", apperror.BadRequest("group/version/resource 不能为空")
+		return "", constants.ErrBadRequestWithMsg(constants.ErrMsgf757c3be22a2)
 	}
 	list, err := s.ListByGVK(ctx, k, schema.GroupVersionKind{
 		Group:   "apiextensions.k8s.io",
@@ -101,7 +101,7 @@ func (s *DynamicResourceService) ResolveCRKindFromCRD(ctx context.Context, k *ko
 		Kind:    "CustomResourceDefinition",
 	}, "")
 	if err != nil {
-		return "", apperror.Internal(fmt.Sprintf("解析 CR 类型失败: %v", err))
+		return "", constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt2b30d4949c98, err))
 	}
 	for _, item := range list {
 		var crd apiextv1.CustomResourceDefinition
@@ -120,7 +120,7 @@ func (s *DynamicResourceService) ResolveCRKindFromCRD(ctx context.Context, k *ko
 			}
 		}
 	}
-	return "", apperror.BadRequest("未找到匹配的 CR 资源类型")
+	return "", constants.ErrBadRequestWithMsg(constants.ErrMsg1a5f8ce82917)
 }
 
 // ListCR 查询列表相关的业务逻辑。

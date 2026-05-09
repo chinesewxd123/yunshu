@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"strconv"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
@@ -23,12 +24,12 @@ func NewRegistrationHandler(svc *service.RegistrationService) *RegistrationHandl
 
 // Apply 提交申请对应的 HTTP 接口处理逻辑。
 func (h *RegistrationHandler) Apply(c *gin.Context) {
-	handleJSONOK(c, nil, func(ctx context.Context, req service.ApplyRegisterRequest) error {
+	ServeJSONOK(c, nil, func(ctx context.Context, req service.ApplyRegisterRequest) error {
 		if err := h.service.Apply(ctx, req); err != nil {
 			if _, ok := apperror.IsAppError(err); ok {
 				return err
 			}
-			return apperror.Internal(err.Error())
+			return constants.ErrInternalWithMsg(err.Error())
 		}
 		return nil
 	})
@@ -50,7 +51,7 @@ func (h *RegistrationHandler) List(c *gin.Context) {
 
 	list, total, err := h.service.List(c.Request.Context(), keyword, status, page, pageSize)
 	if err != nil {
-		response.Error(c, apperror.Internal(err.Error()))
+		response.Error(c, constants.ErrInternalWithMsg(err.Error()))
 		return
 	}
 	response.Success(c, gin.H{
@@ -71,12 +72,12 @@ func (h *RegistrationHandler) Review(c *gin.Context) {
 
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.ReviewRequest) (gin.H, error) {
+	ServeJSON(c, func(ctx context.Context, req service.ReviewRequest) (gin.H, error) {
 		if err := h.service.Review(ctx, id, user.ID, req); err != nil {
-			return nil, apperror.BadRequest(err.Error())
+			return nil, constants.ErrBadRequestWithMsg(err.Error())
 		}
 		statusText := "approved"
 		if req.Status == 2 {

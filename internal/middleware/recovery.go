@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"runtime/debug"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
 
@@ -19,7 +19,7 @@ func Recovery(logger *logx.Logger) gin.HandlerFunc {
 					"path", c.Request.URL.Path,
 					"stack", string(debug.Stack()),
 				)
-				response.Error(c, apperror.Internal("服务器内部错误"))
+				response.Error(c, constants.ErrInternal)
 				c.Abort()
 			}
 		}()

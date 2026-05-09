@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,7 +64,7 @@ func (s *K8sEventService) List(ctx context.Context, q EventListQuery) ([]EventIt
 		query = query.Namespace(ns)
 	}
 	if err := query.List(&list).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Events 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd678ffdd4e0f, err))
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	kind := strings.TrimSpace(q.Kind)

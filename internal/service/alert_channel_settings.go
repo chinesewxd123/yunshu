@@ -12,9 +12,9 @@ import (
 	"strings"
 	"text/template"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/parseutil"
 	"yunshu/internal/pkg/validateutil"
 )
@@ -38,7 +38,7 @@ func validateChannelMessageTemplates(headersJSON string) error {
 			return nil
 		}
 		if _, parseErr := template.New(fieldKey).Option("missingkey=zero").Parse(tplRaw); parseErr != nil {
-			return apperror.BadRequest(fmt.Sprintf("%s 语法错误: %v", fieldLabel, parseErr))
+			return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt3664a9ad8a57, fieldLabel, parseErr))
 		}
 		return nil
 	}
@@ -75,7 +75,7 @@ func parseChannelSettings(v string) (map[string]interface{}, error) {
 	}
 	var m map[string]interface{}
 	if err := json.Unmarshal([]byte(v), &m); err != nil {
-		return nil, apperror.BadRequest("headers_json 解析失败，请检查 JSON 格式")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg2a14724b02d9)
 	}
 	return m, nil
 }
@@ -132,7 +132,7 @@ func validateEmailChannelRecipients(enabled bool, chType, headersJSON string) er
 		return err
 	}
 	if len(recipients) == 0 {
-		return apperror.BadRequest("邮件通道至少需要配置一个收件人")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgbb73fcfe4fb7)
 	}
 	return nil
 }
@@ -153,7 +153,7 @@ func parseEmailRecipients(headersJSON string) ([]string, error) {
 	}
 	var raw map[string]interface{}
 	if err := json.Unmarshal([]byte(headersJSON), &raw); err != nil {
-		return nil, apperror.BadRequest("邮件通道配置 JSON 解析失败，请检查 JSON 格式")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg5b6514e2f558)
 	}
 	seen := make(map[string]bool)
 	var out []string

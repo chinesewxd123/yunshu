@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/apperror"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	corev1 "k8s.io/api/core/v1"
 )
+
+// logAgentOnlineWindow 须与 LogAgentService 心跳超时一致，用于总览「在线 Agent」计数。
+const logAgentOnlineWindow = 90 * time.Second
 
 type OverviewResponse struct {
 	UsersCount    int64 `json:"users_count"`
@@ -32,6 +35,14 @@ type OverviewResponse struct {
 	EventTotalCount    int64 `json:"event_total_count"`
 	EventWarningCount  int64 `json:"event_warning_count"`
 	EventClusterErrors int64 `json:"event_cluster_errors"`
+
+	// Alert events（告警监控）
+	AlertFiringCount      int64 `json:"alert_firing_count"`
+	AlertEventsTodayCount int64 `json:"alert_events_today_count"`
+
+	// Log agents（与 Agent 列表「在线」判定一致：最近心跳在 90s 内）
+	LogAgentsOnlineCount  int64 `json:"log_agents_online_count"`
+	LogAgentsOfflineCount int64 `json:"log_agents_offline_count"`
 }
 
 type OverviewTrendsResponse struct {
@@ -55,7 +66,7 @@ func NewOverviewService(db *gorm.DB, runtime *K8sRuntimeService, redisClient *re
 // Trends 执行对应的业务逻辑。
 func (s *OverviewService) Trends(ctx context.Context, days int) (*OverviewTrendsResponse, error) {
 	if s.db == nil {
-		return nil, apperror.Internal("数据库未初始化")
+		return nil, constants.ErrInternal
 	}
 	if days <= 0 || days > 31 {
 		days = 7
@@ -158,10 +169,10 @@ func (s *OverviewService) Trends(ctx context.Context, days int) (*OverviewTrends
 // Get 获取相关的业务逻辑。
 func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 	if s.db == nil {
-		return nil, apperror.Internal("数据库未初始化")
+		return nil, constants.ErrInternal
 	}
 
-	cacheKey := "overview:metrics:v2"
+	cacheKey := "overview:metrics:v3"
 	if s.redis != nil {
 		if raw, err := s.redis.Get(ctx, cacheKey).Result(); err == nil && raw != "" {
 			var cached OverviewResponse
@@ -182,6 +193,8 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 	).Scan(out).Error; err != nil {
 		return nil, err
 	}
+
+	s.fillOverviewAlertAndAgents(ctx, out)
 
 	// Pod stats: aggregate across enabled clusters.
 	var clusters []model.K8sCluster
@@ -308,6 +321,38 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 	return out, nil
 }
 
+// fillOverviewAlertAndAgents 聚合告警与日志 Agent 指标；表不存在或查询失败时保持 0，不阻断总览。
+func (s *OverviewService) fillOverviewAlertAndAgents(ctx context.Context, out *OverviewResponse) {
+	if s.db == nil {
+		return
+	}
+	cutoff := time.Now().Add(-logAgentOnlineWindow)
+
+	_ = s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("status = ?", "firing").Count(&out.AlertFiringCount).Error
+
+	now := time.Now()
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	dayEnd := dayStart.Add(24 * time.Hour)
+	_ = s.db.WithContext(ctx).Model(&model.AlertEvent{}).
+		Where("created_at >= ? AND created_at < ?", dayStart, dayEnd).
+		Count(&out.AlertEventsTodayCount).Error
+
+	var online int64
+	_ = s.db.WithContext(ctx).Model(&model.LogAgent{}).
+		Where("deleted_at IS NULL AND status = ?", 1).
+		Where("last_seen_at IS NOT NULL AND last_seen_at >= ?", cutoff).
+		Count(&online).Error
+	out.LogAgentsOnlineCount = online
+
+	var totalAgents int64
+	_ = s.db.WithContext(ctx).Model(&model.LogAgent{}).
+		Where("deleted_at IS NULL AND status = ?", 1).
+		Count(&totalAgents).Error
+	if totalAgents >= online {
+		out.LogAgentsOfflineCount = totalAgents - online
+	}
+}
+
 func isPodNormal(p corev1.Pod) bool {
 	// A pragmatic definition:
 	// - phase is Running
@@ -328,6 +373,7 @@ func isPodNormal(p corev1.Pod) bool {
 
 // String 的功能实现。
 func (o OverviewResponse) String() string {
-	return fmt.Sprintf("users=%d clusters=%d pod_normal=%d pod_abnormal=%d pod_errors=%d event_total=%d event_warning=%d event_errors=%d",
-		o.UsersCount, o.ClustersCount, o.PodNormalCount, o.PodAbnormalCount, o.PodClusterErrors, o.EventTotalCount, o.EventWarningCount, o.EventClusterErrors)
+	return fmt.Sprintf("users=%d clusters=%d alerts_firing=%d alerts_today=%d agents_on=%d agents_off=%d pod_normal=%d pod_abnormal=%d pod_errors=%d event_total=%d event_warning=%d event_errors=%d",
+		o.UsersCount, o.ClustersCount, o.AlertFiringCount, o.AlertEventsTodayCount, o.LogAgentsOnlineCount, o.LogAgentsOfflineCount,
+		o.PodNormalCount, o.PodAbnormalCount, o.PodClusterErrors, o.EventTotalCount, o.EventWarningCount, o.EventClusterErrors)
 }

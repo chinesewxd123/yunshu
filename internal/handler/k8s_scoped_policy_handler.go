@@ -30,7 +30,12 @@ func (h *K8sScopedPolicyHandler) Paths(c *gin.Context) {
 
 // Grant 处理对应的 HTTP 请求并返回统一响应。
 func (h *K8sScopedPolicyHandler) Grant(c *gin.Context) {
-	handleJSON(c, h.svc.Grant)
+	ServeJSON(c, h.svc.Grant)
+}
+
+// GrantPreset 按 readonly / readonly_exec / admin 档位一键下发。
+func (h *K8sScopedPolicyHandler) GrantPreset(c *gin.Context) {
+	ServeJSON(c, h.svc.GrantPreset)
 }
 
 // ListByRole 查询列表对应的 HTTP 接口处理逻辑。

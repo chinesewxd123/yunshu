@@ -3,8 +3,8 @@ package handler
 import (
 	"context"
 	"net/http"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/pkg/response"
@@ -40,10 +40,10 @@ func NewUserHandler(service *service.UserService) *UserHandler {
 func (h *UserHandler) Create(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
-	handleJSONCreated(c, func(ctx context.Context, req service.UserCreateRequest) (*service.UserDetailResponse, error) {
+	ServeJSON201(c, func(ctx context.Context, req service.UserCreateRequest) (*service.UserDetailResponse, error) {
 		return h.service.CreateByActor(ctx, user, req)
 	})
 }
@@ -67,7 +67,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 func (h *UserHandler) Update(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 	id, err := parseUintParam(c, "id")
@@ -76,7 +76,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 		return
 	}
 
-	handleJSON(c, func(ctx context.Context, req service.UserUpdateRequest) (*service.UserDetailResponse, error) {
+	ServeJSON(c, func(ctx context.Context, req service.UserUpdateRequest) (*service.UserDetailResponse, error) {
 		return h.service.UpdateByActor(ctx, user, id, req)
 	})
 }
@@ -98,7 +98,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 func (h *UserHandler) Delete(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 	id, err := parseUintParam(c, "id")
@@ -131,7 +131,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 func (h *UserHandler) Detail(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 	id, err := parseUintParam(c, "id")
@@ -166,10 +166,10 @@ func (h *UserHandler) Detail(c *gin.Context) {
 func (h *UserHandler) List(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
-	handleQuery(c, func(ctx context.Context, req service.UserListQuery) (*pagination.Result[service.UserDetailResponse], error) {
+	ServeQuery(c, func(ctx context.Context, req service.UserListQuery) (*pagination.Result[service.UserDetailResponse], error) {
 		return h.service.ListByActor(ctx, user, req)
 	})
 }
@@ -193,7 +193,7 @@ func (h *UserHandler) List(c *gin.Context) {
 func (h *UserHandler) AssignRoles(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 	id, err := parseUintParam(c, "id")
@@ -202,7 +202,7 @@ func (h *UserHandler) AssignRoles(c *gin.Context) {
 		return
 	}
 
-	handleJSON(c, func(ctx context.Context, req service.UserAssignRolesRequest) (*service.UserDetailResponse, error) {
+	ServeJSON(c, func(ctx context.Context, req service.UserAssignRolesRequest) (*service.UserDetailResponse, error) {
 		return h.service.AssignRolesByActor(ctx, user, id, req)
 	})
 }
@@ -216,7 +216,7 @@ func (h *UserHandler) AssignRoles(c *gin.Context) {
 func (h *UserHandler) Export(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 	users, err := h.service.ListAllByActor(c.Request.Context(), user)
@@ -278,7 +278,7 @@ func (h *UserHandler) ImportTemplate(c *gin.Context) {
 func (h *UserHandler) Import(c *gin.Context) {
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
-		response.Error(c, apperror.BadRequest("文件上传失败"))
+		response.Error(c, constants.ErrUploadFailed)
 		return
 	}
 	defer file.Close()

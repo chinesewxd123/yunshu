@@ -13,6 +13,8 @@ const PATH_COMPONENT_FALLBACK: Record<string, string> = {
   "/namespaces": "namespaces-page",
   "/nodes": "nodes-page",
   "/component-status": "component-status-page",
+  "/cluster-api-resources": "cluster-api-resources-page",
+  "/horizontal-pod-autoscalers": "horizontal-pod-autoscalers-page",
   "/deployments": "deployments-page",
   "/statefulsets": "statefulsets-page",
   "/daemonsets": "daemonsets-page",

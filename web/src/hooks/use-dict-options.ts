@@ -68,6 +68,8 @@ const fallbackMap: Record<string, Option[]> = {
     { label: "已停止", value: "stopped" },
     { label: "错误", value: "error" },
     { label: "未知", value: "unknown" },
+    /** 由平台根据心跳推导：库中可能仍为 running，但超过心跳窗口视为离线 */
+    { label: "离线", value: "offline" },
   ],
   /** 监控规则 PromQL 生成器中的标签键候选；条目以数据字典为准 */
   alert_promql_label_key: [

@@ -12,68 +12,34 @@ import (
 	"strings"
 	"text/template"
 	"time"
+	"yunshu/internal/pkg/constants"
 
+	"yunshu/internal/alertdispatch"
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/alertnotify"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/parseutil"
 )
 
-type channelNotifyFunc func(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}, settings map[string]interface{}) (int, string, error)
+func (s *AlertService) sendToChannel(ctx context.Context, channel *model.AlertChannel, env *alertdispatch.Envelope) (int, string, error) {
+	if env == nil {
+		env = alertdispatch.NewEnvelope("", "", "", "", map[string]interface{}{})
+	}
+	payload := env.PayloadOrEmpty()
+	source := env.Source
+	title := env.Title
+	severity := env.Severity
+	status := env.Status
 
-// webhookJSONAPIFailure 解析钉钉/企业微信等「HTTP 200 + JSON errcode」类响应。若存在 errcode 且非 0，返回具体错误文案；无 errcode 字段则视为非此类协议，不覆盖 HTTP 语义。
-func webhookJSONAPIFailure(respBody string) (checked bool, errMsg string) {
-	body := strings.TrimSpace(respBody)
-	if len(body) == 0 || body[0] != '{' {
-		return false, ""
-	}
-	var m map[string]interface{}
-	if err := json.Unmarshal([]byte(body), &m); err != nil {
-		return false, ""
-	}
-	raw, ok := m["errcode"]
-	if !ok {
-		return false, ""
-	}
-	code := 0
-	switch v := raw.(type) {
-	case float64:
-		code = int(v)
-	case int:
-		code = v
-	case int64:
-		code = int(v)
-	case string:
-		code, _ = strconv.Atoi(strings.TrimSpace(v))
-	default:
-		return false, ""
-	}
-	if code == 0 {
-		return true, ""
-	}
-	msg := strings.TrimSpace(fmt.Sprintf("%v", m["errmsg"]))
-	if msg == "" || msg == "<nil>" {
-		msg = "errmsg empty"
-	}
-	return true, fmt.Sprintf("API errcode=%d: %s", code, msg)
-}
-
-func (s *AlertService) sendToChannel(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}) (int, string, error) {
 	title = s.buildUnifiedNotifyTitle(ctx, title, severity, status, payload)
-	if payload != nil {
-		payload["title"] = title
-	}
+	payload["title"] = title
 	settings, err := parseChannelSettings(channel.HeadersJSON)
 	if err != nil {
 		return 0, "", err
 	}
-	if strings.EqualFold(channel.Type, "email") {
+	if strings.EqualFold(strings.TrimSpace(channel.Type), alertdispatch.ChannelTypeEmail) {
 		return s.sendEmailChannel(ctx, channel, source, title, severity, status, payload)
 	}
-	typeKey := strings.ToLower(strings.TrimSpace(channel.Type))
-	if typeKey == "" {
-		typeKey = "generic_webhook"
-	}
+	typeKey := alertdispatch.NormalizeWebhookChannelType(channel.Type)
 	notifyFn := s.buildNotifierRegistry()[typeKey]
 	if notifyFn == nil {
 		notifyFn = s.notifyGenericWebhook
@@ -83,14 +49,6 @@ func (s *AlertService) sendToChannel(ctx context.Context, channel *model.AlertCh
 
 func payloadString(payload map[string]interface{}, key string) string {
 	return strings.TrimSpace(alertnotify.StringFromPayload(payload, key))
-}
-
-func payloadLabels(payload map[string]interface{}) map[string]string {
-	labels := alertnotify.PayloadLabels(payload)
-	if labels == nil {
-		return map[string]string{}
-	}
-	return labels
 }
 
 func (s *AlertService) renderChannelMessage(ctx context.Context, title, severity, status string, payload map[string]interface{}, settings map[string]interface{}) string {
@@ -106,40 +64,8 @@ func (s *AlertService) renderChannelMessage(ctx context.Context, title, severity
 	if tplRaw == "" || tplRaw == "<nil>" {
 		return defaultMsg
 	}
-	summary := payloadString(payload, "summary")
-	if summary == "" {
-		summary = strings.TrimSpace(alertnotify.PayloadAnnotation(payload, "summary"))
-	}
-	description := strings.TrimSpace(alertnotify.PayloadAnnotation(payload, "description"))
-	labels := payloadLabels(payload)
-	labelsText := "-"
-	if compact := alertnotify.FormatCompactLabels(labels, 24); strings.TrimSpace(compact) != "" {
-		labelsText = compact
-	}
-	occurredAt := payloadString(payload, "occurred_at")
-	if occurredAt == "" {
-		occurredAt = time.Now().In(time.Local).Format("2006-01-02 15:04:05 MST")
-	}
-	data := map[string]interface{}{
-		"Title":        title,
-		"Severity":     strings.TrimSpace(severity),
-		"Status":       strings.TrimSpace(status),
-		"StatusText":   map[bool]string{true: "告警恢复", false: "告警触发"}[isResolved],
-		"IsResolved":   isResolved,
-		"Summary":      summary,
-		"Description":  description,
-		"ProjectName":  s.resolveNotifyProjectName(ctx, payload),
-		"Cluster":      payloadString(payload, "cluster"),
-		"OccurredAt":   occurredAt,
-		"StartsAt":     alertnotify.FormatPayloadTime(payload["starts_at"]),
-		"EndsAt":       alertnotify.FormatPayloadTime(payload["ends_at"]),
-		"Current":      payloadString(payload, "current"),
-		"Count":        payloadString(payload, "count"),
-		"Fingerprint":  payloadString(payload, "fingerprint"),
-		"GeneratorURL": payloadString(payload, "generator_url"),
-		"Labels":       labels,
-		"LabelsText":   labelsText,
-	}
+	projectName := s.resolveNotifyProjectName(ctx, payload)
+	data := alertdispatch.BuildChannelTemplateData(title, severity, status, payload, projectName)
 	tpl, err := template.New("channel_message").Option("missingkey=zero").Parse(tplRaw)
 	if err != nil {
 		return defaultMsg
@@ -334,15 +260,6 @@ func parseUintAny(v interface{}) uint {
 	return uint(n)
 }
 
-func (s *AlertService) buildNotifierRegistry() map[string]channelNotifyFunc {
-	return map[string]channelNotifyFunc{
-		"generic_webhook": s.notifyGenericWebhook,
-		"wechat":          s.notifyWeComWebhook,
-		"wechat_work":     s.notifyWeComWebhook,
-		"dingding":        s.notifyDingTalkWebhook,
-	}
-}
-
 func (s *AlertService) notifyGenericWebhook(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}, settings map[string]interface{}) (int, string, error) {
 	clamped := payload
 	if s.cfg.PlatformLimits.GenericMaxChars > 0 {
@@ -423,7 +340,7 @@ func (s *AlertService) notifyWeComApp(ctx context.Context, channel *model.AlertC
 	corpSecret := strings.TrimSpace(fmt.Sprintf("%v", settings["corpSecret"]))
 	agentID := strings.TrimSpace(fmt.Sprintf("%v", settings["agentId"]))
 	if corpID == "" || corpSecret == "" || agentID == "" {
-		return 0, "", apperror.BadRequest("企业微信应用模式需配置 corpID/corpSecret/agentId")
+		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsg5fcdf3f22c91)
 	}
 	atMobiles := parseutil.ParseStringList(settings["atMobiles"])
 	atUsers := parseutil.ParseStringList(settings["atUserIds"])
@@ -438,7 +355,7 @@ func (s *AlertService) notifyWeComApp(ctx context.Context, channel *model.AlertC
 		atUsers = append(atUsers, "@all")
 	}
 	if len(atUsers) == 0 {
-		return 0, "", apperror.BadRequest("企业微信应用模式至少需要配置 atMobiles/atUserIds/isAtAll")
+		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsg3963f2e4d87c)
 	}
 	token, err := s.getWeComAccessToken(ctx, corpID, corpSecret)
 	if err != nil {
@@ -462,7 +379,7 @@ func (s *AlertService) notifyDingTalkAppChat(ctx context.Context, channel *model
 	appSecret := strings.TrimSpace(fmt.Sprintf("%v", settings["appSecret"]))
 	chatID := strings.TrimSpace(fmt.Sprintf("%v", settings["chatId"]))
 	if appKey == "" || appSecret == "" || chatID == "" {
-		return 0, "", apperror.BadRequest("钉钉应用会话模式需配置 appKey/appSecret/chatId")
+		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsgf1768c17d51a)
 	}
 	token, err := s.getDingTalkAccessToken(ctx, appKey, appSecret)
 	if err != nil {
@@ -541,23 +458,23 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 	}
 
 	cluster := alertnotify.StringFromPayload(alertPayload, "cluster")
-	monPipe := strings.TrimSpace(alertnotify.StringFromPayload(alertPayload, "monitor_pipeline"))
-	groupKey := alertnotify.StringFromPayload(alertPayload, "group_key")
-	labelsDigest := alertnotify.StringFromPayload(alertPayload, "labels_digest")
+	monPipe := strings.TrimSpace(alertnotify.StringFromPayload(alertPayload, "monitorPipeline"))
+	groupKey := alertnotify.StringFromPayload(alertPayload, "groupKey")
+	labelsDigest := alertnotify.StringFromPayload(alertPayload, "labelsDigest")
 	if cluster == "" {
 		cluster = alertnotify.StringFromPayload(body, "cluster")
 	}
 	if monPipe == "" {
-		monPipe = strings.TrimSpace(alertnotify.StringFromPayload(body, "monitor_pipeline"))
+		monPipe = strings.TrimSpace(alertnotify.StringFromPayload(body, "monitorPipeline"))
 	}
 	if groupKey == "" {
-		groupKey = alertnotify.StringFromPayload(body, "group_key")
+		groupKey = alertnotify.StringFromPayload(body, "groupKey")
 	}
 	if labelsDigest == "" {
-		labelsDigest = alertnotify.StringFromPayload(body, "labels_digest")
+		labelsDigest = alertnotify.StringFromPayload(body, "labelsDigest")
 	}
 	httpOK := reqErr == nil && code >= 200 && code < 300
-	apiChecked, apiErr := webhookJSONAPIFailure(respBody)
+	apiChecked, apiErr := alertdispatch.WebhookJSONAPIFailure(respBody)
 	success := httpOK && (!apiChecked || apiErr == "")
 	respPayload := truncateText(respBody, s.cfg.MaxPayloadChars)
 	if dbg := dingtalkRequestDebugNote(channel, req); dbg != "" {
@@ -576,15 +493,16 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 		MonitorPipeline:    monPipe,
 		GroupKey:           groupKey,
 		LabelsDigest:       labelsDigest,
-		MatchedPolicyIDs:   alertnotify.StringFromPayload(alertPayload, "matched_policy_ids"),
-		MatchedPolicyNames: alertnotify.StringFromPayload(alertPayload, "matched_policy_names"),
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(alertPayload, "matchedPolicyIds"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(alertPayload, "matchedPolicyNames"),
 		ChannelID:          channel.ID,
 		ChannelName:        channel.Name,
 		Success:            success,
 		HTTPStatusCode:     code,
-		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
+		RequestPayload:     truncateText(string(buildEventPayloadBytes(reqBytes, alertPayload, s.cfg.MaxPayloadChars)), s.cfg.MaxPayloadChars),
 		ResponsePayload:    respPayload,
 	}
+	fillAlertEventDatasourceFromPayload(&event, alertPayload)
 	if reqErr != nil {
 		event.ErrorMessage = truncateText(reqErr.Error(), 1000)
 	} else if code < 200 || code >= 300 {
@@ -597,12 +515,160 @@ func (s *AlertService) executeAndLogHTTP(ctx context.Context, source, title, sev
 		return code, respBody, reqErr
 	}
 	if code < 200 || code >= 300 {
-		return code, respBody, apperror.Internal(fmt.Sprintf("webhook 返回异常状态码: %d", code))
+		return code, respBody, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd0ae16233479, code))
 	}
 	if apiChecked && apiErr != "" {
-		return code, respBody, apperror.Internal(apiErr)
+		return code, respBody, constants.ErrInternalWithMsg(apiErr)
 	}
 	return code, respBody, nil
+}
+
+// payloadMetaValueMeaningful 判断入库 JSON 中某字段是否已有可用值（避免 webhook 体里占位空串阻断用 alertPayload 回填）。
+func payloadMetaValueMeaningful(v interface{}) bool {
+	if v == nil {
+		return false
+	}
+	switch x := v.(type) {
+	case string:
+		s := strings.TrimSpace(x)
+		return s != "" && strings.EqualFold(s, "null") == false
+	case map[string]interface{}:
+		return len(x) > 0
+	case []interface{}:
+		return len(x) > 0
+	default:
+		s := strings.TrimSpace(fmt.Sprintf("%v", v))
+		return s != "" && s != "<nil>" && strings.EqualFold(s, "null") == false
+	}
+}
+
+func enrichRequestMapWithAlertPayload(reqMap map[string]interface{}, alertPayload map[string]interface{}) {
+	if reqMap == nil {
+		return
+	}
+	for _, key := range []string{"startsAt", "endsAt", "occurredAt", "generatorURL", "status", "severity", "groupKey", "monitorPipeline", "datasourceId", "datasourceName", "datasourceType"} {
+		if existing, ok := reqMap[key]; ok && payloadMetaValueMeaningful(existing) {
+			continue
+		}
+		if alertPayload == nil {
+			continue
+		}
+		if v, ok := alertPayload[key]; ok && payloadMetaValueMeaningful(v) {
+			reqMap[key] = v
+		}
+	}
+	if existing, ok := reqMap["labels"]; ok && payloadMetaValueMeaningful(existing) {
+		return
+	}
+	if alertPayload == nil {
+		return
+	}
+	if v, ok := alertPayload["labels"]; ok && payloadMetaValueMeaningful(v) {
+		reqMap["labels"] = v
+	}
+}
+
+// shrinkLargestNotifyStrings 缩短钉钉/企微等大段 markdown，避免 json.Marshal 后按字节截断时丢掉排在后面的 startsAt 等字段。
+func shrinkLargestNotifyStrings(m map[string]interface{}) bool {
+	if md, ok := m["markdown"].(map[string]interface{}); ok {
+		for _, key := range []string{"text", "content"} {
+			s, ok := md[key].(string)
+			if !ok || len(s) <= 512 {
+				continue
+			}
+			cut := len(s) / 2
+			if cut < 256 {
+				cut = 256
+			}
+			md[key] = s[:cut] + "\n…(truncated)…"
+			return true
+		}
+	}
+	if tx, ok := m["text"].(map[string]interface{}); ok {
+		s, ok := tx["content"].(string)
+		if !ok || len(s) <= 512 {
+			return false
+		}
+		cut := len(s) / 2
+		if cut < 256 {
+			cut = 256
+		}
+		tx["content"] = s[:cut] + "\n…(truncated)…"
+		return true
+	}
+	// 钉钉应用会话：msg.markdown.text
+	if msg, ok := m["msg"].(map[string]interface{}); ok {
+		if md, ok := msg["markdown"].(map[string]interface{}); ok {
+			if s, ok := md["text"].(string); ok && len(s) > 512 {
+				cut := len(s) / 2
+				if cut < 256 {
+					cut = 256
+				}
+				md["text"] = s[:cut] + "\n…(truncated)…"
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func trimWebhookBodyForMaxJSON(m map[string]interface{}, maxBytes int) {
+	if maxBytes <= 0 || m == nil {
+		return
+	}
+	for iter := 0; iter < 64; iter++ {
+		bs, err := json.Marshal(m)
+		if err != nil || len(bs) <= maxBytes {
+			return
+		}
+		if shrinkLargestNotifyStrings(m) {
+			continue
+		}
+		if md, ok := m["markdown"].(map[string]interface{}); ok {
+			title := md["title"]
+			m["markdown"] = map[string]interface{}{
+				"title": title,
+				"text":  "[内容过长已省略，历史记录保留告警时间等字段]",
+			}
+			continue
+		}
+		if tx, ok := m["text"].(map[string]interface{}); ok {
+			tx["content"] = "[内容过长已省略，历史记录保留告警时间等字段]"
+			m["text"] = tx
+			continue
+		}
+		if msg, ok := m["msg"].(map[string]interface{}); ok {
+			if md, ok := msg["markdown"].(map[string]interface{}); ok {
+				md["text"] = "[内容过长已省略，历史记录保留告警时间等字段]"
+				msg["markdown"] = md
+				m["msg"] = msg
+				continue
+			}
+		}
+		break
+	}
+}
+
+func buildEventPayloadBytes(reqBytes []byte, alertPayload map[string]interface{}, maxChars int) []byte {
+	// 历史记录展示需要 startsAt 等原始告警上下文（钉钉/企微下发体默认不包含），
+	// 这里仅扩充入库 payload，不影响实际发往通道的请求体。
+	if len(reqBytes) == 0 {
+		return reqBytes
+	}
+	var reqMap map[string]interface{}
+	if err := json.Unmarshal(reqBytes, &reqMap); err != nil {
+		return reqBytes
+	}
+	if reqMap == nil {
+		reqMap = map[string]interface{}{}
+	}
+	enrichRequestMapWithAlertPayload(reqMap, alertPayload)
+	trimWebhookBodyForMaxJSON(reqMap, maxChars)
+	bs, err := json.Marshal(reqMap)
+	if err != nil {
+		return reqBytes
+	}
+	return bs
 }
 
 func dingtalkRequestDebugNote(channel *model.AlertChannel, req *http.Request) string {
@@ -696,10 +762,10 @@ func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.Aler
 	}
 	recipients = mergeAssigneeEmails(recipients, payload)
 	if len(recipients) == 0 {
-		return 0, "", apperror.BadRequest("邮件通道未配置收件人：请在邮件接收人或配置 JSON 中填写 to/recipients/emails；或由监控规则处理人 assignee_emails 提供")
+		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsgc47e8ed41463)
 	}
 	if s.mailer == nil || !s.mailer.Enabled() {
-		return 0, "", apperror.Internal("邮件通道未配置：请检查全局 SMTP（mail 相关配置）是否启用")
+		return 0, "", constants.ErrInternalWithMsg(constants.ErrMsg71c5fe1e9994)
 	}
 	settings, err := parseChannelSettings(channel.HeadersJSON)
 	if err != nil {
@@ -723,7 +789,13 @@ func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.Aler
 	} else if len(failMsgs) > 0 {
 		sendErr = fmt.Errorf("partial failure: %s", strings.Join(failMsgs, "; "))
 	}
-	reqBytes, _ := json.Marshal(payload)
+	storeMap := make(map[string]interface{}, len(payload)+4)
+	for k, v := range payload {
+		storeMap[k] = v
+	}
+	storeMap["to"] = recipients
+	alertdispatch.SlimOutgoingPayloadForHistory(storeMap, s.cfg.MaxPayloadChars)
+	reqBytes, _ := json.Marshal(storeMap)
 	respNote := "email sent"
 	if okCount > 0 && len(failMsgs) > 0 {
 		respNote = fmt.Sprintf("email sent: %d ok, %d failed", okCount, len(failMsgs))
@@ -734,18 +806,19 @@ func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.Aler
 		Severity:           severity,
 		Status:             status,
 		Cluster:            alertnotify.StringFromPayload(payload, "cluster"),
-		MonitorPipeline:    strings.TrimSpace(alertnotify.StringFromPayload(payload, "monitor_pipeline")),
-		GroupKey:           alertnotify.StringFromPayload(payload, "group_key"),
-		LabelsDigest:       alertnotify.StringFromPayload(payload, "labels_digest"),
-		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matched_policy_ids"),
-		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matched_policy_names"),
+		MonitorPipeline:    strings.TrimSpace(alertnotify.StringFromPayload(payload, "monitorPipeline")),
+		GroupKey:           alertnotify.StringFromPayload(payload, "groupKey"),
+		LabelsDigest:       alertnotify.StringFromPayload(payload, "labelsDigest"),
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matchedPolicyIds"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matchedPolicyNames"),
 		ChannelID:          channel.ID,
 		ChannelName:        channel.Name,
 		Success:            okCount > 0,
 		HTTPStatusCode:     200,
-		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
+		RequestPayload:     truncateText(string(buildEventPayloadBytes(reqBytes, payload, s.cfg.MaxPayloadChars)), s.cfg.MaxPayloadChars),
 		ResponsePayload:    truncateText(respNote, s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	if sendErr != nil && okCount == 0 {
 		event.HTTPStatusCode = 500
 		event.Success = false

@@ -112,6 +112,7 @@ export function ProjectLogsPage() {
   const abortRef = useRef<AbortController | null>(null);
 
   const termHostRef = useRef<HTMLDivElement | null>(null);
+  const termWrapRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
 
@@ -149,8 +150,18 @@ export function ProjectLogsPage() {
     }
     const onResize = () => fitRef.current?.fit();
     window.addEventListener("resize", onResize);
+    const wrap = termWrapRef.current;
+    const ro =
+      wrap &&
+      new ResizeObserver(() => {
+        fitRef.current?.fit();
+      });
+    if (wrap && ro) {
+      ro.observe(wrap);
+    }
     return () => {
       window.removeEventListener("resize", onResize);
+      ro?.disconnect();
       termRef.current?.dispose();
       termRef.current = null;
     };
@@ -270,7 +281,12 @@ export function ProjectLogsPage() {
       }
     } catch (e: any) {
       if (e?.name !== "AbortError") {
-        message.error(String(e?.message ?? e));
+        const raw = String(e?.message ?? e);
+        const hint =
+          /chunk|network|Failed to fetch|Load failed|ERR_/i.test(raw)
+            ? "日志流连接中断（常见于网关缓冲或后端写入超时）。请确认已部署最新配置并点击「开始」重试。"
+            : raw;
+        message.error(hint);
       }
     } finally {
       setStreaming(false);
@@ -329,6 +345,7 @@ export function ProjectLogsPage() {
   }, [watchProjectId, watchServerId, selectedSource?.id, selectedSource?.path, selectedSource?.log_type]);
 
   return (
+    <div className="project-logs-page">
     <Card
       className="table-card project-logs-card"
       title="日志平台"
@@ -483,10 +500,11 @@ export function ProjectLogsPage() {
         </Row>
       </Form>
 
-      <div className="project-logs-terminal-wrap">
-        <div ref={termHostRef} style={{ height: "100%", width: "100%" }} />
+      <div ref={termWrapRef} className="project-logs-terminal-wrap">
+        <div ref={termHostRef} className="project-logs-terminal-host" />
       </div>
     </Card>
+    </div>
   );
 }
 

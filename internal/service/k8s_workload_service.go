@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/k8sutil"
 
 	kom "github.com/weibaohui/kom/kom"
@@ -100,7 +100,7 @@ func (s *K8sWorkloadService) ListDeployments(ctx context.Context, q NamespacedLi
 	gvk, _ := s.dyn.GVKByKind("Deployment")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Deployments 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt78bb8313c519, err))
 	}
 	list := make([]appsv1.Deployment, 0, len(listU))
 	for _, item := range listU {
@@ -285,9 +285,9 @@ func (s *K8sWorkloadService) DeploymentDetail(ctx context.Context, q NamespacedD
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Deployment 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgf6d026c4bc20)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 Deployment 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta3018a66177e, err))
 	}
 	var obj appsv1.Deployment
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -302,25 +302,28 @@ func (s *K8sWorkloadService) DeploymentDetail(ctx context.Context, q NamespacedD
 }
 
 // DeploymentScale 执行对应的业务逻辑。
+// DeploymentScale 水平扩缩（修改 replicas）。
+// 对齐 Kubernetes 中可通过 HPA / scale 子资源调整副本的控制器：Deployment、StatefulSet、ReplicaSet、ReplicationController；
+// 不包含 DaemonSet、Job、CronJob（后三者不按「副本数」做持续水平伸缩）。
 func (s *K8sWorkloadService) DeploymentScale(ctx context.Context, req WorkloadScaleRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if req.Replicas < 0 {
-		return apperror.BadRequest("replicas 不能小于 0")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgba0d4ada9f12)
 	}
 	var obj appsv1.Deployment
 	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("Deployment 资源不存在")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsgf6d026c4bc20)
 		}
-		return apperror.Internal(fmt.Sprintf("获取 Deployment 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta3018a66177e, err))
 	}
 	copyObj := obj.DeepCopy()
 	copyObj.Spec.Replicas = &req.Replicas
 	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return apperror.Internal(fmt.Sprintf("Deployment 扩缩容失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtdc6cb8eb04b7, err))
 	}
 	return nil
 }
@@ -335,12 +338,12 @@ func (s *K8sWorkloadService) DeploymentRestart(ctx context.Context, q Namespaced
 	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(q.Namespace).Name(q.Name).
 		Patch(&appsv1.Deployment{}, types.StrategicMergePatchType, patch).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("Deployment 资源不存在")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsgf6d026c4bc20)
 		}
 		if apierrors.IsForbidden(err) {
-			return apperror.Forbidden("无权限重启该 Deployment")
+			return constants.ErrForbiddenWithMsg(constants.ErrMsg4a3ba8680915)
 		}
-		return apperror.Internal(fmt.Sprintf("Deployment 重启失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt31dc761c382a, err))
 	}
 	return nil
 }
@@ -354,7 +357,7 @@ func (s *K8sWorkloadService) ListStatefulSets(ctx context.Context, q NamespacedL
 	gvk, _ := s.dyn.GVKByKind("StatefulSet")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 StatefulSets 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt3bef5bb60df3, err))
 	}
 	list := make([]appsv1.StatefulSet, 0, len(listU))
 	for _, item := range listU {
@@ -407,9 +410,9 @@ func (s *K8sWorkloadService) StatefulSetDetail(ctx context.Context, q Namespaced
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("StatefulSet 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg728d3e3b08a7)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 StatefulSet 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt70dba6fa52bd, err))
 	}
 	var obj appsv1.StatefulSet
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -423,25 +426,235 @@ func (s *K8sWorkloadService) StatefulSetDetail(ctx context.Context, q Namespaced
 }
 
 // StatefulSetScale 执行对应的业务逻辑。
+// StatefulSetScale 水平扩缩（修改 replicas）。语义同 DeploymentScale，属 HPA scale 子资源一类。
 func (s *K8sWorkloadService) StatefulSetScale(ctx context.Context, req WorkloadScaleRequest) error {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return err
 	}
 	if req.Replicas < 0 {
-		return apperror.BadRequest("replicas 不能小于 0")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgba0d4ada9f12)
 	}
 	var obj appsv1.StatefulSet
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("StatefulSet 资源不存在")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg728d3e3b08a7)
 		}
-		return apperror.Internal(fmt.Sprintf("获取 StatefulSet 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt70dba6fa52bd, err))
 	}
 	copyObj := obj.DeepCopy()
 	copyObj.Spec.Replicas = &req.Replicas
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return apperror.Internal(fmt.Sprintf("StatefulSet 扩缩容失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta91edbc01ba4, err))
+	}
+	return nil
+}
+
+func workloadContainerIndex(containers []corev1.Container, name string) int {
+	n := strings.TrimSpace(name)
+	if n != "" {
+		for i, c := range containers {
+			if c.Name == n {
+				return i
+			}
+		}
+		return -1
+	}
+	if len(containers) > 0 {
+		return 0
+	}
+	return -1
+}
+
+// DeploymentPatchContainerResources 垂直扩缩：修改 Deployment Pod 模板内指定容器的 requests/limits（对齐 VPA 修改模板资源的范畴）。
+func (s *K8sWorkloadService) DeploymentPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj appsv1.Deployment
+	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return constants.ErrBadRequestWithMsg(constants.ErrMsgf6d026c4bc20)
+		}
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta3018a66177e, err))
+	}
+	containers := obj.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg1a5aaa6cfa35)
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmte922f3829384, err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
+	}
+	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd272644d22c5, err))
+	}
+	return nil
+}
+
+// StatefulSetPatchContainerResources 垂直扩缩：修改 StatefulSet Pod 模板内指定容器的 requests/limits（对齐 VPA 范畴）。
+func (s *K8sWorkloadService) StatefulSetPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj appsv1.StatefulSet
+	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg728d3e3b08a7)
+		}
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt70dba6fa52bd, err))
+	}
+	containers := obj.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg1a5aaa6cfa35)
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmte922f3829384, err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
+	}
+	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6cf03553be44, err))
+	}
+	return nil
+}
+
+// DaemonSetPatchContainerResources 垂直扩缩：修改 DaemonSet Pod 模板内指定容器的 requests/limits。
+// VPA 虽可纳管 DaemonSet，但 DaemonSet 按节点全局副本运行，资源上调可能导致节点压力，运维上需谨慎评估。
+func (s *K8sWorkloadService) DaemonSetPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj appsv1.DaemonSet
+	if err := k.WithContext(ctx).Resource(&appsv1.DaemonSet{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg728030d27854)
+		}
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt960ced5a2f6f, err))
+	}
+	containers := obj.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg1a5aaa6cfa35)
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmte922f3829384, err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
+	}
+	if err := k.WithContext(ctx).Resource(&appsv1.DaemonSet{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt4b5d3792ab7b, err))
+	}
+	return nil
+}
+
+// JobPatchContainerResources 垂直扩缩：修改 Job Pod 模板内指定容器的 requests/limits。
+// 批量类工作负载若由集群 VPA 纳管，通常仅在 Initial/Off 等模式下对新建 Pod 生效更安全；此处仅修改模板，不调整并行语义。
+func (s *K8sWorkloadService) JobPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj batchv1.Job
+	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg656deb688b72)
+		}
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt1a7e7f82dbdc, err))
+	}
+	containers := obj.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg1a5aaa6cfa35)
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmte922f3829384, err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
+	}
+	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtcf70bcca046e, err))
+	}
+	return nil
+}
+
+// CronJobPatchContainerResources 垂直扩缩：修改 CronJob 的 jobTemplate 内 Pod 模板资源。
+// 与 Job 类似，批量/定时任务场景下变更模板主要影响后续创建的 Job/Pod；运行中实例不受影响。
+func (s *K8sWorkloadService) CronJobPatchContainerResources(ctx context.Context, req WorkloadContainerResourcesRequest) error {
+	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
+	if err != nil {
+		return err
+	}
+	var obj batchv1.CronJob
+	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
+		if apierrors.IsNotFound(err) {
+			return constants.ErrBadRequestWithMsg(constants.ErrMsgc6ae960d40d1)
+		}
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt687b79e3dfdb, err))
+	}
+	containers := obj.Spec.JobTemplate.Spec.Template.Spec.Containers
+	idx := workloadContainerIndex(containers, req.ContainerName)
+	if idx < 0 {
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg1a5aaa6cfa35)
+	}
+	copyObj := obj.DeepCopy()
+	c := &copyObj.Spec.JobTemplate.Spec.Template.Spec.Containers[idx]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Requests, req.Requests); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmte922f3829384, err))
+	}
+	if err := k8sutil.PatchResourceList(&c.Resources.Limits, req.Limits); err != nil {
+		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
+	}
+	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtb9659e254f0c, err))
 	}
 	return nil
 }
@@ -456,12 +669,12 @@ func (s *K8sWorkloadService) StatefulSetRestart(ctx context.Context, q Namespace
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(q.Namespace).Name(q.Name).
 		Patch(&appsv1.StatefulSet{}, types.StrategicMergePatchType, patch).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("StatefulSet 资源不存在")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg728d3e3b08a7)
 		}
 		if apierrors.IsForbidden(err) {
-			return apperror.Forbidden("无权限重启该 StatefulSet")
+			return constants.ErrForbiddenWithMsg(constants.ErrMsga0421725a51e)
 		}
-		return apperror.Internal(fmt.Sprintf("StatefulSet 重启失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt83515735986c, err))
 	}
 	return nil
 }
@@ -475,7 +688,7 @@ func (s *K8sWorkloadService) ListDaemonSets(ctx context.Context, q NamespacedLis
 	gvk, _ := s.dyn.GVKByKind("DaemonSet")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 DaemonSets 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt22f7c7b69366, err))
 	}
 	list := make([]appsv1.DaemonSet, 0, len(listU))
 	for _, item := range listU {
@@ -527,9 +740,9 @@ func (s *K8sWorkloadService) DaemonSetDetail(ctx context.Context, q NamespacedDe
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("DaemonSet 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg728030d27854)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 DaemonSet 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt960ced5a2f6f, err))
 	}
 	var obj appsv1.DaemonSet
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -552,12 +765,12 @@ func (s *K8sWorkloadService) DaemonSetRestart(ctx context.Context, q NamespacedD
 	if err := k.WithContext(ctx).Resource(&appsv1.DaemonSet{}).Namespace(q.Namespace).Name(q.Name).
 		Patch(&appsv1.DaemonSet{}, types.StrategicMergePatchType, patch).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("DaemonSet 资源不存在")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsg728030d27854)
 		}
 		if apierrors.IsForbidden(err) {
-			return apperror.Forbidden("无权限重启该 DaemonSet")
+			return constants.ErrForbiddenWithMsg(constants.ErrMsg6e28e4e09c23)
 		}
-		return apperror.Internal(fmt.Sprintf("DaemonSet 重启失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt2ad7f69842e8, err))
 	}
 	return nil
 }
@@ -571,7 +784,7 @@ func (s *K8sWorkloadService) ListJobs(ctx context.Context, q NamespacedListQuery
 	gvk, _ := s.dyn.GVKByKind("Job")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Jobs 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt9987a1977622, err))
 	}
 	list := make([]batchv1.Job, 0, len(listU))
 	for _, item := range listU {
@@ -643,9 +856,9 @@ func (s *K8sWorkloadService) JobDetail(ctx context.Context, q NamespacedDetailQu
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("Job 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg656deb688b72)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 Job 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt1a7e7f82dbdc, err))
 	}
 	var obj batchv1.Job
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -666,7 +879,7 @@ func (s *K8sWorkloadService) ListCronJobs(ctx context.Context, q NamespacedListQ
 	gvk, _ := s.dyn.GVKByKind("CronJob")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 CronJobs 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt336d54b211b0, err))
 	}
 	list := make([]batchv1.CronJob, 0, len(listU))
 	for _, item := range listU {
@@ -718,7 +931,7 @@ func (s *K8sWorkloadService) ListCronJobsV2(ctx context.Context, q NamespacedLis
 	gvk, _ := s.dyn.GVKByKind("CronJob")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 CronJobs 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt336d54b211b0, err))
 	}
 	list := make([]batchv1.CronJob, 0, len(listU))
 	for _, item := range listU {
@@ -781,9 +994,9 @@ func (s *K8sWorkloadService) JobRerun(ctx context.Context, req JobRerunRequest) 
 	var job batchv1.Job
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Name(req.Name).Get(&job).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", apperror.BadRequest("Job 资源不存在")
+			return "", constants.ErrBadRequestWithMsg(constants.ErrMsg656deb688b72)
 		}
-		return "", apperror.Internal(fmt.Sprintf("获取 Job 失败: %v", err))
+		return "", constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt1a7e7f82dbdc, err))
 	}
 	newName := fmt.Sprintf("%s-rerun-%d", job.Name, time.Now().Unix())
 	newJob := &batchv1.Job{
@@ -798,7 +1011,7 @@ func (s *K8sWorkloadService) JobRerun(ctx context.Context, req JobRerunRequest) 
 	newJob.Spec.Selector = nil
 	newJob.Spec.ManualSelector = nil
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Create(newJob).Error; err != nil {
-		return "", apperror.Internal(fmt.Sprintf("重新执行 Job 失败: %v", err))
+		return "", constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt2abaeffc289e, err))
 	}
 	return newName, nil
 }
@@ -823,7 +1036,7 @@ func (s *K8sWorkloadService) DeploymentPods(ctx context.Context, q RelatedPodsQu
 	}
 	var d appsv1.Deployment
 	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(q.Namespace).Name(q.Name).Get(&d).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Deployment 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta3018a66177e, err))
 	}
 	selector := metav1.FormatLabelSelector(d.Spec.Selector)
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
@@ -837,7 +1050,7 @@ func (s *K8sWorkloadService) StatefulSetPods(ctx context.Context, q RelatedPodsQ
 	}
 	var st appsv1.StatefulSet
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(q.Namespace).Name(q.Name).Get(&st).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 StatefulSet 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt70dba6fa52bd, err))
 	}
 	selector := metav1.FormatLabelSelector(st.Spec.Selector)
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
@@ -851,7 +1064,7 @@ func (s *K8sWorkloadService) DaemonSetPods(ctx context.Context, q RelatedPodsQue
 	}
 	var ds appsv1.DaemonSet
 	if err := k.WithContext(ctx).Resource(&appsv1.DaemonSet{}).Namespace(q.Namespace).Name(q.Name).Get(&ds).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 DaemonSet 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt960ced5a2f6f, err))
 	}
 	selector := metav1.FormatLabelSelector(ds.Spec.Selector)
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
@@ -865,7 +1078,7 @@ func (s *K8sWorkloadService) JobPods(ctx context.Context, q RelatedPodsQuery) ([
 	}
 	var job batchv1.Job
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(q.Namespace).Name(q.Name).Get(&job).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 Job 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt1a7e7f82dbdc, err))
 	}
 	selector := ""
 	if job.Spec.Selector != nil {
@@ -885,14 +1098,14 @@ func (s *K8sWorkloadService) CronJobPods(ctx context.Context, q RelatedPodsQuery
 	}
 	var cj batchv1.CronJob
 	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(q.Namespace).Name(q.Name).Get(&cj).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 CronJob 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt687b79e3dfdb, err))
 	}
 
 	// CronJob 触发后，Pod 通常由 Job 创建并带有 job-name 标签；
 	// 直接按 cronjob 标签查 Pod 在部分版本/场景会为空，因此改为“先找 Job，再找 Pod”。
 	var jobs []batchv1.Job
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(q.Namespace).List(&jobs).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取 CronJob 关联 Jobs 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtc13b046a7597, err))
 	}
 
 	all := make([]RelatedPodItem, 0)
@@ -928,7 +1141,7 @@ func (s *K8sWorkloadService) CronJobPods(ctx context.Context, q RelatedPodsQuery
 
 func listPodsBySelector(ctx context.Context, k *kom.Kubectl, namespace, selector string) ([]RelatedPodItem, error) {
 	if k == nil {
-		return nil, apperror.Internal("K8s 客户端不存在")
+		return nil, constants.ErrInternalWithMsg(constants.ErrMsgc674e8a0802b)
 	}
 	opts := metav1.ListOptions{}
 	if strings.TrimSpace(selector) != "" {
@@ -940,7 +1153,7 @@ func listPodsBySelector(ctx context.Context, k *kom.Kubectl, namespace, selector
 		query = query.WithLabelSelector(strings.TrimSpace(opts.LabelSelector))
 	}
 	if err := query.List(&list).Error; err != nil {
-		return nil, apperror.Internal(fmt.Sprintf("获取关联 Pods 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt3ab38ee441a3, err))
 	}
 	out := make([]RelatedPodItem, 0, len(list))
 	for _, p := range list {
@@ -976,9 +1189,9 @@ func (s *K8sWorkloadService) CronJobDetail(ctx context.Context, q NamespacedDeta
 	u, err := s.dyn.GetByGVK(ctx, k, gvk, q.Namespace, q.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, apperror.BadRequest("CronJob 资源不存在")
+			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc6ae960d40d1)
 		}
-		return nil, apperror.Internal(fmt.Sprintf("获取 CronJob 失败: %v", err))
+		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt687b79e3dfdb, err))
 	}
 	var obj batchv1.CronJob
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -997,7 +1210,7 @@ func (s *K8sWorkloadService) Apply(ctx context.Context, req NamespacedApplyReque
 		return err
 	}
 	if strings.TrimSpace(req.Manifest) == "" {
-		return apperror.BadRequest("资源清单不能为空")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 
 	refs := extractWorkloadRefsForApply(req.Manifest)
@@ -1017,7 +1230,7 @@ func (s *K8sWorkloadService) Apply(ctx context.Context, req NamespacedApplyReque
 		return true
 	})
 	if err != nil {
-		return apperror.Internal(fmt.Sprintf("应用 YAML 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
 	}
 	return nil
 }
@@ -1116,13 +1329,13 @@ func (s *K8sWorkloadService) deleteWorkloadByKind(ctx context.Context, req Names
 	}
 	gvk, ok := s.dyn.GVKByKind(kind)
 	if !ok {
-		return apperror.BadRequest("不支持的工作负载类型")
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgd5692b195622)
 	}
 	if err := s.dyn.DeleteByGVK(ctx, k, gvk, req.Namespace, req.Name); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return apperror.Internal(fmt.Sprintf("删除 %s 失败: %v", kind, err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt32b88f9cc2e5, kind, err))
 	}
 	return nil
 }
@@ -1136,14 +1349,14 @@ func (s *K8sWorkloadService) CronJobSuspend(ctx context.Context, req CronJobSusp
 	var obj batchv1.CronJob
 	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Name(req.Name).Get(&obj).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return apperror.BadRequest("CronJob 资源不存在")
+			return constants.ErrBadRequestWithMsg(constants.ErrMsgc6ae960d40d1)
 		}
-		return apperror.Internal(fmt.Sprintf("获取 CronJob 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt687b79e3dfdb, err))
 	}
 	copyObj := obj.DeepCopy()
 	copyObj.Spec.Suspend = &req.Suspend
 	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return apperror.Internal(fmt.Sprintf("更新 CronJob suspend 失败: %v", err))
+		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt2dc26da7706f, err))
 	}
 	return nil
 }
@@ -1157,9 +1370,9 @@ func (s *K8sWorkloadService) CronJobTrigger(ctx context.Context, req CronJobTrig
 	var cj batchv1.CronJob
 	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Name(req.Name).Get(&cj).Error; err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", apperror.BadRequest("CronJob 资源不存在")
+			return "", constants.ErrBadRequestWithMsg(constants.ErrMsgc6ae960d40d1)
 		}
-		return "", apperror.Internal(fmt.Sprintf("获取 CronJob 失败: %v", err))
+		return "", constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt687b79e3dfdb, err))
 	}
 	jobName := fmt.Sprintf("%s-manual-%d", cj.Name, time.Now().Unix())
 	job := &batchv1.Job{
@@ -1178,7 +1391,7 @@ func (s *K8sWorkloadService) CronJobTrigger(ctx context.Context, req CronJobTrig
 		UID:        cj.UID,
 	}}
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Create(job).Error; err != nil {
-		return "", apperror.Internal(fmt.Sprintf("触发 CronJob 创建 Job 失败: %v", err))
+		return "", constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt25f9e144a662, err))
 	}
 	return jobName, nil
 }

@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"strings"
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/constants"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
@@ -16,7 +16,7 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.Handler
 	return func(c *gin.Context) {
 		user, ok := auth.CurrentUserFromContext(c)
 		if !ok {
-			response.Error(c, apperror.Unauthorized("未登录"))
+			response.Error(c, constants.ErrNotLoggedIn)
 			c.Abort()
 			return
 		}
@@ -36,7 +36,7 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.Handler
 		allowed, err := enforcer.Enforce(service.UserSubject(user.ID), path, c.Request.Method)
 		if err != nil {
 			logger.Error.Error("casbin authorize failed", "error", err, "path", path, "method", c.Request.Method)
-			response.Error(c, apperror.Internal("权限校验失败"))
+			response.Error(c, constants.ErrInternal)
 			c.Abort()
 			return
 		}
@@ -47,7 +47,7 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.Handler
 				c.Next()
 				return
 			}
-			response.Error(c, apperror.Forbidden("无访问权限"))
+			response.Error(c, constants.ErrForbidden)
 			c.Abort()
 			return
 		}
@@ -69,9 +69,9 @@ func allowReadByK8sScopedPolicy(enforcer *casbin.SyncedEnforcer, subject, path, 
 		return true
 	}
 	// 非 K8s 资源读取，不走三元兜底。
-	if !isK8sReadPath(normalizedPath) {
-		return false
-	}
+			if !service.IsK8sReadAPIPath(normalizedPath) {
+				return false
+			}
 
 	perms, err := enforcer.GetImplicitPermissionsForUser(subject)
 	if err != nil || len(perms) == 0 {
@@ -96,38 +96,6 @@ func allowReadByK8sScopedPolicy(enforcer *casbin.SyncedEnforcer, subject, path, 
 			continue
 		}
 		if strings.HasSuffix(obj, targetSuffix) {
-			return true
-		}
-	}
-	return false
-}
-
-func isK8sReadPath(path string) bool {
-	p := strings.TrimSpace(path)
-	k8sPrefixes := []string{
-		"/api/v1/clusters",
-		"/api/v1/pods",
-		"/api/v1/namespaces",
-		"/api/v1/nodes",
-		"/api/v1/deployments",
-		"/api/v1/statefulsets",
-		"/api/v1/daemonsets",
-		"/api/v1/cronjobs",
-		"/api/v1/jobs",
-		"/api/v1/configmaps",
-		"/api/v1/secrets",
-		"/api/v1/k8s-services",
-		"/api/v1/persistentvolumes",
-		"/api/v1/persistentvolumeclaims",
-		"/api/v1/storageclasses",
-		"/api/v1/ingresses",
-		"/api/v1/events",
-		"/api/v1/crds",
-		"/api/v1/crs",
-		"/api/v1/rbac",
-	}
-	for _, prefix := range k8sPrefixes {
-		if strings.HasPrefix(p, prefix) {
 			return true
 		}
 	}

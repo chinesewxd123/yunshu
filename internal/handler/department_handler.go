@@ -3,8 +3,8 @@ package handler
 import (
 	"context"
 	"errors"
+	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
@@ -24,7 +24,7 @@ func NewDepartmentHandler(service *service.DepartmentService) *DepartmentHandler
 func (h *DepartmentHandler) Tree(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 	data, err := h.service.TreeByActor(c.Request.Context(), user)
@@ -38,7 +38,7 @@ func (h *DepartmentHandler) Tree(c *gin.Context) {
 func (h *DepartmentHandler) Detail(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 	id, err := parseUintParam(c, "id")
@@ -57,10 +57,10 @@ func (h *DepartmentHandler) Detail(c *gin.Context) {
 func (h *DepartmentHandler) Create(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
-	handleJSONCreated(c, func(ctx context.Context, req service.DepartmentCreateRequest) (*service.DepartmentDetailResponse, error) {
+	ServeJSON201(c, func(ctx context.Context, req service.DepartmentCreateRequest) (*service.DepartmentDetailResponse, error) {
 		return h.service.CreateByActor(ctx, user, req)
 	})
 }
@@ -68,7 +68,7 @@ func (h *DepartmentHandler) Create(c *gin.Context) {
 func (h *DepartmentHandler) Update(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 	id, err := parseUintParam(c, "id")
@@ -76,7 +76,7 @@ func (h *DepartmentHandler) Update(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	handleJSON(c, func(ctx context.Context, req service.DepartmentUpdateRequest) (*service.DepartmentDetailResponse, error) {
+	ServeJSON(c, func(ctx context.Context, req service.DepartmentUpdateRequest) (*service.DepartmentDetailResponse, error) {
 		return h.service.UpdateByActor(ctx, user, id, req)
 	})
 }
@@ -84,7 +84,7 @@ func (h *DepartmentHandler) Update(c *gin.Context) {
 func (h *DepartmentHandler) Delete(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
-		response.Error(c, apperror.Unauthorized("未登录或登录已失效"))
+		response.Error(c, constants.ErrUnauthorized)
 		return
 	}
 	id, err := parseUintParam(c, "id")
@@ -94,7 +94,7 @@ func (h *DepartmentHandler) Delete(c *gin.Context) {
 	}
 	if err = h.service.DeleteByActor(c.Request.Context(), user, id); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.Error(c, apperror.NotFound("部门不存在"))
+			response.Error(c, constants.ErrDepartmentNotFound)
 			return
 		}
 		response.Error(c, err)

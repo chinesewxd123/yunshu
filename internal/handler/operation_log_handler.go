@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"yunshu/internal/pkg/apperror"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -33,7 +33,7 @@ func NewOperationLogHandler(svc *service.OperationLogService) *OperationLogHandl
 // @Success 200 {object} response.Body
 // @Router /api/v1/operation-logs [get]
 func (h *OperationLogHandler) List(c *gin.Context) {
-	handleQuery(c, h.svc.List)
+	ServeQuery(c, h.svc.List)
 }
 
 // BatchDelete godoc
@@ -46,7 +46,7 @@ func (h *OperationLogHandler) List(c *gin.Context) {
 // @Success 200 {object} response.Body{data=MessageData}
 // @Router /api/v1/operation-logs/delete [post]
 func (h *OperationLogHandler) BatchDelete(c *gin.Context) {
-	handleJSONOK(c, gin.H{"message": "deleted"}, func(ctx context.Context, req idsRequest) error {
+	ServeJSONOK(c, gin.H{"message": "deleted"}, func(ctx context.Context, req idsRequest) error {
 		return h.svc.DeleteBatch(ctx, req.IDs)
 	})
 }
@@ -84,7 +84,7 @@ func (h *OperationLogHandler) Delete(c *gin.Context) {
 func (h *OperationLogHandler) Export(c *gin.Context) {
 	var q service.OperationLogListQuery
 	if err := c.ShouldBindQuery(&q); err != nil {
-		response.Error(c, apperror.BadRequest(err.Error()))
+		response.Error(c, constants.ErrBadRequestWithMsg(err.Error()))
 		return
 	}
 	c.Header("Content-Type", "application/octet-stream")

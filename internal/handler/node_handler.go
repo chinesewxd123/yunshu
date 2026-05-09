@@ -17,20 +17,20 @@ func NewNodeHandler(svc *service.K8sNodeService) *NodeHandler {
 
 // List 查询列表对应的 HTTP 接口处理逻辑。
 func (h *NodeHandler) List(c *gin.Context) {
-	handleQuery(c, h.svc.List)
+	ServeQuery(c, h.svc.List)
 }
 
 // Detail 查询详情对应的 HTTP 接口处理逻辑。
 func (h *NodeHandler) Detail(c *gin.Context) {
-	handleQuery(c, h.svc.Detail)
+	ServeQuery(c, h.svc.Detail)
 }
 
 // SetSchedulability 设置对应的 HTTP 接口处理逻辑。
 func (h *NodeHandler) SetSchedulability(c *gin.Context) {
-	handleJSONOK(c, gin.H{"ok": true}, h.svc.SetSchedulability)
+	ServeJSONOK(c, gin.H{"ok": true}, h.svc.SetSchedulability)
 }
 
 // ReplaceTaints 处理对应的 HTTP 请求并返回统一响应。
 func (h *NodeHandler) ReplaceTaints(c *gin.Context) {
-	handleJSONOK(c, gin.H{"ok": true}, h.svc.ReplaceTaints)
+	ServeJSONOK(c, gin.H{"ok": true}, h.svc.ReplaceTaints)
 }

@@ -1,17 +1,24 @@
 import {
+  AlertOutlined,
+  ApiOutlined,
+  CalendarOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  CloudOutlined,
   ClusterOutlined,
+  DashboardOutlined,
   DesktopOutlined,
+  DisconnectOutlined,
   InfoOutlined,
   LoginOutlined,
   ProfileOutlined,
   SafetyCertificateOutlined,
   TeamOutlined,
+  ThunderboltOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
-import { Card, Col, Row, Space, Statistic, Tag, Typography, Progress, Table } from "antd";
-import { useEffect, useState } from "react";
+import { Card, Col, Divider, Progress, Row, Space, Statistic, Table, Tag, Typography } from "antd";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getHealth } from "../services/auth";
 import { getOverview, getOverviewTrends } from "../services/overview";
 import type { OverviewTrendsResponse } from "../services/overview";
@@ -31,6 +38,10 @@ interface DashboardMetrics {
   eventTotal: number;
   eventWarning: number;
   eventClusterErrors: number;
+  alertFiring: number;
+  alertEventsToday: number;
+  logAgentsOnline: number;
+  logAgentsOffline: number;
 }
 
 interface SystemHealth {
@@ -51,40 +62,102 @@ const defaultMetrics: DashboardMetrics = {
   eventTotal: 0,
   eventWarning: 0,
   eventClusterErrors: 0,
+  alertFiring: 0,
+  alertEventsToday: 0,
+  logAgentsOnline: 0,
+  logAgentsOffline: 0,
 };
 
-const statItems = [
+const assetStats = [
   {
     key: "users",
     title: "账号主体",
-    hint: "系统内已创建的账号数量",
+    hint: "系统内已激活账号数量",
     icon: <TeamOutlined />,
-    color: "#0f766e",
-    gradient: "linear-gradient(135deg, #0f766e 0%, #14804a 100%)",
+    accent: "#22d3ee",
   },
   {
     key: "clusters",
     title: "K8s 集群",
-    hint: "已注册到系统的集群数量",
+    hint: "已注册且启用的集群",
     icon: <ClusterOutlined />,
-    color: "#0f6cbd",
-    gradient: "linear-gradient(135deg, #0f6cbd 0%, #0077ea 100%)",
-  },
-  {
-    key: "pendingRegistrations",
-    title: "待审核",
-    hint: "待审批的注册申请数量",
-    icon: <SafetyCertificateOutlined />,
-    color: "#c96a11",
-    gradient: "linear-gradient(135deg, #c96a11 0%, #fa8c16 100%)",
+    accent: "#38bdf8",
   },
   {
     key: "servers",
     title: "服务器",
-    hint: "纳管的服务器数量",
+    hint: "纳管日志源服务器",
     icon: <DesktopOutlined />,
-    color: "#7a4dd8",
-    gradient: "linear-gradient(135deg, #7a4dd8 0%, #a855f7 100%)",
+    accent: "#a78bfa",
+  },
+  {
+    key: "pendingRegistrations",
+    title: "待审核注册",
+    hint: "待审批的注册申请",
+    icon: <SafetyCertificateOutlined />,
+    accent: "#fbbf24",
+  },
+] as const;
+
+const k8sStats = [
+  {
+    key: "podNormal",
+    title: "正常 Pod",
+    hint: "Running 且容器就绪",
+    icon: <CheckCircleOutlined />,
+    accent: "#34d399",
+  },
+  {
+    key: "podAbnormal",
+    title: "异常 Pod",
+    hint: "非 Running 或未就绪",
+    icon: <WarningOutlined />,
+    accent: "#fb7185",
+  },
+  {
+    key: "eventTotal",
+    title: "Events 采样",
+    hint: "各集群最近 500 条合计",
+    icon: <CloudOutlined />,
+    accent: "#818cf8",
+  },
+  {
+    key: "eventWarning",
+    title: "Warning",
+    hint: "采样中的 Warning 类型",
+    icon: <ThunderboltOutlined />,
+    accent: "#f97316",
+  },
+] as const;
+
+const alertAndAgentStats = [
+  {
+    key: "alertFiring",
+    title: "告警 Firing",
+    hint: "当前仍未恢复的告警事件",
+    icon: <AlertOutlined />,
+    accent: "#f87171",
+  },
+  {
+    key: "alertEventsToday",
+    title: "今日告警事件",
+    hint: "本自然日新建事件条数",
+    icon: <CalendarOutlined />,
+    accent: "#fbbf24",
+  },
+  {
+    key: "logAgentsOnline",
+    title: "日志 Agent 在线",
+    hint: "最近 90s 内有心跳",
+    icon: <ApiOutlined />,
+    accent: "#4ade80",
+  },
+  {
+    key: "logAgentsOffline",
+    title: "日志 Agent 离线",
+    hint: "已启用但未满足在线条件",
+    icon: <DisconnectOutlined />,
+    accent: "#94a3b8",
   },
 ] as const;
 
@@ -94,6 +167,8 @@ function formatUptime(seconds: number): string {
   return `${hours}小时 ${minutes}分钟`;
 }
 
+const OVERVIEW_LOG_PAGE_SIZE = 14;
+
 export function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics>(defaultMetrics);
   const [health, setHealth] = useState<SystemHealth>({ status: "", version: "", uptime: 0, loading: true });
@@ -101,6 +176,8 @@ export function DashboardPage() {
   const [trends, setTrends] = useState<OverviewTrendsResponse | null>(null);
   const [recentOps, setRecentOps] = useState<OperationLogItem[]>([]);
   const [recentLogins, setRecentLogins] = useState<LoginLogItem[]>([]);
+  const tableScrollWrapRef = useRef<HTMLDivElement>(null);
+  const [tableScrollY, setTableScrollY] = useState(360);
 
   useEffect(() => {
     let active = true;
@@ -113,8 +190,8 @@ export function DashboardPage() {
           getOverview().catch(() => null),
           getHealth().catch(() => null),
           getOverviewTrends().catch(() => null),
-          getOperationLogs({ page: 1, page_size: 5 }).catch(() => null),
-          getLoginLogs({ page: 1, page_size: 5 }).catch(() => null),
+          getOperationLogs({ page: 1, page_size: OVERVIEW_LOG_PAGE_SIZE }).catch(() => null),
+          getLoginLogs({ page: 1, page_size: OVERVIEW_LOG_PAGE_SIZE }).catch(() => null),
         ]);
 
         if (!active) {
@@ -133,6 +210,10 @@ export function DashboardPage() {
             eventTotal: overview.event_total_count,
             eventWarning: overview.event_warning_count,
             eventClusterErrors: overview.event_cluster_errors,
+            alertFiring: overview.alert_firing_count ?? 0,
+            alertEventsToday: overview.alert_events_today_count ?? 0,
+            logAgentsOnline: overview.log_agents_online_count ?? 0,
+            logAgentsOffline: overview.log_agents_offline_count ?? 0,
           });
         } else {
           setMetrics(defaultMetrics);
@@ -165,263 +246,381 @@ export function DashboardPage() {
     };
   }, []);
 
-  const uptimePercentage = Math.min(100, (health.uptime / 86400) * 100);
+  useLayoutEffect(() => {
+    const el = tableScrollWrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = el.clientHeight;
+      if (h > 56) {
+        setTableScrollY(Math.max(140, Math.floor(h - 6)));
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [recentOps, recentLogins, loading]);
+
+  const podTotal = metrics.podNormal + metrics.podAbnormal;
+  const podHealthyPct = useMemo(() => {
+    if (podTotal <= 0) return 0;
+    return Math.round((metrics.podNormal / podTotal) * 100);
+  }, [metrics.podNormal, podTotal]);
+
+  const warnRatio = useMemo(() => {
+    if (metrics.eventTotal <= 0) return 0;
+    return Math.round((metrics.eventWarning / metrics.eventTotal) * 100);
+  }, [metrics.eventTotal, metrics.eventWarning]);
+
+  const agentOnlinePct = useMemo(() => {
+    const t = metrics.logAgentsOnline + metrics.logAgentsOffline;
+    if (t <= 0) return 0;
+    return Math.round((metrics.logAgentsOnline / t) * 100);
+  }, [metrics.logAgentsOnline, metrics.logAgentsOffline]);
+
+  const uptimePct = Math.min(100, (health.uptime / 86400) * 100);
+
+  const cellTextStyle = { color: "rgba(248, 250, 252, 0.96)" };
 
   return (
-    <div>
-      <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
-        {statItems.map((item) => (
-          <Col xs={24} sm={12} lg={8} xl={6} key={item.key}>
-            <Card
-              className="stats-card"
-              loading={loading}
-              hoverable
-              style={{
-                height: "100%",
-                borderLeft: `4px solid ${item.color}`,
-              }}
-            >
-              <Statistic
-                title={<span style={{ color: "#5a6d89", fontSize: 14 }}>{item.title}</span>}
-                value={metrics[item.key]}
-                valueStyle={{ color: item.color, fontSize: 32, fontWeight: 700 }}
-                prefix={
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 42,
-                      height: 42,
-                      borderRadius: 12,
-                      background: item.gradient,
-                      color: "#fff",
-                      fontSize: 20,
-                      marginRight: 12,
-                    }}
-                  >
-                    {item.icon}
-                  </span>
-                }
-              />
-              <Typography.Paragraph
-                className="stats-card__hint"
-                style={{ marginTop: 12, marginBottom: 0, fontSize: 12, color: "#6f819d" }}
-              >
-                {item.hint}
-              </Typography.Paragraph>
+    <div className="overview-big-screen">
+      <div className="overview-big-screen__top">
+        <div className="overview-big-screen__hero">
+          <div>
+            <Typography.Title level={3} className="overview-big-screen__title">
+              <DashboardOutlined /> 运维运行总览
+            </Typography.Title>
+            <Typography.Text className="overview-big-screen__subtitle">
+              资产底座 · Kubernetes · 告警与日志采集 · 活跃趋势 · 健康状态
+            </Typography.Text>
+          </div>
+        </div>
+
+        <Typography.Text className="overview-big-screen__section-label">
+          <TeamOutlined /> 资产底座
+        </Typography.Text>
+        <Row gutter={[16, 16]} className="overview-big-screen__metrics">
+        {assetStats.map((item) => (
+          <Col xs={24} sm={12} xl={6} key={item.key}>
+            <Card className="overview-big-screen__stat-card" loading={loading} bordered={false}>
+              <div className="overview-big-screen__stat-head">
+                <span className="overview-big-screen__stat-icon" style={{ boxShadow: `0 0 24px ${item.accent}44` }}>
+                  {item.icon}
+                </span>
+                <Statistic
+                  title={<span className="overview-big-screen__stat-title">{item.title}</span>}
+                  value={metrics[item.key as keyof DashboardMetrics] as number}
+                  valueStyle={{
+                    color: item.accent,
+                    fontSize: 36,
+                    fontWeight: 700,
+                    fontFamily: "var(--overview-num-font, ui-monospace, monospace)",
+                  }}
+                />
+              </div>
+              <Typography.Paragraph className="overview-big-screen__stat-hint">{item.hint}</Typography.Paragraph>
             </Card>
           </Col>
         ))}
-      </Row>
+        </Row>
 
-      <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
-        <Col xs={24}>
+        <Typography.Text className="overview-big-screen__section-label">
+          <ClusterOutlined /> Kubernetes 运行态势
+        </Typography.Text>
+        <Row gutter={[16, 16]} className="overview-big-screen__metrics">
+        {k8sStats.map((item) => (
+          <Col xs={24} sm={12} xl={6} key={item.key}>
+            <Card className="overview-big-screen__stat-card overview-big-screen__stat-card--k8s" loading={loading} bordered={false}>
+              <div className="overview-big-screen__stat-head">
+                <span className="overview-big-screen__stat-icon" style={{ boxShadow: `0 0 28px ${item.accent}55` }}>
+                  {item.icon}
+                </span>
+                <Statistic
+                  title={<span className="overview-big-screen__stat-title">{item.title}</span>}
+                  value={metrics[item.key as keyof DashboardMetrics] as number}
+                  valueStyle={{
+                    color: item.accent,
+                    fontSize: 34,
+                    fontWeight: 700,
+                    fontFamily: "var(--overview-num-font, ui-monospace, monospace)",
+                  }}
+                />
+              </div>
+              <Typography.Paragraph className="overview-big-screen__stat-hint">{item.hint}</Typography.Paragraph>
+            </Card>
+          </Col>
+        ))}
+        </Row>
+
+        <Typography.Text className="overview-big-screen__section-label">
+          <AlertOutlined /> 告警与日志采集
+        </Typography.Text>
+        <Row gutter={[16, 16]} className="overview-big-screen__metrics">
+        {alertAndAgentStats.map((item) => (
+          <Col xs={24} sm={12} xl={6} key={item.key}>
+            <Card className="overview-big-screen__stat-card overview-big-screen__stat-card--alert" loading={loading} bordered={false}>
+              <div className="overview-big-screen__stat-head">
+                <span className="overview-big-screen__stat-icon" style={{ boxShadow: `0 0 28px ${item.accent}55` }}>
+                  {item.icon}
+                </span>
+                <Statistic
+                  title={<span className="overview-big-screen__stat-title">{item.title}</span>}
+                  value={metrics[item.key as keyof DashboardMetrics] as number}
+                  valueStyle={{
+                    color: item.accent,
+                    fontSize: 34,
+                    fontWeight: 700,
+                    fontFamily: "var(--overview-num-font, ui-monospace, monospace)",
+                  }}
+                />
+              </div>
+              <Typography.Paragraph className="overview-big-screen__stat-hint">{item.hint}</Typography.Paragraph>
+            </Card>
+          </Col>
+        ))}
+        </Row>
+
+        <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
+        <Col xs={24} xl={15}>
           <Card
-            className="table-card"
+            className="overview-big-screen__panel"
             title={
               <Space>
-                <InfoOutlined style={{ color: "#0f6cbd" }} />
-                平台活跃趋势（近 7 天）
+                <InfoOutlined style={{ color: "#38bdf8" }} />
+                <span>平台活跃趋势（近 7 天）</span>
               </Space>
             }
             loading={loading && !trends}
+            bordered={false}
           >
             {trends ? (
               <LineChart
+                darkMode
                 labels={trends.days}
                 series={[
-                  { name: "登录成功", data: trends.login_success, color: "#2563eb" },
-                  { name: "操作量", data: trends.operation_total, color: "#10b981" },
-                  { name: "登录失败", data: trends.login_fail, color: "#ef4444" },
+                  { name: "登录成功", data: trends.login_success, color: "#38bdf8" },
+                  { name: "操作量", data: trends.operation_total, color: "#34d399" },
+                  { name: "登录失败", data: trends.login_fail, color: "#f87171" },
                 ]}
-                height={240}
+                height={300}
               />
             ) : (
-              <Typography.Text type="secondary">暂无趋势数据（未产生登录/操作日志或服务未启用统计）。</Typography.Text>
+              <Typography.Text type="secondary" style={{ color: "rgba(186, 214, 238, 0.65)" }}>
+                暂无趋势数据（未产生登录/操作日志或服务未启用统计）。
+              </Typography.Text>
             )}
           </Card>
         </Col>
-      </Row>
-
-      <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
-        <Col xs={24} lg={12}>
-          <Card
-            className="table-card"
-            title={
-              <Space>
-                <ProfileOutlined style={{ color: "#10b981" }} />
-                最近操作（Top 5）
-              </Space>
-            }
-            loading={loading}
-            bodyStyle={{ paddingTop: 12 }}
-          >
-            <Table<OperationLogItem>
-              size="small"
-              rowKey="id"
-              dataSource={recentOps}
-              pagination={false}
-              tableLayout="fixed"
-              columns={[
-                { title: "用户", dataIndex: "username", width: 100, render: (v: string) => v || "-" },
-                { title: "方法", dataIndex: "method", width: 80, render: (v: string) => <Tag>{v}</Tag> },
-                {
-                  title: "路径",
-                  dataIndex: "path",
-                  ellipsis: true,
-                  render: (v: string) => (
-                    <Typography.Text ellipsis={{ tooltip: v }} style={{ maxWidth: "100%" }}>
-                      {v}
-                    </Typography.Text>
-                  ),
-                },
-                { title: "时间", dataIndex: "created_at", width: 160, render: formatDateTime },
-              ]}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card
-            className="table-card"
-            title={
-              <Space>
-                <LoginOutlined style={{ color: "#2563eb" }} />
-                最近登录（Top 5）
-              </Space>
-            }
-            loading={loading}
-            bodyStyle={{ paddingTop: 12 }}
-          >
-            <Table<LoginLogItem>
-              size="small"
-              rowKey="id"
-              dataSource={recentLogins}
-              pagination={false}
-              tableLayout="fixed"
-              columns={[
-                { title: "用户", dataIndex: "username", width: 130, render: (v: string) => v || "-" },
-                {
-                  title: "状态",
-                  dataIndex: "status",
-                  width: 80,
-                  render: (v: number) => (v === 1 ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>),
-                },
-                { title: "来源", dataIndex: "source", width: 110, render: (v: string) => <Tag>{v || "-"}</Tag> },
-                { title: "时间", dataIndex: "created_at", width: 160, render: formatDateTime },
-              ]}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      <div className="dashboard-pair-grid">
-        <Card
-          className="table-card"
-          title={
-            <Space>
-              <CheckCircleOutlined style={{ color: "#52c41a" }} />
-              系统状态
-            </Space>
-          }
-          loading={health.loading}
-        >
-            <Space direction="vertical" size="large" style={{ width: "100%" }}>
-              <Row gutter={16}>
-                <Col span={8}>
-                  <div style={{ textAlign: "center", padding: "16px 0" }}>
-                    <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
-                      服务状态
-                    </Typography.Text>
+        <Col xs={24} xl={9}>
+          <Space direction="vertical" size={16} style={{ width: "100%" }}>
+            <Card className="overview-big-screen__panel" title={<Space><CheckCircleOutlined /> 系统状态</Space>} loading={health.loading} bordered={false}>
+              <Row gutter={[12, 12]}>
+                <Col span={24}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                    <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>服务</Typography.Text>
                     {health.status === "ok" || health.status === "healthy" ? (
-                      <Tag color="success" style={{ fontSize: 14, padding: "4px 12px" }}>
-                        运行正常
-                      </Tag>
+                      <Tag color="success">运行正常</Tag>
                     ) : health.status === "error" ? (
-                      <Tag color="error" style={{ fontSize: 14, padding: "4px 12px" }}>
-                        连接异常
-                      </Tag>
+                      <Tag color="error">连接异常</Tag>
                     ) : (
-                      <Tag color="warning" style={{ fontSize: 14, padding: "4px 12px" }}>
-                        {health.status}
-                      </Tag>
+                      <Tag color="warning">{health.status}</Tag>
                     )}
                   </div>
                 </Col>
-                <Col span={8}>
-                  <div style={{ textAlign: "center", padding: "16px 0" }}>
-                    <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
-                      版本信息
-                    </Typography.Text>
-                    <Tag style={{ fontSize: 14, padding: "4px 12px" }}>
-                      <InfoOutlined style={{ marginRight: 4 }} />
-                      {health.version}
+                <Col span={24}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>版本</Typography.Text>
+                    <Tag style={{ marginInlineEnd: 0 }}>
+                      <InfoOutlined /> {health.version}
                     </Tag>
                   </div>
                 </Col>
-                <Col span={8}>
-                  <div style={{ textAlign: "center", padding: "16px 0" }}>
-                    <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
-                      运行时间
-                    </Typography.Text>
-                    <div style={{ color: "#0f6cbd", fontWeight: 600 }}>
-                      <ClockCircleOutlined style={{ marginRight: 4 }} />
-                      {formatUptime(health.uptime)}
-                    </div>
-                  </div>
+                <Col span={24}>
+                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)", display: "block", marginBottom: 8 }}>
+                    运行时间 · {formatUptime(health.uptime)}
+                  </Typography.Text>
+                  <Progress
+                    percent={uptimePct}
+                    strokeColor={{ "0%": "#38bdf8", "100%": "#34d399" }}
+                    trailColor="rgba(148, 163, 184, 0.15)"
+                    format={(p) => `${Math.floor(((p ?? 0) / 100) * 24)}h / 24h`}
+                  />
                 </Col>
               </Row>
-              <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 16 }}>
-                <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
-                  运行时长进度（以 24 小时为基准）
-                </Typography.Text>
-                <Progress
-                  percent={uptimePercentage}
-                  strokeColor={{
-                    "0%": "#108ee9",
-                    "100%": "#87d068",
-                  }}
-                  trailColor="#f5f5f5"
-                  format={(percent) => `${Math.floor(((percent ?? 0) / 100) * 24)}小时`}
+            </Card>
+
+            <Card className="overview-big-screen__panel" title={<Space><ThunderboltOutlined /> Pod / Event 摘要</Space>} loading={loading} bordered={false}>
+              <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                <div>
+                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>Pod 健康占比</Typography.Text>
+                  <Progress
+                    percent={metrics.clusters === 0 ? 0 : podHealthyPct}
+                    strokeColor="#34d399"
+                    trailColor="rgba(251, 113, 133, 0.35)"
+                    format={() => (metrics.clusters === 0 ? "未接入集群" : `${podHealthyPct}%`)}
+                  />
+                </div>
+                <div>
+                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>Warning 占采样 Events</Typography.Text>
+                  <Progress
+                    percent={metrics.eventTotal === 0 ? 0 : warnRatio}
+                    strokeColor="#f97316"
+                    trailColor="rgba(148, 163, 184, 0.2)"
+                    format={() => (metrics.eventTotal === 0 ? "无采样" : `${warnRatio}%`)}
+                  />
+                </div>
+                <div>
+                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>日志 Agent 在线占比</Typography.Text>
+                  <Progress
+                    percent={metrics.logAgentsOnline + metrics.logAgentsOffline === 0 ? 0 : agentOnlinePct}
+                    strokeColor="#4ade80"
+                    trailColor="rgba(148, 163, 184, 0.2)"
+                    format={() =>
+                      metrics.logAgentsOnline + metrics.logAgentsOffline === 0 ? "无启用 Agent" : `${agentOnlinePct}%`
+                    }
+                  />
+                </div>
+                <Divider style={{ borderColor: "rgba(56, 189, 248, 0.15)", margin: "8px 0" }} />
+                {metrics.clusters > 0 && (metrics.podClusterErrors > 0 || metrics.eventClusterErrors > 0) ? (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <Typography.Text style={{ color: "rgba(248, 250, 252, 0.75)" }}>采集失败集群（Pod / Event）</Typography.Text>
+                    <Tag color="warning">
+                      {metrics.podClusterErrors} / {metrics.eventClusterErrors}
+                    </Tag>
+                  </div>
+                ) : (
+                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.55)", fontSize: 12 }}>
+                    Events 为每集群最近 500 条采样；未接入集群时上方 K8s 指标可能为 0。
+                  </Typography.Text>
+                )}
+              </Space>
+            </Card>
+          </Space>
+        </Col>
+        </Row>
+      </div>
+
+      <div className="overview-big-screen__tables">
+        <Row gutter={[16, 16]} className="overview-big-screen__tables-row">
+          <Col xs={24} lg={12} className="overview-big-screen__table-col">
+            <Card
+              className="overview-big-screen__panel overview-big-screen__table-card overview-big-screen__table-panel"
+              title={
+                <Space>
+                  <ProfileOutlined style={{ color: "#34d399" }} />
+                  最近操作
+                  <Typography.Text type="secondary" style={{ fontSize: 12, color: "rgba(186, 214, 238, 0.55)" }}>
+                    最近 {OVERVIEW_LOG_PAGE_SIZE} 条
+                  </Typography.Text>
+                </Space>
+              }
+              loading={loading}
+              bordered={false}
+            >
+              <div ref={tableScrollWrapRef} className="overview-big-screen__table-scroll">
+                <Table<OperationLogItem>
+                  size="small"
+                  rowKey="id"
+                  dataSource={recentOps}
+                  pagination={false}
+                  tableLayout="fixed"
+                  scroll={{ y: tableScrollY }}
+                  columns={[
+                    {
+                      title: "用户",
+                      dataIndex: "username",
+                      width: 88,
+                      render: (v: string) => <span style={cellTextStyle}>{v || "-"}</span>,
+                    },
+                    {
+                      title: "方法",
+                      dataIndex: "method",
+                      width: 72,
+                      render: (v: string) => (
+                        <Tag bordered={false} color="processing">
+                          {v}
+                        </Tag>
+                      ),
+                    },
+                    {
+                      title: "路径",
+                      dataIndex: "path",
+                      ellipsis: true,
+                      render: (v: string) => (
+                        <Typography.Text ellipsis={{ tooltip: v }} style={{ maxWidth: "100%", ...cellTextStyle }}>
+                          {v}
+                        </Typography.Text>
+                      ),
+                    },
+                    {
+                      title: "时间",
+                      dataIndex: "created_at",
+                      width: 156,
+                      render: (v: string) => <span style={cellTextStyle}>{formatDateTime(v)}</span>,
+                    },
+                  ]}
                 />
               </div>
-            </Space>
-          </Card>
-
-        <Card className="table-card" title="采集状态" loading={loading}>
-          <Space direction="vertical" size={8} style={{ width: "100%" }}>
-            <Typography.Text className="inline-muted">
-              Pod 和 Events 均按“已启用集群”聚合；Events 为每集群最近 500 条采样。未接入/未启用集群时将显示为 0，不代表系统异常。
-            </Typography.Text>
-            <Row gutter={16}>
-              <Col span={12}>
-                <Statistic title="正常 Pod" value={metrics.podNormal} valueStyle={{ color: "#14804a", fontWeight: 700 }} />
-              </Col>
-              <Col span={12}>
-                <Statistic title="异常 Pod" value={metrics.podAbnormal} valueStyle={{ color: "#c23a2b", fontWeight: 700 }} />
-              </Col>
-            </Row>
-            {metrics.clusters > 0 && (metrics.podClusterErrors > 0 || metrics.eventClusterErrors > 0) ? (
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <Typography.Text type="secondary">采集失败集群数（Pod / Event）</Typography.Text>
-                <Tag color="warning">
-                  {metrics.podClusterErrors} / {metrics.eventClusterErrors}
-                </Tag>
+            </Card>
+          </Col>
+          <Col xs={24} lg={12} className="overview-big-screen__table-col">
+            <Card
+              className="overview-big-screen__panel overview-big-screen__table-card overview-big-screen__table-panel"
+              title={
+                <Space>
+                  <LoginOutlined style={{ color: "#38bdf8" }} />
+                  最近登录
+                  <Typography.Text type="secondary" style={{ fontSize: 12, color: "rgba(186, 214, 238, 0.55)" }}>
+                    最近 {OVERVIEW_LOG_PAGE_SIZE} 条
+                  </Typography.Text>
+                </Space>
+              }
+              loading={loading}
+              bordered={false}
+            >
+              <div className="overview-big-screen__table-scroll">
+                <Table<LoginLogItem>
+                  size="small"
+                  rowKey="id"
+                  dataSource={recentLogins}
+                  pagination={false}
+                  tableLayout="fixed"
+                  scroll={{ y: tableScrollY }}
+                  columns={[
+                    {
+                      title: "用户",
+                      dataIndex: "username",
+                      width: 120,
+                      render: (v: string) => <span style={cellTextStyle}>{v || "-"}</span>,
+                    },
+                    {
+                      title: "状态",
+                      dataIndex: "status",
+                      width: 72,
+                      render: (v: number) => (v === 1 ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>),
+                    },
+                    {
+                      title: "来源",
+                      dataIndex: "source",
+                      width: 96,
+                      render: (v: string) => (
+                        <Tag bordered={false} color="cyan">
+                          {v || "-"}
+                        </Tag>
+                      ),
+                    },
+                    {
+                      title: "时间",
+                      dataIndex: "created_at",
+                      width: 156,
+                      render: (v: string) => <span style={cellTextStyle}>{formatDateTime(v)}</span>,
+                    },
+                  ]}
+                />
               </div>
-            ) : null}
-            <Row gutter={16}>
-              <Col span={12}>
-                <Statistic title="Events 总数" value={metrics.eventTotal} valueStyle={{ color: "#7a4dd8", fontWeight: 700 }} />
-              </Col>
-              <Col span={12}>
-                <Statistic title="Warning Events" value={metrics.eventWarning} valueStyle={{ color: "#d4380d", fontWeight: 700 }} />
-              </Col>
-            </Row>
-            {metrics.clusters === 0 ? (
-              <Tag color="default">未接入集群</Tag>
-            ) : null}
-          </Space>
-        </Card>
+            </Card>
+          </Col>
+        </Row>
       </div>
     </div>
   );

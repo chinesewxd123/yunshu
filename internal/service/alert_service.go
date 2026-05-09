@@ -13,11 +13,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/constants"
 
+	"yunshu/internal/alertdispatch"
 	"yunshu/internal/config"
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/alertnotify"
-	"yunshu/internal/pkg/apperror"
+	cryptox "yunshu/internal/pkg/crypto"
 	"yunshu/internal/pkg/mailer"
 	"yunshu/internal/pkg/pagination"
 
@@ -25,11 +27,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// 监控链路：与 Prometheus cluster 标签解耦，便于筛选与策略匹配（避免「同一规则双路告警」难以区分）。
-const (
-	monitorPipelinePrometheus = "prometheus" // Prometheus.yml + rules + Alertmanager -> 平台 Webhook
-	monitorPipelinePlatform   = "platform"   // 平台内 PromQL 规则评估（receiver=platform-monitor）
-)
+// 历史 monitor_pipeline 取值 prometheus/platform 仍可能存在于旧数据；新写入以数据源为主，见 resolveAlertDatasourceMeta。
 
 type AlertChannelListQuery struct {
 	Keyword string `form:"keyword"`
@@ -40,10 +38,11 @@ type AlertEventListQuery struct {
 	PageSize        int    `form:"page_size"`
 	Keyword         string `form:"keyword"`
 	Cluster         string `form:"cluster"`
-	AlertIP         string `form:"alert_ip"`
+	AlertIP         string `form:"alertIP"`
 	Status          string `form:"status"`
-	MonitorPipeline string `form:"monitor_pipeline"`
-	GroupKey        string `form:"group_key"`
+	MonitorPipeline string `form:"monitorPipeline"`
+	DatasourceID    uint   `form:"datasourceId"`
+	GroupKey        string `form:"groupKey"`
 }
 
 type AlertChannelUpsertRequest struct {
@@ -90,7 +89,6 @@ type AlertService struct {
 	mailer      mailer.Sender
 	cfg         config.AlertConfig
 	enrichQueue chan promEnrichTask
-	policySvc   *AlertPolicyService
 
 	silenceSvc  *AlertSilenceService
 	assigneeSvc *AlertRuleAssigneeService
@@ -98,15 +96,16 @@ type AlertService struct {
 
 	monitorEvalCancel context.CancelFunc
 	monitorEvalMu     sync.Mutex
-	monitorEvalState  map[uint]*monitorEvalRuleState
 	aead              cipher.AEAD
 	cloudExpiryState  map[string]bool
-}
 
-type monitorEvalRuleState struct {
-	activeFiring bool
-	pendingSince *time.Time
-	lastEval     time.Time
+	// 可选依赖：告警抑制、订阅树路由
+	inhibitionSvc      *AlertInhibitionService   // 告警抑制服务
+	subscriptionSvc    *AlertSubscriptionService // 订阅树服务
+	receiverGroupCache *ReceiverGroupCache       // 接收组缓存
+
+	metrics        *AlertMetrics // Prometheus自监控指标
+	metricsUpdater *AlertMetricsUpdater
 }
 
 // AlertServiceOptions 可选依赖：静默、处理人、内置规则评估。
@@ -114,6 +113,8 @@ type AlertServiceOptions struct {
 	SilenceSvc  *AlertSilenceService
 	AssigneeSvc *AlertRuleAssigneeService
 	DutySvc     *AlertDutyService
+	// EncryptionKey 与项目/云账号凭据加密一致；非空时用于云到期规则解密云账号 AK/SK。
+	EncryptionKey string
 }
 
 type promEnrichTask struct {
@@ -135,14 +136,23 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 	if cfg.PromQueryTimeout <= 0 {
 		cfg.PromQueryTimeout = 5
 	}
-	if cfg.NotifyIntervalSeconds <= 0 {
-		cfg.NotifyIntervalSeconds = 300
+	if cfg.GroupWaitSeconds < 0 {
+		cfg.GroupWaitSeconds = 0
 	}
-	if cfg.ResolvedNotifyIntervalSeconds <= 0 {
-		cfg.ResolvedNotifyIntervalSeconds = 30
+	if cfg.GroupIntervalSeconds <= 0 {
+		cfg.GroupIntervalSeconds = 60
+	}
+	if cfg.RepeatIntervalSeconds <= 0 {
+		cfg.RepeatIntervalSeconds = 300
 	}
 	if cfg.AggregateTTLSeconds <= 0 {
 		cfg.AggregateTTLSeconds = 86400
+	}
+	if cfg.WebhookQueueMaxLen <= 0 {
+		cfg.WebhookQueueMaxLen = 10000
+	}
+	if cfg.MonitorEvalLeaderLockSeconds <= 0 {
+		cfg.MonitorEvalLeaderLockSeconds = 30
 	}
 	if len(cfg.GroupBy) == 0 {
 		cfg.GroupBy = []string{"alertname", "cluster", "namespace", "severity", "receiver"}
@@ -157,95 +167,127 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 		cfg.PlatformLimits.GenericMaxChars = 8000
 	}
 	svc := &AlertService{
-		db:               db,
-		redis:            redisClient,
-		mailer:           sender,
-		cfg:              cfg,
-		policySvc:        NewAlertPolicyService(db),
-		monitorEvalState: make(map[uint]*monitorEvalRuleState),
-		cloudExpiryState: make(map[string]bool),
+		db:                 db,
+		redis:              redisClient,
+		mailer:             sender,
+		cfg:                cfg,
+		cloudExpiryState:   make(map[string]bool),
+		inhibitionSvc:      NewAlertInhibitionService(db, redisClient),
+		subscriptionSvc:    NewAlertSubscriptionService(db),
+		receiverGroupCache: NewReceiverGroupCache(db),
+		metrics:            NewAlertMetrics(),
 	}
+
+	// 初始化指标更新器并启动
+	svc.metricsUpdater = NewAlertMetricsUpdater(svc.metrics, svc.inhibitionSvc)
+	svc.metricsUpdater.Start()
+
 	if opts != nil {
 		svc.silenceSvc = opts.SilenceSvc
 		svc.assigneeSvc = opts.AssigneeSvc
 		svc.dutySvc = opts.DutySvc
+		if key := strings.TrimSpace(opts.EncryptionKey); key != "" {
+			if aead, err := cryptox.NewAESGCMFromKeyString(key); err == nil {
+				svc.aead = aead
+			}
+		}
 	}
 	svc.startPrometheusEnrichWorkers()
+	svc.startInhibitionPruner(context.Background())
 	evalCtx, cancel := context.WithCancel(context.Background())
 	svc.monitorEvalCancel = cancel
 	go svc.runMonitorRuleEvaluator(evalCtx)
+	svc.runAlertWebhookIngestWorker(evalCtx)
 	return svc
 }
 
+func (s *AlertService) GetSubscriptionService() *AlertSubscriptionService {
+	return s.subscriptionSvc
+}
+
 func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, labels map[string]string) (map[uint]struct{}, string, string, int) {
-	enabled, err := s.policySvc.ListEnabled(ctx)
-	if err != nil || len(enabled) == 0 {
+	// 彻底弃用旧策略：仅使用订阅树路由（订阅节点 -> 接收组 -> 通道）
+	if s.subscriptionSvc == nil || s.receiverGroupCache == nil {
+		return nil, "", "", 0
+	}
+	projectID := parseLabelUintOrZero(labels["project_id"])
+	severity := strings.TrimSpace(labels["severity"])
+	route, ok := s.subscriptionSvc.MatchRouteDetailed(ctx, projectID, labels, severity, status)
+	if !ok || len(route.ReceiverGroupIDs) == 0 {
 		return nil, "", "", 0
 	}
 	out := map[uint]struct{}{}
-	matchedIDs := make([]string, 0)
-	matchedNames := make([]string, 0)
-	maxSilenceSeconds := 0
-	for _, p := range enabled {
-		if status == "resolved" && !p.NotifyResolved {
+	for _, gid := range route.ReceiverGroupIDs {
+		g, err := s.receiverGroupCache.Get(gid)
+		if err != nil || g == nil {
 			continue
 		}
-		ids := s.policySvc.MatchPolicyChannels(p, labels)
-		if len(ids) > 0 {
-			matchedIDs = append(matchedIDs, fmt.Sprintf("%d", p.ID))
-			matchedNames = append(matchedNames, p.Name)
-			if p.SilenceSeconds > maxSilenceSeconds {
-				maxSilenceSeconds = p.SilenceSeconds
+		if !g.IsActiveNow() {
+			continue
+		}
+		for _, cid := range g.ChannelIDs {
+			if cid > 0 {
+				out[cid] = struct{}{}
 			}
 		}
-		for _, id := range ids {
-			out[id] = struct{}{}
-		}
 	}
-	return out, strings.Join(matchedIDs, ","), strings.Join(matchedNames, ","), maxSilenceSeconds
+	ids := make([]string, 0, len(route.MatchedNodeIDs))
+	for _, id := range route.MatchedNodeIDs {
+		ids = append(ids, fmt.Sprintf("%d", id))
+	}
+	return out, strings.Join(ids, ","), strings.Join(route.MatchedNodeNames, ","), route.SilenceSeconds
 }
 
-func (s *AlertService) shouldSuppressByPolicySilence(ctx context.Context, status, groupKey, matchedPolicyIDs string, silenceSeconds int, labels map[string]string) bool {
+func parseLabelUintOrZero(s string) uint {
+	n, ok := parseLabelUint(s)
+	if !ok {
+		return 0
+	}
+	return n
+}
+
+func (s *AlertService) shouldSuppressByRouteSilence(ctx context.Context, status, groupKey, matchedNodeIDs string, silenceSeconds int, labels map[string]string) bool {
 	if s.redis == nil || silenceSeconds <= 0 || status != "firing" {
 		return false
 	}
 	gk := strings.TrimSpace(groupKey)
-	pid := strings.TrimSpace(matchedPolicyIDs)
-	if gk == "" || pid == "" {
+	nid := strings.TrimSpace(matchedNodeIDs)
+	if gk == "" || nid == "" {
 		return false
 	}
-	key := "alert:policy:silence:" + gk + ":" + pid
+	key := "alert:subscription:silence:" + gk + ":" + nid
 	ok, err := s.redis.SetNX(ctx, key, "1", time.Duration(silenceSeconds)*time.Second).Result()
 	if err != nil {
 		return false
 	}
 	if labels != nil {
 		if ruleID, parsed := parseLabelUint(labels["monitor_rule_id"]); parsed && ruleID > 0 {
-			// 为规则列表页提供可观测状态：策略静默窗口剩余时间
-			_ = s.redis.Set(ctx, fmt.Sprintf("alert:policy:silence:rule:%d", ruleID), pid, time.Duration(silenceSeconds)*time.Second).Err()
+			// 为规则列表页提供可观测状态：订阅静默窗口剩余时间
+			_ = s.redis.Set(ctx, fmt.Sprintf("alert:subscription:silence:rule:%d", ruleID), nid, time.Duration(silenceSeconds)*time.Second).Err()
 		}
 	}
 	return !ok
 }
 
-func (s *AlertService) logSuppressedPolicySilence(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, silenceSeconds int, payload map[string]interface{}) {
+func (s *AlertService) logSuppressedRouteSilence(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, silenceSeconds int, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:          "alertmanager",
-		Title:           title + " (policy silence suppressed)",
+		Source:          alertEventSourceFromPayload(payload),
+		Title:           title + " (subscription silence suppressed)",
 		Severity:        severity,
 		Status:          status,
 		Cluster:         cluster,
-		MonitorPipeline: strings.TrimSpace(fmt.Sprintf("%v", payload["monitor_pipeline"])),
+		MonitorPipeline: strings.TrimSpace(fmt.Sprintf("%v", payload["monitorPipeline"])),
 		GroupKey:        strings.TrimSpace(groupKey),
 		LabelsDigest:    strings.TrimSpace(labelsDigest),
-		ChannelName:     "（未外发·策略静默窗口抑制）",
+		ChannelName:     "（未外发·订阅静默窗口抑制）",
 		Success:         true,
 		HTTPStatusCode:  200,
-		ErrorMessage:    "policy_suppressed",
+		ErrorMessage:    "subscription_suppressed",
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload: truncateText(fmt.Sprintf("suppressed by policy silence_seconds=%d", silenceSeconds), s.cfg.MaxPayloadChars),
+		ResponsePayload: truncateText(fmt.Sprintf("suppressed by subscription silence_seconds=%d", silenceSeconds), s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
@@ -296,12 +338,13 @@ type AlertChannelPreviewRequest struct {
 }
 
 type AlertChannelPreviewResponse struct {
-	Rendered           string                 `json:"rendered"`
-	SamplePayload      map[string]interface{} `json:"sample_payload"`
-	AvailableFields    []string               `json:"available_fields"`
-	RawPayloadFields   []string               `json:"raw_payload_fields"`
-	CombinedFields     []string               `json:"combined_fields"`
-	SuggestedLabelKeys []string               `json:"suggested_label_keys"`
+	Rendered           string                                     `json:"rendered"`
+	SamplePayload      map[string]interface{}                     `json:"sample_payload"`
+	AvailableFields    []string                                   `json:"available_fields"`
+	RawPayloadFields   []string                                   `json:"raw_payload_fields"`
+	CombinedFields     []string                                   `json:"combined_fields"`
+	SuggestedLabelKeys []string                                   `json:"suggested_label_keys"`
+	TemplateVariables  []alertdispatch.ChannelTemplateVariableDoc `json:"template_variables"`
 }
 
 // PreviewChannelTemplate 渲染并返回通道模板预览文本。
@@ -353,13 +396,15 @@ func (s *AlertService) PreviewChannelTemplate(ctx context.Context, req AlertChan
 	// 使用统一渲染函数生成消息文本，title/severity 可从 payload 或设置中扩展。
 	msg := s.renderChannelMessage(ctx, alertnotify.SafeOr(strings.TrimSpace(req.Title), "Preview"), strings.TrimSpace(req.Severity), status, payload, settings)
 	rawFields, combinedFields, labelKeys := previewPayloadFieldCatalog(payload)
+	docs := alertdispatch.ChannelTemplateVariableDocs()
 	return &AlertChannelPreviewResponse{
 		Rendered:           msg,
 		SamplePayload:      payload,
-		AvailableFields:    []string{"Title", "Severity", "Status", "StatusText", "Summary", "Description", "ProjectName", "Cluster", "OccurredAt", "StartsAt", "EndsAt", "Current", "Count", "Fingerprint", "GeneratorURL", "Labels", "LabelsText"},
+		AvailableFields:    append([]string{}, alertdispatch.ChannelTemplateFieldList()...),
 		RawPayloadFields:   rawFields,
 		CombinedFields:     combinedFields,
 		SuggestedLabelKeys: labelKeys,
+		TemplateVariables:  docs,
 	}, nil
 }
 
@@ -421,7 +466,7 @@ func (s *AlertService) CreateChannel(ctx context.Context, req AlertChannelUpsert
 		ch.Type = "generic_webhook"
 	}
 	if requiresWebhookURL(ch.Type, ch.HeadersJSON) && strings.TrimSpace(ch.URL) == "" {
-		return nil, apperror.BadRequest("非邮件通道必须填写 Webhook 地址")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgaae2bd7c8c91)
 	}
 	if ch.TimeoutMS <= 0 {
 		ch.TimeoutMS = s.cfg.DefaultTimeoutMS
@@ -458,7 +503,7 @@ func (s *AlertService) UpdateChannel(ctx context.Context, id uint, req AlertChan
 		ch.Type = "generic_webhook"
 	}
 	if requiresWebhookURL(ch.Type, ch.HeadersJSON) && strings.TrimSpace(ch.URL) == "" {
-		return nil, apperror.BadRequest("非邮件通道必须填写 Webhook 地址")
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgaae2bd7c8c91)
 	}
 	if req.TimeoutMS > 0 {
 		ch.TimeoutMS = req.TimeoutMS
@@ -505,16 +550,16 @@ func (s *AlertService) TestChannel(ctx context.Context, id uint, req AlertTestRe
 		severity = "info"
 	}
 	payload := map[string]interface{}{
-		"source":      "manual-test",
-		"title":       title,
-		"content":     content,
-		"summary":     content,
-		"severity":    severity,
-		"status":      "firing",
-		"occurred_at": time.Now().Format(time.RFC3339),
-		"cluster":     "manual-test",
+		"source":     "manual-test",
+		"title":      title,
+		"content":    content,
+		"summary":    content,
+		"severity":   severity,
+		"status":     "firing",
+		"occurredAt": time.Now().Format(time.RFC3339),
+		"cluster":    "manual-test",
 	}
-	_, _, err := s.sendToChannel(ctx, &ch, "manual-test", title, severity, "firing", payload)
+	_, _, err := s.sendToChannel(ctx, &ch, alertdispatch.NewEnvelope("manual-test", title, severity, "firing", payload))
 	return err
 }
 
@@ -542,10 +587,13 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 		)
 	}
 	if v := strings.ToLower(strings.TrimSpace(q.Status)); v != "" {
-		tx = tx.Where("LOWER(TRIM(status)) = ?", v)
+		tx = tx.Where("status = ?", v)
 	}
 	if v := strings.TrimSpace(q.MonitorPipeline); v != "" {
 		tx = tx.Where("monitor_pipeline = ?", v)
+	}
+	if q.DatasourceID > 0 {
+		tx = tx.Where("datasource_id = ?", q.DatasourceID)
 	}
 	if v := strings.TrimSpace(q.GroupKey); v != "" {
 		tx = tx.Where("group_key = ?", v)
@@ -595,7 +643,7 @@ func (s *AlertService) backfillResolvedAlertIP(ctx context.Context, list []model
 	}
 	var firingRows []model.AlertEvent
 	if err := s.db.WithContext(ctx).
-		Where("group_key IN ? AND LOWER(TRIM(status)) = ?", groupKeys, "firing").
+		Where("group_key IN ? AND status = ?", groupKeys, "firing").
 		Order("id DESC").
 		Find(&firingRows).Error; err != nil {
 		return
@@ -646,7 +694,7 @@ func extractAlertStartedAtFromPayload(requestPayload string) string {
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		return ""
 	}
-	for _, key := range []string{"starts_at", "startsAt"} {
+	for _, key := range []string{"startsAt"} {
 		v := strings.TrimSpace(fmt.Sprintf("%v", payload[key]))
 		if v != "" && v != "<nil>" {
 			return v
@@ -810,7 +858,7 @@ func previewPayloadFieldCatalog(payload map[string]interface{}) ([]string, []str
 		}
 	}
 	sort.Strings(labelKeys)
-	combined := append([]string{}, []string{"Title", "Severity", "Status", "StatusText", "Summary", "Description", "ProjectName", "Cluster", "OccurredAt", "StartsAt", "EndsAt", "Current", "Count", "Fingerprint", "GeneratorURL", "Labels", "LabelsText"}...)
+	combined := append([]string{}, alertdispatch.ChannelTemplateFieldList()...)
 	combined = append(combined, rawFields...)
 	sort.Strings(combined)
 	return rawFields, combined, labelKeys
@@ -1004,7 +1052,7 @@ func (s *AlertService) enrichAssigneeAndDutyEmails(ctx context.Context, outgoing
 func (s *AlertService) logSilenceSuppressed(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, silenceID uint, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:          "alertmanager",
+		Source:          alertEventSourceFromPayload(payload),
 		Title:           title + " (silence suppressed)",
 		Severity:        severity,
 		Status:          status,
@@ -1020,13 +1068,14 @@ func (s *AlertService) logSilenceSuppressed(ctx context.Context, title, severity
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload: truncateText(fmt.Sprintf("suppressed by platform silence_id=%d", silenceID), s.cfg.MaxPayloadChars),
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
 func (s *AlertService) logNoMatchedChannel(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, payload map[string]interface{}, reason string) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
-		Source:             "alertmanager",
+		Source:             alertEventSourceFromPayload(payload),
 		Title:              title + " (no matched channel)",
 		Severity:           severity,
 		Status:             status,
@@ -1034,8 +1083,8 @@ func (s *AlertService) logNoMatchedChannel(ctx context.Context, title, severity,
 		MonitorPipeline:    monitorPipelineFromPayload(payload),
 		GroupKey:           groupKey,
 		LabelsDigest:       labelsDigest,
-		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matched_policy_ids"),
-		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matched_policy_names"),
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matchedPolicyIds"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matchedPolicyNames"),
 		ChannelID:          0,
 		ChannelName:        "（无匹配通道）",
 		Success:            false,
@@ -1044,202 +1093,53 @@ func (s *AlertService) logNoMatchedChannel(ctx context.Context, title, severity,
 		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
 		ResponsePayload:    "",
 	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
+	_ = s.db.WithContext(ctx).Create(&event).Error
+}
+
+func (s *AlertService) logAllChannelsDeliveryFailed(ctx context.Context, title, severity, status, cluster, groupKey, labelsDigest string, payload map[string]interface{}) {
+	reqBytes, _ := json.Marshal(payload)
+	event := model.AlertEvent{
+		Source:             alertEventSourceFromPayload(payload),
+		Title:              title + " (all channel delivery failed)",
+		Severity:           severity,
+		Status:             status,
+		Cluster:            cluster,
+		MonitorPipeline:    monitorPipelineFromPayload(payload),
+		GroupKey:           groupKey,
+		LabelsDigest:       labelsDigest,
+		MatchedPolicyIDs:   alertnotify.StringFromPayload(payload, "matchedPolicyIds"),
+		MatchedPolicyNames: alertnotify.StringFromPayload(payload, "matchedPolicyNames"),
+		ChannelID:          0,
+		ChannelName:        "（外发失败·全部通道）",
+		Success:            false,
+		HTTPStatusCode:     0,
+		ErrorMessage:       "all_channel_delivery_failed",
+		RequestPayload:     truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
+		ResponsePayload:    "",
+	}
+	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
 // ReceiveAlertmanager 执行对应的业务逻辑。
+// 配置启用且 Redis 可用时，Webhook 先入队异步消费；内置评估路径应调用 receiveAlertmanagerPayloadSync 避免二次入队。
 func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertManagerPayload) error {
-	var channels []model.AlertChannel
-	if err := s.db.WithContext(ctx).Model(&model.AlertChannel{}).
-		Where("enabled = ?", true).
-		Order("id ASC").
-		Find(&channels).Error; err != nil {
-		return err
+	if s.shouldEnqueueAlertmanagerWebhook() {
+		return s.enqueueAlertmanagerWebhook(ctx, payload)
 	}
-	for _, alert := range payload.Alerts {
-		labels := mergeStringMap(payload.CommonLabels, alert.Labels)
-		monitorPipeline := monitorPipelinePrometheus
-		if s.isPlatformMonitor(labels, payload.Receiver) {
-			monitorPipeline = monitorPipelinePlatform
-		}
-		labels["monitor_pipeline"] = monitorPipeline
-		annotations := mergeStringMap(payload.CommonAnnotations, alert.Annotations)
-		status := strings.TrimSpace(alert.Status)
-		if status == "" {
-			status = strings.TrimSpace(payload.Status)
-		}
-		status = strings.ToLower(strings.TrimSpace(status))
-		if status == "" {
-			status = "firing"
-		}
-		eventName := strings.TrimSpace(labels["alertname"])
-		if eventName == "" {
-			eventName = strings.TrimSpace(payload.CommonLabels["alertname"])
-		}
-		if eventName == "" {
-			eventName = "Alertmanager 告警"
-		}
-		summary := strings.TrimSpace(annotations["summary"])
-		if summary == "" {
-			summary = strings.TrimSpace(annotations["description"])
-		}
-		if summary == "" {
-			summary = strings.TrimSpace(payload.CommonAnnotations["summary"])
-		}
-		if summary == "" {
-			summary = "Alertmanager webhook message"
-		}
-		severity := strings.TrimSpace(labels["severity"])
-		if severity == "" {
-			severity = strings.TrimSpace(payload.CommonLabels["severity"])
-		}
-		if severity == "" {
-			severity = "warning"
-		}
-		title := eventName
+	return s.receiveAlertmanagerPayloadSync(ctx, payload)
+}
 
-		dims := alertnotify.ExtractDims(labels)
-		groupKey := s.computeGroupKey(payload.Receiver, status, severity, eventName, labels, dims)
-		labelsDigest := alertnotify.DigestLabels(labels)
-		envLabel := s.resolveAlertEnvironmentLabel(labels, payload.Receiver, dims, alert.Labels)
-		if s.silenceSvc != nil {
-			if sid, muted, err := s.silenceSvc.FirstMatchingSilenceID(ctx, labels, time.Now()); err == nil && muted {
-				minPayload := map[string]interface{}{
-					"labels": labels, "annotations": annotations, "severity": severity, "status": status,
-					"receiver": payload.Receiver, "fingerprint": alert.Fingerprint,
-					"group_key": groupKey, "cluster": envLabel, "labels_digest": labelsDigest,
-					"monitor_pipeline": monitorPipeline,
-				}
-				s.logSilenceSuppressed(ctx, title, severity, status, envLabel, groupKey, labelsDigest, sid, minPayload)
-				continue
-			}
-		}
-
-		count, deduped, _ := s.updateFingerprintState(ctx, alert.Fingerprint, status)
-
-		ctxEnrich, cancelEnrich := context.WithTimeout(ctx, time.Duration(maxInt(1, s.cfg.PromQueryTimeout))*time.Second)
-		currentValue := strings.TrimSpace(s.getCachedCurrentValue(ctx, alert.Fingerprint))
-		if currentValue == "" && strings.TrimSpace(s.cfg.PrometheusURL) != "" && strings.TrimSpace(alert.GeneratorURL) != "" {
-			if v, qerr := s.queryCurrentValueByGeneratorURL(ctxEnrich, alert.GeneratorURL); qerr == nil && strings.TrimSpace(v) != "" {
-				currentValue = strings.TrimSpace(v)
-				s.setCachedCurrentValue(ctx, alert.Fingerprint, currentValue)
-			}
-		}
-		cancelEnrich()
-		if currentValue == "" {
-			currentValue = "-"
-		}
-		// P3：异步增强，不阻塞通知主链路（缓存 miss 时上面已尽力同步查询）
-		if status == "firing" {
-			s.enqueuePrometheusEnrich(promEnrichTask{
-				Fingerprint:  alert.Fingerprint,
-				GeneratorURL: alert.GeneratorURL,
-			})
-		}
-		outgoing := map[string]interface{}{
-			"source":           "alertmanager",
-			"title":            title,
-			"summary":          summary,
-			"severity":         severity,
-			"status":           status,
-			"receiver":         payload.Receiver,
-			"fingerprint":      alert.Fingerprint,
-			"count":            count,
-			"labels":           labels,
-			"annotations":      annotations,
-			"group_labels":     payload.GroupLabels,
-			"am_version":       payload.Version,
-			"starts_at":        alert.StartsAt,
-			"ends_at":          alert.EndsAt,
-			"generator_url":    alert.GeneratorURL,
-			"current":          currentValue,
-			"truncated":        payload.TruncatedAlerts,
-			"occurred_at":      time.Now().Format(time.RFC3339),
-			"cluster":          envLabel,
-			"monitor_pipeline": monitorPipeline,
-			"group_key":        groupKey,
-			"labels_digest":    labelsDigest,
-		}
-		// Prometheus/Alertmanager 规则可在 labels 中携带 project_id，此处查库写入 project_name，供统一标题与通道展示。
-		s.enrichOutgoingProjectName(ctx, outgoing)
-		s.enrichAssigneeAndDutyEmails(ctx, outgoing, labels)
-
-		// 服务端第二层收敛：同 group_key 在 firing 状态下按 notify_interval 控制发送频率
-		if status == "firing" {
-			shouldSend, aggCount, firstSeen, lastSeen := s.updateGroupAggregateState(ctx, groupKey)
-			outgoing["agg_count"] = aggCount
-			outgoing["agg_first_seen"] = firstSeen
-			outgoing["agg_last_seen"] = lastSeen
-			if !shouldSend {
-				s.logSuppressedAggregate(ctx, title, severity, status, groupKey, outgoing)
-				continue
-			}
-		}
-		if status == "resolved" {
-			// resolved 恢复汇总：短窗口内同 group_key 合并为一条恢复通知
-			shouldSend, rCount, firstSeen, lastSeen := s.updateGroupResolvedState(ctx, groupKey)
-			outgoing["resolved_count"] = rCount
-			outgoing["resolved_first_seen"] = firstSeen
-			outgoing["resolved_last_seen"] = lastSeen
-			outgoing["summary"] = fmt.Sprintf("恢复汇总：%d 条在 %s ~ %s 已恢复。", rCount, alertnotify.SafeOr(firstSeen, "-"), alertnotify.SafeOr(lastSeen, "-"))
-			outgoing["resolved_sent"] = shouldSend
-			if !shouldSend {
-				s.logSuppressedResolvedAggregate(ctx, title, severity, status, groupKey, outgoing)
-				continue
-			}
-		}
-
-		if status == "firing" && deduped {
-			s.logSuppressedDedup(ctx, title, severity, status, alert.Fingerprint, outgoing)
-			continue
-		}
-		policyChannels, matchedPolicyIDs, matchedPolicyNames, policySilenceSeconds := s.channelIDSetForAlert(ctx, status, labels)
-		outgoing["matched_policy_ids"] = matchedPolicyIDs
-		outgoing["matched_policy_names"] = matchedPolicyNames
-		outgoing["policy_silence_seconds"] = policySilenceSeconds
-		if len(policyChannels) == 0 {
-			s.logNoMatchedChannel(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing, "no_policy_matched")
-			continue
-		}
-		if s.shouldSuppressByPolicySilence(ctx, status, groupKey, matchedPolicyIDs, policySilenceSeconds, labels) {
-			s.logSuppressedPolicySilence(ctx, title, severity, status, envLabel, groupKey, labelsDigest, policySilenceSeconds, outgoing)
-			continue
-		}
-		sentCount := 0
-		for i := range channels {
-			if _, ok := policyChannels[channels[i].ID]; !ok {
-				continue
-			}
-			settings, _ := parseChannelSettings(channels[i].HeadersJSON)
-			if !channelMatchesAlert(settings, labels, dims) {
-				continue
-			}
-			sentCount++
-			_, _, _ = s.sendToChannel(ctx, &channels[i], "alertmanager", title, severity, status, outgoing)
-		}
-		if sentCount == 0 {
-			reason := "no_channel_matched"
-			if len(channels) == 0 {
-				reason = "no_enabled_channels"
-			} else if len(policyChannels) > 0 {
-				reason = "no_channel_matched_policy"
-			}
-			s.logNoMatchedChannel(ctx, title, severity, status, envLabel, groupKey, labelsDigest, outgoing, reason)
-		}
-		if status == "resolved" {
-			_ = s.clearFingerprintState(ctx, alert.Fingerprint)
-			if s.redis != nil && strings.TrimSpace(alert.Fingerprint) != "" {
-				_ = s.redis.Del(ctx, "alert:current:"+strings.TrimSpace(alert.Fingerprint)).Err()
-			}
-			// resolved 到来：清理 firing 聚合状态，避免后续误聚合
-			_ = s.clearGroupAggregateState(ctx, groupKey)
-			// resolved 汇总发送后再清理 resolved 状态；若本次被去抖抑制，则保留用于后续汇总
-			if v, ok := outgoing["resolved_sent"].(bool); ok && v {
-				_ = s.clearGroupResolvedState(ctx, groupKey)
-			}
-		}
+func alertEventSourceFromPayload(payload map[string]interface{}) string {
+	if payload == nil {
+		return "alertmanager"
 	}
-	return nil
+	src := strings.TrimSpace(fmt.Sprintf("%v", payload["source"]))
+	if src == "" {
+		return "alertmanager"
+	}
+	return src
 }
 
 // ValidateWebhookToken 校验相关的业务逻辑。
@@ -1252,6 +1152,112 @@ func (s *AlertService) ValidateWebhookToken(token string) bool {
 	token = strings.TrimPrefix(token, "Bearer ")
 	token = strings.TrimPrefix(token, "bearer ")
 	return strings.TrimSpace(token) == expected
+}
+
+// resolveAlertDatasourceMeta 统一解析「数据源」维度：优先标签/规则上的 datasource_id，其次平台规则反查；monitor_pipeline 列写入简短 slug 便于筛选。
+func (s *AlertService) resolveAlertDatasourceMeta(ctx context.Context, labels map[string]string, receiver string) (dsID uint, dsName, dsType, pipelineSlug string) {
+	rcv := strings.TrimSpace(receiver)
+	if rcv == "cloud-expiry" {
+		return 0, "云资源到期", "cloud_expiry", "cloud_expiry"
+	}
+	for _, key := range []string{"yunshu_datasource_id", "datasource_id"} {
+		if labels == nil {
+			break
+		}
+		if n, ok := parseLabelUint(labels[key]); ok && n > 0 {
+			dsID = n
+			break
+		}
+	}
+	if dsID == 0 && s.isPlatformMonitor(labels, receiver) {
+		if rid, ok := parseLabelUint(labels["monitor_rule_id"]); ok && rid > 0 {
+			var rule model.AlertMonitorRule
+			if err := s.db.WithContext(ctx).First(&rule, rid).Error; err == nil && rule.DatasourceID > 0 {
+				dsID = rule.DatasourceID
+			}
+		}
+	}
+	if dsID > 0 {
+		var ds model.AlertDatasource
+		if err := s.db.WithContext(ctx).First(&ds, dsID).Error; err == nil {
+			dsName = strings.TrimSpace(ds.Name)
+			dsType = strings.TrimSpace(ds.Type)
+		}
+		if dsType == "" {
+			dsType = "prometheus"
+		}
+		return dsID, dsName, dsType, fmt.Sprintf("ds:%d", dsID)
+	}
+	if labels != nil {
+		if n := strings.TrimSpace(labels["datasource_name"]); n != "" {
+			dsName = n
+		}
+		if t := strings.TrimSpace(labels["datasource_type"]); t != "" {
+			dsType = t
+		}
+	}
+	if dsType == "" {
+		dsType = "prometheus"
+	}
+	if s.isPlatformMonitor(labels, receiver) {
+		if dsName == "" {
+			dsName = "平台监控规则"
+		}
+		return 0, dsName, dsType, "platform_monitor"
+	}
+	return 0, dsName, dsType, "alertmanager"
+}
+
+func fillAlertEventDatasourceFromPayload(ev *model.AlertEvent, payload map[string]interface{}) {
+	if ev == nil || payload == nil {
+		return
+	}
+	if id := payloadUintAny(payload["datasourceId"]); id > 0 {
+		ev.DatasourceID = id
+	}
+	if s := strings.TrimSpace(fmt.Sprintf("%v", payload["datasourceName"])); s != "" && s != "<nil>" {
+		ev.DatasourceName = truncateText(s, 128)
+	}
+	if s := strings.TrimSpace(fmt.Sprintf("%v", payload["datasourceType"])); s != "" && s != "<nil>" {
+		ev.DatasourceType = truncateText(s, 32)
+	}
+}
+
+func payloadUintAny(v interface{}) uint {
+	if v == nil {
+		return 0
+	}
+	switch x := v.(type) {
+	case uint:
+		return x
+	case uint32:
+		return uint(x)
+	case uint64:
+		if x <= 1<<32-1 {
+			return uint(x)
+		}
+	case int:
+		if x > 0 {
+			return uint(x)
+		}
+	case int64:
+		if x > 0 && x < 1<<32 {
+			return uint(x)
+		}
+	case float64:
+		if x > 0 && x < 1e12 {
+			return uint(x)
+		}
+	case string:
+		if n, ok := parseLabelUint(x); ok {
+			return n
+		}
+	case json.Number:
+		if u, err := x.Int64(); err == nil && u > 0 {
+			return uint(u)
+		}
+	}
+	return 0
 }
 
 func (s *AlertService) isPlatformMonitor(labels map[string]string, receiver string) bool {
@@ -1283,7 +1289,7 @@ func monitorPipelineFromPayload(payload map[string]interface{}) string {
 	if payload == nil {
 		return ""
 	}
-	s := strings.TrimSpace(fmt.Sprintf("%v", payload["monitor_pipeline"]))
+	s := strings.TrimSpace(fmt.Sprintf("%v", payload["monitorPipeline"]))
 	if s == "" || s == "<nil>" {
 		return ""
 	}
@@ -1304,15 +1310,22 @@ func mergeStringMap(base, override map[string]string) map[string]string {
 	return out
 }
 
+// AlertDatasourceFilterOption 历史告警筛选：已出现过的数据源（按事件表聚合）。
+type AlertDatasourceFilterOption struct {
+	ID   uint   `json:"id" gorm:"column:id"`
+	Name string `json:"name" gorm:"column:name"`
+}
+
 type AlertHistoryStats struct {
-	Total                 int64    `json:"total"`
-	Firing                int64    `json:"firing"`
-	Resolved              int64    `json:"resolved"`
-	Success               int64    `json:"success"`
-	Failed                int64    `json:"failed"`
-	TodayCreated          int64    `json:"today_created"`
-	ClusterValues         []string `json:"cluster_values"`
-	MonitorPipelineValues []string `json:"monitor_pipeline_values"`
+	Total                   int64                         `json:"total"`
+	Firing                  int64                         `json:"firing"`
+	Resolved                int64                         `json:"resolved"`
+	Success                 int64                         `json:"success"`
+	Failed                  int64                         `json:"failed"`
+	TodayCreated            int64                         `json:"today_created"`
+	ClusterValues           []string                      `json:"cluster_values"`
+	MonitorPipelineValues   []string                      `json:"monitor_pipeline_values"`
+	DatasourceFilterOptions []AlertDatasourceFilterOption `json:"datasource_filter_options"`
 }
 
 func (s *AlertService) HistoryStats(ctx context.Context) (*AlertHistoryStats, error) {
@@ -1320,10 +1333,10 @@ func (s *AlertService) HistoryStats(ctx context.Context) (*AlertHistoryStats, er
 	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Count(&stats.Total).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("LOWER(TRIM(status)) = ?", "firing").Count(&stats.Firing).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("status = ?", "firing").Count(&stats.Firing).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("LOWER(TRIM(status)) = ?", "resolved").Count(&stats.Resolved).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("status = ?", "resolved").Count(&stats.Resolved).Error; err != nil {
 		return nil, err
 	}
 	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("success = ?", true).Count(&stats.Success).Error; err != nil {
@@ -1332,7 +1345,13 @@ func (s *AlertService) HistoryStats(ctx context.Context) (*AlertHistoryStats, er
 	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("success = ?", false).Count(&stats.Failed).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).Where("DATE(created_at) = CURRENT_DATE").Count(&stats.TodayCreated).Error; err != nil {
+	// 使用半开区间替代 DATE(created_at)，便于命中 created_at 索引（语义：应用进程本地日历日的 00:00–24:00）。
+	now := time.Now()
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	dayEnd := dayStart.Add(24 * time.Hour)
+	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).
+		Where("created_at >= ? AND created_at < ?", dayStart, dayEnd).
+		Count(&stats.TodayCreated).Error; err != nil {
 		return nil, err
 	}
 	var clusters []string
@@ -1355,5 +1374,16 @@ func (s *AlertService) HistoryStats(ctx context.Context) (*AlertHistoryStats, er
 		return nil, err
 	}
 	stats.MonitorPipelineValues = pipes
+	var dsRows []AlertDatasourceFilterOption
+	if err := s.db.WithContext(ctx).Model(&model.AlertEvent{}).
+		Select("datasource_id AS id, MAX(datasource_name) AS name").
+		Where("datasource_id > ?", 0).
+		Group("datasource_id").
+		Order("id DESC").
+		Limit(200).
+		Scan(&dsRows).Error; err != nil {
+		return nil, err
+	}
+	stats.DatasourceFilterOptions = dsRows
 	return stats, nil
 }
