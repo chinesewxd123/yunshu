@@ -51,8 +51,27 @@ export function getNamespaceDetail(clusterId: number, name: string) {
   return getData<NamespaceDetail>(http.get("/namespaces/detail", { params: { cluster_id: clusterId, name } }));
 }
 
-export function applyNamespace(clusterId: number, manifest: string) {
-  return getData<boolean>(http.post("/namespaces/apply", { cluster_id: clusterId, manifest }));
+export type ApplyNamespaceOptions = {
+  /** 为 true 时若集群中已有同名 Namespace 则拒绝（表单创建）；YAML 更新场景勿传 */
+  failIfExists?: boolean;
+  /** 为 true 时不弹出全局错误 toast，由调用方用 extractApiErrorMessage 展示（避免重复提示） */
+  silentErrorToast?: boolean;
+};
+
+export function applyNamespace(clusterId: number, manifest: string, opts?: ApplyNamespaceOptions) {
+  const failIfExists = opts?.failIfExists;
+  const silent = opts?.silentErrorToast;
+  return getData<boolean>(
+    http.post(
+      "/namespaces/apply",
+      {
+        cluster_id: clusterId,
+        manifest,
+        ...(failIfExists ? { fail_if_exists: true } : {}),
+      },
+      silent ? { silentErrorToast: true } : {},
+    ),
+  );
 }
 
 export function deleteNamespace(clusterId: number, name: string) {

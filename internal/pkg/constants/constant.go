@@ -1,12 +1,14 @@
 // Package constants：统一业务错误码（数字 error_code）、产品话术、以及脚本生成的 ErrMsg* 文案与模板。
-// 业务码分段：10xxx 通用；11xxx 请求校验；20xxx–25xxx 按功能域手写；11020/10901 等为可变文案固定码（Err*WithMsg，可传 ErrMsg* / fmt 拼接）。
+// 业务码分段：10xxx 通用；11xxx 请求校验；20xxx–26xxx 按功能域手写；11020/10901 等为可变文案固定码（Err*WithMsg，可传 ErrMsg* / fmt 拼接）。
 // 请使用 BizError、域内 Err*；长尾或脚本 ErrMsg* 用 Err*WithMsg(constants.ErrMsg…)。response.Error(c, err) 将业务码写入 JSON error_code。
 // 文件后部「固定错误/提示文案」「fmt.Sprintf 模板」为脚本生成区，勿手改常量值。
 package constants
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"yunshu/internal/pkg/apperror"
 )
@@ -135,6 +137,21 @@ var (
 	ErrRegistrationAlreadyProcessed = BizError(http.StatusConflict, 25002, "该注册申请已审核，请勿重复操作")
 	ErrRegistrationDuplicatePending = BizError(http.StatusConflict, 25003, "该用户名或邮箱已有待审核申请，请勿重复提交")
 )
+
+// —— Kubernetes 集群 26xxx ——
+var (
+	// ErrK8sNamespaceAlreadyExists 表单创建命名空间时名称已在集群中存在（HTTP 409 / error_code 26001）。
+	ErrK8sNamespaceAlreadyExists = BizError(http.StatusConflict, 26001, "该命名空间已存在，请勿重复创建")
+)
+
+// ErrK8sNamespaceAlreadyExistsMsg 返回业务码 26001，文案包含冲突的名称。
+func ErrK8sNamespaceAlreadyExistsMsg(name string) error {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return ErrK8sNamespaceAlreadyExists
+	}
+	return BizError(http.StatusConflict, 26001, fmt.Sprintf("命名空间「%s」已存在，请勿重复创建", n))
+}
 
 // 展示用语（非 error）：Agent 离线归因话术
 const (

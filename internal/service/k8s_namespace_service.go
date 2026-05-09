@@ -20,7 +20,14 @@ import (
 
 type NamespaceListQuery = ClusterKeywordQuery
 type NamespaceDetailQuery = ClusterNameQuery
-type NamespaceApplyRequest = ClusterManifestApplyRequest
+
+// NamespaceApplyRequest 命名空间 YAML 下发；FailIfExists 为 true 时若资源已存在则拒绝（表单「创建」场景），YAML 页更新标签等不传该字段。
+type NamespaceApplyRequest struct {
+	ClusterID    uint   `json:"cluster_id" binding:"required"`
+	Manifest     string `json:"manifest" binding:"required"`
+	FailIfExists bool   `json:"fail_if_exists"`
+}
+
 type NamespaceDeleteRequest = ClusterNameQuery
 
 type NamespaceListItem struct {
@@ -290,6 +297,17 @@ func (s *K8sNamespaceService) Apply(ctx context.Context, req NamespaceApplyReque
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	refs := extractNamespaceRefs(req.Manifest)
+	if req.FailIfExists && len(refs) > 0 {
+		for _, name := range refs {
+			_, ge := s.dyn.GetByGVK(ctx, k, namespaceGVK, "", name)
+			if ge == nil {
+				return constants.ErrK8sNamespaceAlreadyExistsMsg(name)
+			}
+			if !apierrors.IsNotFound(ge) {
+				return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, ge))
+			}
+		}
+	}
 	err = s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
 		if len(refs) == 0 {
 			return false

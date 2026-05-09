@@ -45,6 +45,8 @@ services:
     restart: unless-stopped
     mem_limit: 128m
     cpus: 0.3
+    environment:
+      - TZ=Asia/Shanghai
     command:
       - redis-server
       - --requirepass
@@ -88,7 +90,8 @@ services:
     environment:
       - GIN_MODE=release
       - APP_ENV=prod
-      - TZ=UTC
+      # 与宿主机/业务常用时区一致；勿用 UTC，否则 slog 等本地时间日志会差 8 小时
+      - TZ=Asia/Shanghai
       - MYSQL_HOST=yunshu-mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=root
@@ -117,6 +120,8 @@ services:
     restart: unless-stopped
     mem_limit: 64m
     cpus: 0.2
+    environment:
+      - TZ=Asia/Shanghai
     ports:
       - "80:80"
     depends_on:

@@ -1,6 +1,8 @@
 export interface ApiResponse<T> {
   code: number;
   message: string;
+  /** 业务错误码数字字符串，与后端 response.Body.error_code 对齐（成功时通常为空） */
+  error_code?: string;
   data: T;
 }
 

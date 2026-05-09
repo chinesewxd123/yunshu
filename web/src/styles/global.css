@@ -3773,17 +3773,58 @@ body {
   }
 }
 
+/* Project logs page：占满内容区剩余高度，终端随容器伸缩 */
+.project-logs-page {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 120px);
+  min-height: calc(100vh - 120px);
+}
+
+.project-logs-page > .project-logs-card.ant-card {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.project-logs-page > .project-logs-card.ant-card > .ant-card-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* Project logs page panel alignment */
 .project-logs-status-panel {
   margin-bottom: 12px;
   padding: 10px 12px;
   border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.project-logs-page .project-logs-card .ant-form {
+  flex-shrink: 0;
 }
 
 .project-logs-terminal-wrap {
-  height: 520px;
+  flex: 1 1 auto;
+  min-height: 280px;
   border-radius: 6px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.project-logs-terminal-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.project-logs-terminal-host .xterm,
+.project-logs-terminal-host .xterm-viewport {
+  height: 100% !important;
 }
 
 .admin-shell.theme-dark .project-logs-card .project-logs-status-panel {

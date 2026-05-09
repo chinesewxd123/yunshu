@@ -85,3 +85,17 @@ export async function getData<T>(promise: Promise<ApiResponse<T>>) {
   const result = await promise;
   return result.data;
 }
+
+/** 从 axios 错误中取出后端 Body.Message（与 response.Error 业务话术对齐）；非 axios 时回退 Error.message。 */
+export function extractApiErrorMessage(error: unknown, fallback = "请求失败"): string {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { message?: string } | undefined;
+    if (typeof data?.message === "string" && data.message.trim()) {
+      return data.message.trim();
+    }
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}

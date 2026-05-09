@@ -120,6 +120,10 @@ export function AgentListPage() {
         </Space>
       }
     >
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16, fontSize: 13 }}>
+        本页按<strong>项目内服务器</strong>逐行展示（并非「仅有 Agent 的机器」）。删除 Agent 仅移除平台上的<strong>登记与令牌</strong>，不会删除服务器资产，因此该行仍会保留，Agent 相关列变为「—」；
+        从未完成注册的行本就没有「删除」。若需整行从项目中消失，请到<strong>服务器管理</strong>删除该服务器。
+      </Typography.Paragraph>
       <div style={{ width: "100%", overflowX: "auto", overflowY: "hidden", paddingBottom: 8 }}>
         <Table
         rowKey="server_id"
