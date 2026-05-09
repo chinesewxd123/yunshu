@@ -33,6 +33,11 @@ func (h *K8sScopedPolicyHandler) Grant(c *gin.Context) {
 	ServeJSON(c, h.svc.Grant)
 }
 
+// GrantPreset 按 readonly / readonly_exec / admin 档位一键下发。
+func (h *K8sScopedPolicyHandler) GrantPreset(c *gin.Context) {
+	ServeJSON(c, h.svc.GrantPreset)
+}
+
 // ListByRole 查询列表对应的 HTTP 接口处理逻辑。
 func (h *K8sScopedPolicyHandler) ListByRole(c *gin.Context) {
 	// 前端首屏初始化阶段可能先请求一次未带 role_id，

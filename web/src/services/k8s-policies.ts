@@ -29,6 +29,20 @@ export type K8sScopedPolicyGrantResponse = {
   policies: string[];
 };
 
+export type K8sScopedPolicyGrantPresetPayload = {
+  role_id: number;
+  cluster_ids: number[];
+  namespaces: string[];
+  preset: "readonly" | "readonly_exec" | "admin";
+  /** 可选；须配合明确集群 ID，写入命名空间黑名单 */
+  deny_namespaces?: string[];
+};
+
+export type K8sScopedPolicyGrantPresetResponse = K8sScopedPolicyGrantResponse & {
+  deny_rules_added: number;
+  deny_rules_skipped: number;
+};
+
 export function listK8sPolicyActions() {
   return getData<{ list: K8sActionItem[] }>(http.get("/k8s-policies/actions"));
 }
@@ -46,5 +60,9 @@ export function listK8sPoliciesByRole(roleId: number) {
 
 export function grantK8sScopedPolicies(payload: K8sScopedPolicyGrantPayload) {
   return getData<K8sScopedPolicyGrantResponse>(http.post("/k8s-policies/grant", payload));
+}
+
+export function grantK8sScopedPoliciesPreset(payload: K8sScopedPolicyGrantPresetPayload) {
+  return getData<K8sScopedPolicyGrantPresetResponse>(http.post("/k8s-policies/grant-preset", payload));
 }
 

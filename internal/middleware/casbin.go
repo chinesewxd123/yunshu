@@ -69,9 +69,9 @@ func allowReadByK8sScopedPolicy(enforcer *casbin.SyncedEnforcer, subject, path, 
 		return true
 	}
 	// 非 K8s 资源读取，不走三元兜底。
-	if !isK8sReadPath(normalizedPath) {
-		return false
-	}
+			if !service.IsK8sReadAPIPath(normalizedPath) {
+				return false
+			}
 
 	perms, err := enforcer.GetImplicitPermissionsForUser(subject)
 	if err != nil || len(perms) == 0 {
@@ -96,38 +96,6 @@ func allowReadByK8sScopedPolicy(enforcer *casbin.SyncedEnforcer, subject, path, 
 			continue
 		}
 		if strings.HasSuffix(obj, targetSuffix) {
-			return true
-		}
-	}
-	return false
-}
-
-func isK8sReadPath(path string) bool {
-	p := strings.TrimSpace(path)
-	k8sPrefixes := []string{
-		"/api/v1/clusters",
-		"/api/v1/pods",
-		"/api/v1/namespaces",
-		"/api/v1/nodes",
-		"/api/v1/deployments",
-		"/api/v1/statefulsets",
-		"/api/v1/daemonsets",
-		"/api/v1/cronjobs",
-		"/api/v1/jobs",
-		"/api/v1/configmaps",
-		"/api/v1/secrets",
-		"/api/v1/k8s-services",
-		"/api/v1/persistentvolumes",
-		"/api/v1/persistentvolumeclaims",
-		"/api/v1/storageclasses",
-		"/api/v1/ingresses",
-		"/api/v1/events",
-		"/api/v1/crds",
-		"/api/v1/crs",
-		"/api/v1/rbac",
-	}
-	for _, prefix := range k8sPrefixes {
-		if strings.HasPrefix(p, prefix) {
 			return true
 		}
 	}

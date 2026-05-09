@@ -248,6 +248,7 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&model.ServiceLogSource{},
 		&model.LogAgent{},
 		&model.AgentDiscovery{},
+		&model.K8sNamespaceDenyRule{},
 	); err != nil {
 		return err
 	}

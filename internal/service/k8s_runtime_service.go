@@ -13,6 +13,8 @@ import (
 	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/eventbus"
+	"yunshu/internal/pkg/extension"
 	"yunshu/internal/repository"
 
 	"github.com/weibaohui/kom/callbacks"
@@ -114,6 +116,11 @@ func (s *K8sRuntimeService) registerClusterIfNeeded(clusterID string, kubeconfig
 		st.ConsecutiveFailures++
 		s.connState[clusterID] = st
 		s.komMu.Unlock()
+		extension.NotifyKomRegister(clusterID, false, err.Error())
+		eventbus.Default().Publish(eventbus.Event{
+			Type: eventbus.ClusterKomRegisterFail,
+			Payload: map[string]any{"cluster_id": clusterID, "error": err.Error()},
+		})
 		return err
 	}
 	s.komMu.Lock()
@@ -124,6 +131,11 @@ func (s *K8sRuntimeService) registerClusterIfNeeded(clusterID string, kubeconfig
 	st.ConsecutiveFailures = 0
 	s.connState[clusterID] = st
 	s.komMu.Unlock()
+	extension.NotifyKomRegister(clusterID, true, "")
+	eventbus.Default().Publish(eventbus.Event{
+		Type:    eventbus.ClusterKomRegisterOK,
+		Payload: map[string]any{"cluster_id": clusterID},
+	})
 	return nil
 }
 

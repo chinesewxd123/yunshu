@@ -4,6 +4,8 @@ import (
 	"context"
 	"strconv"
 	"strings"
+
+	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/repository"
@@ -40,10 +42,29 @@ type K8sScopedPolicyItem struct {
 	Resource  string `json:"resource"`
 }
 
+// K8sScopedPolicyGrantPresetRequest 按 k8m 风格档位一键下发三元策略，并可同步命名空间黑名单规则。
+type K8sScopedPolicyGrantPresetRequest struct {
+	RoleID         uint     `json:"role_id" binding:"required"`
+	ClusterIDs     []uint   `json:"cluster_ids"`
+	Namespaces     []string `json:"namespaces"`
+	Preset         string   `json:"preset" binding:"required"` // readonly | readonly_exec | admin
+	DenyNamespaces []string `json:"deny_namespaces"`           // 可选；对每个已选集群写入黑名单（需明确 cluster_ids）
+}
+
+// K8sScopedPolicyGrantPresetResponse 预设下发结果。
+type K8sScopedPolicyGrantPresetResponse struct {
+	Added            int      `json:"added"`
+	Skipped          int      `json:"skipped"`
+	Policies         []string `json:"policies"`
+	DenyRulesAdded   int      `json:"deny_rules_added"`
+	DenyRulesSkipped int      `json:"deny_rules_skipped"`
+}
+
 type K8sScopedPolicyService struct {
-	roleRepo *repository.RoleRepository
-	permRepo *repository.PermissionRepository
-	enforcer *casbin.SyncedEnforcer
+	roleRepo   *repository.RoleRepository
+	permRepo   *repository.PermissionRepository
+	enforcer   *casbin.SyncedEnforcer
+	nsDenyRepo *repository.K8sNamespaceDenyRepository
 }
 
 // NewK8sScopedPolicyService 创建相关逻辑。
@@ -51,11 +72,13 @@ func NewK8sScopedPolicyService(
 	roleRepo *repository.RoleRepository,
 	permRepo *repository.PermissionRepository,
 	enforcer *casbin.SyncedEnforcer,
+	nsDenyRepo *repository.K8sNamespaceDenyRepository,
 ) *K8sScopedPolicyService {
 	return &K8sScopedPolicyService{
-		roleRepo: roleRepo,
-		permRepo: permRepo,
-		enforcer: enforcer,
+		roleRepo:   roleRepo,
+		permRepo:   permRepo,
+		enforcer:   enforcer,
+		nsDenyRepo: nsDenyRepo,
 	}
 }
 
@@ -159,6 +182,139 @@ func (s *K8sScopedPolicyService) Grant(ctx context.Context, req K8sScopedPolicyG
 		Skipped:  skipped,
 		Policies: flat,
 	}, nil
+}
+
+// GrantPreset 按档位批量下发 path+action 配对（非 paths×actions 笛卡尔积）。
+func (s *K8sScopedPolicyService) GrantPreset(ctx context.Context, req K8sScopedPolicyGrantPresetRequest) (*K8sScopedPolicyGrantPresetResponse, error) {
+	role, err := s.roleRepo.GetByID(ctx, req.RoleID)
+	if err != nil {
+		return nil, err
+	}
+	preset := K8sClusterAccessPreset(strings.TrimSpace(req.Preset))
+	if preset != PresetK8sReadonly && preset != PresetK8sReadonlyExec && preset != PresetK8sAdmin {
+		return nil, constants.ErrBadRequestWithMsg("preset 须为 readonly、readonly_exec 或 admin")
+	}
+	if s.permRepo == nil {
+		return nil, constants.ErrInternal
+	}
+	perms, err := s.permRepo.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pairs := expandPresetTriples(perms, preset)
+	if len(pairs) == 0 {
+		return nil, constants.ErrBadRequestWithMsg("当前权限目录无法展开该预设，请检查 permissions 表或 seed")
+	}
+
+	namespaces := req.Namespaces
+	if len(namespaces) == 0 {
+		namespaces = []string{"*"}
+	}
+	clusterIDs := req.ClusterIDs
+	if len(clusterIDs) == 0 {
+		clusterIDs = []uint{0}
+	}
+
+	addCount, skipped, flat, err := s.addPairedK8sPolicies(role.Code, clusterIDs, namespaces, pairs)
+	if err != nil {
+		return nil, err
+	}
+
+	denyAdded, denySkipped := 0, 0
+	if s.nsDenyRepo != nil && len(req.DenyNamespaces) > 0 {
+		da, ds, err := s.syncDenyNamespaces(ctx, role.Code, clusterIDs, req.DenyNamespaces)
+		if err != nil {
+			return nil, err
+		}
+		denyAdded, denySkipped = da, ds
+	}
+
+	return &K8sScopedPolicyGrantPresetResponse{
+		Added:            addCount,
+		Skipped:          skipped,
+		Policies:         flat,
+		DenyRulesAdded:   denyAdded,
+		DenyRulesSkipped: denySkipped,
+	}, nil
+}
+
+func (s *K8sScopedPolicyService) addPairedK8sPolicies(roleCode string, clusterIDs []uint, namespaces []string, pairs []policyPathAction) (added, skipped int, flat []string, err error) {
+	flat = make([]string, 0, len(clusterIDs)*len(namespaces)*len(pairs))
+	for _, cid := range clusterIDs {
+		clusterPart := "*"
+		if cid > 0 {
+			clusterPart = strconv.FormatUint(uint64(cid), 10)
+		}
+		for _, ns := range namespaces {
+			ns = strings.TrimSpace(ns)
+			if ns == "" {
+				ns = "*"
+			}
+			for _, pair := range pairs {
+				p := strings.TrimSpace(pair.path)
+				act := strings.TrimSpace(pair.action)
+				if p == "" || act == "" {
+					skipped++
+					continue
+				}
+				res := "k8s:cluster:" + clusterPart + ":ns:" + ns + ":" + p
+				ok, e := s.enforcer.AddPolicy(roleCode, res, act)
+				if e != nil {
+					return added, skipped, flat, e
+				}
+				flat = append(flat, roleCode+" "+res+" "+act)
+				if ok {
+					added++
+				} else {
+					skipped++
+				}
+			}
+		}
+	}
+	return added, skipped, flat, nil
+}
+
+func (s *K8sScopedPolicyService) syncDenyNamespaces(ctx context.Context, roleCode string, clusterIDs []uint, denyNS []string) (added, skipped int, err error) {
+	rc := strings.TrimSpace(roleCode)
+	if rc == "" {
+		return 0, 0, nil
+	}
+	hasWildCluster := false
+	concreteClusters := make([]uint, 0, len(clusterIDs))
+	for _, cid := range clusterIDs {
+		if cid == 0 {
+			hasWildCluster = true
+			continue
+		}
+		concreteClusters = append(concreteClusters, cid)
+	}
+	if hasWildCluster || len(concreteClusters) == 0 {
+		return 0, len(denyNS), nil
+	}
+	for _, cid := range concreteClusters {
+		for _, raw := range denyNS {
+			ns := strings.TrimSpace(raw)
+			if ns == "" || ns == "*" || ns == "_cluster" {
+				skipped++
+				continue
+			}
+			it := &model.K8sNamespaceDenyRule{
+				RoleCode:  rc,
+				ClusterID: cid,
+				Namespace: ns,
+			}
+			e := s.nsDenyRepo.Create(ctx, it)
+			if e != nil {
+				if strings.Contains(strings.ToLower(e.Error()), "duplicate") {
+					skipped++
+					continue
+				}
+				return added, skipped, e
+			}
+			added++
+		}
+	}
+	return added, skipped, nil
 }
 
 // ListByRole 查询列表相关的业务逻辑。

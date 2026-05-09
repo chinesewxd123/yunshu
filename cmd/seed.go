@@ -64,6 +64,7 @@ var seedCmd = &cobra.Command{
 			} else {
 				permission.Name = item.Name
 				permission.Description = item.Description
+				permission.K8sScopeEnabled = item.K8sScopeEnabled
 				if err = app.DB.WithContext(ctx).Save(&permission).Error; err != nil {
 					return err
 				}
@@ -186,6 +187,10 @@ func defaultPermissions() []model.Permission {
 		{Name: "K8s 三元策略路径目录", Resource: "/api/v1/k8s-policies/paths", Action: "GET", Description: "List k8s scoped paths"},
 		{Name: "K8s 三元策略列表", Resource: "/api/v1/k8s-policies", Action: "GET", Description: "List k8s scoped policies by role"},
 		{Name: "K8s 三元策略下发", Resource: "/api/v1/k8s-policies/grant", Action: "POST", Description: "Grant k8s scoped policies"},
+		{Name: "K8s 三元策略预设下发", Resource: "/api/v1/k8s-policies/grant-preset", Action: "POST", Description: "Grant k8s scoped policies by preset (readonly/exec/admin)"},
+		{Name: "K8s 命名空间黑名单列表", Resource: "/api/v1/k8s-namespace-deny-rules", Action: "GET", Description: "List k8s namespace deny rules"},
+		{Name: "K8s 命名空间黑名单新增", Resource: "/api/v1/k8s-namespace-deny-rules", Action: "POST", Description: "Create k8s namespace deny rule"},
+		{Name: "K8s 命名空间黑名单删除", Resource: "/api/v1/k8s-namespace-deny-rules/:id", Action: "DELETE", Description: "Delete k8s namespace deny rule"},
 		{Name: "注册审核列表", Resource: "/api/v1/registrations", Action: "GET", Description: "View registration requests"},
 		{Name: "审核注册申请", Resource: "/api/v1/registrations/:id/review", Action: "POST", Description: "Review registration request"},
 		{Name: "菜单树", Resource: "/api/v1/menus/tree", Action: "GET", Description: "View menu tree"},
@@ -246,6 +251,8 @@ func defaultPermissions() []model.Permission {
 		{Name: "集群连接状态", Resource: "/api/v1/clusters/:id/status", Action: "GET", Description: "Check k8s cluster status"},
 		{Name: "集群命名空间", Resource: "/api/v1/clusters/:id/namespaces", Action: "GET", Description: "List cluster namespaces"},
 		{Name: "组件状态列表", Resource: "/api/v1/clusters/:id/component-statuses", Action: "GET", Description: "List control plane component statuses"},
+		{Name: "集群 API 资源发现", Resource: "/api/v1/clusters/:id/api-resources", Action: "GET", Description: "Discovery API resources like kubectl api-resources"},
+		{Name: "K8s 资源 Watch（SSE）", Resource: "/api/v1/k8s/resource-watch/stream", Action: "GET", Description: "Kubernetes watch streamed as Server-Sent Events [k8s-scope=on]", K8sScopeEnabled: true},
 		{Name: "Pod 列表", Resource: "/api/v1/pods", Action: "GET", Description: "List pods"},
 		{Name: "Pod 详情", Resource: "/api/v1/pods/detail", Action: "GET", Description: "Get pod detail"},
 		{Name: "Pod 事件", Resource: "/api/v1/pods/events", Action: "GET", Description: "List pod events"},
@@ -368,6 +375,10 @@ func defaultPermissions() []model.Permission {
 		{Name: "删除 IngressClass", Resource: "/api/v1/ingresses/classes", Action: "DELETE", Description: "Delete ingress class"},
 		{Name: "重启 Ingress-Nginx Pods", Resource: "/api/v1/ingresses/nginx/restart", Action: "POST", Description: "Restart ingress-nginx controller pods to refresh cert"},
 		{Name: "删除 Ingress", Resource: "/api/v1/ingresses", Action: "DELETE", Description: "Delete ingress"},
+		{Name: "HPA 列表", Resource: "/api/v1/horizontal-pod-autoscalers", Action: "GET", Description: "List HorizontalPodAutoscaler"},
+		{Name: "HPA 详情", Resource: "/api/v1/horizontal-pod-autoscalers/detail", Action: "GET", Description: "Get HPA YAML"},
+		{Name: "HPA 应用 YAML", Resource: "/api/v1/horizontal-pod-autoscalers/apply", Action: "POST", Description: "Apply HPA yaml"},
+		{Name: "删除 HPA", Resource: "/api/v1/horizontal-pod-autoscalers", Action: "DELETE", Description: "Delete HPA"},
 		{Name: "网络策略列表", Resource: "/api/v1/network-policies", Action: "GET", Description: "List network policies"},
 		{Name: "网络策略详情", Resource: "/api/v1/network-policies/detail", Action: "GET", Description: "Get network policy detail"},
 		{Name: "网络策略应用 YAML", Resource: "/api/v1/network-policies/apply", Action: "POST", Description: "Apply network policy yaml"},
@@ -660,6 +671,8 @@ func defaultMenus() []model.Menu {
 				{Name: "网络策略管理", Path: "/network-policies", Icon: "DeploymentUnitOutlined", Sort: 19, Component: "network-policies-page", Status: 1},
 				{Name: "Event 事件", Path: "/events", Icon: "FileSearchOutlined", Sort: 20, Component: "events-page", Status: 1},
 				{Name: "ServiceAccount 管理", Path: "/serviceaccounts", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "serviceaccounts-page", Status: 1},
+				{Name: "API 资源发现", Path: "/cluster-api-resources", Icon: "UnorderedListOutlined", Sort: 22, Component: "cluster-api-resources-page", Status: 1},
+				{Name: "HPA 弹性伸缩", Path: "/horizontal-pod-autoscalers", Icon: "LineChartOutlined", Sort: 23, Component: "horizontal-pod-autoscalers-page", Status: 1},
 			},
 		},
 		{
