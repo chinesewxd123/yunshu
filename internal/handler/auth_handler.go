@@ -261,12 +261,17 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 // @Success 200 {object} response.Body{data=MessageData} "success"
 // @Failure 400 {object} response.Body "bad request"
 // @Failure 401 {object} response.Body "未登录或登录已失效"
+// @Failure 403 {object} response.Body "无访问权限（仅管理员角色可在个人中心修改自己的密码）"
 // @Failure 500 {object} response.Body "服务器内部错误"
 // @Router /api/v1/auth/password [put]
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	user, ok := auth.CurrentUserFromContext(c)
 	if !ok {
 		response.Error(c, constants.ErrUnauthorized)
+		return
+	}
+	if !auth.IsSuperAdminRole(user.RoleCodes) {
+		response.Error(c, constants.ErrForbiddenWithMsg("普通用户无法在个人中心修改登录密码，请由管理员在用户管理中为该账号设置新密码"))
 		return
 	}
 	ServeJSONOK(c, gin.H{"message": "密码修改成功"}, func(ctx context.Context, req service.ChangePasswordRequest) error {

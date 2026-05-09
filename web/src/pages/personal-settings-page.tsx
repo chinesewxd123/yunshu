@@ -22,13 +22,24 @@ export function PersonalSettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  const menuItems = useMemo<MenuProps["items"]>(
-    () => [
-      { key: "basic", label: "基本设置" },
-      { key: "password", label: "修改密码" },
-    ],
-    [],
+  const isSuperAdmin = useMemo(
+    () => user?.roles?.some((r) => r.code === "super-admin") ?? false,
+    [user?.roles],
   );
+
+  const menuItems = useMemo<MenuProps["items"]>(() => {
+    const items: MenuProps["items"] = [{ key: "basic", label: "基本设置" }];
+    if (isSuperAdmin) {
+      items.push({ key: "password", label: "修改密码" });
+    }
+    return items;
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (tab === "password" && !isSuperAdmin) {
+      setTab("basic");
+    }
+  }, [tab, isSuperAdmin]);
 
   useEffect(() => {
     profileForm.setFieldsValue({
@@ -63,8 +74,6 @@ export function PersonalSettingsPage() {
   }
 
   const handleSubmitPassword = useCallback(async () => {
-    console.log("当前状态值:", { oldPassword, newPassword, confirmPassword });
-
     if (!oldPassword) {
       message.error("请输入旧密码");
       return;
@@ -86,7 +95,6 @@ export function PersonalSettingsPage() {
       old_password: oldPassword,
       new_password: newPassword,
     };
-    console.log("发送的 payload:", JSON.stringify(payload));
 
     setPasswordLoading(true);
     try {
@@ -98,7 +106,6 @@ export function PersonalSettingsPage() {
         navigate("/login");
       }, 1500);
     } catch (err: any) {
-      console.error("密码修改失败:", err);
       const errorMessage = err?.response?.data?.message || err?.message || "密码修改失败";
       message.error(errorMessage);
     } finally {

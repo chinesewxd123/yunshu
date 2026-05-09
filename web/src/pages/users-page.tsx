@@ -1,4 +1,11 @@
-import { PlusOutlined, ReloadOutlined, EyeOutlined, DeleteOutlined, UserSwitchOutlined } from "@ant-design/icons";
+import {
+  PlusOutlined,
+  ReloadOutlined,
+  EyeOutlined,
+  DeleteOutlined,
+  UserSwitchOutlined,
+  LockOutlined,
+} from "@ant-design/icons";
 import {
   Button,
   Card,
@@ -35,10 +42,12 @@ import type { DepartmentItem, RoleItem, UserCreatePayload, UserItem, UserUpdateP
 import { formatDateTime } from "../utils/format";
 import { buildRoleTreeData, normalizeCheckedKeys } from "../utils/tree";
 import { useDictOptions } from "../hooks/use-dict-options";
+import { useAuth } from "../contexts/auth-context";
 
 const defaultQuery = { keyword: "", department_id: undefined as number | undefined, page: 1, page_size: 10 };
 
 export function UsersPage() {
+  const { user: currentUser } = useAuth();
   const [list, setList] = useState<UserItem[]>([]);
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState(defaultQuery);
@@ -55,11 +64,19 @@ export function UsersPage() {
   const [checkedRoleIds, setCheckedRoleIds] = useState<number[]>([]);
   const [form] = Form.useForm<UserCreatePayload & UserUpdatePayload>();
   const [detailForm] = Form.useForm<UserUpdatePayload>();
+  const [resetPwdOpen, setResetPwdOpen] = useState(false);
+  const [resetPwdTarget, setResetPwdTarget] = useState<UserItem | null>(null);
+  const [resetPwdSubmitting, setResetPwdSubmitting] = useState(false);
+  const [resetPwdForm] = Form.useForm<{ password: string; confirm: string }>();
   const statusOptions = useDictOptions("common_status");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const roleTreeData = useMemo(() => buildRoleTreeData(roles), [roles]);
   const roleIdSet = useMemo(() => new Set(roles.map((role) => role.id)), [roles]);
+  const isSuperAdmin = useMemo(
+    () => currentUser?.roles?.some((r) => r.code === "super-admin") ?? false,
+    [currentUser?.roles],
+  );
 
   useEffect(() => {
     void loadUsers(query);
@@ -111,7 +128,6 @@ export function UsersPage() {
       email: detail.email || "",
       status: detail.status,
       department_id: detail.department_id,
-      password: "",
     });
     setDetailOpen(true);
   }
@@ -127,7 +143,6 @@ export function UsersPage() {
         department_id: values.department_id,
       };
       if (values.email) payload.email = values.email;
-      if (values.password) payload.password = values.password;
       await updateUser(detailRecord.id, payload);
       message.success("用户详情已更新");
       setDetailOpen(false);
@@ -210,6 +225,40 @@ export function UsersPage() {
     }
     // reset
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function openResetPassword(record: UserItem) {
+    if (!isSuperAdmin) {
+      message.warning("仅管理员（超级管理员）可修改其他用户的登录密码");
+      return;
+    }
+    if (currentUser && record.id === currentUser.id) {
+      message.warning("不能在此修改当前登录账号的密码");
+      return;
+    }
+    setResetPwdTarget(record);
+    resetPwdForm.resetFields();
+    setResetPwdOpen(true);
+  }
+
+  async function submitResetPassword() {
+    if (!resetPwdTarget) {
+      return;
+    }
+    const values = await resetPwdForm.validateFields();
+    if (values.password !== values.confirm) {
+      message.error("两次输入的新密码不一致");
+      return;
+    }
+    setResetPwdSubmitting(true);
+    try {
+      await updateUser(resetPwdTarget.id, { password: values.password });
+      message.success("已更新该账号的登录密码");
+      setResetPwdOpen(false);
+      setResetPwdTarget(null);
+    } finally {
+      setResetPwdSubmitting(false);
+    }
   }
 
   async function handleDownloadTemplate() {
@@ -302,12 +351,17 @@ export function UsersPage() {
             {
               title: "操作",
               key: "action",
-              width: 260,
+              width: 280,
               render: (_: unknown, record: UserItem) => (
                 <Space size={4}>
                   <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
                     详情
                   </Button>
+                  {isSuperAdmin && currentUser && record.id !== currentUser.id ? (
+                    <Button type="link" size="small" icon={<LockOutlined />} onClick={() => openResetPassword(record)}>
+                      修改密码
+                    </Button>
+                  ) : null}
                   <Button type="link" size="small" icon={<UserSwitchOutlined />} onClick={() => openAssign(record)}>
                     分配角色
                   </Button>
@@ -408,9 +462,16 @@ export function UsersPage() {
         width={680}
         className="detail-edit-drawer"
         extra={
-          <Button type="primary" loading={detailSubmitting} onClick={() => void submitDetailEdit()}>
-            保存修改
-          </Button>
+          <Space>
+            {isSuperAdmin && detailRecord && currentUser && detailRecord.id !== currentUser.id ? (
+              <Button icon={<LockOutlined />} onClick={() => openResetPassword(detailRecord)}>
+                修改密码
+              </Button>
+            ) : null}
+            <Button type="primary" loading={detailSubmitting} onClick={() => void submitDetailEdit()}>
+              保存修改
+            </Button>
+          </Space>
         }
       >
         {detailRecord && (
@@ -433,9 +494,6 @@ export function UsersPage() {
             <Form.Item label="所属部门" name="department_id">
               <Select allowClear options={departmentOptions} />
             </Form.Item>
-            <Form.Item label="新密码" name="password">
-              <Input.Password placeholder="留空则不修改密码" autoComplete="new-password" />
-            </Form.Item>
             <Form.Item label="角色">
               <Input.TextArea
                 rows={3}
@@ -456,6 +514,44 @@ export function UsersPage() {
           </Form>
         )}
       </Drawer>
+
+      <Modal
+        title={resetPwdTarget ? `修改登录密码：${resetPwdTarget.username}` : "修改密码"}
+        open={resetPwdOpen}
+        onCancel={() => {
+          setResetPwdOpen(false);
+          setResetPwdTarget(null);
+        }}
+        onOk={() => void submitResetPassword()}
+        confirmLoading={resetPwdSubmitting}
+        destroyOnClose
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          仅管理员（超级管理员）可为其他账号设置新密码；普通用户不能在个人中心自行改密。完成后请通知对方使用新密码登录。
+        </Typography.Paragraph>
+        <Form form={resetPwdForm} layout="vertical" autoComplete="off">
+          <Form.Item
+            label="新密码"
+            name="password"
+            rules={[
+              { required: true, message: "请输入新密码" },
+              { min: 6, message: "至少 6 位" },
+            ]}
+          >
+            <Input.Password placeholder="新密码" autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item
+            label="确认新密码"
+            name="confirm"
+            rules={[
+              { required: true, message: "请再次输入新密码" },
+              { min: 6, message: "至少 6 位" },
+            ]}
+          >
+            <Input.Password placeholder="再次输入" autoComplete="new-password" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
