@@ -10,7 +10,13 @@ import { API_CATALOG_GROUPS } from "../constants/api-catalog";
 import type { PermissionItem, PermissionPayload, PermissionQuery, RoleItem } from "../types/api";
 import { formatDateTime } from "../utils/format";
 
-const defaultQuery: PermissionQuery = { keyword: "", page: 1, page_size: 10, k8s_scope: "" };
+const defaultQuery: PermissionQuery = {
+  keyword: "",
+  page: 1,
+  page_size: 10,
+  k8s_scope: "",
+  k8s_related: "",
+};
 
 const HTTP_METHOD_OPTIONS = ["GET", "POST", "PUT", "DELETE", "PATCH"].map((m) => ({ label: m, value: m }));
 
@@ -221,6 +227,22 @@ export function PermissionsPage() {
                 }))
               }
             />
+            <Select
+              style={{ width: 200 }}
+              placeholder="集群资源接口"
+              options={[
+                { label: "全部接口", value: "" },
+                { label: "仅 K8s 集群资源", value: "on" },
+              ]}
+              value={query.k8s_related}
+              onChange={(v) =>
+                setQuery((prev) => ({
+                  ...prev,
+                  k8s_related: (v ?? "") as PermissionQuery["k8s_related"],
+                  page: 1,
+                }))
+              }
+            />
           </Space>
           <div className="toolbar__actions">
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
@@ -250,6 +272,7 @@ export function PermissionsPage() {
               <br />
               <Typography.Text type="secondary">
                 列表中的「K8s 范围校验」开关用于把该接口纳入 K8s 三元中间件的<strong>校验目录</strong>（见权限设计文档 §0）；不等于给角色授权，角色授权在「授权管理」中配置。
+                筛选「仅 K8s 集群资源」对应后端路由已挂 K8sScopeAuthorize 的路径前缀，便于批量打开开关；与 router.go 前缀表同步维护。
               </Typography.Text>
             </span>
           }

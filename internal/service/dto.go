@@ -167,10 +167,11 @@ type PermissionUpdateRequest struct {
 }
 
 type PermissionListQuery struct {
-	Keyword   string `form:"keyword"`
-	Page      int    `form:"page"`
-	PageSize  int    `form:"page_size"`
-	K8sScope  string `form:"k8s_scope"` // 空=全部；on=仅已纳入 K8s 范围校验；off=仅未纳入
+	Keyword    string `form:"keyword"`
+	Page       int    `form:"page"`
+	PageSize   int    `form:"page_size"`
+	K8sScope   string `form:"k8s_scope"`   // 空=全部；on=仅已纳入 K8s 范围校验；off=仅未纳入
+	K8sRelated string `form:"k8s_related"` // 空=全部；on=仅挂载 K8sScopeAuthorize 的集群资源路径前缀（见 constants.K8sClusterPermissionPathPrefixes）
 }
 
 type PolicyGrantRequest struct {

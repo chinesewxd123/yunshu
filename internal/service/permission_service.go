@@ -113,10 +113,11 @@ func (s *PermissionService) Detail(ctx context.Context, id uint) (*PermissionIte
 func (s *PermissionService) List(ctx context.Context, query PermissionListQuery) (*pagination.Result[PermissionItem], error) {
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
 	permissions, total, err := s.permissionRepo.List(ctx, repository.PermissionListParams{
-		Keyword:  query.Keyword,
-		Page:     page,
-		PageSize: pageSize,
-		K8sScope: query.K8sScope,
+		Keyword:    query.Keyword,
+		Page:       page,
+		PageSize:   pageSize,
+		K8sScope:   query.K8sScope,
+		K8sRelated: query.K8sRelated,
 	})
 	if err != nil {
 		return nil, err

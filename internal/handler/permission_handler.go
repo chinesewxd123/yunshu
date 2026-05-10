@@ -110,6 +110,7 @@ func (h *PermissionHandler) Detail(c *gin.Context) {
 // @Param page query int false "Page number"
 // @Param page_size query int false "Page size"
 // @Param k8s_scope query string false "K8s scope filter: empty=all, on=enabled only, off=disabled only"
+// @Param k8s_related query string false "Cluster API filter: empty=all, on=routes under K8sScopeAuthorize path prefixes only"
 // @Success 200 {object} response.Body{data=PermissionPageData} "success"
 // @Failure 400 {object} response.Body "bad request"
 // @Failure 401 {object} response.Body "未登录或登录已失效"
