@@ -2,15 +2,14 @@ package service
 
 import (
 	"context"
-	"strconv"
 	"strings"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
-
+	"yunshu/internal/pkg/k8sauth"
 	"yunshu/internal/repository"
 
-	"github.com/casbin/casbin/v2"
+	"gorm.io/gorm"
 )
 
 type K8sActionItem struct {
@@ -19,70 +18,81 @@ type K8sActionItem struct {
 	Description string `json:"description"`
 }
 
-type K8sScopedPolicyGrantRequest struct {
-	RoleID     uint     `json:"role_id" binding:"required"`
-	ClusterIDs []uint   `json:"cluster_ids"`
-	Namespaces []string `json:"namespaces"`
-	Actions    []string `json:"actions" binding:"required"`
-	Paths      []string `json:"paths" binding:"required"`
+// K8sClusterAccessItem 集群档位（DB），不经 Casbin。
+type K8sClusterAccessItem struct {
+	ID            uint   `json:"id"`
+	PrincipalKind string `json:"principal_kind"`
+	PrincipalRef  string `json:"principal_ref"`
+	RoleCode      string `json:"role_code"` // 兼容：principal_kind=role 时与 principal_ref 相同
+	ClusterID     uint   `json:"cluster_id"`
+	Preset        string `json:"preset"`
 }
 
-type K8sScopedPolicyGrantResponse struct {
-	Added    int      `json:"added"`
-	Skipped  int      `json:"skipped"`
-	Policies []string `json:"policies"`
+func k8sClusterAccessItemFromGrant(g model.K8sClusterAccessGrant) K8sClusterAccessItem {
+	it := K8sClusterAccessItem{
+		ID:            g.ID,
+		PrincipalKind: g.PrincipalKind,
+		PrincipalRef:  g.PrincipalRef,
+		ClusterID:     g.ClusterID,
+		Preset:        g.Preset,
+	}
+	if strings.EqualFold(strings.TrimSpace(g.PrincipalKind), model.K8sPrincipalRole) {
+		it.RoleCode = g.PrincipalRef
+	}
+	return it
 }
 
-type K8sScopedPolicyItem struct {
-	RoleCode  string `json:"role_code"`
-	ClusterID string `json:"cluster_id"`
-	Namespace string `json:"namespace"`
-	Path      string `json:"path"`
-	Action    string `json:"action"`
-	Resource  string `json:"resource"`
-}
-
-// K8sScopedPolicyGrantPresetRequest 按 k8m 风格档位一键下发三元策略，并可同步命名空间黑名单规则。
+// K8sScopedPolicyGrantPresetRequest 下发档位；兼容仅传 role_id（视为 role 主体）。
 type K8sScopedPolicyGrantPresetRequest struct {
-	RoleID         uint     `json:"role_id" binding:"required"`
-	ClusterIDs     []uint   `json:"cluster_ids"`
-	Namespaces     []string `json:"namespaces"`
-	Preset         string   `json:"preset" binding:"required"` // readonly | readonly_exec | admin
-	DenyNamespaces []string `json:"deny_namespaces"`           // 可选；对每个已选集群写入黑名单（需明确 cluster_ids）
+	PrincipalKind string `json:"principal_kind"` // role|user|group，可空（由 role_id/user_id/group_id 推断）
+	RoleID        uint   `json:"role_id"`
+	UserID        uint   `json:"user_id"`
+	GroupID       uint   `json:"group_id"`
+	ClusterIDs    []uint `json:"cluster_ids"`
+	Preset        string `json:"preset" binding:"required"` // readonly | readonly_exec | admin
+	// 仅对具体集群 ID 写入（cluster_id=0 全部集群时不写）
+	DenyNamespaces  []string `json:"deny_namespaces"`
+	AllowNamespaces []string `json:"allow_namespaces"`
 }
 
-// K8sScopedPolicyGrantPresetResponse 预设下发结果。
 type K8sScopedPolicyGrantPresetResponse struct {
-	Added            int      `json:"added"`
-	Skipped          int      `json:"skipped"`
-	Policies         []string `json:"policies"`
-	DenyRulesAdded   int      `json:"deny_rules_added"`
-	DenyRulesSkipped int      `json:"deny_rules_skipped"`
+	Added             int `json:"added"`
+	Skipped           int `json:"skipped"`
+	DenyRulesAdded    int `json:"deny_rules_added"`
+	DenyRulesSkipped  int `json:"deny_rules_skipped"`
+	AllowRulesAdded   int `json:"allow_rules_added"`
+	AllowRulesSkipped int `json:"allow_rules_skipped"`
 }
 
 type K8sScopedPolicyService struct {
-	roleRepo   *repository.RoleRepository
-	permRepo   *repository.PermissionRepository
-	enforcer   *casbin.SyncedEnforcer
-	nsDenyRepo *repository.K8sNamespaceDenyRepository
+	roleRepo       *repository.RoleRepository
+	permRepo       *repository.PermissionRepository
+	accessRepo     *repository.K8sClusterAccessRepository
+	nsDenyRepo     *repository.K8sNamespaceDenyRepository
+	nsAllowRepo    *repository.K8sNamespaceAllowRepository
+	userGroupRepo  *repository.UserGroupRepository
 }
 
-// NewK8sScopedPolicyService 创建相关逻辑。
+// NewK8sScopedPolicyService 创建 K8s 集群档位服务（不写 Casbin k8s: 策略）。
 func NewK8sScopedPolicyService(
 	roleRepo *repository.RoleRepository,
 	permRepo *repository.PermissionRepository,
-	enforcer *casbin.SyncedEnforcer,
+	accessRepo *repository.K8sClusterAccessRepository,
 	nsDenyRepo *repository.K8sNamespaceDenyRepository,
+	nsAllowRepo *repository.K8sNamespaceAllowRepository,
+	userGroupRepo *repository.UserGroupRepository,
 ) *K8sScopedPolicyService {
 	return &K8sScopedPolicyService{
-		roleRepo:   roleRepo,
-		permRepo:   permRepo,
-		enforcer:   enforcer,
-		nsDenyRepo: nsDenyRepo,
+		roleRepo:      roleRepo,
+		permRepo:      permRepo,
+		accessRepo:    accessRepo,
+		nsDenyRepo:     nsDenyRepo,
+		nsAllowRepo:    nsAllowRepo,
+		userGroupRepo: userGroupRepo,
 	}
 }
 
-// ActionCatalog 执行对应的业务逻辑。
+// ActionCatalog 动作码目录（供文档/展示；档位授权不再逐条绑定动作码）。
 func (s *K8sScopedPolicyService) ActionCatalog() []K8sActionItem {
 	if s.permRepo == nil {
 		return []K8sActionItem{}
@@ -95,7 +105,7 @@ func (s *K8sScopedPolicyService) ActionCatalog() []K8sActionItem {
 	return actions
 }
 
-// PathCatalog 执行对应的业务逻辑。
+// PathCatalog 纳入 K8s 范围校验的 API 路径目录。
 func (s *K8sScopedPolicyService) PathCatalog() []string {
 	if s.permRepo == nil {
 		return []string{}
@@ -108,175 +118,135 @@ func (s *K8sScopedPolicyService) PathCatalog() []string {
 	return paths
 }
 
-// Grant 执行对应的业务逻辑。
-func (s *K8sScopedPolicyService) Grant(ctx context.Context, req K8sScopedPolicyGrantRequest) (*K8sScopedPolicyGrantResponse, error) {
-	role, err := s.roleRepo.GetByID(ctx, req.RoleID)
-	if err != nil {
-		return nil, err
+// GrantPreset 按 k8m 风格写入 k8s_cluster_access_grants（主体可为角色 / 用户 / 组）。
+func (s *K8sScopedPolicyService) GrantPreset(ctx context.Context, req K8sScopedPolicyGrantPresetRequest) (*K8sScopedPolicyGrantPresetResponse, error) {
+	preset := strings.TrimSpace(req.Preset)
+	switch preset {
+	case string(PresetK8sReadonly), string(PresetK8sReadonlyExec), string(PresetK8sAdmin):
+	default:
+		return nil, constants.ErrBadRequestWithMsg("preset 须为 readonly、readonly_exec 或 admin")
 	}
-	roleCode := role.Code
-
-	if len(req.Actions) == 0 || len(req.Paths) == 0 {
-		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg316eb6f964a1)
-	}
-
-	namespaces := req.Namespaces
-	if len(namespaces) == 0 {
-		namespaces = []string{"*"}
+	if s.accessRepo == nil {
+		return nil, constants.ErrInternal
 	}
 
-	clusterIDs := req.ClusterIDs
-	if len(clusterIDs) == 0 {
-		clusterIDs = []uint{0}
+	kind := strings.TrimSpace(strings.ToLower(req.PrincipalKind))
+	switch {
+	case kind == "" && req.RoleID > 0:
+		kind = model.K8sPrincipalRole
+	case kind == "" && req.UserID > 0:
+		kind = model.K8sPrincipalUser
+	case kind == "" && req.GroupID > 0:
+		kind = model.K8sPrincipalGroup
 	}
 
-	policies := make([][]string, 0, len(clusterIDs)*len(namespaces)*len(req.Paths)*len(req.Actions))
-	flat := make([]string, 0, cap(policies))
-	for _, cid := range clusterIDs {
-		clusterPart := "*"
-		if cid > 0 {
-			clusterPart = strconv.FormatUint(uint64(cid), 10)
+	var principalRef string
+	switch kind {
+	case model.K8sPrincipalRole:
+		if req.RoleID == 0 {
+			return nil, constants.ErrBadRequestWithMsg("role_id 必填（principal_kind=role）")
 		}
-		for _, ns := range namespaces {
-			ns = strings.TrimSpace(ns)
-			if ns == "" {
-				ns = "*"
-			}
-			for _, p := range req.Paths {
-				p = strings.TrimSpace(p)
-				if p == "" {
-					continue
-				}
-				res := "k8s:cluster:" + clusterPart + ":ns:" + ns + ":" + p
-				for _, act := range req.Actions {
-					act = strings.TrimSpace(act)
-					if act == "" {
-						continue
-					}
-					policies = append(policies, []string{roleCode, res, act})
-					flat = append(flat, roleCode+" "+res+" "+act)
-				}
-			}
+		if s.roleRepo == nil {
+			return nil, constants.ErrInternal
 		}
-	}
-
-	addCount := 0
-	skipped := 0
-	for _, pol := range policies {
-		if len(pol) != 3 {
-			skipped++
-			continue
-		}
-		ok, err := s.enforcer.AddPolicy(pol[0], pol[1], pol[2])
+		role, err := s.roleRepo.GetByID(ctx, req.RoleID)
 		if err != nil {
 			return nil, err
 		}
-		if ok {
-			addCount++
-		} else {
-			skipped++
+		principalRef = strings.TrimSpace(role.Code)
+		if principalRef == "" {
+			return nil, constants.ErrBadRequestWithMsg("角色编码为空")
 		}
-	}
-	return &K8sScopedPolicyGrantResponse{
-		Added:    addCount,
-		Skipped:  skipped,
-		Policies: flat,
-	}, nil
-}
-
-// GrantPreset 按档位批量下发 path+action 配对（非 paths×actions 笛卡尔积）。
-func (s *K8sScopedPolicyService) GrantPreset(ctx context.Context, req K8sScopedPolicyGrantPresetRequest) (*K8sScopedPolicyGrantPresetResponse, error) {
-	role, err := s.roleRepo.GetByID(ctx, req.RoleID)
-	if err != nil {
-		return nil, err
-	}
-	preset := K8sClusterAccessPreset(strings.TrimSpace(req.Preset))
-	if preset != PresetK8sReadonly && preset != PresetK8sReadonlyExec && preset != PresetK8sAdmin {
-		return nil, constants.ErrBadRequestWithMsg("preset 须为 readonly、readonly_exec 或 admin")
-	}
-	if s.permRepo == nil {
-		return nil, constants.ErrInternal
-	}
-	perms, err := s.permRepo.ListAll(ctx)
-	if err != nil {
-		return nil, err
-	}
-	pairs := expandPresetTriples(perms, preset)
-	if len(pairs) == 0 {
-		return nil, constants.ErrBadRequestWithMsg("当前权限目录无法展开该预设，请检查 permissions 表或 seed")
+	case model.K8sPrincipalUser:
+		if req.UserID == 0 {
+			return nil, constants.ErrBadRequestWithMsg("user_id 必填（principal_kind=user）")
+		}
+		principalRef = k8sauth.UserRefString(req.UserID)
+	case model.K8sPrincipalGroup:
+		if req.GroupID == 0 {
+			return nil, constants.ErrBadRequestWithMsg("group_id 必填（principal_kind=group）")
+		}
+		if s.userGroupRepo == nil {
+			return nil, constants.ErrInternal
+		}
+		g, err := s.userGroupRepo.GetByID(ctx, req.GroupID)
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, constants.ErrBadRequestWithMsg("用户组不存在")
+			}
+			return nil, err
+		}
+		principalRef = strings.TrimSpace(g.Code)
+		if principalRef == "" {
+			return nil, constants.ErrBadRequestWithMsg("用户组编码为空")
+		}
+	default:
+		return nil, constants.ErrBadRequestWithMsg("principal_kind 须为 role、user 或 group，或提供 role_id/user_id/group_id")
 	}
 
-	namespaces := req.Namespaces
-	if len(namespaces) == 0 {
-		namespaces = []string{"*"}
-	}
 	clusterIDs := req.ClusterIDs
 	if len(clusterIDs) == 0 {
 		clusterIDs = []uint{0}
 	}
 
-	addCount, skipped, flat, err := s.addPairedK8sPolicies(role.Code, clusterIDs, namespaces, pairs)
-	if err != nil {
-		return nil, err
+	added, skipped := 0, 0
+	for _, cid := range clusterIDs {
+		preList, _ := s.accessRepo.ListByPrincipal(ctx, kind, principalRef)
+		had := false
+		for _, g := range preList {
+			if g.ClusterID == cid {
+				had = true
+				break
+			}
+		}
+		it := &model.K8sClusterAccessGrant{
+			PrincipalKind: kind,
+			PrincipalRef:  principalRef,
+			ClusterID:     cid,
+			Preset:        preset,
+		}
+		if err := s.accessRepo.Upsert(ctx, it); err != nil {
+			return nil, err
+		}
+		if had {
+			skipped++
+		} else {
+			added++
+		}
 	}
 
 	denyAdded, denySkipped := 0, 0
 	if s.nsDenyRepo != nil && len(req.DenyNamespaces) > 0 {
-		da, ds, err := s.syncDenyNamespaces(ctx, role.Code, clusterIDs, req.DenyNamespaces)
+		da, ds, err := syncDenyNamespaces(ctx, s.nsDenyRepo, kind, principalRef, clusterIDs, req.DenyNamespaces)
 		if err != nil {
 			return nil, err
 		}
 		denyAdded, denySkipped = da, ds
 	}
 
+	allowAdded, allowSkipped := 0, 0
+	if s.nsAllowRepo != nil && len(req.AllowNamespaces) > 0 {
+		aa, as, err := syncAllowNamespaces(ctx, s.nsAllowRepo, kind, principalRef, clusterIDs, req.AllowNamespaces)
+		if err != nil {
+			return nil, err
+		}
+		allowAdded, allowSkipped = aa, as
+	}
+
 	return &K8sScopedPolicyGrantPresetResponse{
-		Added:            addCount,
-		Skipped:          skipped,
-		Policies:         flat,
-		DenyRulesAdded:   denyAdded,
-		DenyRulesSkipped: denySkipped,
+		Added:             added,
+		Skipped:           skipped,
+		DenyRulesAdded:    denyAdded,
+		DenyRulesSkipped:  denySkipped,
+		AllowRulesAdded:   allowAdded,
+		AllowRulesSkipped: allowSkipped,
 	}, nil
 }
 
-func (s *K8sScopedPolicyService) addPairedK8sPolicies(roleCode string, clusterIDs []uint, namespaces []string, pairs []policyPathAction) (added, skipped int, flat []string, err error) {
-	flat = make([]string, 0, len(clusterIDs)*len(namespaces)*len(pairs))
-	for _, cid := range clusterIDs {
-		clusterPart := "*"
-		if cid > 0 {
-			clusterPart = strconv.FormatUint(uint64(cid), 10)
-		}
-		for _, ns := range namespaces {
-			ns = strings.TrimSpace(ns)
-			if ns == "" {
-				ns = "*"
-			}
-			for _, pair := range pairs {
-				p := strings.TrimSpace(pair.path)
-				act := strings.TrimSpace(pair.action)
-				if p == "" || act == "" {
-					skipped++
-					continue
-				}
-				res := "k8s:cluster:" + clusterPart + ":ns:" + ns + ":" + p
-				ok, e := s.enforcer.AddPolicy(roleCode, res, act)
-				if e != nil {
-					return added, skipped, flat, e
-				}
-				flat = append(flat, roleCode+" "+res+" "+act)
-				if ok {
-					added++
-				} else {
-					skipped++
-				}
-			}
-		}
-	}
-	return added, skipped, flat, nil
-}
-
-func (s *K8sScopedPolicyService) syncDenyNamespaces(ctx context.Context, roleCode string, clusterIDs []uint, denyNS []string) (added, skipped int, err error) {
-	rc := strings.TrimSpace(roleCode)
-	if rc == "" {
+func syncDenyNamespaces(ctx context.Context, nsDenyRepo *repository.K8sNamespaceDenyRepository, principalKind, principalRef string, clusterIDs []uint, denyNS []string) (added, skipped int, err error) {
+	k := strings.TrimSpace(strings.ToLower(principalKind))
+	ref := strings.TrimSpace(principalRef)
+	if k == "" || ref == "" {
 		return 0, 0, nil
 	}
 	hasWildCluster := false
@@ -299,11 +269,12 @@ func (s *K8sScopedPolicyService) syncDenyNamespaces(ctx context.Context, roleCod
 				continue
 			}
 			it := &model.K8sNamespaceDenyRule{
-				RoleCode:  rc,
-				ClusterID: cid,
-				Namespace: ns,
+				PrincipalKind: k,
+				PrincipalRef:  ref,
+				ClusterID:     cid,
+				Namespace:     ns,
 			}
-			e := s.nsDenyRepo.Create(ctx, it)
+			e := nsDenyRepo.Create(ctx, it)
 			if e != nil {
 				if strings.Contains(strings.ToLower(e.Error()), "duplicate") {
 					skipped++
@@ -317,59 +288,104 @@ func (s *K8sScopedPolicyService) syncDenyNamespaces(ctx context.Context, roleCod
 	return added, skipped, nil
 }
 
-// ListByRole 查询列表相关的业务逻辑。
-func (s *K8sScopedPolicyService) ListByRole(ctx context.Context, roleID uint) ([]K8sScopedPolicyItem, error) {
-	role, err := s.roleRepo.GetByID(ctx, roleID)
+func syncAllowNamespaces(ctx context.Context, nsAllowRepo *repository.K8sNamespaceAllowRepository, principalKind, principalRef string, clusterIDs []uint, allowNS []string) (added, skipped int, err error) {
+	k := strings.TrimSpace(strings.ToLower(principalKind))
+	ref := strings.TrimSpace(principalRef)
+	if k == "" || ref == "" {
+		return 0, 0, nil
+	}
+	hasWildCluster := false
+	concreteClusters := make([]uint, 0, len(clusterIDs))
+	for _, cid := range clusterIDs {
+		if cid == 0 {
+			hasWildCluster = true
+			continue
+		}
+		concreteClusters = append(concreteClusters, cid)
+	}
+	if hasWildCluster || len(concreteClusters) == 0 {
+		return 0, len(allowNS), nil
+	}
+	for _, cid := range concreteClusters {
+		for _, raw := range allowNS {
+			ns := strings.TrimSpace(raw)
+			if ns == "" || ns == "*" || ns == "_cluster" {
+				skipped++
+				continue
+			}
+			it := &model.K8sNamespaceAllowRule{
+				PrincipalKind: k,
+				PrincipalRef:  ref,
+				ClusterID:     cid,
+				Namespace:     ns,
+			}
+			e := nsAllowRepo.Create(ctx, it)
+			if e != nil {
+				if strings.Contains(strings.ToLower(e.Error()), "duplicate") {
+					skipped++
+					continue
+				}
+				return added, skipped, e
+			}
+			added++
+		}
+	}
+	return added, skipped, nil
+}
+
+// ListClusterGrants 按 role_id / user_id / group_id 之一列出档位（仅处理第一个非零参数，优先级 role > user > group）。
+func (s *K8sScopedPolicyService) ListClusterGrants(ctx context.Context, roleID, userID, groupID uint) ([]K8sClusterAccessItem, error) {
+	if s.accessRepo == nil {
+		return []K8sClusterAccessItem{}, nil
+	}
+	var kind, ref string
+	switch {
+	case roleID > 0:
+		if s.roleRepo == nil {
+			return nil, constants.ErrInternal
+		}
+		role, err := s.roleRepo.GetByID(ctx, roleID)
+		if err != nil {
+			return nil, err
+		}
+		kind, ref = model.K8sPrincipalRole, strings.TrimSpace(role.Code)
+	case userID > 0:
+		kind, ref = model.K8sPrincipalUser, k8sauth.UserRefString(userID)
+	case groupID > 0:
+		if s.userGroupRepo == nil {
+			return nil, constants.ErrInternal
+		}
+		g, err := s.userGroupRepo.GetByID(ctx, groupID)
+		if err != nil {
+			return nil, err
+		}
+		kind, ref = model.K8sPrincipalGroup, strings.TrimSpace(g.Code)
+	default:
+		return []K8sClusterAccessItem{}, nil
+	}
+	if ref == "" {
+		return []K8sClusterAccessItem{}, nil
+	}
+	list, err := s.accessRepo.ListByPrincipal(ctx, kind, ref)
 	if err != nil {
 		return nil, err
 	}
-	roleCode := role.Code
-
-	policies := s.enforcer.GetFilteredPolicy(0, roleCode)
-
-	out := make([]K8sScopedPolicyItem, 0, len(policies))
-	for _, p := range policies {
-		if len(p) < 3 {
-			continue
-		}
-		obj := p[1]
-		act := p[2]
-		if !strings.HasPrefix(obj, "k8s:cluster:") {
-			continue
-		}
-		clusterID, namespace, path := parseK8sScopeResource(obj)
-		out = append(out, K8sScopedPolicyItem{
-			RoleCode:  roleCode,
-			ClusterID: clusterID,
-			Namespace: namespace,
-			Path:      path,
-			Action:    act,
-			Resource:  obj,
-		})
+	out := make([]K8sClusterAccessItem, 0, len(list))
+	for _, g := range list {
+		out = append(out, k8sClusterAccessItemFromGrant(g))
 	}
 	return out, nil
 }
 
-func parseK8sScopeResource(res string) (clusterID, namespace, path string) {
-	// k8s:cluster:<id|*>:ns:<ns>:<path>
-	s := strings.TrimSpace(res)
-	if s == "" {
-		return "", "", ""
+// ListByRole 列出角色在 DB 中的集群档位（兼容旧名）。
+func (s *K8sScopedPolicyService) ListByRole(ctx context.Context, roleID uint) ([]K8sClusterAccessItem, error) {
+	return s.ListClusterGrants(ctx, roleID, 0, 0)
+}
+
+// DeleteClusterGrant 删除一条集群档位。
+func (s *K8sScopedPolicyService) DeleteClusterGrant(ctx context.Context, id uint) error {
+	if s.accessRepo == nil {
+		return constants.ErrInternal
 	}
-	parts := strings.SplitN(s, ":ns:", 2)
-	if len(parts) != 2 {
-		return "", "", ""
-	}
-	left := parts[0] // k8s:cluster:<id|*>
-	right := parts[1]
-	leftParts := strings.Split(left, ":")
-	if len(leftParts) >= 3 {
-		clusterID = leftParts[len(leftParts)-1]
-	}
-	nsAndPath := strings.SplitN(right, ":", 2)
-	if len(nsAndPath) == 2 {
-		namespace = nsAndPath[0]
-		path = nsAndPath[1]
-	}
-	return clusterID, namespace, path
+	return s.accessRepo.DeleteByID(ctx, id)
 }

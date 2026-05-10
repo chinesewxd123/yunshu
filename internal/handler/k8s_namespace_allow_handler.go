@@ -9,23 +9,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type K8sNamespaceDenyHandler struct {
-	svc *service.K8sNamespaceDenyService
+type K8sNamespaceAllowHandler struct {
+	svc *service.K8sNamespaceAllowService
 }
 
-func NewK8sNamespaceDenyHandler(svc *service.K8sNamespaceDenyService) *K8sNamespaceDenyHandler {
-	return &K8sNamespaceDenyHandler{svc: svc}
+func NewK8sNamespaceAllowHandler(svc *service.K8sNamespaceAllowService) *K8sNamespaceAllowHandler {
+	return &K8sNamespaceAllowHandler{svc: svc}
 }
 
-func (h *K8sNamespaceDenyHandler) List(c *gin.Context) {
+func (h *K8sNamespaceAllowHandler) List(c *gin.Context) {
 	kind := strings.TrimSpace(c.Query("principal_kind"))
 	ref := strings.TrimSpace(c.Query("principal_ref"))
-	if kind == "" && ref == "" {
-		if legacy := strings.TrimSpace(c.Query("role_code")); legacy != "" {
-			kind = "role"
-			ref = legacy
-		}
-	}
 	var clusterID uint
 	if raw := strings.TrimSpace(c.Query("cluster_id")); raw != "" {
 		if n, err := strconv.ParseUint(raw, 10, 32); err == nil {
@@ -40,11 +34,11 @@ func (h *K8sNamespaceDenyHandler) List(c *gin.Context) {
 	response.Success(c, gin.H{"list": list})
 }
 
-func (h *K8sNamespaceDenyHandler) Create(c *gin.Context) {
+func (h *K8sNamespaceAllowHandler) Create(c *gin.Context) {
 	ServeJSON(c, h.svc.Create)
 }
 
-func (h *K8sNamespaceDenyHandler) Delete(c *gin.Context) {
+func (h *K8sNamespaceAllowHandler) Delete(c *gin.Context) {
 	id, err := parseUintParam(c, "id")
 	if err != nil {
 		response.Error(c, err)

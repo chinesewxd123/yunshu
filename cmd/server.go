@@ -52,6 +52,9 @@ var serverCmd = &cobra.Command{
 			return fmt.Errorf("auto migrate: %w", err)
 		}
 		app.Logger.Info.Info("database schema migrated")
+		if err := app.Enforcer.LoadPolicy(); err != nil {
+			return fmt.Errorf("reload casbin policy: %w", err)
+		}
 
 		// 初始化只读演示用户
 		ctx := context.Background()
@@ -197,13 +200,11 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		logger.Warn("failed to remove old policies", slog.Any("error", err))
 	}
 
-	// 获取所有权限
 	perms, err := permRepo.ListAll(ctx)
 	if err != nil {
 		return fmt.Errorf("list permissions: %w", err)
 	}
 
-	// 添加 GET 权限
 	added := 0
 	for _, p := range perms {
 		if p.Action != "GET" {
@@ -220,21 +221,14 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		added++
 	}
 
-	// 添加 K8s 资源查看权限
-	k8sPaths := []string{
-		"/api/v1/clusters", "/api/v1/pods", "/api/v1/namespaces",
-		"/api/v1/nodes", "/api/v1/deployments", "/api/v1/statefulsets",
-		"/api/v1/daemonsets", "/api/v1/cronjobs", "/api/v1/jobs",
-		"/api/v1/configmaps", "/api/v1/secrets", "/api/v1/k8s-services",
-		"/api/v1/persistentvolumes", "/api/v1/persistentvolumeclaims",
-		"/api/v1/storageclasses", "/api/v1/ingresses", "/api/v1/events",
-		"/api/v1/crds", "/api/v1/crs", "/api/v1/rbac",
-	}
-	for _, path := range k8sPaths {
-		res := "k8s:cluster:*:ns:*:" + path
-		if _, err := enforcer.AddPolicy(roleCode, res, "GET"); err != nil {
-			logger.Warn("failed to add k8s policy", slog.Any("path", path), slog.Any("error", err))
-		}
+	accessRepo := repository.NewK8sClusterAccessRepository(db)
+	if err := accessRepo.Upsert(ctx, &model.K8sClusterAccessGrant{
+		PrincipalKind: model.K8sPrincipalRole,
+		PrincipalRef:  roleCode,
+		ClusterID:     0,
+		Preset:        "readonly",
+	}); err != nil {
+		return fmt.Errorf("upsert k8s cluster access grant: %w", err)
 	}
 
 	logger.Info("configured readonly role permissions", "role", roleCode, "policies_added", added)

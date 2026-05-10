@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/k8sauth"
 
 	"gorm.io/gorm"
 )
@@ -17,34 +18,42 @@ func NewK8sNamespaceDenyRepository(db *gorm.DB) *K8sNamespaceDenyRepository {
 	return &K8sNamespaceDenyRepository{db: db}
 }
 
-// IsDenied 若用户任一角色码在该集群下配置了禁止该命名空间，则返回 true。
-func (r *K8sNamespaceDenyRepository) IsDenied(ctx context.Context, roleCodes []string, clusterID uint, namespace string) (bool, error) {
+// IsDenied 任一主体在该集群下禁止该命名空间则 true。
+func (r *K8sNamespaceDenyRepository) IsDenied(ctx context.Context, pack k8sauth.PrincipalPack, clusterID uint, namespace string) (bool, error) {
 	if r == nil || r.db == nil {
 		return false, nil
 	}
 	ns := strings.TrimSpace(namespace)
-	if len(roleCodes) == 0 || clusterID == 0 || ns == "" || ns == "_cluster" {
+	rows := pack.PrincipalRows()
+	if len(rows) == 0 || clusterID == 0 || ns == "" || ns == "_cluster" {
 		return false, nil
 	}
+	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceDenyRule{}).Where("cluster_id = ? AND namespace = ?", clusterID, ns)
+	var parts []string
+	var args []any
+	for _, row := range rows {
+		parts = append(parts, "(principal_kind = ? AND principal_ref = ?)")
+		args = append(args, row.Kind, row.Ref)
+	}
+	q = q.Where(strings.Join(parts, " OR "), args...)
 	var n int64
-	err := r.db.WithContext(ctx).Model(&model.K8sNamespaceDenyRule{}).
-		Where("cluster_id = ? AND namespace = ? AND role_code IN ?", clusterID, ns, roleCodes).
-		Limit(1).
-		Count(&n).Error
-	if err != nil {
+	if err := q.Limit(1).Count(&n).Error; err != nil {
 		return false, err
 	}
 	return n > 0, nil
 }
 
 // List 按可选条件列出规则。
-func (r *K8sNamespaceDenyRepository) List(ctx context.Context, roleCode string, clusterID uint) ([]model.K8sNamespaceDenyRule, error) {
+func (r *K8sNamespaceDenyRepository) List(ctx context.Context, principalKind, principalRef string, clusterID uint) ([]model.K8sNamespaceDenyRule, error) {
 	if r == nil || r.db == nil {
 		return nil, nil
 	}
-	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceDenyRule{}).Order("cluster_id ASC, role_code ASC, namespace ASC")
-	if rc := strings.TrimSpace(roleCode); rc != "" {
-		q = q.Where("role_code = ?", rc)
+	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceDenyRule{}).Order("cluster_id ASC, principal_kind ASC, principal_ref ASC, namespace ASC")
+	if k := strings.TrimSpace(principalKind); k != "" {
+		q = q.Where("principal_kind = ?", k)
+	}
+	if ref := strings.TrimSpace(principalRef); ref != "" {
+		q = q.Where("principal_ref = ?", ref)
 	}
 	if clusterID > 0 {
 		q = q.Where("cluster_id = ?", clusterID)
@@ -56,7 +65,6 @@ func (r *K8sNamespaceDenyRepository) List(ctx context.Context, roleCode string, 
 	return list, nil
 }
 
-// Create 插入一条规则（唯一约束冲突由调用方处理）。
 func (r *K8sNamespaceDenyRepository) Create(ctx context.Context, it *model.K8sNamespaceDenyRule) error {
 	if r == nil || r.db == nil {
 		return gorm.ErrInvalidDB
@@ -64,7 +72,6 @@ func (r *K8sNamespaceDenyRepository) Create(ctx context.Context, it *model.K8sNa
 	return r.db.WithContext(ctx).Create(it).Error
 }
 
-// DeleteByID 按主键删除。
 func (r *K8sNamespaceDenyRepository) DeleteByID(ctx context.Context, id uint) error {
 	if r == nil || r.db == nil {
 		return gorm.ErrInvalidDB

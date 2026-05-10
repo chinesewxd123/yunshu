@@ -3,16 +3,18 @@ package middleware
 import (
 	"strings"
 	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/k8sauth"
 	"yunshu/internal/pkg/constants"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
+	"yunshu/internal/repository"
 	"yunshu/internal/service"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"
 )
 
-func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.HandlerFunc {
+func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger, k8sAccessRepo *repository.K8sClusterAccessRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, ok := auth.CurrentUserFromContext(c)
 		if !ok {
@@ -20,7 +22,6 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.Handler
 			c.Abort()
 			return
 		}
-		// super-admin 内置放行，避免新接口尚未 seed policy 时出现“无访问权限”
 		for _, rc := range user.RoleCodes {
 			if rc == "super-admin" {
 				c.Next()
@@ -41,9 +42,7 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.Handler
 			return
 		}
 		if !allowed {
-			// 兼容策略：对于只读类接口，若已配置 K8s 三元策略，则不强制再配置一份 API 级 GET 权限。
-			// 这样可避免“角色已下发三元策略，但页面仍因 /clusters、/pods GET 被拦截”的体验问题。
-			if allowReadByK8sScopedPolicy(enforcer, service.UserSubject(user.ID), path, c.Request.Method) {
+			if allowReadByK8sClusterGrant(c, k8sAccessRepo, user, path, c.Request.Method) {
 				c.Next()
 				return
 			}
@@ -56,7 +55,11 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger) gin.Handler
 	}
 }
 
-func allowReadByK8sScopedPolicy(enforcer *casbin.SyncedEnforcer, subject, path, method string) bool {
+// allowReadByK8sClusterGrant：未配置 API 级 GET 时，若角色在 DB 中有 K8s 集群档位且满足只读场景则放行（与旧版 Casbin 三元兜底等价）。
+func allowReadByK8sClusterGrant(c *gin.Context, accessRepo *repository.K8sClusterAccessRepository, user *auth.CurrentUser, path, method string) bool {
+	if accessRepo == nil || user == nil {
+		return false
+	}
 	if strings.ToUpper(strings.TrimSpace(method)) != "GET" {
 		return false
 	}
@@ -64,40 +67,21 @@ func allowReadByK8sScopedPolicy(enforcer *casbin.SyncedEnforcer, subject, path, 
 	if normalizedPath == "" {
 		return false
 	}
-	// 菜单树是登录后基础读取能力，否则普通角色前端会先白屏再报权限不足。
 	if normalizedPath == "/api/v1/menus/tree" {
 		return true
 	}
-	// 非 K8s 资源读取，不走三元兜底。
-			if !service.IsK8sReadAPIPath(normalizedPath) {
-				return false
-			}
-
-	perms, err := enforcer.GetImplicitPermissionsForUser(subject)
-	if err != nil || len(perms) == 0 {
+	if !service.IsK8sReadAPIPath(normalizedPath) {
 		return false
 	}
-	// clusters 列表没有 cluster_id 维度，判定为“只要有任意 k8s 三元策略即可查看集群列表”。
+	ctx := c.Request.Context()
+	pack := k8sauth.PackFromCurrentUser(user)
 	if normalizedPath == "/api/v1/clusters" {
-		for _, p := range perms {
-			if len(p) >= 3 && strings.HasPrefix(strings.TrimSpace(p[1]), "k8s:cluster:") {
-				return true
-			}
-		}
+		return accessRepo.HasAnyK8sGrant(ctx, pack)
+	}
+	clusterID, _ := extractClusterNamespaceFromRequest(c)
+	if clusterID == 0 {
 		return false
 	}
-	targetSuffix := ":" + normalizedPath
-	for _, p := range perms {
-		if len(p) < 3 {
-			continue
-		}
-		obj := strings.TrimSpace(p[1])
-		if !strings.HasPrefix(obj, "k8s:cluster:") {
-			continue
-		}
-		if strings.HasSuffix(obj, targetSuffix) {
-			return true
-		}
-	}
-	return false
+	rank := accessRepo.EffectiveTier(ctx, pack, clusterID)
+	return rank >= service.K8sAccessRankReadonly
 }

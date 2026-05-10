@@ -28,6 +28,7 @@ type CurrentUser struct {
 	Status       int      `json:"status"`
 	DepartmentID *uint    `json:"department_id,omitempty"`
 	RoleCodes    []string `json:"role_codes"`
+	GroupCodes   []string `json:"group_codes"`
 }
 
 // IsSuperAdminRole reports whether the subject has the built-in super-admin role.

@@ -18,6 +18,7 @@ export function PoliciesPage() {
   const [roleKeyword, setRoleKeyword] = useState("");
   const [permissionKeyword, setPermissionKeyword] = useState("");
   const [roleStatus, setRoleStatus] = useState<number | undefined>();
+  const [assignPager, setAssignPager] = useState({ current: 1, pageSize: 10 });
 
   const permissionTreeData = useMemo(() => buildPermissionTreeData(permissions), [permissions]);
   const permissionIdSet = useMemo(() => new Set(permissions.map((permission) => permission.id)), [permissions]);
@@ -57,6 +58,10 @@ export function PoliciesPage() {
   useEffect(() => {
     void bootstrap();
   }, []);
+
+  useEffect(() => {
+    setAssignPager((p) => ({ ...p, current: 1 }));
+  }, [selectedRoleId]);
 
   async function bootstrap(preferredRoleId?: number) {
     setLoading(true);
@@ -115,9 +120,11 @@ export function PoliciesPage() {
     }
   }
 
+  const roleTableScrollY = "calc(100dvh - 220px)";
+
   return (
-    <div>
-      <Card className="table-card" loading={loading}>
+    <div className="policies-auth-page">
+      <Card className="table-card policies-auth-page__card" loading={loading}>
         <div className="toolbar auth-toolbar">
           <Space>
             <Input
@@ -176,7 +183,7 @@ export function PoliciesPage() {
               dataSource={filteredRoles}
               pagination={false}
               size="small"
-              scroll={{ y: 560 }}
+              scroll={{ y: roleTableScrollY }}
               rowClassName={(record) => (record.id === selectedRoleId ? "is-selected-row" : "")}
               onRow={(record) => ({
                 onClick: () => handleRoleChange(record.id),
@@ -228,9 +235,21 @@ export function PoliciesPage() {
                   <Table
                     rowKey={(record) => `${record.role_id}-${record.permission_id}`}
                     dataSource={currentRolePolicies}
-                    pagination={{ pageSize: 8 }}
+                    pagination={{
+                      current: assignPager.current,
+                      pageSize: assignPager.pageSize,
+                      total: currentRolePolicies.length,
+                      showSizeChanger: true,
+                      pageSizeOptions: [8, 10, 20, 50],
+                      showTotal: (t) => `共 ${t} 条`,
+                      hideOnSinglePage: currentRolePolicies.length <= assignPager.pageSize,
+                      onChange: (page, pageSize) =>
+                        setAssignPager({
+                          current: page,
+                          pageSize: pageSize ?? assignPager.pageSize,
+                        }),
+                    }}
                     size="small"
-                    scroll={{ y: 260 }}
                     columns={[
                       { title: "权限名称", dataIndex: "permission_name" },
                       { title: "权限编码", dataIndex: "resource", render: (value: string) => <Tag>{value}</Tag> },

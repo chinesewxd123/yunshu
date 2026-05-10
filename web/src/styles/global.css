@@ -3773,6 +3773,85 @@ body {
   }
 }
 
+/* 授权管理（/policies）：纵向铺满主内容区，右侧树与已授权表平分高度，避免大块留白 */
+.policies-auth-page {
+  width: 100%;
+  min-height: calc(100dvh - 100px);
+  min-height: calc(100vh - 100px);
+}
+
+.policies-auth-page__card.ant-card > .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 132px);
+  min-height: calc(100vh - 132px);
+}
+
+.policies-auth-page .auth-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  grid-template-columns: minmax(260px, 28%) minmax(0, 1fr);
+}
+
+.policies-auth-page .auth-split__left.ant-card,
+.policies-auth-page .auth-split__right.ant-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.policies-auth-page .auth-split__left .ant-card-body,
+.policies-auth-page .auth-split__right .ant-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.policies-auth-page .auth-split__left .ant-table-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.policies-auth-page .auth-right-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(200px, 1fr) minmax(220px, 1fr);
+  gap: 10px;
+}
+
+.policies-auth-page .auth-right-tree {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.policies-auth-page .auth-tree-shell.tree-shell {
+  flex: 1 1 auto;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 160px;
+  overflow: auto;
+}
+
+.policies-auth-page .auth-right-result {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.policies-auth-page .auth-right-result .ant-pagination {
+  flex-shrink: 0;
+}
+
+/* API 管理（/permissions）：表格区尽量占满横向空间 */
+.permissions-admin-page {
+  width: 100%;
+  max-width: none;
+}
+
 /* Project logs page：占满内容区剩余高度，终端随容器伸缩 */
 .project-logs-page {
   display: flex;

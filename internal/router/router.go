@@ -30,9 +30,16 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	permissionService := service.NewPermissionService(permissionRepo, app.Enforcer)
 	policyService := service.NewPolicyService(roleRepo, permissionRepo, app.Enforcer)
 	k8sNsDenyRepo := repository.NewK8sNamespaceDenyRepository(app.DB)
-	k8sScopedPolicyService := service.NewK8sScopedPolicyService(roleRepo, permissionRepo, app.Enforcer, k8sNsDenyRepo)
+	k8sNsAllowRepo := repository.NewK8sNamespaceAllowRepository(app.DB)
+	userGroupRepo := repository.NewUserGroupRepository(app.DB)
+	k8sClusterAccessRepo := repository.NewK8sClusterAccessRepository(app.DB)
+	k8sScopedPolicyService := service.NewK8sScopedPolicyService(roleRepo, permissionRepo, k8sClusterAccessRepo, k8sNsDenyRepo, k8sNsAllowRepo, userGroupRepo)
 	k8sNamespaceDenySvc := service.NewK8sNamespaceDenyService(k8sNsDenyRepo)
 	k8sNamespaceDenyHandler := handler.NewK8sNamespaceDenyHandler(k8sNamespaceDenySvc)
+	k8sNamespaceAllowSvc := service.NewK8sNamespaceAllowService(k8sNsAllowRepo)
+	k8sNamespaceAllowHandler := handler.NewK8sNamespaceAllowHandler(k8sNamespaceAllowSvc)
+	userGroupSvc := service.NewUserGroupService(userGroupRepo, userRepo)
+	userGroupHandler := handler.NewUserGroupHandler(userGroupSvc)
 
 	regReqRepo := repository.NewRegistrationRequestRepository(app.DB)
 	menuRepo := repository.NewMenuRepository(app.DB)
@@ -135,8 +142,8 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 
 	authMiddleware := middleware.Auth(app.Config.Auth.JWTSecret, app.Redis, userRepo, app.Logger)
 	wsAuthMiddleware := middleware.WSAuth(app.Config.Auth.JWTSecret, app.Redis, userRepo, app.Logger)
-	authorize := middleware.Authorize(app.Enforcer, app.Logger)
-	k8sScopeAuthorize := middleware.K8sScopeAuthorize(app.Enforcer, app.Logger, permissionRepo, k8sNsDenyRepo)
+	authorize := middleware.Authorize(app.Enforcer, app.Logger, k8sClusterAccessRepo)
+	k8sScopeAuthorize := middleware.K8sScopeAuthorize(app.Logger, permissionRepo, k8sClusterAccessRepo, k8sNsDenyRepo, k8sNsAllowRepo)
 	opAudit := middleware.OperationAudit(opLogSvc, app.Logger)
 
 	api := app.Engine.Group("/api/v1")
@@ -192,6 +199,15 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	roles.PUT("/:id", roleHandler.Update)
 	roles.DELETE("/:id", roleHandler.Delete)
 
+	userGroups := api.Group("/user-groups")
+	userGroups.Use(authMiddleware, authorize, opAudit)
+	userGroups.GET("", userGroupHandler.List)
+	userGroups.POST("", userGroupHandler.Create)
+	userGroups.GET("/:id", userGroupHandler.Detail)
+	userGroups.PUT("/:id", userGroupHandler.Update)
+	userGroups.DELETE("/:id", userGroupHandler.Delete)
+	userGroups.PUT("/:id/users", userGroupHandler.AssignUsers)
+
 	permissions := api.Group("/permissions")
 	permissions.Use(authMiddleware, authorize, opAudit)
 	permissions.GET("", permissionHandler.List)
@@ -211,14 +227,20 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	k8sPolicies.GET("/actions", k8sScopedPolicyHandler.Actions)
 	k8sPolicies.GET("/paths", k8sScopedPolicyHandler.Paths)
 	k8sPolicies.GET("", k8sScopedPolicyHandler.ListByRole)
-	k8sPolicies.POST("/grant", k8sScopedPolicyHandler.Grant)
 	k8sPolicies.POST("/grant-preset", k8sScopedPolicyHandler.GrantPreset)
+	k8sPolicies.DELETE("/cluster-grants/:id", k8sScopedPolicyHandler.DeleteClusterGrant)
 
 	k8sNsDeny := api.Group("/k8s-namespace-deny-rules")
 	k8sNsDeny.Use(authMiddleware, authorize, opAudit)
 	k8sNsDeny.GET("", k8sNamespaceDenyHandler.List)
 	k8sNsDeny.POST("", k8sNamespaceDenyHandler.Create)
 	k8sNsDeny.DELETE("/:id", k8sNamespaceDenyHandler.Delete)
+
+	k8sNsAllow := api.Group("/k8s-namespace-allow-rules")
+	k8sNsAllow.Use(authMiddleware, authorize, opAudit)
+	k8sNsAllow.GET("", k8sNamespaceAllowHandler.List)
+	k8sNsAllow.POST("", k8sNamespaceAllowHandler.Create)
+	k8sNsAllow.DELETE("/:id", k8sNamespaceAllowHandler.Delete)
 
 	// 注册审核接口
 	registrations := api.Group("/registrations")

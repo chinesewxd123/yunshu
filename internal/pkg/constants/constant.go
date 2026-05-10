@@ -126,6 +126,7 @@ var (
 // —— RBAC / 组织 24xxx ——
 var (
 	ErrRoleNotFound       = BizError(http.StatusNotFound, 24001, "角色不存在或已删除")
+	ErrUserGroupNotFound  = BizError(http.StatusNotFound, 24002, "用户组不存在或已删除")
 	ErrPermissionNotFound = BizError(http.StatusNotFound, 24002, "权限项不存在或已变更")
 	ErrMenuNotFound       = BizError(http.StatusNotFound, 24003, "菜单不存在或已下线")
 	ErrDepartmentNotFound = BizError(http.StatusNotFound, 24004, "部门不存在或已撤销")

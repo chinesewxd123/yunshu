@@ -102,14 +102,17 @@ var grantViewDemoCmd = &cobra.Command{
 			}
 		}
 
-		// 2) 三元只读：对 K8s 读接口下发 k8s:cluster:*:ns:*:<path> GET
-		k8sPaths := collectK8sReadPaths(perms)
-		for _, path := range k8sPaths {
-			res := "k8s:cluster:*:ns:*:" + path
-			_, _ = app.Enforcer.AddPolicy(roleCode, res, "GET")
+		accessRepo := repository.NewK8sClusterAccessRepository(app.DB)
+		if err := accessRepo.Upsert(ctx, &model.K8sClusterAccessGrant{
+			PrincipalKind: model.K8sPrincipalRole,
+			PrincipalRef:  roleCode,
+			ClusterID:     0,
+			Preset:        "readonly",
+		}); err != nil {
+			return err
 		}
 
-		fmt.Printf("done: user=%s role=%s readonly_get_policies_added=%d k8s_scoped_paths=%d\n", username, roleCode, added, len(k8sPaths))
+		fmt.Printf("done: user=%s role=%s readonly_get_policies_added=%d k8s_cluster_access=readonly(all_clusters)\n", username, roleCode, added)
 		return nil
 	},
 }
@@ -126,59 +129,4 @@ func findRoleByCode(ctx context.Context, repo *repository.RoleRepository, code s
 		}
 	}
 	return nil, fmt.Errorf("role %q not found", code)
-}
-
-func collectK8sReadPaths(perms []model.Permission) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0)
-	for _, p := range perms {
-		if strings.ToUpper(strings.TrimSpace(p.Action)) != "GET" {
-			continue
-		}
-		path := strings.TrimSpace(p.Resource)
-		if path == "" || !strings.HasPrefix(path, "/api/v1/") {
-			continue
-		}
-		if !isK8sReadPath(path) {
-			continue
-		}
-		if seen[path] {
-			continue
-		}
-		seen[path] = true
-		out = append(out, path)
-	}
-	return out
-}
-
-func isK8sReadPath(path string) bool {
-	p := strings.TrimSpace(path)
-	k8sPrefixes := []string{
-		"/api/v1/clusters",
-		"/api/v1/pods",
-		"/api/v1/namespaces",
-		"/api/v1/nodes",
-		"/api/v1/deployments",
-		"/api/v1/statefulsets",
-		"/api/v1/daemonsets",
-		"/api/v1/cronjobs",
-		"/api/v1/jobs",
-		"/api/v1/configmaps",
-		"/api/v1/secrets",
-		"/api/v1/k8s-services",
-		"/api/v1/persistentvolumes",
-		"/api/v1/persistentvolumeclaims",
-		"/api/v1/storageclasses",
-		"/api/v1/ingresses",
-		"/api/v1/events",
-		"/api/v1/crds",
-		"/api/v1/crs",
-		"/api/v1/rbac",
-	}
-	for _, prefix := range k8sPrefixes {
-		if strings.HasPrefix(p, prefix) {
-			return true
-		}
-	}
-	return false
 }

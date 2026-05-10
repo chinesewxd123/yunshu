@@ -127,6 +127,29 @@ type RoleListQuery struct {
 	PageSize int    `form:"page_size"`
 }
 
+type UserGroupCreateRequest struct {
+	Name        string `json:"name" binding:"required,max=64"`
+	Code        string `json:"code" binding:"required,max=64"`
+	Description string `json:"description" binding:"omitempty,max=255"`
+	Status      int    `json:"status"`
+}
+
+type UserGroupUpdateRequest struct {
+	Name        *string `json:"name" binding:"omitempty,max=64"`
+	Description *string `json:"description" binding:"omitempty,max=255"`
+	Status      *int    `json:"status"`
+}
+
+type UserGroupListQuery struct {
+	Keyword  string `form:"keyword"`
+	Page     int    `form:"page"`
+	PageSize int    `form:"page_size"`
+}
+
+type UserGroupAssignUsersRequest struct {
+	UserIDs []uint `json:"user_ids"`
+}
+
 type PermissionCreateRequest struct {
 	Name            string `json:"name" binding:"required,max=64"`
 	Resource        string `json:"resource" binding:"required,max=191"`

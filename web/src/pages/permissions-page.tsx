@@ -84,7 +84,7 @@ export function PermissionsPage() {
 
   async function handleToggleK8sScope(record: PermissionItem, enabled: boolean) {
     await updatePermission(record.id, { k8s_scope_enabled: enabled });
-    message.success(enabled ? "已纳入三元授权目录" : "已取消纳入三元授权目录");
+    message.success(enabled ? "已纳入 K8s 范围校验目录" : "已取消 K8s 范围校验目录");
     setList((prev) => prev.map((item) => (item.id === record.id ? { ...item, k8s_scope_enabled: enabled } : item)));
     if (detailRecord?.id === record.id) {
       setDetailRecord((prev) => (prev ? { ...prev, k8s_scope_enabled: enabled } : prev));
@@ -191,8 +191,10 @@ export function PermissionsPage() {
     }
   }
 
+  const totalCount = Number(total);
+
   return (
-    <div>
+    <div className="permissions-admin-page">
       <Card className="table-card">
         <div className="toolbar">
           <Input.Search
@@ -226,6 +228,10 @@ export function PermissionsPage() {
               <Typography.Text code>Name</Typography.Text> 一致）。数据源、静默、监控规则、处理人、值班、PromQL 与「策略与联调」（Webhook、策略、历史、模板）均在{" "}
               <Link to="/alert-monitor-platform">告警监控平台</Link>
               （<Link to="/alert-monitor-platform?tab=config">策略与联调</Link>）。
+              <br />
+              <Typography.Text type="secondary">
+                列表中的「K8s 范围校验」开关用于把该接口纳入 K8s 三元中间件的<strong>校验目录</strong>（见权限设计文档 §0）；不等于给角色授权，角色授权在「授权管理」中配置。
+              </Typography.Text>
             </span>
           }
         />
@@ -237,11 +243,21 @@ export function PermissionsPage() {
           pagination={{
             current: query.page,
             pageSize: query.page_size,
-            total,
+            total: Number.isFinite(totalCount) ? totalCount : 0,
             showSizeChanger: true,
             pageSizeOptions: [10, 20, 50, 100],
             showQuickJumper: true,
-            onChange: (page, pageSize) => setQuery((prev) => ({ ...prev, page, page_size: pageSize })),
+            showTotal: (t, range) => `${range[0]}-${range[1]} / 共 ${t} 条`,
+            onChange: (page, pageSize) => {
+              setQuery((prev) => ({
+                ...prev,
+                page,
+                page_size: pageSize ?? prev.page_size,
+              }));
+            },
+            onShowSizeChange: (_page, size) => {
+              setQuery((prev) => ({ ...prev, page: 1, page_size: size }));
+            },
           }}
           columns={[
             { title: "ID", dataIndex: "id", width: 70 },
@@ -249,10 +265,10 @@ export function PermissionsPage() {
             { title: "资源路径", dataIndex: "resource", render: (value: string) => <Tag>{value}</Tag> },
             { title: "动作", dataIndex: "action", render: (value: string) => <Tag color="processing">{value}</Tag> },
             {
-              title: "三元授权",
+              title: "K8s 范围校验",
               dataIndex: "k8s_scope_enabled",
-              width: 110,
-              render: (v?: boolean) => <Tag color={v ? "purple" : "default"}>{v ? "纳入" : "默认规则"}</Tag>,
+              width: 120,
+              render: (v?: boolean) => <Tag color={v ? "purple" : "default"}>{v ? "已纳入目录" : "未纳入"}</Tag>,
             },
             { title: "说明", dataIndex: "description", render: (value?: string) => value || "-" },
             {
@@ -266,12 +282,16 @@ export function PermissionsPage() {
                   <Button type="link" icon={<SafetyCertificateOutlined />} onClick={() => openAssignRoles(record)}>
                     分配角色
                   </Button>
-                  <Tooltip title="纳入/取消纳入 Kubernetes 三元授权目录">
+                  <Tooltip
+                    title={
+                      "打开后：该接口在请求带集群上下文时将进入 K8s 范围校验中间件。仅标记「是否参与校验」；集群侧能力由「K8s 集群访问档位」页配置，API 能否调用仍由「授权管理」决定。"
+                    }
+                  >
                     <Switch
                       size="small"
                       checked={Boolean(record.k8s_scope_enabled)}
-                      checkedChildren="三元开"
-                      unCheckedChildren="三元关"
+                      checkedChildren="开"
+                      unCheckedChildren="关"
                       onChange={(checked) => {
                         void handleToggleK8sScope(record, checked);
                       }}
@@ -378,6 +398,14 @@ export function PermissionsPage() {
             </Form.Item>
             <Form.Item label="说明" name="description">
               <Input.TextArea rows={4} />
+            </Form.Item>
+            <Form.Item
+              label="K8s 范围校验"
+              name="k8s_scope_enabled"
+              valuePropName="checked"
+              extra="打开后该接口纳入 K8s 三元中间件目录（permissions.k8s_scope_enabled）；与「授权管理」中的 API 勾选相互独立。"
+            >
+              <Switch checkedChildren="已纳入" unCheckedChildren="未纳入" />
             </Form.Item>
             <Form.Item label="创建时间">
               <Input value={formatDateTime(detailRecord.created_at)} readOnly />

@@ -17,6 +17,7 @@ type User struct {
 	DepartmentID *uint          `json:"department_id" gorm:"index;comment:所属部门ID"`
 	Department   *Department    `json:"department,omitempty" gorm:"foreignKey:DepartmentID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
 	Roles        []Role         `json:"roles,omitempty" gorm:"many2many:user_roles;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	Groups       []UserGroup    `json:"groups,omitempty" gorm:"many2many:user_group_users;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 	CreatedAt    time.Time      `json:"created_at" gorm:"comment:创建时间"`
 	UpdatedAt    time.Time      `json:"updated_at" gorm:"comment:更新时间"`
 	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index;comment:删除时间"`
