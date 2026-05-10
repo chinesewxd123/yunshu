@@ -167,9 +167,10 @@ type PermissionUpdateRequest struct {
 }
 
 type PermissionListQuery struct {
-	Keyword  string `form:"keyword"`
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
+	Keyword   string `form:"keyword"`
+	Page      int    `form:"page"`
+	PageSize  int    `form:"page_size"`
+	K8sScope  string `form:"k8s_scope"` // 空=全部；on=仅已纳入 K8s 范围校验；off=仅未纳入
 }
 
 type PolicyGrantRequest struct {

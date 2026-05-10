@@ -189,6 +189,8 @@ export interface PermissionQuery {
   keyword?: string;
   page?: number;
   page_size?: number;
+  /** 空：全部；on：仅已纳入 K8s 范围校验；off：仅未纳入 */
+  k8s_scope?: "" | "on" | "off";
 }
 
 export interface PolicyItem {

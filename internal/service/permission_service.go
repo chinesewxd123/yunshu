@@ -116,6 +116,7 @@ func (s *PermissionService) List(ctx context.Context, query PermissionListQuery)
 		Keyword:  query.Keyword,
 		Page:     page,
 		PageSize: pageSize,
+		K8sScope: query.K8sScope,
 	})
 	if err != nil {
 		return nil, err

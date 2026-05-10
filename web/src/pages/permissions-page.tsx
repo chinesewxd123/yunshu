@@ -7,17 +7,17 @@ import { createPermission, deletePermission, getPermissions, getPermission, upda
 import { getRoleOptions } from "../services/roles";
 import { grantPolicy } from "../services/policies";
 import { API_CATALOG_GROUPS } from "../constants/api-catalog";
-import type { PermissionItem, PermissionPayload, RoleItem } from "../types/api";
+import type { PermissionItem, PermissionPayload, PermissionQuery, RoleItem } from "../types/api";
 import { formatDateTime } from "../utils/format";
 
-const defaultQuery = { keyword: "", page: 1, page_size: 10 };
+const defaultQuery: PermissionQuery = { keyword: "", page: 1, page_size: 10, k8s_scope: "" };
 
 const HTTP_METHOD_OPTIONS = ["GET", "POST", "PUT", "DELETE", "PATCH"].map((m) => ({ label: m, value: m }));
 
 export function PermissionsPage() {
   const [list, setList] = useState<PermissionItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [query, setQuery] = useState(defaultQuery);
+  const [query, setQuery] = useState<PermissionQuery>(defaultQuery);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
@@ -197,12 +197,31 @@ export function PermissionsPage() {
     <div className="permissions-admin-page">
       <Card className="table-card">
         <div className="toolbar">
-          <Input.Search
-            allowClear
-            placeholder="搜索能力名称或资源路径"
-            style={{ width: 280 }}
-            onSearch={(keyword) => setQuery((prev) => ({ ...prev, keyword, page: 1 }))}
-          />
+          <Space wrap size="middle">
+            <Input.Search
+              allowClear
+              placeholder="搜索能力名称或资源路径"
+              style={{ width: 280 }}
+              onSearch={(keyword) => setQuery((prev) => ({ ...prev, keyword, page: 1 }))}
+            />
+            <Select
+              style={{ width: 160 }}
+              placeholder="K8s 范围校验"
+              options={[
+                { label: "全部", value: "" },
+                { label: "已纳入", value: "on" },
+                { label: "未纳入", value: "off" },
+              ]}
+              value={query.k8s_scope}
+              onChange={(v) =>
+                setQuery((prev) => ({
+                  ...prev,
+                  k8s_scope: (v ?? "") as PermissionQuery["k8s_scope"],
+                  page: 1,
+                }))
+              }
+            />
+          </Space>
           <div className="toolbar__actions">
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
               新建能力项
