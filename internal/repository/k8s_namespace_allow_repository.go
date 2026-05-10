@@ -27,7 +27,8 @@ func (r *K8sNamespaceAllowRepository) WhitelistActiveForCluster(ctx context.Cont
 	if len(rows) == 0 {
 		return false, nil
 	}
-	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceAllowRule{}).Where("cluster_id = ?", clusterID)
+	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceAllowRule{}).
+		Where("(cluster_id = ? OR cluster_id = 0)", clusterID)
 	var parts []string
 	var args []any
 	for _, row := range rows {
@@ -55,7 +56,8 @@ func (r *K8sNamespaceAllowRepository) NamespaceAllowed(ctx context.Context, pack
 	if len(rows) == 0 {
 		return false, nil
 	}
-	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceAllowRule{}).Where("cluster_id = ? AND namespace = ?", clusterID, ns)
+	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceAllowRule{}).
+		Where("(cluster_id = ? OR cluster_id = 0) AND namespace = ?", clusterID, ns)
 	var parts []string
 	var args []any
 	for _, row := range rows {

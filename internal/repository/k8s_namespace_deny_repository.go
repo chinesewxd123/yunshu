@@ -19,16 +19,21 @@ func NewK8sNamespaceDenyRepository(db *gorm.DB) *K8sNamespaceDenyRepository {
 }
 
 // IsDenied 任一主体在该集群下禁止该命名空间则 true。
+// cluster_id=0 的规则视为「全部集群」通配，与 k8s_cluster_access_grants 语义一致。
 func (r *K8sNamespaceDenyRepository) IsDenied(ctx context.Context, pack k8sauth.PrincipalPack, clusterID uint, namespace string) (bool, error) {
 	if r == nil || r.db == nil {
 		return false, nil
 	}
 	ns := strings.TrimSpace(namespace)
 	rows := pack.PrincipalRows()
-	if len(rows) == 0 || clusterID == 0 || ns == "" || ns == "_cluster" {
+	if len(rows) == 0 || ns == "" || ns == "_cluster" {
 		return false, nil
 	}
-	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceDenyRule{}).Where("cluster_id = ? AND namespace = ?", clusterID, ns)
+	if clusterID == 0 {
+		return false, nil
+	}
+	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceDenyRule{}).
+		Where("(cluster_id = ? OR cluster_id = 0) AND namespace = ?", clusterID, ns)
 	var parts []string
 	var args []any
 	for _, row := range rows {
