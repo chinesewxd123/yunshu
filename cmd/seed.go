@@ -642,7 +642,7 @@ func defaultMenus() []model.Menu {
 			Children: []model.Menu{
 				{Name: "账号管理", Path: "/users", Icon: "TeamOutlined", Sort: 1, Component: "", Status: 1},
 				{Name: "用户组管理", Path: "/user-groups", Icon: "UserOutlined", Sort: 2, Component: "user-groups-page", Status: 1},
-				{Name: "角色管理", Path: "/roles", Icon: "ApartmentOutlined", Sort: 3, Component: "", Status: 1},
+				{Name: "角色模板", Path: "/roles", Icon: "ApartmentOutlined", Sort: 3, Component: "", Status: 1},
 				{Name: "API管理", Path: "/permissions", Icon: "ApiOutlined", Sort: 4, Component: "", Status: 1},
 				{Name: "授权管理", Path: "/policies", Icon: "AuditOutlined", Sort: 5, Component: "", Status: 1},
 				{Name: "K8s 集群访问档位", Path: "/k8s-scoped-policies", Icon: "AuditOutlined", Sort: 6, Component: "k8s-scoped-policies-page", Status: 1},

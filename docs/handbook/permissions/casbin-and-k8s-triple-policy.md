@@ -19,6 +19,7 @@
 
 - **开**：该 `resource + action` 对应的 Gin 路由会进入 `K8sScopeAuthorize` 的**接口目录**；当请求能解析出 `cluster_id`（以及部分场景下的 `namespace`）时，会叠加 **命名空间黑名单、白名单（若启用）** 与 **`k8s_cluster_access_grants` 档位判定**（按路由所需最低档位与当前用户**角色 + 用户 ID + 用户组编码**对应主体在该集群上的最高档位比较）。
 - **关**：该路由对三元中间件而言视为**未纳入目录**，**不做**上述 K8s 范围校验（其它层仍可能拦截，例如授权管理未勾选）。
+- **误开给非 K8s 接口时**：`K8sScopeAuthorize` 仅在请求能解析出 **`cluster_id > 0`** 时才做黑/白名单与档位比较；解析不到 `cluster_id` 时**直接放行**该层（见 `k8s_scope_authorize.go`）。因此一般不会把「项目管理」等接口整块弄挂；但若某接口的请求体/查询串里**误带** `cluster_id` 且用户又无集群档位，则可能在本层 403——应对方式是**只对真实访问集群资源的 API 打开开关**。
 
 实现入口：`internal/middleware/k8s_scope_authorize.go`（目录来自 `permissions` 表构建的映射）、`internal/model/permission.go` 字段 `K8sScopeEnabled`。
 

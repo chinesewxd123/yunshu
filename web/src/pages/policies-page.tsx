@@ -1,5 +1,6 @@
-import { ReloadOutlined, SaveOutlined } from "@ant-design/icons";
-import { Button, Card, Empty, Input, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
+import { LinkOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
+import { Button, Card, Empty, Input, Select, Space, Table, Tabs, Tag, Tree, Typography, message } from "antd";
+import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { getPermissionOptions } from "../services/permissions";
 import { getPolicies, grantPolicy, revokePolicy } from "../services/policies";
@@ -175,8 +176,15 @@ export function PoliciesPage() {
         <div className="auth-split">
           <Card
             className="glass-card auth-split__left"
-            title="权限分组"
-            extra={<Tag className="status-chip status-chip--ok">共 {filteredRoles.length} 项</Tag>}
+            title="角色模板"
+            extra={
+              <Space size={4} wrap>
+                <Tag className="status-chip status-chip--ok">共 {filteredRoles.length} 项</Tag>
+                <Link to="/roles" className="policies-auth-page__roles-link">
+                  <LinkOutlined /> 维护模板
+                </Link>
+              </Space>
+            }
           >
             <Table
               rowKey="id"
@@ -189,8 +197,8 @@ export function PoliciesPage() {
                 onClick: () => handleRoleChange(record.id),
               })}
               columns={[
-                { title: "分组名称", dataIndex: "name" },
-                { title: "业务标识", dataIndex: "code" },
+                { title: "模板名称", dataIndex: "name" },
+                { title: "模板编码", dataIndex: "code" },
                 {
                   title: "状态",
                   dataIndex: "status",
@@ -204,61 +212,79 @@ export function PoliciesPage() {
 
           <Card
             className="glass-card auth-split__right"
-            title="授权管理"
+            title="Casbin API 授权"
             extra={
               selectedRole ? (
                 <Typography.Text className="inline-muted">
-                  当前角色：{selectedRole.name}（已选 {checkedPermissionIds.length} 项）
+                  当前模板：{selectedRole.name}（树中已选 {checkedPermissionIds.length} 项）
                 </Typography.Text>
               ) : null
             }
           >
             {selectedRole ? (
-              <div className="auth-right-stack">
-                <div className="auth-right-tree">
-                  <div className="auth-right-tree__head">权限配置树</div>
-                  <div className="tree-shell auth-tree-shell">
-                    <Tree
-                      checkable
-                      defaultExpandAll
-                      checkedKeys={checkedPermissionIds}
-                      treeData={filteredPermissionTree}
-                      onCheck={(checkedKeys) => {
-                        const nextIds = normalizeCheckedKeys(checkedKeys).filter((id) => permissionIdSet.has(id));
-                        setCheckedPermissionIds(nextIds);
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="auth-right-result">
-                  <div className="auth-right-result__head">已授权权限</div>
-                  <Table
-                    rowKey={(record) => `${record.role_id}-${record.permission_id}`}
-                    dataSource={currentRolePolicies}
-                    pagination={{
-                      current: assignPager.current,
-                      pageSize: assignPager.pageSize,
-                      total: currentRolePolicies.length,
-                      showSizeChanger: true,
-                      pageSizeOptions: [8, 10, 20, 50],
-                      showTotal: (t) => `共 ${t} 条`,
-                      hideOnSinglePage: currentRolePolicies.length <= assignPager.pageSize,
-                      onChange: (page, pageSize) =>
-                        setAssignPager({
-                          current: page,
-                          pageSize: pageSize ?? assignPager.pageSize,
-                        }),
-                    }}
-                    size="small"
-                    columns={[
-                      { title: "权限名称", dataIndex: "permission_name" },
-                      { title: "权限编码", dataIndex: "resource", render: (value: string) => <Tag>{value}</Tag> },
-                      { title: "分组名称", dataIndex: "role_name" },
-                      { title: "状态", dataIndex: "action", width: 80, render: () => <Tag className="status-chip status-chip--ok">正常</Tag> },
-                    ]}
-                  />
-                </div>
-              </div>
+              <Tabs
+                className="policies-auth-tabs"
+                destroyInactiveTabPane={false}
+                items={[
+                  {
+                    key: "tree",
+                    label: "权限勾选",
+                    children: (
+                      <div className="auth-tab-pane auth-tab-pane--tree">
+                        <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+                          仅影响 HTTP 接口能否调用；与 K8s 集群档位、命名空间黑白名单是不同一层（见手册）。
+                        </Typography.Paragraph>
+                        <div className="tree-shell auth-tree-shell">
+                          <Tree
+                            checkable
+                            defaultExpandAll
+                            checkedKeys={checkedPermissionIds}
+                            treeData={filteredPermissionTree}
+                            onCheck={(checkedKeys) => {
+                              const nextIds = normalizeCheckedKeys(checkedKeys).filter((id) => permissionIdSet.has(id));
+                              setCheckedPermissionIds(nextIds);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "granted",
+                    label: `已授权清单（${currentRolePolicies.length}）`,
+                    children: (
+                      <div className="auth-tab-pane auth-tab-pane--table">
+                        <Table
+                          rowKey={(record) => `${record.role_id}-${record.permission_id}`}
+                          dataSource={currentRolePolicies}
+                          pagination={{
+                            current: assignPager.current,
+                            pageSize: assignPager.pageSize,
+                            total: currentRolePolicies.length,
+                            showSizeChanger: true,
+                            pageSizeOptions: [8, 10, 20, 50],
+                            showTotal: (t) => `共 ${t} 条`,
+                            hideOnSinglePage: currentRolePolicies.length <= assignPager.pageSize,
+                            onChange: (page, pageSize) =>
+                              setAssignPager({
+                                current: page,
+                                pageSize: pageSize ?? assignPager.pageSize,
+                              }),
+                          }}
+                          size="small"
+                          scroll={{ y: "calc(100dvh - 320px)" }}
+                          columns={[
+                            { title: "权限名称", dataIndex: "permission_name" },
+                            { title: "权限编码", dataIndex: "resource", render: (value: string) => <Tag>{value}</Tag> },
+                            { title: "模板名称", dataIndex: "role_name" },
+                            { title: "状态", dataIndex: "action", width: 80, render: () => <Tag className="status-chip status-chip--ok">正常</Tag> },
+                          ]}
+                        />
+                      </div>
+                    ),
+                  },
+                ]}
+              />
             ) : (
               <Empty description="请选择左侧分组后进行授权" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
