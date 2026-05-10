@@ -42,6 +42,10 @@ func expandReadonly(perms []model.Permission) []policyPathAction {
 		if path == "" || method != "GET" {
 			continue
 		}
+		// Pod 终端等虽为 GET，语义上不是「资源只读」，不应纳入 readonly 档位展开（否则 RequiredK8sAccessRank 会误判为 readonly）
+		if strings.Contains(strings.ToLower(path), "exec") {
+			continue
+		}
 		if !IsK8sReadAPIPath(path) {
 			continue
 		}
