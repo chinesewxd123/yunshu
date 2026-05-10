@@ -48,6 +48,31 @@ func (r *K8sNamespaceDenyRepository) IsDenied(ctx context.Context, pack k8sauth.
 	return n > 0, nil
 }
 
+// DeniedNamespaceNames 返回当前主体集合在该集群（含 cluster_id=0 通配规则）下被禁止访问的命名空间名（去重、有序）。
+func (r *K8sNamespaceDenyRepository) DeniedNamespaceNames(ctx context.Context, pack k8sauth.PrincipalPack, clusterID uint) ([]string, error) {
+	if r == nil || r.db == nil || clusterID == 0 {
+		return nil, nil
+	}
+	rows := pack.PrincipalRows()
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceDenyRule{}).
+		Where("cluster_id = ? OR cluster_id = ?", clusterID, 0)
+	var parts []string
+	var args []any
+	for _, row := range rows {
+		parts = append(parts, "(principal_kind = ? AND principal_ref = ?)")
+		args = append(args, row.Kind, row.Ref)
+	}
+	q = q.Where(strings.Join(parts, " OR "), args...)
+	var names []string
+	if err := q.Distinct("namespace").Order("namespace ASC").Pluck("namespace", &names).Error; err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
 // List 按可选条件列出规则。
 func (r *K8sNamespaceDenyRepository) List(ctx context.Context, principalKind, principalRef string, clusterID uint) ([]model.K8sNamespaceDenyRule, error) {
 	if r == nil || r.db == nil {

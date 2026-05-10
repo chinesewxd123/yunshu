@@ -72,6 +72,31 @@ func (r *K8sNamespaceAllowRepository) NamespaceAllowed(ctx context.Context, pack
 	return n > 0, nil
 }
 
+// WhitelistUnionNamespaces 主体集合在该集群（含 cluster_id=0 通配）上「允许访问」的命名空间并集（去重、有序）。
+func (r *K8sNamespaceAllowRepository) WhitelistUnionNamespaces(ctx context.Context, pack k8sauth.PrincipalPack, clusterID uint) ([]string, error) {
+	if r == nil || r.db == nil || clusterID == 0 {
+		return nil, nil
+	}
+	rows := pack.PrincipalRows()
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceAllowRule{}).
+		Where("cluster_id = ? OR cluster_id = ?", clusterID, 0)
+	var parts []string
+	var args []any
+	for _, row := range rows {
+		parts = append(parts, "(principal_kind = ? AND principal_ref = ?)")
+		args = append(args, row.Kind, row.Ref)
+	}
+	q = q.Where(strings.Join(parts, " OR "), args...)
+	var names []string
+	if err := q.Distinct("namespace").Order("namespace ASC").Pluck("namespace", &names).Error; err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
 func (r *K8sNamespaceAllowRepository) List(ctx context.Context, principalKind, principalRef string, clusterID uint) ([]model.K8sNamespaceAllowRule, error) {
 	if r == nil || r.db == nil {
 		return nil, nil

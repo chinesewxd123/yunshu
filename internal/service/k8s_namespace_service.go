@@ -6,8 +6,9 @@ import (
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
-
+	"yunshu/internal/pkg/k8sauth"
 	"yunshu/internal/pkg/k8sutil"
+	"yunshu/internal/repository"
 
 	kom "github.com/weibaohui/kom/kom"
 	corev1 "k8s.io/api/core/v1"
@@ -74,19 +75,30 @@ type NamespaceEventItem struct {
 }
 
 type K8sNamespaceService struct {
-	runtime *K8sRuntimeService
-	dyn     *DynamicResourceService
+	runtime     *K8sRuntimeService
+	dyn         *DynamicResourceService
+	nsDenyRepo  *repository.K8sNamespaceDenyRepository
+	nsAllowRepo *repository.K8sNamespaceAllowRepository
 }
 
 // NewK8sNamespaceService 创建相关逻辑。
-func NewK8sNamespaceService(runtime *K8sRuntimeService) *K8sNamespaceService {
-	return &K8sNamespaceService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
+func NewK8sNamespaceService(
+	runtime *K8sRuntimeService,
+	nsDeny *repository.K8sNamespaceDenyRepository,
+	nsAllow *repository.K8sNamespaceAllowRepository,
+) *K8sNamespaceService {
+	return &K8sNamespaceService{
+		runtime:     runtime,
+		dyn:         NewDynamicResourceService(runtime),
+		nsDenyRepo:  nsDeny,
+		nsAllowRepo: nsAllow,
+	}
 }
 
 var namespaceGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
 
 // List 查询列表相关的业务逻辑。
-func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery) ([]NamespaceListItem, error) {
+func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery, pack *k8sauth.PrincipalPack) ([]NamespaceListItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, query.ClusterID)
 	if err != nil {
 		return nil, err
@@ -152,6 +164,30 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+
+	if pack != nil && len(pack.PrincipalRows()) > 0 && query.ClusterID > 0 {
+		nsNames := make([]string, len(out))
+		for i := range out {
+			nsNames[i] = out[i].Name
+		}
+		var ferr error
+		nsNames, ferr = FilterNamespaceNamesByPolicy(ctx, s.nsDenyRepo, s.nsAllowRepo, *pack, query.ClusterID, nsNames)
+		if ferr != nil {
+			return nil, ferr
+		}
+		keep := make(map[string]struct{}, len(nsNames))
+		for _, n := range nsNames {
+			keep[n] = struct{}{}
+		}
+		filtered := out[:0]
+		for _, it := range out {
+			if _, ok := keep[it.Name]; ok {
+				filtered = append(filtered, it)
+			}
+		}
+		out = filtered
+	}
+
 	return out, nil
 }
 

@@ -114,7 +114,8 @@ func K8sScopeAuthorize(
 			routePath = c.Request.URL.Path
 		}
 		actionCode, tracked := catalog.get(routePath, c.Request.Method)
-		if !tracked {
+		forceTier := k8sScopeForceTierCheck(routePath, c.Request.Method)
+		if !tracked && !forceTier {
 			c.Next()
 			return
 		}
@@ -127,6 +128,11 @@ func K8sScopeAuthorize(
 
 		clusterID, namespace := extractClusterNamespaceFromRequest(c)
 		if clusterID == 0 {
+			if forceTier {
+				response.Error(c, constants.ErrBadRequestWithMsg("Pod Exec 须在请求中携带 cluster_id（及 namespace），以便集群档位校验"))
+				c.Abort()
+				return
+			}
 			c.Next()
 			return
 		}
@@ -202,6 +208,20 @@ func K8sScopeAuthorize(
 		}
 
 		c.Next()
+	}
+}
+
+// k8sScopeForceTierCheck Pod Exec 等为高危：无论 API 管理是否勾选「纳入 K8s 范围校验」，均按集群档位与命名空间策略校验（仍需 Casbin 授权）。
+func k8sScopeForceTierCheck(routePath, method string) bool {
+	p := strings.TrimSpace(routePath)
+	m := strings.ToUpper(strings.TrimSpace(method))
+	switch m {
+	case "POST":
+		return strings.HasSuffix(p, "/pods/exec")
+	case "GET":
+		return strings.HasSuffix(p, "/pods/exec/ws")
+	default:
+		return false
 	}
 }
 

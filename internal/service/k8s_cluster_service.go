@@ -10,6 +10,7 @@ import (
 	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/k8sauth"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/repository"
 
@@ -95,17 +96,27 @@ type ComponentStatusItem struct {
 }
 
 type K8sClusterService struct {
-	repo     *repository.K8sClusterRepository
-	dictRepo *repository.DictEntryRepository
-	runtime  *K8sRuntimeService
+	repo        *repository.K8sClusterRepository
+	dictRepo    *repository.DictEntryRepository
+	runtime     *K8sRuntimeService
+	nsDenyRepo  *repository.K8sNamespaceDenyRepository
+	nsAllowRepo *repository.K8sNamespaceAllowRepository
 }
 
 // NewK8sClusterService 创建相关逻辑。
-func NewK8sClusterService(repo *repository.K8sClusterRepository, dictRepo *repository.DictEntryRepository, runtime *K8sRuntimeService) *K8sClusterService {
+func NewK8sClusterService(
+	repo *repository.K8sClusterRepository,
+	dictRepo *repository.DictEntryRepository,
+	runtime *K8sRuntimeService,
+	nsDeny *repository.K8sNamespaceDenyRepository,
+	nsAllow *repository.K8sNamespaceAllowRepository,
+) *K8sClusterService {
 	return &K8sClusterService{
-		repo:     repo,
-		dictRepo: dictRepo,
-		runtime:  runtime,
+		repo:        repo,
+		dictRepo:    dictRepo,
+		runtime:     runtime,
+		nsDenyRepo:  nsDeny,
+		nsAllowRepo: nsAllow,
 	}
 }
 
@@ -327,8 +338,8 @@ func (s *K8sClusterService) Status(ctx context.Context, id uint) (*K8sClusterSta
 	}, nil
 }
 
-// ListNamespaces 查询列表相关的业务逻辑。
-func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint) ([]NamespaceItem, error) {
+// ListNamespaces 查询列表相关的业务逻辑；若传入 pack，则按命名空间黑/白名单过滤（与控制台下拉、K8sScopeAuthorize 对齐）。
+func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint, pack *k8sauth.PrincipalPack) ([]NamespaceItem, error) {
 	_, k, err := s.runtime.GetClusterKubectl(ctx, id)
 	if err != nil {
 		return nil, err
@@ -341,7 +352,28 @@ func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint) ([]Name
 	for _, ns := range nsList {
 		out = append(out, NamespaceItem{Name: ns.Name, Phase: string(ns.Status.Phase)})
 	}
-	return out, nil
+	if pack == nil || len(pack.PrincipalRows()) == 0 {
+		return out, nil
+	}
+	names := make([]string, len(out))
+	for i := range out {
+		names[i] = out[i].Name
+	}
+	names, err = FilterNamespaceNamesByPolicy(ctx, s.nsDenyRepo, s.nsAllowRepo, *pack, id, names)
+	if err != nil {
+		return nil, err
+	}
+	keep := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		keep[n] = struct{}{}
+	}
+	filtered := out[:0]
+	for _, it := range out {
+		if _, ok := keep[it.Name]; ok {
+			filtered = append(filtered, it)
+		}
+	}
+	return filtered, nil
 }
 
 // ListComponentStatuses 查询列表相关的业务逻辑。

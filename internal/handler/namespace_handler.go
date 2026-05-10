@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"context"
+
+	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/k8sauth"
 	"yunshu/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +21,15 @@ func NewNamespaceHandler(svc *service.K8sNamespaceService) *NamespaceHandler {
 
 // List 查询列表对应的 HTTP 接口处理逻辑。
 func (h *NamespaceHandler) List(c *gin.Context) {
-	ServeQuery(c, h.svc.List)
+	ServeQuery(c, func(ctx context.Context, query service.NamespaceListQuery) ([]service.NamespaceListItem, error) {
+		user, ok := auth.CurrentUserFromContext(c)
+		var pack *k8sauth.PrincipalPack
+		if ok && user != nil {
+			p := k8sauth.PackFromCurrentUser(user)
+			pack = &p
+		}
+		return h.svc.List(ctx, query, pack)
+	})
 }
 
 // Detail 查询详情对应的 HTTP 接口处理逻辑。

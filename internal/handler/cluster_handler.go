@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/k8sauth"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -78,7 +80,13 @@ func (h *ClusterHandler) Namespaces(c *gin.Context) {
 		return
 	}
 
-	list, err := h.svc.ListNamespaces(c.Request.Context(), id)
+	user, ok := auth.CurrentUserFromContext(c)
+	var pack *k8sauth.PrincipalPack
+	if ok && user != nil {
+		p := k8sauth.PackFromCurrentUser(user)
+		pack = &p
+	}
+	list, err := h.svc.ListNamespaces(c.Request.Context(), id, pack)
 	if err != nil {
 		response.Error(c, err)
 		return
