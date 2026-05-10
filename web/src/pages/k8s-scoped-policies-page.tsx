@@ -6,7 +6,6 @@ import {
   Divider,
   Empty,
   Form,
-  Input,
   Popconfirm,
   Segmented,
   Select,
@@ -17,7 +16,7 @@ import {
   message,
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { getClusters } from "../services/clusters";
+import { getClusters, listNamespaces } from "../services/clusters";
 import {
   createK8sNamespaceDenyRule,
   deleteK8sNamespaceDenyRule,
@@ -56,11 +55,88 @@ export function K8sScopedPoliciesPage() {
     allow_namespaces?: string[];
   }>();
   const [denyForm] = Form.useForm<{ cluster_id?: number; namespace?: string }>();
+  const [presetNsOptions, setPresetNsOptions] = useState<{ label: string; value: string }[]>([]);
+  const [presetNsLoading, setPresetNsLoading] = useState(false);
+  const [denyNsOptions, setDenyNsOptions] = useState<{ label: string; value: string }[]>([]);
+  const [denyNsLoading, setDenyNsLoading] = useState(false);
+
+  const watchedPresetClusterIds = Form.useWatch("cluster_ids", presetForm) ?? [];
+  const watchedDenyClusterId = Form.useWatch("cluster_id", denyForm);
 
   const selectedRole = useMemo(() => roles.find((r) => r.id === selectedRoleId) ?? null, [roles, selectedRoleId]);
   const selectedGroup = useMemo(() => groups.find((g) => g.id === selectedGroupId) ?? null, [groups, selectedGroupId]);
   const activeSubjectReady =
     (subjectKind === "role" && selectedRole != null) || (subjectKind === "group" && selectedGroup != null);
+
+  const clusterNameById = useMemo(() => new Map(clusterOptions.map((c) => [c.id, c.name])), [clusterOptions]);
+
+  const presetClusterIds = useMemo(() => {
+    const raw = Array.isArray(watchedPresetClusterIds) ? watchedPresetClusterIds : [];
+    return raw.filter((x): x is number => typeof x === "number" && x > 0);
+  }, [watchedPresetClusterIds]);
+  const presetClusterKey = useMemo(() => presetClusterIds.slice().sort((a, b) => a - b).join(","), [presetClusterIds]);
+
+  useEffect(() => {
+    if (presetClusterIds.length === 0) {
+      setPresetNsOptions([]);
+      setPresetNsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPresetNsLoading(true);
+    void Promise.all(presetClusterIds.map((id) => listNamespaces(id)))
+      .then((results) => {
+        if (cancelled) return;
+        const seen = new Set<string>();
+        const opts: { label: string; value: string }[] = [];
+        for (const res of results) {
+          for (const n of res.list ?? []) {
+            if (!seen.has(n.name)) {
+              seen.add(n.name);
+              opts.push({ label: n.name, value: n.name });
+            }
+          }
+        }
+        opts.sort((a, b) => a.label.localeCompare(b.label));
+        setPresetNsOptions(opts);
+      })
+      .catch(() => {
+        if (!cancelled) setPresetNsOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPresetNsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [presetClusterKey]);
+
+  useEffect(() => {
+    const cid = typeof watchedDenyClusterId === "number" ? watchedDenyClusterId : undefined;
+    if (!cid) {
+      setDenyNsOptions([]);
+      setDenyNsLoading(false);
+      denyForm.setFieldsValue({ namespace: undefined });
+      return;
+    }
+    let cancelled = false;
+    setDenyNsLoading(true);
+    void listNamespaces(cid)
+      .then((res) => {
+        if (cancelled) return;
+        const opts = (res.list ?? []).map((n) => ({ label: n.name, value: n.name }));
+        setDenyNsOptions(opts);
+      })
+      .catch(() => {
+        if (!cancelled) setDenyNsOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDenyNsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [watchedDenyClusterId]); // denyForm.setFieldsValue 稳定；仅集群变更时需重置命名空间
 
   useEffect(() => {
     void bootstrap();
@@ -283,22 +359,50 @@ export function K8sScopedPoliciesPage() {
                       allowClear
                       style={{ minWidth: 260 }}
                       placeholder="不选 = 全部集群"
-                      options={clusterOptions.map((c) => ({ label: `${c.name} (#${c.id})`, value: c.id }))}
+                      options={clusterOptions.map((c) => ({ label: c.name, value: c.id }))}
                     />
                   </Form.Item>
                   <Form.Item
                     label="同步命名空间黑名单（可选）"
                     name="deny_namespaces"
-                    tooltip="须在上栏选择具体集群；对每个所选集群写入禁止访问该命名空间"
+                    tooltip="须在「集群」中选择至少一个具体集群；命名空间列表为所选集群的合并结果（同名去重）；保存时对每个所选集群写入禁止规则"
                   >
-                    <Select mode="tags" style={{ minWidth: 320 }} placeholder="输入后回车，例如 kube-system" tokenSeparators={[","]} />
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      loading={presetNsLoading}
+                      disabled={presetClusterIds.length === 0}
+                      style={{ minWidth: 320 }}
+                      placeholder={
+                        presetClusterIds.length > 0
+                          ? "从下拉选择命名空间（可多选）"
+                          : "请先在「集群」中选择至少一个集群以加载列表"
+                      }
+                      options={presetNsOptions}
+                    />
                   </Form.Item>
                   <Form.Item
                     label="同步命名空间白名单（可选）"
                     name="allow_namespaces"
-                    tooltip="须选择具体集群；写入后该主体在该集群仅允许访问所列命名空间（黑名单优先）"
+                    tooltip="须选择至少一个具体集群；写入后该主体在各所选集群仅允许访问所列命名空间（黑名单优先）；列表为所选集群命名空间合并去重"
                   >
-                    <Select mode="tags" style={{ minWidth: 320 }} placeholder="输入后回车" tokenSeparators={[","]} />
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      loading={presetNsLoading}
+                      disabled={presetClusterIds.length === 0}
+                      style={{ minWidth: 320 }}
+                      placeholder={
+                        presetClusterIds.length > 0
+                          ? "从下拉选择命名空间（可多选）"
+                          : "请先在「集群」中选择至少一个集群以加载列表"
+                      }
+                      options={presetNsOptions}
+                    />
                   </Form.Item>
                   <Form.Item label=" ">
                     <Button
@@ -380,7 +484,12 @@ export function K8sScopedPoliciesPage() {
                   {
                     title: "集群",
                     dataIndex: "cluster_id",
-                    render: (v: number) => (v === 0 ? <Tag color="blue">全部集群</Tag> : <Tag>#{v}</Tag>),
+                    render: (v: number) =>
+                      v === 0 ? (
+                        <Tag color="blue">全部集群</Tag>
+                      ) : (
+                        <Tag>{clusterNameById.get(v) ?? `集群 #${v}`}</Tag>
+                      ),
                   },
                   {
                     title: "档位",
@@ -477,11 +586,20 @@ export function K8sScopedPoliciesPage() {
                   style={{ minWidth: 220 }}
                   placeholder="集群"
                   allowClear
-                  options={clusterOptions.map((c) => ({ label: `${c.name} (#${c.id})`, value: c.id }))}
+                  options={clusterOptions.map((c) => ({ label: c.name, value: c.id }))}
                 />
               </Form.Item>
-              <Form.Item name="namespace" rules={[{ required: true, message: "填写命名空间" }]}>
-                <Input style={{ width: 200 }} placeholder="例如 kube-system" />
+              <Form.Item name="namespace" rules={[{ required: true, message: "请选择命名空间" }]}>
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  allowClear
+                  loading={denyNsLoading}
+                  disabled={!watchedDenyClusterId}
+                  style={{ minWidth: 220 }}
+                  placeholder={watchedDenyClusterId ? "选择命名空间" : "请先选择集群"}
+                  options={denyNsOptions}
+                />
               </Form.Item>
               <Form.Item>
                 <Button type="primary" htmlType="submit" loading={denySubmitting}>
@@ -506,7 +624,12 @@ export function K8sScopedPoliciesPage() {
                     </span>
                   ),
                 },
-                { title: "集群 ID", dataIndex: "cluster_id", width: 100 },
+                {
+                  title: "集群",
+                  dataIndex: "cluster_id",
+                  width: 140,
+                  render: (v: number) => (v === 0 ? <Tag color="blue">全部</Tag> : clusterNameById.get(v) ?? `#${v}`),
+                },
                 { title: "命名空间", dataIndex: "namespace" },
                 {
                   title: "操作",
