@@ -1,11 +1,12 @@
 import { CodeOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined, FolderOpenOutlined, PlusOutlined, ReloadOutlined, UndoOutlined, UploadOutlined } from "@ant-design/icons";
-import { Button, Card, Divider, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tabs, Typography, message } from "antd";
+import { Button, Card, Divider, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tabs, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
 import "xterm/css/xterm.css";
 import { formatDateTime } from "../utils/format";
 import { getClusters, listNamespaces, type ClusterItem, type NamespaceItem } from "../services/clusters";
+import { PodCpuUsageBars, PodMemUsageBars, RealtimeUsageText } from "../components/k8s/k8s-resource-usage-cells";
 import { createPodByYAML, createPodSimple, deletePod, deletePodFile, downloadPodFile, downloadPodLogs, getPodDetail, getPodEvents, getPodLogs, getPods, listPodFiles, readPodFile, restartPod, updatePodSimple, uploadPodFile, type PodDetail, type PodEventItem, type PodFileItem, type PodItem } from "../services/pods";
 import { getToken } from "../services/storage";
 
@@ -776,16 +777,53 @@ export function PodPage() {
             loading={loading}
             dataSource={pods}
             pagination={{ pageSize: 10 }}
+            scroll={{ x: 2200 }}
             onRow={(record) => ({ onClick: () => void loadDetail(record) })}
             rowClassName={(record) => (selected && `${record.namespace}/${record.name}` === `${selected.namespace}/${selected.name}` ? "ant-table-row-selected" : "")}
             columns={[
-              { title: "Pod 名称", dataIndex: "name" },
+              { title: "Pod 名称", dataIndex: "name", width: 160, fixed: "left" },
               { title: "命名空间", dataIndex: "namespace", width: 120 },
               { title: "节点", dataIndex: "node_name", width: 140 },
-              { title: "PodIP", dataIndex: "pod_ip", width: 130 },
-              { title: "QoS", dataIndex: "qos_class", width: 90 },
-              { title: "重启", dataIndex: "restart_count", width: 70 },
-              { title: "状态", dataIndex: "phase", width: 110, render: (phase: string) => <Tag color={phaseColor(phase)}>{phase || "-"}</Tag> },
+              {
+                title: "容器 / 镜像",
+                dataIndex: "containers_text",
+                width: 260,
+                render: (v?: string) => <Typography.Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{v || "-"}</Typography.Text>,
+              },
+              { title: "重启", dataIndex: "restart_count", width: 72 },
+              {
+                title: "实时用量",
+                key: "usage_rt",
+                width: 130,
+                render: (_: unknown, r: PodItem) => (
+                  <Tooltip title="CPU / 内存（需 metrics-server）">
+                    <span>
+                      <RealtimeUsageText cpu={r.cpu_usage} mem={r.mem_usage} />
+                    </span>
+                  </Tooltip>
+                ),
+              },
+              {
+                title: "资源设定",
+                dataIndex: "resource_text",
+                width: 168,
+                render: (v?: string) => <Typography.Text style={{ whiteSpace: "pre-wrap", fontSize: 11 }}>{v || "-"}</Typography.Text>,
+              },
+              {
+                title: "CPU 资源",
+                key: "cpu_bars",
+                width: 172,
+                render: (_: unknown, r: PodItem) => <PodCpuUsageBars row={r} />,
+              },
+              {
+                title: "内存资源",
+                key: "mem_bars",
+                width: 172,
+                render: (_: unknown, r: PodItem) => <PodMemUsageBars row={r} />,
+              },
+              { title: "PodIP", dataIndex: "pod_ip", width: 120 },
+              { title: "QoS", dataIndex: "qos_class", width: 88 },
+              { title: "状态", dataIndex: "phase", width: 100, render: (phase: string) => <Tag color={phaseColor(phase)}>{phase || "-"}</Tag> },
               { title: "启动时间", dataIndex: "start_time", width: 170, render: (v: string) => formatDateTime(v) },
               {
                 title: "操作",

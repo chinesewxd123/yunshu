@@ -12,6 +12,19 @@ export interface PodItem {
   qos_class: string;
   restart_count: number;
   images: string[];
+  host_network?: boolean;
+  containers_text?: string;
+  resource_text?: string;
+  cpu_usage?: string;
+  mem_usage?: string;
+  cpu_pct_request?: number;
+  cpu_pct_limit?: number;
+  cpu_pct_node_alloc?: number;
+  mem_pct_request?: number;
+  mem_pct_limit?: number;
+  mem_pct_node_alloc?: number;
+  label_count?: number;
+  annotation_count?: number;
 }
 
 export interface PodListQuery {

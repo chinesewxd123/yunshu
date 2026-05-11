@@ -43,6 +43,15 @@ type NamespaceListItem struct {
 	CPULimits   string `json:"cpu_limits,omitempty"`
 	MemRequests string `json:"mem_requests,omitempty"`
 	MemLimits   string `json:"mem_limits,omitempty"`
+	CPUUsage    string `json:"cpu_usage,omitempty"`
+	MemUsage    string `json:"mem_usage,omitempty"`
+	// 列表展示用数值（核 / Gi），与 k8m 风格「Request / Limit / 实时」对齐
+	CPUCoresRequest float64 `json:"cpu_cores_request"`
+	CPUCoresLimit   float64 `json:"cpu_cores_limit"`
+	CPUCoresUsage   float64 `json:"cpu_cores_usage"`
+	MemGiRequest    float64 `json:"mem_gi_request"`
+	MemGiLimit      float64 `json:"mem_gi_limit"`
+	MemGiUsage      float64 `json:"mem_gi_usage"`
 }
 
 type NamespaceDetail struct {
@@ -131,6 +140,8 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 		}
 	}
 
+	nsUsage := aggregatePodMetricsUsageByNamespace(ctx, k)
+
 	listU, err := s.dyn.ListByGVK(ctx, k, namespaceGVK, "")
 	if err != nil {
 		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt8d60c2040f20, err))
@@ -150,6 +161,13 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 			continue
 		}
 		sum := podSummary[ns.Name]
+		u := nsUsage[ns.Name]
+		cpuUse := "-"
+		memUse := "-"
+		if !u.CPU.IsZero() || !u.Mem.IsZero() {
+			cpuUse = quantityOrDash(u.CPU)
+			memUse = quantityOrDash(u.Mem)
+		}
 		out = append(out, NamespaceListItem{
 			Name:         ns.Name,
 			Status:       string(ns.Status.Phase),
@@ -161,6 +179,14 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 			CPULimits:    quantityOrDash(sum.CPULimits),
 			MemRequests:  quantityOrDash(sum.MemRequests),
 			MemLimits:    quantityOrDash(sum.MemLimits),
+			CPUUsage:     cpuUse,
+			MemUsage:     memUse,
+			CPUCoresRequest: quantityToCoresApprox(sum.CPURequests),
+			CPUCoresLimit:   quantityToCoresApprox(sum.CPULimits),
+			CPUCoresUsage:   quantityToCoresApprox(u.CPU),
+			MemGiRequest:    quantityToGiApprox(sum.MemRequests),
+			MemGiLimit:      quantityToGiApprox(sum.MemLimits),
+			MemGiUsage:      quantityToGiApprox(u.Mem),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -197,6 +223,20 @@ type namespacePodSummary struct {
 	CPULimits   resource.Quantity
 	MemRequests resource.Quantity
 	MemLimits   resource.Quantity
+}
+
+func quantityToCoresApprox(q resource.Quantity) float64 {
+	if q.IsZero() {
+		return 0
+	}
+	return q.AsApproximateFloat64()
+}
+
+func quantityToGiApprox(q resource.Quantity) float64 {
+	if q.IsZero() {
+		return 0
+	}
+	return q.AsApproximateFloat64() / (1024 * 1024 * 1024)
 }
 
 func quantityOrDash(q resource.Quantity) string {

@@ -55,6 +55,11 @@ type NodeListItem struct {
 	MemLimits       string  `json:"mem_limits,omitempty"`
 	CPUUsagePercent float64 `json:"cpu_usage_percent,omitempty"`
 	MemUsagePercent float64 `json:"mem_usage_percent,omitempty"`
+
+	CPURequestPercent float64 `json:"cpu_request_percent,omitempty"`
+	CPULimitPercent   float64 `json:"cpu_limit_percent,omitempty"`
+	MemRequestPercent float64 `json:"mem_request_percent,omitempty"`
+	MemLimitPercent   float64 `json:"mem_limit_percent,omitempty"`
 }
 
 type NodeDetail struct {
@@ -245,11 +250,15 @@ func (s *K8sNodeService) List(ctx context.Context, query NodeListQuery) ([]NodeL
 			item.PodUsage = fmt.Sprintf("%d/-", item.PodCount)
 		}
 
+		allocCPU := n.Status.Allocatable[corev1.ResourceCPU]
+		allocMem := n.Status.Allocatable[corev1.ResourceMemory]
+		item.CPURequestPercent = quantityPercent(podReqCPUByNode[item.Name], allocCPU)
+		item.CPULimitPercent = quantityPercent(podLimCPUByNode[item.Name], allocCPU)
+		item.MemRequestPercent = quantityPercent(podReqMemByNode[item.Name], allocMem)
+		item.MemLimitPercent = quantityPercent(podLimMemByNode[item.Name], allocMem)
 		if m, ok := metricsByNode[item.Name]; ok {
 			item.CPUUsage = quantityOrDashNode(m.CPU)
 			item.MemUsage = quantityOrDashNode(m.Mem)
-			allocCPU := n.Status.Allocatable[corev1.ResourceCPU]
-			allocMem := n.Status.Allocatable[corev1.ResourceMemory]
 			item.CPUUsagePercent = quantityPercent(m.CPU, allocCPU)
 			item.MemUsagePercent = quantityPercent(m.Mem, allocMem)
 		} else {
@@ -394,6 +403,29 @@ func quantityPercent(usage, alloc resource.Quantity) float64 {
 	}
 	if p > 1000 {
 		// 极端异常时避免把 UI 撑爆
+		return 1000
+	}
+	return p
+}
+
+// quantityPercentScaled 将 usage 与「单副本资源量 × 副本规模」比较，用于 Deployment 等工作负载列表。
+func quantityPercentScaled(usage, perUnit resource.Quantity, scale int64) float64 {
+	if scale < 1 {
+		scale = 1
+	}
+	if usage.IsZero() || perUnit.IsZero() {
+		return 0
+	}
+	u := usage.AsApproximateFloat64()
+	d := perUnit.AsApproximateFloat64() * float64(scale)
+	if d <= 0 {
+		return 0
+	}
+	p := (u / d) * 100
+	if p < 0 {
+		return 0
+	}
+	if p > 1000 {
 		return 1000
 	}
 	return p

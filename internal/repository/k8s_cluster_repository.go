@@ -68,3 +68,16 @@ func (r *K8sClusterRepository) List(ctx context.Context, params K8sClusterListPa
 	}
 	return out, total, nil
 }
+
+// ListAllBrief 返回全部集群 id、名称（用于授权矩阵展示）。
+func (r *K8sClusterRepository) ListAllBrief(ctx context.Context) ([]model.K8sCluster, error) {
+	if r == nil || r.db == nil {
+		return nil, nil
+	}
+	var out []model.K8sCluster
+	err := r.db.WithContext(ctx).Model(&model.K8sCluster{}).Order("id ASC").Select("id", "name").Find(&out).Error
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}

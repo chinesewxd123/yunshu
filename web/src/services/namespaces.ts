@@ -11,6 +11,15 @@ export interface NamespaceItem {
   cpu_limits?: string;
   mem_requests?: string;
   mem_limits?: string;
+  cpu_usage?: string;
+  mem_usage?: string;
+  /** Request / Limit / 实时（核），与列表数值列一致 */
+  cpu_cores_request?: number;
+  cpu_cores_limit?: number;
+  cpu_cores_usage?: number;
+  mem_gi_request?: number;
+  mem_gi_limit?: number;
+  mem_gi_usage?: number;
 }
 
 export interface NamespaceDetail {

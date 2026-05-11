@@ -117,6 +117,24 @@ func (r *UserRepository) ListByIDs(ctx context.Context, ids []uint) ([]model.Use
 	return users, err
 }
 
+// ListUserIDsByRoleCode 返回绑定指定角色编码的用户 ID（用于集群授权矩阵展开）。
+func (r *UserRepository) ListUserIDsByRoleCode(ctx context.Context, roleCode string) ([]uint, error) {
+	roleCode = strings.TrimSpace(roleCode)
+	if roleCode == "" {
+		return nil, nil
+	}
+	var ids []uint
+	err := r.db.WithContext(ctx).Model(&model.User{}).
+		Joins("JOIN user_roles ur ON ur.user_id = users.id").
+		Joins("JOIN roles r ON r.id = ur.role_id AND r.code = ?", roleCode).
+		Distinct("users.id").
+		Pluck("users.id", &ids).Error
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 // ListActiveIDsByDepartmentIDs 返回部门 ID 列表下、状态为启用的用户 ID（精确匹配 department_id）。
 func (r *UserRepository) ListActiveIDsByDepartmentIDs(ctx context.Context, deptIDs []uint) ([]uint, error) {
 	if len(deptIDs) == 0 {

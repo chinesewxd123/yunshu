@@ -18,6 +18,7 @@ import {
 import { useRef, useState } from "react";
 import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
 import { useRelatedPodsDrawer } from "../components/k8s/related-pods-drawer";
+import { RealtimeUsageText, WorkloadCpuUsageBars, WorkloadMemUsageBars } from "../components/k8s/k8s-resource-usage-cells";
 import { useWorkloadFormActions } from "../components/k8s/workload-form-actions";
 import {
   ContainerCommonItems,
@@ -141,6 +142,24 @@ export function DaemonsetsPage() {
       dataIndex: "containers_text",
       width: 220,
       render: (v?: string) => <Typography.Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{v || "-"}</Typography.Text>,
+    },
+    {
+      title: "实时用量",
+      key: "usage_rt",
+      width: 130,
+      render: (_, r) => <RealtimeUsageText cpu={r.cpu_usage} mem={r.mem_usage} />,
+    },
+    {
+      title: "CPU 资源",
+      key: "cpu_bars",
+      width: 152,
+      render: (_, r) => <WorkloadCpuUsageBars row={r} />,
+    },
+    {
+      title: "内存资源",
+      key: "mem_bars",
+      width: 152,
+      render: (_, r) => <WorkloadMemUsageBars row={r} />,
     },
     {
       title: "当前状态",

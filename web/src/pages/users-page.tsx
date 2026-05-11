@@ -5,6 +5,7 @@ import {
   DeleteOutlined,
   UserSwitchOutlined,
   LockOutlined,
+  ClusterOutlined,
 } from "@ant-design/icons";
 import {
   Button,
@@ -23,6 +24,7 @@ import {
   Typography,
   message,
 } from "antd";
+import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { StatusTag } from "../components/status-tag";
 import { getDepartmentTree } from "../services/departments";
@@ -39,6 +41,7 @@ import {
   importUsers,
 } from "../services/users";
 import type { DepartmentItem, RoleItem, UserCreatePayload, UserItem, UserUpdatePayload } from "../types/api";
+import { listUserClusterAuth, type K8sUserClusterAuthRow } from "../services/k8s-policies";
 import { formatDateTime } from "../utils/format";
 import { buildRoleTreeData, normalizeCheckedKeys } from "../utils/tree";
 import { useDictOptions } from "../hooks/use-dict-options";
@@ -70,6 +73,10 @@ export function UsersPage() {
   const [resetPwdForm] = Form.useForm<{ password: string; confirm: string }>();
   const statusOptions = useDictOptions("common_status");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [k8sAuthOpen, setK8sAuthOpen] = useState(false);
+  const [k8sAuthTarget, setK8sAuthTarget] = useState<UserItem | null>(null);
+  const [k8sAuthRows, setK8sAuthRows] = useState<K8sUserClusterAuthRow[]>([]);
+  const [k8sAuthLoading, setK8sAuthLoading] = useState(false);
 
   const roleTreeData = useMemo(() => buildRoleTreeData(roles), [roles]);
   const roleIdSet = useMemo(() => new Set(roles.map((role) => role.id)), [roles]);
@@ -261,6 +268,44 @@ export function UsersPage() {
     }
   }
 
+  async function openK8sAuthClusters(record: UserItem) {
+    setK8sAuthTarget(record);
+    setK8sAuthOpen(true);
+    setK8sAuthLoading(true);
+    try {
+      const res = await listUserClusterAuth(record.id);
+      setK8sAuthRows(res.list ?? []);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "加载 K8s 授权失败");
+      setK8sAuthRows([]);
+    } finally {
+      setK8sAuthLoading(false);
+    }
+  }
+
+  const k8sAuthColumns: ColumnsType<K8sUserClusterAuthRow> = [
+    {
+      title: "集群",
+      dataIndex: "cluster_name",
+      width: 220,
+      render: (v: string, r: K8sUserClusterAuthRow) => (
+        <Space direction="vertical" size={0}>
+          <Typography.Text>{v}</Typography.Text>
+          {r.grant_scope_all ? <Tag color="blue">全部集群</Tag> : null}
+        </Space>
+      ),
+    },
+    { title: "档位", dataIndex: "preset_label", width: 130 },
+    {
+      title: "限制命名空间",
+      dataIndex: "allow_namespaces",
+      ellipsis: true,
+      render: (v: string) =>
+        v ? <Typography.Text ellipsis={{ tooltip: v }}>{v}</Typography.Text> : <span className="inline-muted">未配置白名单</span>,
+    },
+    { title: "来源", dataIndex: "via", width: 200, ellipsis: true },
+  ];
+
   async function handleDownloadTemplate() {
     try {
       const blob = await downloadUsersImportTemplate();
@@ -351,11 +396,14 @@ export function UsersPage() {
             {
               title: "操作",
               key: "action",
-              width: 280,
+              width: 340,
               render: (_: unknown, record: UserItem) => (
                 <Space size={4}>
                   <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
                     详情
+                  </Button>
+                  <Button type="link" size="small" icon={<ClusterOutlined />} onClick={() => void openK8sAuthClusters(record)}>
+                    授权集群
                   </Button>
                   {isSuperAdmin && currentUser && record.id !== currentUser.id ? (
                     <Button type="link" size="small" icon={<LockOutlined />} onClick={() => openResetPassword(record)}>
@@ -552,6 +600,31 @@ export function UsersPage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <Drawer
+        title={k8sAuthTarget ? `K8s 已授权集群 — ${k8sAuthTarget.username}` : "K8s 已授权集群"}
+        open={k8sAuthOpen}
+        onClose={() => {
+          setK8sAuthOpen(false);
+          setK8sAuthTarget(null);
+          setK8sAuthRows([]);
+        }}
+        width={900}
+        destroyOnClose
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          汇总用户直授、责任域角色、用户组在「集群档位」表中的授权；命名空间白名单来自 k8s_namespace_allow_rules。撤销请至「K8s 集群策略」或集群列表「已授权」中操作。
+        </Typography.Paragraph>
+        <Table<K8sUserClusterAuthRow>
+          rowKey="row_key"
+          size="small"
+          loading={k8sAuthLoading}
+          dataSource={k8sAuthRows}
+          columns={k8sAuthColumns}
+          scroll={{ x: 720 }}
+          pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条` }}
+        />
+      </Drawer>
     </div>
   );
 }

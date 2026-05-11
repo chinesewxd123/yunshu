@@ -68,3 +68,51 @@ export function grantK8sScopedPoliciesPreset(payload: K8sScopedPolicyGrantPreset
 export function deleteK8sClusterGrant(id: number) {
   return getData<{ message: string }>(http.delete(`/k8s-policies/cluster-grants/${id}`));
 }
+
+/** 集群管理：某集群下已授权用户（角色/组按成员展开） */
+export type K8sAuthMatrixRow = {
+  row_key: string;
+  grant_id: number;
+  username: string;
+  nickname?: string;
+  principal_kind: string;
+  principal_ref: string;
+  principal_show: string;
+  cluster_id: number;
+  cluster_name: string;
+  grant_scope_all: boolean;
+  preset: string;
+  preset_label: string;
+  allow_namespaces: string;
+  via: string;
+};
+
+/** 用户管理：某用户已授权集群汇总 */
+export type K8sUserClusterAuthRow = {
+  row_key: string;
+  grant_id: number;
+  username: string;
+  cluster_id: number;
+  cluster_name: string;
+  grant_scope_all: boolean;
+  preset: string;
+  preset_label: string;
+  allow_namespaces: string;
+  via: string;
+};
+
+export function listClusterAuthMatrix(clusterId: number) {
+  return getData<{ list: K8sAuthMatrixRow[] }>(
+    http.get("/k8s-policies/cluster-auth-matrix", { params: { cluster_id: String(clusterId) } }),
+  );
+}
+
+export function listUserClusterAuth(userId: number) {
+  return getData<{ list: K8sUserClusterAuthRow[] }>(
+    http.get("/k8s-policies/user-cluster-auth", { params: { user_id: String(userId) } }),
+  );
+}
+
+export function batchDeleteK8sClusterGrants(ids: number[]) {
+  return getData<{ deleted: number }>(http.post("/k8s-policies/cluster-grants/batch-delete", { ids }));
+}

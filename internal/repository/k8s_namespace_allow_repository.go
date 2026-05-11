@@ -97,6 +97,30 @@ func (r *K8sNamespaceAllowRepository) WhitelistUnionNamespaces(ctx context.Conte
 	return names, nil
 }
 
+// DistinctNamespacesForPrincipalCluster 某主体在指定集群上的命名空间白名单（含 cluster_id=0 通配规则）。
+func (r *K8sNamespaceAllowRepository) DistinctNamespacesForPrincipalCluster(ctx context.Context, principalKind, principalRef string, clusterID uint) ([]string, error) {
+	if r == nil || r.db == nil {
+		return nil, nil
+	}
+	k := strings.TrimSpace(principalKind)
+	ref := strings.TrimSpace(principalRef)
+	if k == "" || ref == "" {
+		return nil, nil
+	}
+	q := r.db.WithContext(ctx).Model(&model.K8sNamespaceAllowRule{}).
+		Where("principal_kind = ? AND principal_ref = ?", k, ref)
+	if clusterID > 0 {
+		q = q.Where("cluster_id = ? OR cluster_id = 0", clusterID)
+	} else {
+		q = q.Where("cluster_id = 0")
+	}
+	var names []string
+	if err := q.Distinct("namespace").Order("namespace ASC").Pluck("namespace", &names).Error; err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
 func (r *K8sNamespaceAllowRepository) List(ctx context.Context, principalKind, principalRef string, clusterID uint) ([]model.K8sNamespaceAllowRule, error) {
 	if r == nil || r.db == nil {
 		return nil, nil

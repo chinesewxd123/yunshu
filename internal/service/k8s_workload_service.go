@@ -48,6 +48,12 @@ type WorkloadItem struct {
 	ResourceText   string            `json:"resource_text,omitempty"`
 	ContainersText string            `json:"containers_text,omitempty"`
 	ConditionsText string            `json:"conditions_text,omitempty"`
+	CPUUsage       string            `json:"cpu_usage,omitempty"`
+	MemUsage       string            `json:"mem_usage,omitempty"`
+	CPUPctRequest  float64           `json:"cpu_pct_request,omitempty"`
+	CPUPctLimit    float64           `json:"cpu_pct_limit,omitempty"`
+	MemPctRequest  float64           `json:"mem_pct_request,omitempty"`
+	MemPctLimit    float64           `json:"mem_pct_limit,omitempty"`
 	Labels         map[string]string `json:"labels,omitempty"`
 	Annotations    map[string]string `json:"annotations,omitempty"`
 	Active         string            `json:"active,omitempty"`
@@ -72,6 +78,12 @@ type CronJobItem struct {
 	LastScheduleTime   string            `json:"last_schedule_time,omitempty"`
 	LastSuccessfulTime string            `json:"last_successful_time,omitempty"`
 	ActiveCount        string            `json:"active_count,omitempty"`
+	CPUUsage           string            `json:"cpu_usage,omitempty"`
+	MemUsage           string            `json:"mem_usage,omitempty"`
+	CPUPctRequest      float64           `json:"cpu_pct_request,omitempty"`
+	CPUPctLimit        float64           `json:"cpu_pct_limit,omitempty"`
+	MemPctRequest      float64           `json:"mem_pct_request,omitempty"`
+	MemPctLimit        float64           `json:"mem_pct_limit,omitempty"`
 	Age                string            `json:"age,omitempty"`
 	CreationTime       string            `json:"creation_time"`
 }
@@ -111,6 +123,7 @@ func (s *K8sWorkloadService) ListDeployments(ctx context.Context, q NamespacedLi
 		list = append(list, d)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
+	deployUsage := aggregateDeploymentPodUsage(ctx, k, s.dyn, q.Namespace)
 	out := make([]WorkloadItem, 0, len(list))
 	for _, d := range list {
 		if kw != "" && !strings.Contains(strings.ToLower(d.Name), kw) {
@@ -124,6 +137,11 @@ func (s *K8sWorkloadService) ListDeployments(ctx context.Context, q NamespacedLi
 		if d.Status.Replicas > 0 {
 			readyPercent = int((float64(d.Status.ReadyReplicas) / float64(d.Status.Replicas)) * 100)
 		}
+		scale := int64(d.Status.Replicas)
+		if scale < 1 {
+			scale = 1
+		}
+		cpuUse, memUse, cr, cl, mr, ml := workloadUsagePercents(deployUsage[d.Name], d.Spec.Template.Spec, scale)
 		out = append(out, WorkloadItem{
 			Name:           d.Name,
 			Namespace:      d.Namespace,
@@ -135,6 +153,12 @@ func (s *K8sWorkloadService) ListDeployments(ctx context.Context, q NamespacedLi
 			ResourceText:   deploymentResourceSummary(d),
 			ContainersText: deploymentContainersSummary(d),
 			ConditionsText: deploymentConditionsSummary(d),
+			CPUUsage:       cpuUse,
+			MemUsage:       memUse,
+			CPUPctRequest:  cr,
+			CPUPctLimit:    cl,
+			MemPctRequest:  mr,
+			MemPctLimit:    ml,
 			Labels:         d.Labels,
 			Annotations:    d.Annotations,
 			CreationTime:   d.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
@@ -205,26 +229,39 @@ func deploymentConditionsSummary(d appsv1.Deployment) string {
 	return strings.Join(out, ", ")
 }
 
-func podTemplateResourceSummary(spec corev1.PodSpec) string {
-	cpuReq := *resource.NewQuantity(0, resource.DecimalSI)
-	cpuLim := *resource.NewQuantity(0, resource.DecimalSI)
-	memReq := *resource.NewQuantity(0, resource.BinarySI)
-	memLim := *resource.NewQuantity(0, resource.BinarySI)
+func podTemplateResourceTotals(spec corev1.PodSpec) (reqCPU, reqMem, limCPU, limMem resource.Quantity) {
 	for _, c := range spec.Containers {
-		if q, ok := c.Resources.Requests[corev1.ResourceCPU]; ok {
-			cpuReq.Add(q)
+		if c.Resources.Requests != nil {
+			reqCPU.Add(c.Resources.Requests[corev1.ResourceCPU])
+			reqMem.Add(c.Resources.Requests[corev1.ResourceMemory])
 		}
-		if q, ok := c.Resources.Limits[corev1.ResourceCPU]; ok {
-			cpuLim.Add(q)
-		}
-		if q, ok := c.Resources.Requests[corev1.ResourceMemory]; ok {
-			memReq.Add(q)
-		}
-		if q, ok := c.Resources.Limits[corev1.ResourceMemory]; ok {
-			memLim.Add(q)
+		if c.Resources.Limits != nil {
+			limCPU.Add(c.Resources.Limits[corev1.ResourceCPU])
+			limMem.Add(c.Resources.Limits[corev1.ResourceMemory])
 		}
 	}
-	return fmt.Sprintf("CPU: %s / %s\n内存: %s / %s", quantityOrDash(cpuReq), quantityOrDash(cpuLim), quantityOrDash(memReq), quantityOrDash(memLim))
+	return reqCPU, reqMem, limCPU, limMem
+}
+
+func podTemplateResourceSummary(spec corev1.PodSpec) string {
+	reqCPU, reqMem, limCPU, limMem := podTemplateResourceTotals(spec)
+	return fmt.Sprintf("CPU: %s / %s\n内存: %s / %s", quantityOrDash(reqCPU), quantityOrDash(limCPU), quantityOrDash(reqMem), quantityOrDash(limMem))
+}
+
+func workloadUsagePercents(u podCPUMemUsage, spec corev1.PodSpec, scale int64) (cpuUse, memUse string, cpuReqPct, cpuLimPct, memReqPct, memLimPct float64) {
+	reqCPU, reqMem, limCPU, limMem := podTemplateResourceTotals(spec)
+	if !u.CPU.IsZero() || !u.Mem.IsZero() {
+		cpuUse = quantityOrDash(u.CPU)
+		memUse = quantityOrDash(u.Mem)
+	} else {
+		cpuUse = "-"
+		memUse = "-"
+	}
+	cpuReqPct = quantityPercentScaled(u.CPU, reqCPU, scale)
+	cpuLimPct = quantityPercentScaled(u.CPU, limCPU, scale)
+	memReqPct = quantityPercentScaled(u.Mem, reqMem, scale)
+	memLimPct = quantityPercentScaled(u.Mem, limMem, scale)
+	return cpuUse, memUse, cpuReqPct, cpuLimPct, memReqPct, memLimPct
 }
 
 func podTemplateContainersSummary(spec corev1.PodSpec) string {
@@ -368,6 +405,7 @@ func (s *K8sWorkloadService) ListStatefulSets(ctx context.Context, q NamespacedL
 		list = append(list, st)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
+	stsUsage := aggregateStatefulSetPodUsage(ctx, k, s.dyn, q.Namespace)
 	out := make([]WorkloadItem, 0, len(list))
 	for _, st := range list {
 		if kw != "" && !strings.Contains(strings.ToLower(st.Name), kw) {
@@ -379,6 +417,11 @@ func (s *K8sWorkloadService) ListStatefulSets(ctx context.Context, q NamespacedL
 		if st.Status.Replicas > 0 {
 			readyPercent = int((float64(st.Status.ReadyReplicas) / float64(st.Status.Replicas)) * 100)
 		}
+		scale := int64(st.Status.Replicas)
+		if scale < 1 {
+			scale = 1
+		}
+		cpuUse, memUse, cr, cl, mr, ml := workloadUsagePercents(stsUsage[st.Name], st.Spec.Template.Spec, scale)
 		out = append(out, WorkloadItem{
 			Name:           st.Name,
 			Namespace:      st.Namespace,
@@ -390,6 +433,12 @@ func (s *K8sWorkloadService) ListStatefulSets(ctx context.Context, q NamespacedL
 			ResourceText:   podTemplateResourceSummary(st.Spec.Template.Spec),
 			ContainersText: podTemplateContainersSummary(st.Spec.Template.Spec),
 			ConditionsText: statefulSetConditionsSummary(st),
+			CPUUsage:       cpuUse,
+			MemUsage:       memUse,
+			CPUPctRequest:  cr,
+			CPUPctLimit:    cl,
+			MemPctRequest:  mr,
+			MemPctLimit:    ml,
 			Labels:         st.Labels,
 			Annotations:    st.Annotations,
 			CreationTime:   st.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
@@ -699,6 +748,7 @@ func (s *K8sWorkloadService) ListDaemonSets(ctx context.Context, q NamespacedLis
 		list = append(list, ds)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
+	dsUsage := aggregateDaemonSetPodUsage(ctx, k, s.dyn, q.Namespace)
 	out := make([]WorkloadItem, 0, len(list))
 	for _, ds := range list {
 		if kw != "" && !strings.Contains(strings.ToLower(ds.Name), kw) {
@@ -709,6 +759,11 @@ func (s *K8sWorkloadService) ListDaemonSets(ctx context.Context, q NamespacedLis
 		if ds.Status.DesiredNumberScheduled > 0 {
 			readyPercent = int((float64(ds.Status.NumberReady) / float64(ds.Status.DesiredNumberScheduled)) * 100)
 		}
+		scale := int64(ds.Status.CurrentNumberScheduled)
+		if scale < 1 {
+			scale = 1
+		}
+		cpuUse, memUse, cr, cl, mr, ml := workloadUsagePercents(dsUsage[ds.Name], ds.Spec.Template.Spec, scale)
 		out = append(out, WorkloadItem{
 			Name:           ds.Name,
 			Namespace:      ds.Namespace,
@@ -720,6 +775,12 @@ func (s *K8sWorkloadService) ListDaemonSets(ctx context.Context, q NamespacedLis
 			ResourceText:   podTemplateResourceSummary(ds.Spec.Template.Spec),
 			ContainersText: podTemplateContainersSummary(ds.Spec.Template.Spec),
 			ConditionsText: daemonSetConditionsSummary(ds),
+			CPUUsage:       cpuUse,
+			MemUsage:       memUse,
+			CPUPctRequest:  cr,
+			CPUPctLimit:    cl,
+			MemPctRequest:  mr,
+			MemPctLimit:    ml,
 			Labels:         ds.Labels,
 			Annotations:    ds.Annotations,
 			CreationTime:   ds.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
@@ -795,6 +856,7 @@ func (s *K8sWorkloadService) ListJobs(ctx context.Context, q NamespacedListQuery
 		list = append(list, j)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
+	jobUsage := aggregateJobPodUsage(ctx, k, s.dyn, q.Namespace)
 	out := make([]WorkloadItem, 0, len(list))
 	for _, j := range list {
 		if kw != "" && !strings.Contains(strings.ToLower(j.Name), kw) {
@@ -815,6 +877,12 @@ func (s *K8sWorkloadService) ListJobs(ctx context.Context, q NamespacedListQuery
 			completion = j.Status.CompletionTime.Time.Format("2006-01-02 15:04:05")
 		}
 
+		scale := int64(j.Status.Active)
+		if scale < 1 {
+			scale = 1
+		}
+		cpuUse, memUse, cr, cl, mr, ml := workloadUsagePercents(jobUsage[j.Name], j.Spec.Template.Spec, scale)
+
 		out = append(out, WorkloadItem{
 			Name:      j.Name,
 			Namespace: j.Namespace,
@@ -832,6 +900,12 @@ func (s *K8sWorkloadService) ListJobs(ctx context.Context, q NamespacedListQuery
 			ResourceText:   podTemplateResourceSummary(j.Spec.Template.Spec),
 			ContainersText: podTemplateContainersSummary(j.Spec.Template.Spec),
 			ConditionsText: jobConditionsSummary(j),
+			CPUUsage:       cpuUse,
+			MemUsage:       memUse,
+			CPUPctRequest:  cr,
+			CPUPctLimit:    cl,
+			MemPctRequest:  mr,
+			MemPctLimit:    ml,
 			Labels:         j.Labels,
 			Annotations:    j.Annotations,
 			Active:         active,
@@ -942,6 +1016,7 @@ func (s *K8sWorkloadService) ListCronJobsV2(ctx context.Context, q NamespacedLis
 		list = append(list, cj)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
+	cjUsage := aggregateCronJobPodUsage(ctx, k, s.dyn, q.Namespace)
 	out := make([]CronJobItem, 0, len(list))
 	for _, cj := range list {
 		if kw != "" && !strings.Contains(strings.ToLower(cj.Name), kw) {
@@ -962,6 +1037,12 @@ func (s *K8sWorkloadService) ListCronJobsV2(ctx context.Context, q NamespacedLis
 		}
 
 		activeCount := fmt.Sprintf("%d", len(cj.Status.Active))
+		scale := int64(len(cj.Status.Active))
+		if scale < 1 {
+			scale = 1
+		}
+		tpl := cj.Spec.JobTemplate.Spec.Template.Spec
+		cpuUse, memUse, cr, cl, mr, ml := workloadUsagePercents(cjUsage[cj.Name], tpl, scale)
 
 		out = append(out, CronJobItem{
 			Name:               cj.Name,
@@ -969,14 +1050,20 @@ func (s *K8sWorkloadService) ListCronJobsV2(ctx context.Context, q NamespacedLis
 			Schedule:           cj.Spec.Schedule,
 			Suspend:            suspend,
 			ReadyPercent:       100,
-			ResourceText:       podTemplateResourceSummary(cj.Spec.JobTemplate.Spec.Template.Spec),
-			ContainersText:     podTemplateContainersSummary(cj.Spec.JobTemplate.Spec.Template.Spec),
+			ResourceText:       podTemplateResourceSummary(tpl),
+			ContainersText:     podTemplateContainersSummary(tpl),
 			ConditionsText:     "-",
 			Labels:             cj.Labels,
 			Annotations:        cj.Annotations,
 			LastScheduleTime:   last,
 			LastSuccessfulTime: lastSuccess,
 			ActiveCount:        activeCount,
+			CPUUsage:           cpuUse,
+			MemUsage:           memUse,
+			CPUPctRequest:      cr,
+			CPUPctLimit:        cl,
+			MemPctRequest:      mr,
+			MemPctLimit:        ml,
 			CreationTime:       cj.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
 			Age:                k8sutil.HumanAge(cj.CreationTimestamp.Time),
 		})

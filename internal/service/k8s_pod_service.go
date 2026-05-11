@@ -111,6 +111,20 @@ type PodItem struct {
 	RestartCount int32     `json:"restart_count"`
 	Images       []string  `json:"images"`
 	StartTime    time.Time `json:"start_time"`
+
+	HostNetwork     bool    `json:"host_network"`
+	ContainersText  string  `json:"containers_text,omitempty"`
+	ResourceText    string  `json:"resource_text,omitempty"`
+	CPUUsage        string  `json:"cpu_usage,omitempty"`
+	MemUsage        string  `json:"mem_usage,omitempty"`
+	CPUPctRequest   float64 `json:"cpu_pct_request,omitempty"`
+	CPUPctLimit     float64 `json:"cpu_pct_limit,omitempty"`
+	CPUPctNodeAlloc float64 `json:"cpu_pct_node_alloc,omitempty"`
+	MemPctRequest   float64 `json:"mem_pct_request,omitempty"`
+	MemPctLimit     float64 `json:"mem_pct_limit,omitempty"`
+	MemPctNodeAlloc float64 `json:"mem_pct_node_alloc,omitempty"`
+	LabelCount      int     `json:"label_count,omitempty"`
+	AnnotationCount int     `json:"annotation_count,omitempty"`
 }
 
 type PodContainerInfo struct {
@@ -156,11 +170,12 @@ type PodEventItem struct {
 
 type K8sPodService struct {
 	runtime *K8sRuntimeService
+	dyn     *DynamicResourceService
 }
 
 // NewK8sPodService 创建相关逻辑。
 func NewK8sPodService(runtime *K8sRuntimeService) *K8sPodService {
-	return &K8sPodService{runtime: runtime}
+	return &K8sPodService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
 }
 
 // List 查询列表相关的业务逻辑。
@@ -177,10 +192,23 @@ func (s *K8sPodService) List(ctx context.Context, query PodListQuery) ([]PodItem
 	if err := k.Resource(&corev1.Pod{}).Namespace(ns).List(&pods).Error; err != nil {
 		return nil, err
 	}
+	usageByName := listPodCPUMemUsageByNamespace(ctx, s.dyn, k, ns)
+	nodeAlloc := map[string]nodeAllocResources{}
+	{
+		var nodes []corev1.Node
+		if e := k.WithContext(ctx).Resource(&corev1.Node{}).List(&nodes).Error; e == nil {
+			for _, n := range nodes {
+				nodeAlloc[n.Name] = nodeAllocResources{
+					CPU: n.Status.Allocatable[corev1.ResourceCPU],
+					Mem: n.Status.Allocatable[corev1.ResourceMemory],
+				}
+			}
+		}
+	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]PodItem, 0, len(pods))
 	for _, p := range pods {
-		item := mapPodItem(p)
+		item := mapPodItem(p, usageByName[p.Name], nodeAlloc[p.Spec.NodeName])
 		if kw != "" {
 			if !strings.Contains(strings.ToLower(item.Name), kw) && !strings.Contains(strings.ToLower(item.NodeName), kw) {
 				continue
@@ -191,7 +219,7 @@ func (s *K8sPodService) List(ctx context.Context, query PodListQuery) ([]PodItem
 	return out, nil
 }
 
-func mapPodItem(p corev1.Pod) PodItem {
+func mapPodItem(p corev1.Pod, usage podCPUMemUsage, alloc nodeAllocResources) PodItem {
 	var restart int32
 	images := make([]string, 0, len(p.Spec.Containers))
 	for _, c := range p.Spec.Containers {
@@ -209,19 +237,39 @@ func mapPodItem(p corev1.Pod) PodItem {
 	if p.Status.StartTime != nil {
 		startTime = p.Status.StartTime.Time
 	}
-	return PodItem{
-		Name:         p.Name,
-		Namespace:    p.Namespace,
-		Phase:        string(p.Status.Phase),
-		NodeName:     p.Spec.NodeName,
-		Ready:        ready,
-		PodIP:        p.Status.PodIP,
-		HostIP:       p.Status.HostIP,
-		QOSClass:     string(p.Status.QOSClass),
-		RestartCount: restart,
-		Images:       images,
-		StartTime:    startTime,
+	reqCPU, reqMem, limCPU, limMem := podResourceTotals(p)
+	item := PodItem{
+		Name:            p.Name,
+		Namespace:       p.Namespace,
+		Phase:           string(p.Status.Phase),
+		NodeName:        p.Spec.NodeName,
+		Ready:           ready,
+		PodIP:           p.Status.PodIP,
+		HostIP:          p.Status.HostIP,
+		QOSClass:        string(p.Status.QOSClass),
+		RestartCount:    restart,
+		Images:          images,
+		StartTime:       startTime,
+		HostNetwork:     p.Spec.HostNetwork,
+		ContainersText:  podContainersResourceText(p),
+		ResourceText:    podAggregatedResourceText(reqCPU, reqMem, limCPU, limMem),
+		LabelCount:      len(p.Labels),
+		AnnotationCount: len(p.Annotations),
 	}
+	if !usage.CPU.IsZero() || !usage.Mem.IsZero() {
+		item.CPUUsage = quantityOrDash(usage.CPU)
+		item.MemUsage = quantityOrDash(usage.Mem)
+	} else {
+		item.CPUUsage = "-"
+		item.MemUsage = "-"
+	}
+	item.CPUPctRequest = quantityPercent(usage.CPU, reqCPU)
+	item.CPUPctLimit = quantityPercent(usage.CPU, limCPU)
+	item.CPUPctNodeAlloc = quantityPercent(usage.CPU, alloc.CPU)
+	item.MemPctRequest = quantityPercent(usage.Mem, reqMem)
+	item.MemPctLimit = quantityPercent(usage.Mem, limMem)
+	item.MemPctNodeAlloc = quantityPercent(usage.Mem, alloc.Mem)
+	return item
 }
 
 // Detail 查询详情相关的业务逻辑。

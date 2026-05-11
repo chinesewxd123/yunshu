@@ -32,6 +32,22 @@ func (r *K8sClusterAccessRepository) Upsert(ctx context.Context, it *model.K8sCl
 }
 
 // ListByPrincipal 列出某主体全部集群档位。
+// ListGrantsApplyingToCluster 列出对该集群生效的档位（含 cluster_id=0 的全局授权）。
+func (r *K8sClusterAccessRepository) ListGrantsApplyingToCluster(ctx context.Context, clusterID uint) ([]model.K8sClusterAccessGrant, error) {
+	if r == nil || r.db == nil || clusterID == 0 {
+		return []model.K8sClusterAccessGrant{}, nil
+	}
+	var list []model.K8sClusterAccessGrant
+	err := r.db.WithContext(ctx).Model(&model.K8sClusterAccessGrant{}).
+		Where("cluster_id = ? OR cluster_id = 0", clusterID).
+		Order("principal_kind ASC, principal_ref ASC, cluster_id ASC, id ASC").
+		Find(&list).Error
+	if err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 func (r *K8sClusterAccessRepository) ListByPrincipal(ctx context.Context, kind, ref string) ([]model.K8sClusterAccessGrant, error) {
 	if r == nil || r.db == nil {
 		return nil, nil
