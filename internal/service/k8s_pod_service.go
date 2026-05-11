@@ -251,16 +251,19 @@ func mapPodItem(p corev1.Pod, usage podCPUMemUsage, alloc nodeAllocResources) Po
 		Images:          images,
 		StartTime:       startTime,
 		HostNetwork:     p.Spec.HostNetwork,
-		ContainersText:  podContainersResourceText(p),
+		ContainersText:  podContainersImageText(p),
 		ResourceText:    podAggregatedResourceText(reqCPU, reqMem, limCPU, limMem),
 		LabelCount:      len(p.Labels),
 		AnnotationCount: len(p.Annotations),
 	}
-	if !usage.CPU.IsZero() || !usage.Mem.IsZero() {
-		item.CPUUsage = quantityOrDash(usage.CPU)
-		item.MemUsage = quantityOrDash(usage.Mem)
+	if !usage.CPU.IsZero() {
+		item.CPUUsage = formatQuantityCPUReadable(usage.CPU)
 	} else {
 		item.CPUUsage = "-"
+	}
+	if !usage.Mem.IsZero() {
+		item.MemUsage = formatQuantityMemReadable(usage.Mem)
+	} else {
 		item.MemUsage = "-"
 	}
 	item.CPUPctRequest = quantityPercent(usage.CPU, reqCPU)

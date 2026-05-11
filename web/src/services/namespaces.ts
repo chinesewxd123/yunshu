@@ -20,6 +20,8 @@ export interface NamespaceItem {
   mem_gi_request?: number;
   mem_gi_limit?: number;
   mem_gi_usage?: number;
+  /** ResourceQuota 摘要（未创建则为空；LimitRange 见详情） */
+  resource_quota_summary?: string;
 }
 
 export interface NamespaceDetail {

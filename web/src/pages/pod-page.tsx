@@ -1,5 +1,6 @@
-import { CodeOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined, FolderOpenOutlined, PlusOutlined, ReloadOutlined, UndoOutlined, UploadOutlined } from "@ant-design/icons";
-import { Button, Card, Divider, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tabs, Tooltip, Typography, message } from "antd";
+import { CodeOutlined, DeleteOutlined, DownOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined, FolderOpenOutlined, PlusOutlined, ReloadOutlined, UndoOutlined, UploadOutlined } from "@ant-design/icons";
+import type { MenuProps } from "antd";
+import { Button, Card, Divider, Drawer, Dropdown, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tabs, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
@@ -828,33 +829,73 @@ export function PodPage() {
               {
                 title: "操作",
                 key: "action",
-                width: 280,
-                render: (_: unknown, record: PodItem) => (
-                  <Space>
-                    <Button type="link" icon={<EyeOutlined />} onClick={() => { void loadDetail(record); setDetailOpen(true); }}>
-                      详情
-                    </Button>
-                    <Button type="link" icon={<FileTextOutlined />} onClick={() => void handleViewLogs(record)}>日志</Button>
-                    <Button type="link" icon={<EditOutlined />} onClick={() => void openEditPod(record)}>高级编辑</Button>
-                    <Button
-                      type="link"
-                      icon={<FolderOpenOutlined />}
-                      onClick={() => {
+                width: 200,
+                fixed: "right",
+                render: (_: unknown, record: PodItem) => {
+                  const moreItems: MenuProps["items"] = [
+                    {
+                      key: "edit",
+                      icon: <EditOutlined />,
+                      label: "高级编辑",
+                      onClick: () => void openEditPod(record),
+                    },
+                    {
+                      key: "files",
+                      icon: <FolderOpenOutlined />,
+                      label: "文件",
+                      onClick: () => {
                         setSelected(record);
                         setFileOpen(true);
                         setFileContent("");
                         void loadFiles(record, "/");
-                      }}
-                    >
-                      文件
-                    </Button>
-                    <Button type="link" icon={<CodeOutlined />} onClick={() => { setSelected(record); setExecOpen(true); }}>Exec</Button>
-                    <Button type="link" icon={<UndoOutlined />} onClick={() => void handleRestartPod(record)}>重启</Button>
-                    <Popconfirm title="确认删除该 Pod 吗？" onConfirm={() => void handleDeletePod(record)}>
-                      <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
-                    </Popconfirm>
-                  </Space>
-                ),
+                      },
+                    },
+                    {
+                      key: "exec",
+                      icon: <CodeOutlined />,
+                      label: "Exec",
+                      onClick: () => {
+                        setSelected(record);
+                        setExecOpen(true);
+                      },
+                    },
+                    {
+                      key: "restart",
+                      icon: <UndoOutlined />,
+                      label: "重启",
+                      onClick: () => void handleRestartPod(record),
+                    },
+                    { type: "divider" },
+                    {
+                      key: "delete",
+                      danger: true,
+                      icon: <DeleteOutlined />,
+                      label: "删除",
+                      onClick: () => {
+                        Modal.confirm({
+                          title: "确认删除该 Pod 吗？",
+                          okType: "danger",
+                          onOk: () => handleDeletePod(record),
+                        });
+                      },
+                    },
+                  ];
+                  return (
+                    <Space size={0} wrap>
+                      <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => { void loadDetail(record); setDetailOpen(true); }}>
+                        详情
+                      </Button>
+                      <Button type="link" size="small" icon={<FileTextOutlined />} onClick={() => void handleViewLogs(record)}>
+                        日志
+                      </Button>
+                      <Dropdown menu={{ items: moreItems }} trigger={["click"]}>
+                        <Button type="link" size="small">
+                          更多 <DownOutlined />
+                        </Button>
+                      </Dropdown>
+                    </Space>
+                  );
+                },
               },
             ]}
       />

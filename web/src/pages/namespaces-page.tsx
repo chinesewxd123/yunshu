@@ -25,6 +25,7 @@ type Item = {
   mem_gi_request?: number;
   mem_gi_limit?: number;
   mem_gi_usage?: number;
+  resource_quota_summary?: string;
 };
 
 function fmtTripleCoreGi(a?: number, b?: number, c?: number): string {
@@ -95,12 +96,32 @@ export function NamespacesPage() {
       ),
     },
     {
-      title: "原始量",
-      key: "raw_res",
-      width: 200,
+      title: (
+        <Tooltip title="Pod 模板 request/limit 汇总（含 Init/Ephemeral 调度语义），与 ResourceQuota 无关">
+          <span>工作负载申请</span>
+        </Tooltip>
+      ),
+      key: "workload_res",
+      width: 168,
       render: (_, r) => (
         <Typography.Text style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
-          {`CPU ${r.cpu_requests || "-"} / ${r.cpu_limits || "-"}\nMEM ${r.mem_requests || "-"} / ${r.mem_limits || "-"}\n实时 ${r.cpu_usage || "-"} / ${r.mem_usage || "-"}`}
+          {`CPU ${r.cpu_requests || "-"} / ${r.cpu_limits || "-"}\nMEM ${r.mem_requests || "-"} / ${r.mem_limits || "-"}`}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: (
+        <Tooltip title="首行来自 ResourceQuota（未配置则为空）；LimitRange 仅在详情展示。实时依赖 metrics-server。">
+          <span>配额与实时</span>
+        </Tooltip>
+      ),
+      key: "quota_rt",
+      width: 220,
+      render: (_, r) => (
+        <Typography.Text style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
+          {r.resource_quota_summary
+            ? `${r.resource_quota_summary}\n实时 ${r.cpu_usage || "-"} / ${r.mem_usage || "-"}`
+            : `配额: 未配置 ResourceQuota\n实时 ${r.cpu_usage || "-"} / ${r.mem_usage || "-"}`}
         </Typography.Text>
       ),
     },

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
@@ -52,6 +53,8 @@ type NamespaceListItem struct {
 	MemGiRequest    float64 `json:"mem_gi_request"`
 	MemGiLimit      float64 `json:"mem_gi_limit"`
 	MemGiUsage      float64 `json:"mem_gi_usage"`
+	// ResourceQuota 摘要（与「工作负载 request 汇总」不同；未创建 ResourceQuota 时为空）
+	ResourceQuotaSummary string `json:"resource_quota_summary,omitempty"`
 }
 
 type NamespaceDetail struct {
@@ -125,22 +128,31 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 				}
 				sum := podSummary[ns]
 				sum.PodCount++
-				for _, c := range p.Spec.Containers {
-					if rq := c.Resources.Requests; rq != nil {
-						sum.CPURequests.Add(rq[corev1.ResourceCPU])
-						sum.MemRequests.Add(rq[corev1.ResourceMemory])
-					}
-					if lm := c.Resources.Limits; lm != nil {
-						sum.CPULimits.Add(lm[corev1.ResourceCPU])
-						sum.MemLimits.Add(lm[corev1.ResourceMemory])
-					}
-				}
+				rCPU, rMem, lCPU, lMem := podSpecResourceTotals(p.Spec)
+				sum.CPURequests.Add(rCPU)
+				sum.MemRequests.Add(rMem)
+				sum.CPULimits.Add(lCPU)
+				sum.MemLimits.Add(lMem)
 				podSummary[ns] = sum
 			}
 		}
 	}
 
 	nsUsage := aggregatePodMetricsUsageByNamespace(ctx, k)
+
+	rqByNS := map[string][]corev1.ResourceQuota{}
+	{
+		var rqs []corev1.ResourceQuota
+		if e := k.WithContext(ctx).Resource(&corev1.ResourceQuota{}).AllNamespace().List(&rqs).Error; e == nil {
+			for i := range rqs {
+				q := strings.TrimSpace(rqs[i].Namespace)
+				if q == "" {
+					continue
+				}
+				rqByNS[q] = append(rqByNS[q], rqs[i])
+			}
+		}
+	}
 
 	listU, err := s.dyn.ListByGVK(ctx, k, namespaceGVK, "")
 	if err != nil {
@@ -165,9 +177,10 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 		cpuUse := "-"
 		memUse := "-"
 		if !u.CPU.IsZero() || !u.Mem.IsZero() {
-			cpuUse = quantityOrDash(u.CPU)
-			memUse = quantityOrDash(u.Mem)
+			cpuUse = formatQuantityCPUReadable(u.CPU)
+			memUse = formatQuantityMemReadable(u.Mem)
 		}
+		quotaSum := summarizeResourceQuotasForList(rqByNS[ns.Name])
 		out = append(out, NamespaceListItem{
 			Name:         ns.Name,
 			Status:       string(ns.Status.Phase),
@@ -187,6 +200,7 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 			MemGiRequest:    quantityToGiApprox(sum.MemRequests),
 			MemGiLimit:      quantityToGiApprox(sum.MemLimits),
 			MemGiUsage:      quantityToGiApprox(u.Mem),
+			ResourceQuotaSummary: quotaSum,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -244,6 +258,116 @@ func quantityOrDash(q resource.Quantity) string {
 		return "-"
 	}
 	return q.String()
+}
+
+// formatQuantityCPUReadable 列表/摘要展示用（避免巨量毫核整数）。
+func formatQuantityCPUReadable(q resource.Quantity) string {
+	if q.IsZero() {
+		return "0"
+	}
+	m := q.MilliValue()
+	if m < 1000 || m%1000 != 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	c := float64(m) / 1000.0
+	if c == math.Trunc(c) {
+		return fmt.Sprintf("%.0f", c)
+	}
+	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.3f", c), "0"), ".")
+}
+
+// formatQuantityMemReadable 将内存用量格式化为 Ki/Mi/Gi。
+func formatQuantityMemReadable(q resource.Quantity) string {
+	if q.IsZero() {
+		return "0"
+	}
+	b := q.Value()
+	if b <= 0 {
+		return q.String()
+	}
+	const (
+		Ki int64 = 1024
+		Mi int64 = Ki * 1024
+		Gi int64 = Mi * 1024
+	)
+	switch {
+	case b >= Gi:
+		return fmt.Sprintf("%.2fGi", float64(b)/float64(Gi))
+	case b >= Mi:
+		return fmt.Sprintf("%.2fMi", float64(b)/float64(Mi))
+	case b >= Ki:
+		return fmt.Sprintf("%.2fKi", float64(b)/float64(Ki))
+	default:
+		return fmt.Sprintf("%dB", b)
+	}
+}
+
+func quotaPickCPUMem(hard, used corev1.ResourceList, wantCPU bool) (hardQ, usedQ resource.Quantity) {
+	cpuNames := []corev1.ResourceName{corev1.ResourceRequestsCPU, corev1.ResourceLimitsCPU, corev1.ResourceCPU}
+	memNames := []corev1.ResourceName{corev1.ResourceRequestsMemory, corev1.ResourceLimitsMemory, corev1.ResourceMemory}
+	names := memNames
+	if wantCPU {
+		names = cpuNames
+	}
+	for _, n := range names {
+		if v, ok := hard[n]; ok {
+			hardQ = v
+			break
+		}
+	}
+	for _, n := range names {
+		if v, ok := used[n]; ok {
+			usedQ = v
+			break
+		}
+	}
+	return hardQ, usedQ
+}
+
+func formatQuotaUsedHardLine(used, hard resource.Quantity, isCPU bool) string {
+	uStr, hStr := "-", "-"
+	if !used.IsZero() {
+		if isCPU {
+			uStr = formatQuantityCPUReadable(used)
+		} else {
+			uStr = formatQuantityMemReadable(used)
+		}
+	}
+	if !hard.IsZero() {
+		if isCPU {
+			hStr = formatQuantityCPUReadable(hard)
+		} else {
+			hStr = formatQuantityMemReadable(hard)
+		}
+	}
+	if uStr == "-" && hStr == "-" {
+		return "- / -"
+	}
+	return fmt.Sprintf("%s / %s", uStr, hStr)
+}
+
+// summarizeResourceQuotasForList 列表「配额」列：取字典序第一个 ResourceQuota 的 used/hard（多配额时提示见详情）。
+func summarizeResourceQuotasForList(rqs []corev1.ResourceQuota) string {
+	if len(rqs) == 0 {
+		return ""
+	}
+	rr := append([]corev1.ResourceQuota(nil), rqs...)
+	sort.Slice(rr, func(i, j int) bool { return rr[i].Name < rr[j].Name })
+	q := rr[0]
+	hard := q.Status.Hard
+	if len(hard) == 0 {
+		hard = q.Spec.Hard
+	}
+	used := q.Status.Used
+	cpuH, cpuU := quotaPickCPUMem(hard, used, true)
+	memH, memU := quotaPickCPUMem(hard, used, false)
+	var b strings.Builder
+	fmt.Fprintf(&b, "CPU: %s\n", formatQuotaUsedHardLine(cpuU, cpuH, true))
+	fmt.Fprintf(&b, "MEM: %s", formatQuotaUsedHardLine(memU, memH, false))
+	if len(rr) > 1 {
+		fmt.Fprintf(&b, "\n（另有 %d 个 ResourceQuota，见详情）", len(rr)-1)
+	}
+	return b.String()
 }
 
 // Detail 查询详情相关的业务逻辑。
@@ -308,9 +432,13 @@ func (s *K8sNamespaceService) listNamespaceQuotas(ctx context.Context, k *kom.Ku
 		for _, s := range q.Spec.Scopes {
 			scope = append(scope, string(s))
 		}
+		hardList := q.Status.Hard
+		if len(hardList) == 0 {
+			hardList = q.Spec.Hard
+		}
 		out = append(out, NamespaceQuotaItem{
 			Name:  q.Name,
-			Hard:  mapQuantityToString(q.Status.Hard),
+			Hard:  mapQuantityToString(hardList),
 			Used:  mapQuantityToString(q.Status.Used),
 			Scope: scope,
 		})

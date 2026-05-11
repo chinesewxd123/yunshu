@@ -1,4 +1,4 @@
-import { Progress, Typography } from "antd";
+import { Progress, Tooltip, Typography } from "antd";
 
 function barColor(pct: number): string {
   if (pct > 100) return "#dc2626";
@@ -41,13 +41,20 @@ export type WorkloadUsageMetricsRow = {
 
 /** Pod 列表：CPU 请求/上限/节点可分配 三维占比 */
 export function PodCpuUsageBars({ row }: { row: PodUsageMetricsRow }) {
-  return (
+  const hasRt = Boolean(row.cpu_usage && row.cpu_usage !== "-");
+  const reqZero = !row.cpu_pct_request || row.cpu_pct_request === 0;
+  const hint =
+    hasRt && reqZero
+      ? "已有实时 CPU 用量；未设置 requests 或 requests 极小时「请求用量占比」可能为 0"
+      : undefined;
+  const inner = (
     <div style={{ minWidth: 152 }}>
       <MiniUsageBar label="请求用量占比" pct={row.cpu_pct_request} />
       <MiniUsageBar label="上限用量占比" pct={row.cpu_pct_limit} />
       <MiniUsageBar label="实时占节点" pct={row.cpu_pct_node_alloc} />
     </div>
   );
+  return hint ? <Tooltip title={hint}>{inner}</Tooltip> : inner;
 }
 
 /** Pod 列表：内存 三维占比 */

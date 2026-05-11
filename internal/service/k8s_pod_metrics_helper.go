@@ -107,8 +107,16 @@ func aggregatePodMetricsUsageByNamespace(ctx context.Context, k *kom.Kubectl) ma
 	return out
 }
 
-func podResourceTotals(p corev1.Pod) (reqCPU, reqMem, limCPU, limMem resource.Quantity) {
-	for _, c := range p.Spec.Containers {
+func maxQty(a, b resource.Quantity) resource.Quantity {
+	if a.Cmp(b) >= 0 {
+		return a
+	}
+	return b
+}
+
+// podSpecResourceTotals 工作负载 request/limit：普通容器求和；Init 容器按调度语义取各资源**最大值**再累加；Ephemeral 求和。
+func podSpecResourceTotals(spec corev1.PodSpec) (reqCPU, reqMem, limCPU, limMem resource.Quantity) {
+	for _, c := range spec.Containers {
 		if c.Resources.Requests != nil {
 			reqCPU.Add(c.Resources.Requests[corev1.ResourceCPU])
 			reqMem.Add(c.Resources.Requests[corev1.ResourceMemory])
@@ -118,10 +126,40 @@ func podResourceTotals(p corev1.Pod) (reqCPU, reqMem, limCPU, limMem resource.Qu
 			limMem.Add(c.Resources.Limits[corev1.ResourceMemory])
 		}
 	}
+	var maxInitReqCPU, maxInitReqMem, maxInitLimCPU, maxInitLimMem resource.Quantity
+	for _, c := range spec.InitContainers {
+		if c.Resources.Requests != nil {
+			maxInitReqCPU = maxQty(maxInitReqCPU, c.Resources.Requests[corev1.ResourceCPU])
+			maxInitReqMem = maxQty(maxInitReqMem, c.Resources.Requests[corev1.ResourceMemory])
+		}
+		if c.Resources.Limits != nil {
+			maxInitLimCPU = maxQty(maxInitLimCPU, c.Resources.Limits[corev1.ResourceCPU])
+			maxInitLimMem = maxQty(maxInitLimMem, c.Resources.Limits[corev1.ResourceMemory])
+		}
+	}
+	reqCPU.Add(maxInitReqCPU)
+	reqMem.Add(maxInitReqMem)
+	limCPU.Add(maxInitLimCPU)
+	limMem.Add(maxInitLimMem)
+	for _, ec := range spec.EphemeralContainers {
+		if ec.Resources.Requests != nil {
+			reqCPU.Add(ec.Resources.Requests[corev1.ResourceCPU])
+			reqMem.Add(ec.Resources.Requests[corev1.ResourceMemory])
+		}
+		if ec.Resources.Limits != nil {
+			limCPU.Add(ec.Resources.Limits[corev1.ResourceCPU])
+			limMem.Add(ec.Resources.Limits[corev1.ResourceMemory])
+		}
+	}
 	return reqCPU, reqMem, limCPU, limMem
 }
 
-func podContainersResourceText(p corev1.Pod) string {
+func podResourceTotals(p corev1.Pod) (reqCPU, reqMem, limCPU, limMem resource.Quantity) {
+	return podSpecResourceTotals(p.Spec)
+}
+
+// podContainersImageText 列表「容器/镜像」列：仅名称与镜像（资源在 resource_text 单独列展示）。
+func podContainersImageText(p corev1.Pod) string {
 	if len(p.Spec.Containers) == 0 {
 		return "-"
 	}
@@ -131,24 +169,7 @@ func podContainersResourceText(p corev1.Pod) string {
 		if img == "" {
 			img = "-"
 		}
-		reqC, reqM, limC, limM := "-", "-", "-", "-"
-		if c.Resources.Requests != nil {
-			if q, ok := c.Resources.Requests[corev1.ResourceCPU]; ok && !q.IsZero() {
-				reqC = q.String()
-			}
-			if q, ok := c.Resources.Requests[corev1.ResourceMemory]; ok && !q.IsZero() {
-				reqM = q.String()
-			}
-		}
-		if c.Resources.Limits != nil {
-			if q, ok := c.Resources.Limits[corev1.ResourceCPU]; ok && !q.IsZero() {
-				limC = q.String()
-			}
-			if q, ok := c.Resources.Limits[corev1.ResourceMemory]; ok && !q.IsZero() {
-				limM = q.String()
-			}
-		}
-		fmt.Fprintf(&b, "%s => %s\n  CPU req/limit %s / %s  MEM req/limit %s / %s\n", c.Name, img, reqC, limC, reqM, limM)
+		fmt.Fprintf(&b, "%s => %s\n", c.Name, img)
 	}
 	return strings.TrimSpace(b.String())
 }
