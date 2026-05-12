@@ -6,6 +6,8 @@ import "strings"
 func IsK8sReadAPIPath(path string) bool {
 	p := strings.TrimSpace(path)
 	k8sPrefixes := []string{
+		"/api/v1/k8s-policies/cluster-auth-matrix",
+		"/api/v1/k8s-policies/user-cluster-auth",
 		"/api/v1/clusters",
 		"/api/v1/pods",
 		"/api/v1/namespaces",

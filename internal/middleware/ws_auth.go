@@ -60,12 +60,19 @@ func WSAuth(secret string, redisClient *redis.Client, userRepo *repository.UserR
 			return
 		}
 
+		groupCodes := make([]string, 0, len(user.Groups))
+		for _, g := range user.Groups {
+			if c := strings.TrimSpace(g.Code); c != "" {
+				groupCodes = append(groupCodes, c)
+			}
+		}
 		currentUser := &auth.CurrentUser{
-			ID:        user.ID,
-			Username:  user.Username,
-			Nickname:  user.Nickname,
-			Status:    user.Status,
-			RoleCodes: model.ExtractRoleCodes(user.Roles),
+			ID:         user.ID,
+			Username:   user.Username,
+			Nickname:   user.Nickname,
+			Status:     user.Status,
+			RoleCodes:  model.ExtractRoleCodes(user.Roles),
+			GroupCodes: groupCodes,
 		}
 
 		c.Set(auth.ContextClaimsKey, claims)

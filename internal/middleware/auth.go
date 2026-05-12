@@ -53,6 +53,12 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 			return
 		}
 
+		groupCodes := make([]string, 0, len(user.Groups))
+		for _, g := range user.Groups {
+			if c := strings.TrimSpace(g.Code); c != "" {
+				groupCodes = append(groupCodes, c)
+			}
+		}
 		currentUser := &auth.CurrentUser{
 			ID:           user.ID,
 			Username:     user.Username,
@@ -60,6 +66,7 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 			Status:       user.Status,
 			DepartmentID: user.DepartmentID,
 			RoleCodes:    model.ExtractRoleCodes(user.Roles),
+			GroupCodes:   groupCodes,
 		}
 
 		c.Set(auth.ContextClaimsKey, claims)

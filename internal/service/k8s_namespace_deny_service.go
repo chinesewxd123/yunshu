@@ -10,9 +10,10 @@ import (
 )
 
 type K8sNamespaceDenyCreateRequest struct {
-	RoleCode  string `json:"role_code" binding:"required"`
-	ClusterID uint   `json:"cluster_id" binding:"required"`
-	Namespace string `json:"namespace" binding:"required"`
+	PrincipalKind string `json:"principal_kind" binding:"required"`
+	PrincipalRef  string `json:"principal_ref" binding:"required"`
+	ClusterID     uint   `json:"cluster_id" binding:"required"`
+	Namespace     string `json:"namespace" binding:"required"`
 }
 
 type K8sNamespaceDenyService struct {
@@ -23,33 +24,35 @@ func NewK8sNamespaceDenyService(repo *repository.K8sNamespaceDenyRepository) *K8
 	return &K8sNamespaceDenyService{repo: repo}
 }
 
-func (s *K8sNamespaceDenyService) List(ctx context.Context, roleCode string, clusterID uint) ([]model.K8sNamespaceDenyRule, error) {
+func (s *K8sNamespaceDenyService) List(ctx context.Context, principalKind, principalRef string, clusterID uint) ([]model.K8sNamespaceDenyRule, error) {
 	if s.repo == nil {
 		return []model.K8sNamespaceDenyRule{}, nil
 	}
-	return s.repo.List(ctx, roleCode, clusterID)
+	return s.repo.List(ctx, principalKind, principalRef, clusterID)
 }
 
 func (s *K8sNamespaceDenyService) Create(ctx context.Context, req K8sNamespaceDenyCreateRequest) (*model.K8sNamespaceDenyRule, error) {
 	if s.repo == nil {
 		return nil, constants.ErrInternal
 	}
-	rc := strings.TrimSpace(req.RoleCode)
+	k := strings.TrimSpace(strings.ToLower(req.PrincipalKind))
+	ref := strings.TrimSpace(req.PrincipalRef)
 	ns := strings.TrimSpace(req.Namespace)
-	if rc == "" || ns == "" {
+	if k == "" || ref == "" || ns == "" {
 		return nil, constants.ErrInvalidRequestParam
 	}
 	if ns == "*" || ns == "_cluster" {
 		return nil, constants.ErrBadRequestWithMsg("禁止的命名空间不能为 * 或 _cluster")
 	}
 	it := &model.K8sNamespaceDenyRule{
-		RoleCode:  rc,
-		ClusterID: req.ClusterID,
-		Namespace: ns,
+		PrincipalKind: k,
+		PrincipalRef:  ref,
+		ClusterID:     req.ClusterID,
+		Namespace:     ns,
 	}
 	if err := s.repo.Create(ctx, it); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return nil, constants.ErrConflictWithMsg("该角色在此集群下对该命名空间的禁止规则已存在")
+			return nil, constants.ErrConflictWithMsg("该主体在此集群下对该命名空间的禁止规则已存在")
 		}
 		return nil, err
 	}

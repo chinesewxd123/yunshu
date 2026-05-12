@@ -11,6 +11,12 @@ export interface WorkloadItem {
   resource_text?: string;
   containers_text?: string;
   conditions_text?: string;
+  cpu_usage?: string;
+  mem_usage?: string;
+  cpu_pct_request?: number;
+  cpu_pct_limit?: number;
+  mem_pct_request?: number;
+  mem_pct_limit?: number;
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   active?: string;
@@ -62,6 +68,12 @@ export interface CronJobItemV2 {
   resource_text?: string;
   containers_text?: string;
   conditions_text?: string;
+  cpu_usage?: string;
+  mem_usage?: string;
+  cpu_pct_request?: number;
+  cpu_pct_limit?: number;
+  mem_pct_request?: number;
+  mem_pct_limit?: number;
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   last_schedule_time?: string;

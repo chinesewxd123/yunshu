@@ -150,7 +150,7 @@ export function RolesPage() {
           />
           <div className="toolbar__actions">
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-              新建模板
+              新建角色模板
             </Button>
             <Button icon={<ReloadOutlined />} onClick={() => void loadRoles()}>
               刷新

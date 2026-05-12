@@ -248,8 +248,18 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&model.ServiceLogSource{},
 		&model.LogAgent{},
 		&model.AgentDiscovery{},
+		&model.UserGroup{},
+		&model.UserGroupUser{},
 		&model.K8sNamespaceDenyRule{},
+		&model.K8sNamespaceAllowRule{},
+		&model.K8sClusterAccessGrant{},
 	); err != nil {
+		return err
+	}
+	if err := migrateK8sLegacyRoleCodeToPrincipal(db); err != nil {
+		return err
+	}
+	if err := migrateDropLegacyK8sCasbinPolicies(db); err != nil {
 		return err
 	}
 	if err := migrateNormalizeAlertEventStatus(db); err != nil {
@@ -264,5 +274,52 @@ func AutoMigrateModels(db *gorm.DB) error {
 	if err := migrateLogAgentsClearPlaceholderListenPort(db); err != nil {
 		return err
 	}
-	return dropLegacyUnusedTables(db)
+	if err := dropLegacyUnusedTables(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// migrateDropLegacyK8sCasbinPolicies 移除历史写入的 k8s:cluster:* Casbin 策略，集群权限改由 k8s_cluster_access_grants 表维护。
+func migrateDropLegacyK8sCasbinPolicies(db *gorm.DB) error {
+	if db == nil || !db.Migrator().HasTable("casbin_rule") {
+		return nil
+	}
+	return db.Exec("DELETE FROM casbin_rule WHERE ptype = 'p' AND v1 LIKE 'k8s:cluster%'").Error
+}
+
+// migrateK8sGrantLegacy 仅用于检测/删除历史 role_code 列（无业务引用）。
+type migrateK8sGrantLegacy struct {
+	RoleCode string `gorm:"column:role_code"`
+}
+
+func (migrateK8sGrantLegacy) TableName() string { return "k8s_cluster_access_grants" }
+
+type migrateK8sDenyLegacy struct {
+	RoleCode string `gorm:"column:role_code"`
+}
+
+func (migrateK8sDenyLegacy) TableName() string { return "k8s_namespace_deny_rules" }
+
+// migrateK8sLegacyRoleCodeToPrincipal 将历史 role_code 列回填为 principal_kind=role + principal_ref 后删除旧列（对齐 k8m 主体模型）。
+func migrateK8sLegacyRoleCodeToPrincipal(db *gorm.DB) error {
+	if db == nil {
+		return nil
+	}
+	var gProbe migrateK8sGrantLegacy
+	if db.Migrator().HasTable(&model.K8sClusterAccessGrant{}) && db.Migrator().HasColumn(&gProbe, "RoleCode") {
+		if err := db.Exec(`UPDATE k8s_cluster_access_grants SET principal_kind = ?, principal_ref = TRIM(role_code) WHERE TRIM(COALESCE(role_code,'')) <> ''`, model.K8sPrincipalRole).Error; err != nil {
+			return err
+		}
+		_ = db.Migrator().DropColumn(&gProbe, "RoleCode")
+	}
+
+	var dProbe migrateK8sDenyLegacy
+	if db.Migrator().HasTable(&model.K8sNamespaceDenyRule{}) && db.Migrator().HasColumn(&dProbe, "RoleCode") {
+		if err := db.Exec(`UPDATE k8s_namespace_deny_rules SET principal_kind = ?, principal_ref = TRIM(role_code) WHERE TRIM(COALESCE(role_code,'')) <> ''`, model.K8sPrincipalRole).Error; err != nil {
+			return err
+		}
+		_ = db.Migrator().DropColumn(&dProbe, "RoleCode")
+	}
+	return nil
 }

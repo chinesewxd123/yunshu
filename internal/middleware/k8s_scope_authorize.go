@@ -9,15 +9,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/pkg/auth"
+	"yunshu/internal/pkg/k8sauth"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/repository"
 	"yunshu/internal/service"
 
-	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"
 )
 
@@ -28,6 +29,7 @@ type k8sScopeCatalogCache struct {
 	loadedAt    time.Time
 	actionByKey map[string]string
 	scopedKeys  map[string]bool
+	perms       []model.Permission
 }
 
 func newK8sScopeCatalogCache(repo *repository.PermissionRepository) *k8sScopeCatalogCache {
@@ -61,6 +63,17 @@ func (c *k8sScopeCatalogCache) get(routePath, method string) (string, bool) {
 	return strings.TrimSpace(actionByKey[key]), true
 }
 
+func (c *k8sScopeCatalogCache) permissions() []model.Permission {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.perms == nil {
+		return nil
+	}
+	out := make([]model.Permission, len(c.perms))
+	copy(out, c.perms)
+	return out
+}
+
 func (c *k8sScopeCatalogCache) refresh() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -68,6 +81,7 @@ func (c *k8sScopeCatalogCache) refresh() {
 	if c.repo == nil {
 		c.actionByKey = map[string]string{}
 		c.scopedKeys = map[string]bool{}
+		c.perms = nil
 		c.loadedAt = time.Now()
 		return
 	}
@@ -78,19 +92,20 @@ func (c *k8sScopeCatalogCache) refresh() {
 	actionByKey, scopedKeys := service.BuildK8sScopeMappings(perms)
 	c.actionByKey = actionByKey
 	c.scopedKeys = scopedKeys
+	c.perms = perms
 	c.loadedAt = time.Now()
 }
 
 // K8sScopeAuthorize:
-// 1) 仅对纳入三元目录的 K8s 接口启用（来自 permissions 动态构建）
-// 2) 支持 cluster + namespace + action 三元权限
-// 3) 命名空间黑名单（对齐 k8m）：先于三元判定；含 super-admin，避免误操作生产命名空间
-// 4) 兼容旧权限：当未配置任何三元策略时默认放行（非 super-admin）
+// 1) 仅对纳入 K8s 范围目录的接口启用（permissions.k8s_scope_enabled 等）
+// 2) 集群/命名空间访问由 DB 表 k8s_cluster_access_grants 档位控制（不经 Casbin）
+// 3) 命名空间黑名单优先；白名单（若该集群对任一主体有允许规则）在黑名单之后判定；含 super-admin 仍受黑名单/白名单约束
 func K8sScopeAuthorize(
-	enforcer *casbin.SyncedEnforcer,
 	logger *logx.Logger,
 	permRepo *repository.PermissionRepository,
+	accessRepo *repository.K8sClusterAccessRepository,
 	nsDenyRepo *repository.K8sNamespaceDenyRepository,
+	nsAllowRepo *repository.K8sNamespaceAllowRepository,
 ) gin.HandlerFunc {
 	catalog := newK8sScopeCatalogCache(permRepo)
 	return func(c *gin.Context) {
@@ -99,7 +114,8 @@ func K8sScopeAuthorize(
 			routePath = c.Request.URL.Path
 		}
 		actionCode, tracked := catalog.get(routePath, c.Request.Method)
-		if !tracked {
+		forceTier := k8sScopeForceTierCheck(routePath, c.Request.Method)
+		if !tracked && !forceTier {
 			c.Next()
 			return
 		}
@@ -112,7 +128,11 @@ func K8sScopeAuthorize(
 
 		clusterID, namespace := extractClusterNamespaceFromRequest(c)
 		if clusterID == 0 {
-			// 无 cluster_id 的旧接口不拦截
+			if forceTier {
+				response.Error(c, constants.ErrBadRequestWithMsg("Pod Exec 须在请求中携带 cluster_id（及 namespace），以便集群档位校验"))
+				c.Abort()
+				return
+			}
 			c.Next()
 			return
 		}
@@ -120,9 +140,10 @@ func K8sScopeAuthorize(
 			namespace = "_cluster"
 		}
 
-		// 命名空间黑名单：对齐 k8m「黑名单优先」；含 super-admin，避免平台账号误入生产命名空间
+		pack := k8sauth.PackFromCurrentUser(user)
+
 		if nsDenyRepo != nil && namespace != "" && namespace != "_cluster" {
-			denied, err := nsDenyRepo.IsDenied(c.Request.Context(), user.RoleCodes, clusterID, namespace)
+			denied, err := nsDenyRepo.IsDenied(c.Request.Context(), pack, clusterID, namespace)
 			if err != nil {
 				logger.Error.Error("k8s namespace deny check failed", "error", err)
 				response.Error(c, constants.ErrInternal)
@@ -130,9 +151,33 @@ func K8sScopeAuthorize(
 				return
 			}
 			if denied {
-				response.Error(c, constants.ErrForbiddenWithMsg("当前角色在此集群下禁止访问命名空间「"+namespace+"」"))
+				response.Error(c, constants.ErrForbiddenWithMsg("当前主体在此集群下禁止访问命名空间「"+namespace+"」"))
 				c.Abort()
 				return
+			}
+		}
+
+		if nsAllowRepo != nil && clusterID > 0 && namespace != "" && namespace != "_cluster" {
+			active, err := nsAllowRepo.WhitelistActiveForCluster(c.Request.Context(), pack, clusterID)
+			if err != nil {
+				logger.Error.Error("k8s namespace allow check failed", "error", err)
+				response.Error(c, constants.ErrInternal)
+				c.Abort()
+				return
+			}
+			if active {
+				ok, err := nsAllowRepo.NamespaceAllowed(c.Request.Context(), pack, clusterID, namespace)
+				if err != nil {
+					logger.Error.Error("k8s namespace allow match failed", "error", err)
+					response.Error(c, constants.ErrInternal)
+					c.Abort()
+					return
+				}
+				if !ok {
+					response.Error(c, constants.ErrForbiddenWithMsg("当前主体在此集群下仅允许访问白名单内的命名空间"))
+					c.Abort()
+					return
+				}
 			}
 		}
 
@@ -143,50 +188,20 @@ func K8sScopeAuthorize(
 			}
 		}
 
-		path := routePath
-		method := c.Request.Method
-		actionCandidates := []string{}
-		if strings.TrimSpace(actionCode) != "" {
-			actionCandidates = append(actionCandidates, actionCode)
-		}
-		// 兼容旧策略：仍允许使用 HTTP method 作为 action
-		actionCandidates = append(actionCandidates, method)
-		subject := service.UserSubject(user.ID)
-
-		resources := []string{
-			buildK8sScopeResource(clusterID, namespace, path),
-			buildK8sScopeResource(clusterID, "*", path),
-			buildK8sScopeResource(0, namespace, path),
-			buildK8sScopeResource(0, "*", path),
+		if accessRepo == nil {
+			response.Error(c, constants.ErrInternal)
+			c.Abort()
+			return
 		}
 
-		hasScopedPolicy := false
-		allowed := false
-		for _, res := range resources {
-			for _, act := range actionCandidates {
-				policies := enforcer.GetFilteredPolicy(1, res, act)
-				if len(policies) == 0 {
-					continue
-				}
-				hasScopedPolicy = true
-				ok, err := enforcer.Enforce(subject, res, act)
-				if err != nil {
-					logger.Error.Error("enforce scoped policy failed", "error", err, "resource", res, "action", act)
-					response.Error(c, constants.ErrInternal)
-					c.Abort()
-					return
-				}
-				if ok {
-					allowed = true
-					break
-				}
-			}
-			if allowed {
-				break
-			}
+		perms := catalog.permissions()
+		required := service.RequiredK8sAccessRank(perms, routePath, c.Request.Method, actionCode)
+		if required <= 0 {
+			required = service.K8sAccessRankAdmin
 		}
 
-		if hasScopedPolicy && !allowed {
+		rank := accessRepo.EffectiveTier(c.Request.Context(), pack, clusterID)
+		if rank < required {
 			response.Error(c, constants.ErrForbidden)
 			c.Abort()
 			return
@@ -196,16 +211,18 @@ func K8sScopeAuthorize(
 	}
 }
 
-func buildK8sScopeResource(clusterID uint, namespace, path string) string {
-	clusterPart := "*"
-	if clusterID > 0 {
-		clusterPart = strconv.FormatUint(uint64(clusterID), 10)
+// k8sScopeForceTierCheck Pod Exec 等为高危：无论 API 管理是否勾选「纳入 K8s 范围校验」，均按集群档位与命名空间策略校验（仍需 Casbin 授权）。
+func k8sScopeForceTierCheck(routePath, method string) bool {
+	p := strings.TrimSpace(routePath)
+	m := strings.ToUpper(strings.TrimSpace(method))
+	switch m {
+	case "POST":
+		return strings.HasSuffix(p, "/pods/exec")
+	case "GET":
+		return strings.HasSuffix(p, "/pods/exec/ws")
+	default:
+		return false
 	}
-	ns := strings.TrimSpace(namespace)
-	if ns == "" {
-		ns = "_cluster"
-	}
-	return "k8s:cluster:" + clusterPart + ":ns:" + ns + ":" + strings.TrimSpace(path)
 }
 
 func extractClusterNamespaceFromRequest(c *gin.Context) (uint, string) {

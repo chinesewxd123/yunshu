@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/pagination"
 
 	"gorm.io/gorm"
@@ -17,6 +19,8 @@ type PermissionListParams struct {
 	Keyword  string
 	Page     int
 	PageSize int
+	K8sScope   string // 空=全部；on/enabled/true/1；off/disabled/false/0
+	K8sRelated string // 空=全部；on=仅集群资源接口路径
 }
 
 func NewPermissionRepository(db *gorm.DB) *PermissionRepository {
@@ -49,6 +53,25 @@ func (r *PermissionRepository) List(ctx context.Context, params PermissionListPa
 	if params.Keyword != "" {
 		keyword := "%" + params.Keyword + "%"
 		query = query.Where("name LIKE ? OR resource LIKE ? OR action LIKE ?", keyword, keyword, keyword)
+	}
+	switch strings.ToLower(strings.TrimSpace(params.K8sScope)) {
+	case "on", "enabled", "true", "1", "yes":
+		query = query.Where("k8s_scope_enabled = ?", true)
+	case "off", "disabled", "false", "0", "no":
+		query = query.Where("k8s_scope_enabled = ?", false)
+	}
+	switch strings.ToLower(strings.TrimSpace(params.K8sRelated)) {
+	case "on", "enabled", "true", "1", "yes":
+		prefixes := constants.K8sClusterPermissionPathPrefixes
+		if len(prefixes) > 0 {
+			var parts []string
+			var args []any
+			for _, p := range prefixes {
+				parts = append(parts, "resource LIKE ?")
+				args = append(args, p+"%")
+			}
+			query = query.Where(strings.Join(parts, " OR "), args...)
+		}
 	}
 	var permissions []model.Permission
 	page, pageSize := pagination.Normalize(params.Page, params.PageSize)

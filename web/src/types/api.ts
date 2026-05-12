@@ -189,6 +189,10 @@ export interface PermissionQuery {
   keyword?: string;
   page?: number;
   page_size?: number;
+  /** 空：全部；on：仅已纳入 K8s 范围校验；off：仅未纳入 */
+  k8s_scope?: "" | "on" | "off";
+  /** 空：全部；on：仅后端挂载 K8s 三元中间件的集群资源路径（与 router 前缀表一致） */
+  k8s_related?: "" | "on";
 }
 
 export interface PolicyItem {

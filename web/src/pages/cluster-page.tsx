@@ -1,18 +1,20 @@
 import {
   CheckCircleOutlined,
-  ClusterOutlined,
   CloseCircleOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
   ReloadOutlined,
   SettingOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Button, Card, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from "antd";
+import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
 import { DictLabelFillSelect } from "../components/dict-fill-select";
 import { useDictOptions } from "../hooks/use-dict-options";
 import { formatDateTime } from "../utils/format";
+import { batchDeleteK8sClusterGrants, deleteK8sClusterGrant, listClusterAuthMatrix, type K8sAuthMatrixRow } from "../services/k8s-policies";
 import { createCluster, deleteCluster, getClusterDetail, getClusterStatus, getClusters, setClusterStatus, updateCluster, type ClusterItem, type ClusterCreatePayload, type ClusterUpdatePayload } from "../services/clusters";
 
 type ClusterQuery = {
@@ -47,6 +49,11 @@ export function ClusterPage() {
   const [statusByID, setStatusByID] = useState<Record<number, { server_version: string; connection_state?: string; last_error?: string }>>({});
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authCluster, setAuthCluster] = useState<ClusterItem | null>(null);
+  const [authRows, setAuthRows] = useState<K8sAuthMatrixRow[]>([]);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authSelectedKeys, setAuthSelectedKeys] = useState<React.Key[]>([]);
   const [current, setCurrent] = useState<ClusterItem | null>(null);
   const [form] = Form.useForm<ClusterCreatePayload &
   Partial<ClusterUpdatePayload> & {
@@ -340,6 +347,64 @@ export function ClusterPage() {
     }
   }
 
+  async function openAuthDrawer(record: ClusterItem) {
+    setAuthCluster(record);
+    setAuthOpen(true);
+    setAuthSelectedKeys([]);
+    setAuthLoading(true);
+    try {
+      const res = await listClusterAuthMatrix(record.id);
+      setAuthRows(res.list ?? []);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "加载已授权列表失败");
+      setAuthRows([]);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function reloadAuthMatrix() {
+    if (!authCluster) return;
+    setAuthLoading(true);
+    try {
+      const res = await listClusterAuthMatrix(authCluster.id);
+      setAuthRows(res.list ?? []);
+      setAuthSelectedKeys([]);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleBatchRevokeGrants() {
+    const idSet = new Set<number>();
+    for (const k of authSelectedKeys) {
+      const row = authRows.find((r) => r.row_key === k);
+      if (row && row.grant_id > 0) idSet.add(row.grant_id);
+    }
+    const ids = [...idSet];
+    if (ids.length === 0) {
+      message.warning("请选择要撤销的授权行");
+      return;
+    }
+    try {
+      const res = await batchDeleteK8sClusterGrants(ids);
+      message.success(`已撤销 ${res.deleted} 条集群档位授权`);
+      await reloadAuthMatrix();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "批量撤销失败");
+    }
+  }
+
+  async function handleRevokeOneGrant(grantId: number) {
+    try {
+      await deleteK8sClusterGrant(grantId);
+      message.success("已撤销");
+      await reloadAuthMatrix();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "撤销失败");
+    }
+  }
+
   async function handleConnectTest(record: ClusterItem) {
     try {
       const st = await getClusterStatus(record.id);
@@ -363,6 +428,46 @@ export function ClusterPage() {
       message.error(msg || "连接测试失败");
     }
   }
+
+  const authColumns: ColumnsType<K8sAuthMatrixRow> = [
+    { title: "用户名", dataIndex: "username", width: 140, render: (v: string, r) => (v === "-" ? <span className="inline-muted">{r.nickname || v}</span> : v) },
+    {
+      title: "集群",
+      key: "cluster",
+      width: 200,
+      render: (_: unknown, r) => (
+        <Space direction="vertical" size={0}>
+          <Typography.Text>{r.cluster_name}</Typography.Text>
+          {r.grant_scope_all ? <Tag color="blue">含「全部集群」档</Tag> : null}
+        </Space>
+      ),
+    },
+    { title: "档位", dataIndex: "preset_label", width: 120 },
+    {
+      title: "限制命名空间",
+      dataIndex: "allow_namespaces",
+      ellipsis: true,
+      render: (v: string) => (v ? <Typography.Text ellipsis={{ tooltip: v }}>{v}</Typography.Text> : <span className="inline-muted">未限制（白名单未配置）</span>),
+    },
+    { title: "授权主体", dataIndex: "principal_show", width: 200, ellipsis: true },
+    { title: "来源", dataIndex: "via", width: 130 },
+    {
+      title: "操作",
+      key: "revoke",
+      width: 100,
+      fixed: "right",
+      render: (_: unknown, r: K8sAuthMatrixRow) =>
+        r.grant_id > 0 ? (
+          <Popconfirm title="确认撤销该条集群档位授权？（同一档位多行会一并失效）" onConfirm={() => void handleRevokeOneGrant(r.grant_id)}>
+            <Button type="link" size="small" danger>
+              撤销
+            </Button>
+          </Popconfirm>
+        ) : (
+          <span className="inline-muted">-</span>
+        ),
+    },
+  ];
 
   function renderConnection(record: ClusterItem) {
     if (record.status !== 1) return <Tag>disabled</Tag>;
@@ -448,9 +553,12 @@ export function ClusterPage() {
             {
               title: "操作",
               key: "action",
-              width: 340,
+              width: 420,
               render: (_: unknown, record: ClusterItem) => (
                 <Space>
+                  <Button type="link" icon={<TeamOutlined />} onClick={() => void openAuthDrawer(record)}>
+                    已授权
+                  </Button>
                   <Button
                     type="link"
                     icon={<SettingOutlined />}
@@ -491,6 +599,46 @@ export function ClusterPage() {
           ]}
         />
       </Space>
+
+      <Drawer
+        title={authCluster ? `已授权用户 — ${authCluster.name}` : "已授权用户"}
+        open={authOpen}
+        onClose={() => {
+          setAuthOpen(false);
+          setAuthCluster(null);
+          setAuthRows([]);
+          setAuthSelectedKeys([]);
+        }}
+        width={980}
+        destroyOnClose
+      >
+        <Space style={{ marginBottom: 12 }} wrap>
+          <Typography.Text type="secondary">共 {authRows.length} 条（按用户展开；撤销档位后关联行会消失）</Typography.Text>
+          <Button icon={<ReloadOutlined />} onClick={() => void reloadAuthMatrix()} disabled={!authCluster}>
+            刷新
+          </Button>
+          <Popconfirm title="确认批量撤销选中行对应的集群档位？" onConfirm={() => void handleBatchRevokeGrants()}>
+            <Button danger disabled={authSelectedKeys.length === 0}>
+              批量撤销
+            </Button>
+          </Popconfirm>
+        </Space>
+        <Table<K8sAuthMatrixRow>
+          rowKey="row_key"
+          size="small"
+          loading={authLoading}
+          dataSource={authRows}
+          columns={authColumns}
+          scroll={{ x: 900 }}
+          rowSelection={{
+            selectedRowKeys: authSelectedKeys,
+            onChange: (keys) => setAuthSelectedKeys(keys),
+            getCheckboxProps: (r) => ({ disabled: !r.grant_id }),
+          }}
+          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `共 ${t} 条` }}
+        />
+      </Drawer>
+
       <Modal
         title={current ? "编辑集群" : "新建集群"}
         open={modalOpen}

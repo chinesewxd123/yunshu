@@ -35,7 +35,7 @@ func (s *DepartmentService) hasDepartmentAccess(ctx context.Context, actor *auth
 	if actor == nil {
 		return false, nil
 	}
-	if isSuperAdmin(actor.RoleCodes) {
+	if auth.IsSuperAdminRole(actor.RoleCodes) {
 		return true, nil
 	}
 	scope, err := s.actorDepartmentScopeIDs(ctx, actor)
@@ -116,7 +116,7 @@ func (s *DepartmentService) TreeByActor(ctx context.Context, actor *auth.Current
 	if err != nil {
 		return nil, err
 	}
-	if isSuperAdmin(actor.RoleCodes) {
+	if auth.IsSuperAdminRole(actor.RoleCodes) {
 		return all, nil
 	}
 	if actor.DepartmentID == nil || *actor.DepartmentID == 0 {
@@ -220,7 +220,7 @@ func (s *DepartmentService) CreateByActor(ctx context.Context, actor *auth.Curre
 	if actor == nil {
 		return nil, constants.ErrUnauthorized
 	}
-	if isSuperAdmin(actor.RoleCodes) {
+	if auth.IsSuperAdminRole(actor.RoleCodes) {
 		return s.Create(ctx, req)
 	}
 	if req.ParentID == nil {
@@ -336,7 +336,7 @@ func (s *DepartmentService) UpdateByActor(ctx context.Context, actor *auth.Curre
 	if actor == nil {
 		return nil, constants.ErrUnauthorized
 	}
-	if !isSuperAdmin(actor.RoleCodes) {
+	if !auth.IsSuperAdminRole(actor.RoleCodes) {
 		ok, err := s.hasDepartmentAccess(ctx, actor, id)
 		if err != nil {
 			return nil, err
@@ -386,7 +386,7 @@ func (s *DepartmentService) DeleteByActor(ctx context.Context, actor *auth.Curre
 	if actor == nil {
 		return constants.ErrUnauthorized
 	}
-	if !isSuperAdmin(actor.RoleCodes) {
+	if !auth.IsSuperAdminRole(actor.RoleCodes) {
 		ok, err := s.hasDepartmentAccess(ctx, actor, id)
 		if err != nil {
 			return err

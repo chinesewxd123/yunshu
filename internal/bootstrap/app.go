@@ -105,6 +105,10 @@ func (b *Builder) WithMySQL() *Builder {
 		b.err = err
 		return b
 	}
+	if err = db.SetupJoinTable(&model.User{}, "Groups", &model.UserGroupUser{}); err != nil {
+		b.err = err
+		return b
+	}
 
 	sqlDB, err := db.DB()
 	if err != nil {

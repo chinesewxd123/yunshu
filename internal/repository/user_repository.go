@@ -41,7 +41,7 @@ func (r *UserRepository) Delete(ctx context.Context, user *model.User) error {
 
 func (r *UserRepository) GetByID(ctx context.Context, id uint) (*model.User, error) {
 	var user model.User
-	err := r.db.WithContext(ctx).Preload("Roles").Preload("Department").First(&user, id).Error
+	err := r.db.WithContext(ctx).Preload("Roles").Preload("Groups").Preload("Department").First(&user, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id uint) (*model.User, err
 
 func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*model.User, error) {
 	var user model.User
-	err := r.db.WithContext(ctx).Preload("Roles").Preload("Department").Where("username = ?", username).First(&user).Error
+	err := r.db.WithContext(ctx).Preload("Roles").Preload("Groups").Preload("Department").Where("username = ?", username).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*m
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
-	err := r.db.WithContext(ctx).Preload("Roles").Preload("Department").Where("email = ?", email).First(&user).Error
+	err := r.db.WithContext(ctx).Preload("Roles").Preload("Groups").Preload("Department").Where("email = ?", email).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (r *UserRepository) List(ctx context.Context, params UserListParams) ([]mod
 	}
 
 	var users []model.User
-	query = query.Preload("Roles").Preload("Department")
+	query = query.Preload("Roles").Preload("Groups").Preload("Department")
 	total, err := listWithPagination(query, params.Page, params.PageSize, "id DESC", &users)
 	if err != nil {
 		return nil, 0, err
@@ -104,7 +104,7 @@ func (r *UserRepository) ExistsByUsernameOrEmail(ctx context.Context, username, 
 // ListAll returns all users without pagination. Used for export.
 func (r *UserRepository) ListAll(ctx context.Context) ([]model.User, error) {
 	var users []model.User
-	err := r.db.WithContext(ctx).Preload("Roles").Preload("Department").Order("id DESC").Find(&users).Error
+	err := r.db.WithContext(ctx).Preload("Roles").Preload("Groups").Preload("Department").Order("id DESC").Find(&users).Error
 	return users, err
 }
 
@@ -115,6 +115,24 @@ func (r *UserRepository) ListByIDs(ctx context.Context, ids []uint) ([]model.Use
 	var users []model.User
 	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&users).Error
 	return users, err
+}
+
+// ListUserIDsByRoleCode 返回绑定指定角色编码的用户 ID（用于集群授权矩阵展开）。
+func (r *UserRepository) ListUserIDsByRoleCode(ctx context.Context, roleCode string) ([]uint, error) {
+	roleCode = strings.TrimSpace(roleCode)
+	if roleCode == "" {
+		return nil, nil
+	}
+	var ids []uint
+	err := r.db.WithContext(ctx).Model(&model.User{}).
+		Joins("JOIN user_roles ur ON ur.user_id = users.id").
+		Joins("JOIN roles r ON r.id = ur.role_id AND r.code = ?", roleCode).
+		Distinct("users.id").
+		Pluck("users.id", &ids).Error
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // ListActiveIDsByDepartmentIDs 返回部门 ID 列表下、状态为启用的用户 ID（精确匹配 department_id）。

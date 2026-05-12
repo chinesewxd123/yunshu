@@ -17,7 +17,21 @@ type Item = {
   cpu_limits?: string;
   mem_requests?: string;
   mem_limits?: string;
+  cpu_usage?: string;
+  mem_usage?: string;
+  cpu_cores_request?: number;
+  cpu_cores_limit?: number;
+  cpu_cores_usage?: number;
+  mem_gi_request?: number;
+  mem_gi_limit?: number;
+  mem_gi_usage?: number;
+  resource_quota_summary?: string;
 };
+
+function fmtTripleCoreGi(a?: number, b?: number, c?: number): string {
+  const f = (n?: number) => (typeof n === "number" && !Number.isNaN(n) ? n.toFixed(2) : "0.00");
+  return `${f(a)} / ${f(b)} / ${f(c)}`;
+}
 type Detail = {
   yaml: string;
   item: Item;
@@ -54,11 +68,63 @@ export function NamespacesPage() {
   };
 
   const columns: ColumnsType<Item> = [
-    { title: "命名空间", dataIndex: "name" },
+    { title: "命名空间", dataIndex: "name", width: 160, fixed: "left" },
     { title: "状态", dataIndex: "status", width: 120, render: (v: string) => <Tag color={v === "Active" ? "green" : "default"}>{v || "-"}</Tag> },
     { title: "Pod 数", dataIndex: "pod_count", width: 90, render: (v?: number) => (typeof v === "number" ? v : "-") },
-    { title: "CPU(Req/Lim)", key: "cpu", width: 160, render: (_, r) => `${r.cpu_requests || "-"} / ${r.cpu_limits || "-"}` },
-    { title: "内存(Req/Lim)", key: "mem", width: 170, render: (_, r) => `${r.mem_requests || "-"} / ${r.mem_limits || "-"}` },
+    {
+      title: (
+        <Tooltip title="Request / Limit / 实时（核），实时依赖 metrics-server">
+          <span>CPU 用量（核）</span>
+        </Tooltip>
+      ),
+      key: "cpu_triple",
+      width: 200,
+      render: (_, r) => (
+        <Typography.Text style={{ fontSize: 12, whiteSpace: "nowrap" }}>{fmtTripleCoreGi(r.cpu_cores_request, r.cpu_cores_limit, r.cpu_cores_usage)}</Typography.Text>
+      ),
+    },
+    {
+      title: (
+        <Tooltip title="Request / Limit / 实时（Gi），实时依赖 metrics-server">
+          <span>内存用量（Gi）</span>
+        </Tooltip>
+      ),
+      key: "mem_triple",
+      width: 200,
+      render: (_, r) => (
+        <Typography.Text style={{ fontSize: 12, whiteSpace: "nowrap" }}>{fmtTripleCoreGi(r.mem_gi_request, r.mem_gi_limit, r.mem_gi_usage)}</Typography.Text>
+      ),
+    },
+    {
+      title: (
+        <Tooltip title="Pod 模板 request/limit 汇总（含 Init/Ephemeral 调度语义），与 ResourceQuota 无关">
+          <span>工作负载申请</span>
+        </Tooltip>
+      ),
+      key: "workload_res",
+      width: 168,
+      render: (_, r) => (
+        <Typography.Text style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
+          {`CPU ${r.cpu_requests || "-"} / ${r.cpu_limits || "-"}\nMEM ${r.mem_requests || "-"} / ${r.mem_limits || "-"}`}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: (
+        <Tooltip title="首行来自 ResourceQuota（未配置则为空）；LimitRange 仅在详情展示。实时依赖 metrics-server。">
+          <span>配额与实时</span>
+        </Tooltip>
+      ),
+      key: "quota_rt",
+      width: 220,
+      render: (_, r) => (
+        <Typography.Text style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
+          {r.resource_quota_summary
+            ? `${r.resource_quota_summary}\n实时 ${r.cpu_usage || "-"} / ${r.mem_usage || "-"}`
+            : `配额: 未配置 ResourceQuota\n实时 ${r.cpu_usage || "-"} / ${r.mem_usage || "-"}`}
+        </Typography.Text>
+      ),
+    },
     { title: "标签", key: "labels", width: 70, align: "center", render: (_, r) => renderMetaCell("标签", r.labels) },
     { title: "注解", key: "annotations", width: 70, align: "center", render: (_, r) => renderMetaCell("注解", r.annotations) },
     { title: "创建时间", dataIndex: "creation_time", width: 180, fixed: "right" },

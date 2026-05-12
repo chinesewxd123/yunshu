@@ -18,14 +18,21 @@ func NewK8sNamespaceDenyHandler(svc *service.K8sNamespaceDenyService) *K8sNamesp
 }
 
 func (h *K8sNamespaceDenyHandler) List(c *gin.Context) {
-	roleCode := strings.TrimSpace(c.Query("role_code"))
+	kind := strings.TrimSpace(c.Query("principal_kind"))
+	ref := strings.TrimSpace(c.Query("principal_ref"))
+	if kind == "" && ref == "" {
+		if legacy := strings.TrimSpace(c.Query("role_code")); legacy != "" {
+			kind = "role"
+			ref = legacy
+		}
+	}
 	var clusterID uint
 	if raw := strings.TrimSpace(c.Query("cluster_id")); raw != "" {
 		if n, err := strconv.ParseUint(raw, 10, 32); err == nil {
 			clusterID = uint(n)
 		}
 	}
-	list, err := h.svc.List(c.Request.Context(), roleCode, clusterID)
+	list, err := h.svc.List(c.Request.Context(), kind, ref, clusterID)
 	if err != nil {
 		response.Error(c, err)
 		return

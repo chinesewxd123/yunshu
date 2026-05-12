@@ -120,7 +120,7 @@ export function ProjectMembersPanel({ projectId }: Props) {
         ]}
       />
       <div style={{ color: "rgba(0,0,0,0.45)", fontSize: 12 }}>
-        项目成员不再区分 owner/admin/member/readonly，权限统一由现有全局 RBAC/Casbin 与 K8s 三元策略控制。
+        项目成员不再区分 owner/admin/member/readonly，权限统一由全局 RBAC/Casbin（API）与 K8s 集群访问档位（集群侧）控制。
       </div>
       <div style={{ color: "rgba(0,0,0,0.45)", fontSize: 12 }}>
         绑定项目的监控规则触发告警时，除「规则处理人」外，会将<strong>本项目启用成员</strong>的邮箱一并纳入邮件通知收件人（去重）。

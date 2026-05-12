@@ -4,11 +4,11 @@ app:
   port: 8080
 
 http:
-  read_header_timeout_seconds: 5
+  read_header_timeout_seconds: 5  #从连接建立到读完请求头的最长时间；防慢连接占满，
   # 日志流（SSE）为长连接：若 write/read 过短会导致浏览器 net::ERR_INCOMPLETE_CHUNKED_ENCODING
-  read_timeout_seconds: 0
-  write_timeout_seconds: 0
-  idle_timeout_seconds: 120
+  read_timeout_seconds: 0  #从连接建立到读完请求体的最长时间；防慢连接占满，影响其它请求。0 表示不限制。
+  write_timeout_seconds: 0  #从连接建立到写完响应体的最长时间；防慢连接占满，影响其它请求。0 表示不限制。
+  idle_timeout_seconds: 120  #连接空闲时间；防慢连接占满，影响其它请求
 
 grpc:
   listen_addr: 0.0.0.0:18080

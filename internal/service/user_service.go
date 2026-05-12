@@ -41,15 +41,6 @@ func NewUserService(
 	}
 }
 
-func isSuperAdmin(roleCodes []string) bool {
-	for _, code := range roleCodes {
-		if strings.TrimSpace(code) == "super-admin" {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *UserService) accessibleDepartmentIDs(ctx context.Context, actor *auth.CurrentUser) ([]uint, error) {
 	if actor == nil || actor.DepartmentID == nil || *actor.DepartmentID == 0 {
 		return nil, nil
@@ -61,7 +52,7 @@ func (s *UserService) canAccessUser(ctx context.Context, actor *auth.CurrentUser
 	if actor == nil || target == nil {
 		return false, nil
 	}
-	if isSuperAdmin(actor.RoleCodes) || actor.ID == target.ID {
+	if auth.IsSuperAdminRole(actor.RoleCodes) || actor.ID == target.ID {
 		return true, nil
 	}
 	if actor.DepartmentID == nil || *actor.DepartmentID == 0 {
@@ -136,7 +127,7 @@ func (s *UserService) CreateByActor(ctx context.Context, actor *auth.CurrentUser
 	if actor == nil {
 		return nil, constants.ErrUnauthorized
 	}
-	if isSuperAdmin(actor.RoleCodes) {
+	if auth.IsSuperAdminRole(actor.RoleCodes) {
 		return s.Create(ctx, req)
 	}
 	if actor.DepartmentID == nil || *actor.DepartmentID == 0 {
@@ -223,7 +214,15 @@ func (s *UserService) UpdateByActor(ctx context.Context, actor *auth.CurrentUser
 	if !ok {
 		return nil, constants.ErrForbidden
 	}
-	if !isSuperAdmin(actor.RoleCodes) && req.DepartmentID != nil && *req.DepartmentID > 0 {
+	if req.Password != nil && strings.TrimSpace(*req.Password) != "" {
+		if actor.ID == target.ID {
+			return nil, constants.ErrForbiddenWithMsg("不能通过用户管理修改自己的登录密码")
+		}
+		if !auth.CanManageOtherUsersLoginPassword(actor.RoleCodes) {
+			return nil, constants.ErrForbiddenWithMsg("仅管理员角色（内置超级管理员）可修改其他账号的登录密码")
+		}
+	}
+	if !auth.IsSuperAdminRole(actor.RoleCodes) && req.DepartmentID != nil && *req.DepartmentID > 0 {
 		allowedDepartmentIDs, err := s.accessibleDepartmentIDs(ctx, actor)
 		if err != nil {
 			return nil, err
@@ -338,7 +337,7 @@ func (s *UserService) ListByActor(ctx context.Context, actor *auth.CurrentUser, 
 	if actor == nil {
 		return nil, constants.ErrUnauthorized
 	}
-	if isSuperAdmin(actor.RoleCodes) {
+	if auth.IsSuperAdminRole(actor.RoleCodes) {
 		return s.List(ctx, query)
 	}
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
@@ -458,7 +457,7 @@ func (s *UserService) ListAllByActor(ctx context.Context, actor *auth.CurrentUse
 	if actor == nil {
 		return nil, constants.ErrUnauthorized
 	}
-	if isSuperAdmin(actor.RoleCodes) {
+	if auth.IsSuperAdminRole(actor.RoleCodes) {
 		return s.ListAll(ctx)
 	}
 	params := repository.UserListParams{

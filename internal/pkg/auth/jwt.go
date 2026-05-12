@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,23 @@ type CurrentUser struct {
 	Status       int      `json:"status"`
 	DepartmentID *uint    `json:"department_id,omitempty"`
 	RoleCodes    []string `json:"role_codes"`
+	GroupCodes   []string `json:"group_codes"`
+}
+
+// IsSuperAdminRole reports whether the subject has the built-in super-admin role.
+func IsSuperAdminRole(roleCodes []string) bool {
+	for _, code := range roleCodes {
+		if strings.TrimSpace(code) == "super-admin" {
+			return true
+		}
+	}
+	return false
+}
+
+// CanManageOtherUsersLoginPassword reports whether the subject may set another user's login password in user management.
+// 与内置超级管理员角色对齐；普通用户不可通过用户更新接口写入 password 字段。
+func CanManageOtherUsersLoginPassword(roleCodes []string) bool {
+	return IsSuperAdminRole(roleCodes)
 }
 
 func GenerateToken(secret string, claims Claims) (string, error) {
