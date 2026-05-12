@@ -2741,7 +2741,11 @@ export function AlertMonitorPlatformPage() {
               ]}
             />
           </Form.Item>
-          <Form.Item name="region_scope" label="地域范围">
+          <Form.Item
+            name="region_scope"
+            label="地域范围"
+            extra="多个地域用英文逗号分隔；留空表示全部。腾讯云请填 API 地域（如 ap-guangzhou），也可填「广州」等常见中文名。"
+          >
             <Input placeholder="多个地域用英文逗号分隔；留空表示全部" />
           </Form.Item>
           <Form.Item name="advance_days" label="提前告警天数" rules={[{ required: true, message: "请输入提前天数" }]}>
