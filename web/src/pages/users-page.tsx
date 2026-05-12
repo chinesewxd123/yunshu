@@ -6,6 +6,7 @@ import {
   UserSwitchOutlined,
   LockOutlined,
   ClusterOutlined,
+  AppstoreOutlined,
 } from "@ant-design/icons";
 import {
   Button,
@@ -26,6 +27,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { StatusTag } from "../components/status-tag";
 import { getDepartmentTree } from "../services/departments";
 import { getRoleOptions } from "../services/roles";
@@ -50,6 +52,7 @@ import { useAuth } from "../contexts/auth-context";
 const defaultQuery = { keyword: "", department_id: undefined as number | undefined, page: 1, page_size: 10 };
 
 export function UsersPage() {
+  const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [list, setList] = useState<UserItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -77,6 +80,8 @@ export function UsersPage() {
   const [k8sAuthTarget, setK8sAuthTarget] = useState<UserItem | null>(null);
   const [k8sAuthRows, setK8sAuthRows] = useState<K8sUserClusterAuthRow[]>([]);
   const [k8sAuthLoading, setK8sAuthLoading] = useState(false);
+  const [permOpen, setPermOpen] = useState(false);
+  const [permTarget, setPermTarget] = useState<UserItem | null>(null);
 
   const roleTreeData = useMemo(() => buildRoleTreeData(roles), [roles]);
   const roleIdSet = useMemo(() => new Set(roles.map((role) => role.id)), [roles]);
@@ -283,6 +288,17 @@ export function UsersPage() {
     }
   }
 
+  function openPermissionView(record: UserItem) {
+    setPermTarget(record);
+    setPermOpen(true);
+  }
+
+  function openK8sFromPermissionView() {
+    if (!permTarget) return;
+    setPermOpen(false);
+    void openK8sAuthClusters(permTarget);
+  }
+
   const k8sAuthColumns: ColumnsType<K8sUserClusterAuthRow> = [
     {
       title: "集群",
@@ -390,17 +406,38 @@ export function UsersPage() {
               render: (value: RoleItem[]) =>
                 value.length > 0 ? value.map((role) => <Tag key={role.id}>{role.name}</Tag>) : <span className="inline-muted">未分配</span>,
             },
+            {
+              title: "用户组",
+              dataIndex: "groups",
+              width: 220,
+              render: (_: unknown, record: UserItem) => {
+                const gs = record.groups ?? [];
+                if (gs.length === 0) return <span className="inline-muted">未加入</span>;
+                return (
+                  <Space size={[4, 4]} wrap>
+                    {gs.map((g) => (
+                      <Tag key={g.id} color="geekblue">
+                        {g.name}
+                      </Tag>
+                    ))}
+                  </Space>
+                );
+              },
+            },
             { title: "所属部门", dataIndex: "department_name", render: (v: string) => v || <span className="inline-muted">未设置</span> },
             { title: "状态", dataIndex: "status", render: (value: number) => <StatusTag status={value} /> },
             { title: "创建时间", dataIndex: "created_at", render: formatDateTime },
             {
               title: "操作",
               key: "action",
-              width: 340,
+              width: 420,
               render: (_: unknown, record: UserItem) => (
-                <Space size={4}>
+                <Space size={4} wrap>
                   <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
                     详情
+                  </Button>
+                  <Button type="link" size="small" icon={<AppstoreOutlined />} onClick={() => openPermissionView(record)}>
+                    权限查看
                   </Button>
                   <Button type="link" size="small" icon={<ClusterOutlined />} onClick={() => void openK8sAuthClusters(record)}>
                     授权集群
@@ -553,6 +590,17 @@ export function UsersPage() {
                 readOnly
               />
             </Form.Item>
+            <Form.Item label="用户组">
+              <Input.TextArea
+                rows={3}
+                value={
+                  (detailRecord.groups ?? []).length > 0
+                    ? (detailRecord.groups ?? []).map((g) => `${g.name}（${g.code}）`).join("，")
+                    : "未加入任何用户组；可在「用户组管理」中将用户加入组以继承 K8s 集群档位等授权。"
+                }
+                readOnly
+              />
+            </Form.Item>
             <Form.Item label="创建时间">
               <Input value={formatDateTime(detailRecord.created_at)} readOnly />
             </Form.Item>
@@ -561,6 +609,66 @@ export function UsersPage() {
             </Form.Item>
           </Form>
         )}
+      </Drawer>
+
+      <Drawer
+        title={permTarget ? `权限概览 — ${permTarget.nickname}` : "权限概览"}
+        open={permOpen}
+        onClose={() => {
+          setPermOpen(false);
+          setPermTarget(null);
+        }}
+        width={520}
+        destroyOnClose
+      >
+        {permTarget ? (
+          <Space direction="vertical" size={16} style={{ width: "100%" }}>
+            <div>
+              <Typography.Text strong>责任域角色</Typography.Text>
+              <div style={{ marginTop: 8 }}>
+                {permTarget.roles.length > 0 ? (
+                  <Space wrap>{permTarget.roles.map((r) => <Tag key={r.id}>{r.name}</Tag>)}</Space>
+                ) : (
+                  <Typography.Text type="secondary">未分配角色</Typography.Text>
+                )}
+              </div>
+            </div>
+            <div>
+              <Typography.Text strong>用户组</Typography.Text>
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12 }}>
+                用户组与账号为多对多；成员关系在「用户组管理」中维护。组编码可作为 K8s 授权主体。
+              </Typography.Paragraph>
+              <div>
+                {(permTarget.groups ?? []).length > 0 ? (
+                  <Space wrap>
+                    {(permTarget.groups ?? []).map((g) => (
+                      <Tag key={g.id} color="geekblue">
+                        {g.name}{" "}
+                        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                          ({g.code})
+                        </Typography.Text>
+                      </Tag>
+                    ))}
+                  </Space>
+                ) : (
+                  <Typography.Text type="secondary">未加入用户组</Typography.Text>
+                )}
+              </div>
+              <Button type="link" style={{ paddingLeft: 0 }} onClick={() => navigate("/user-groups")}>
+                打开用户组管理
+              </Button>
+            </div>
+            <div>
+              <Typography.Text strong>Kubernetes 集群档位</Typography.Text>
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12 }}>
+                汇总直授、责任域角色、用户组在集群策略中的档位；与「授权集群」入口相同。
+              </Typography.Paragraph>
+              <Button type="primary" icon={<ClusterOutlined />} onClick={() => openK8sFromPermissionView()}>
+                查看集群授权明细
+              </Button>
+            </div>
+          </Space>
+        ) : null}
       </Drawer>
 
       <Modal

@@ -34,6 +34,12 @@ export interface PermissionItem {
   updated_at: string;
 }
 
+export interface UserGroupBrief {
+  id: number;
+  name: string;
+  code: string;
+}
+
 export interface UserItem {
   id: number;
   username: string;
@@ -43,6 +49,8 @@ export interface UserItem {
   department_id?: number;
   department_name?: string;
   roles: RoleItem[];
+  /** 用户所属用户组（K8s 主体 principal_kind=group 等场景） */
+  groups?: UserGroupBrief[];
   created_at: string;
   updated_at: string;
 }
