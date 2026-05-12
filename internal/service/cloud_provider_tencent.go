@@ -23,9 +23,20 @@ func (p *TencentCloudProvider) ListInstances(ctx context.Context, ak, sk, region
 	regions := make([]string, 0)
 	for _, it := range strings.Split(regionScope, ",") {
 		v := strings.TrimSpace(it)
-		if v != "" {
-			regions = append(regions, v)
+		if v == "" {
+			continue
 		}
+		if api := tencentAPIRegionFromUserInput(v); api != "" {
+			regions = append(regions, api)
+			continue
+		}
+		lv := strings.ToLower(v)
+		if strings.HasPrefix(lv, "ap-") || strings.HasPrefix(lv, "na-") || strings.HasPrefix(lv, "eu-") {
+			regions = append(regions, lv)
+			continue
+		}
+		// 无法识别的 token 仍尝试原样（兼容自定义地域写法）
+		regions = append(regions, v)
 	}
 	if len(regions) == 0 {
 		// 腾讯云默认地域：广州
@@ -64,6 +75,10 @@ func (p *TencentCloudProvider) ListInstances(ctx context.Context, ak, sk, region
 				if ins == nil {
 					continue
 				}
+				instanceID := ""
+				if ins.InstanceId != nil {
+					instanceID = strings.TrimSpace(*ins.InstanceId)
+				}
 				host := ""
 				publicIP := ""
 				privateIP := ""
@@ -79,7 +94,12 @@ func (p *TencentCloudProvider) ListInstances(ctx context.Context, ak, sk, region
 					privateIP = strings.TrimSpace(*ins.PrivateIpAddresses[0])
 				}
 				if host == "" {
-					continue
+					// 无公网/私网 IP 的包年实例仍可能有过期时间，需参与到期评估
+					if instanceID != "" {
+						host = instanceID
+					} else {
+						continue
+					}
 				}
 				osName := ""
 				if ins.OsName != nil {
@@ -95,10 +115,6 @@ func (p *TencentCloudProvider) ListInstances(ctx context.Context, ak, sk, region
 					if strings.ToUpper(strings.TrimSpace(*ins.InstanceState)) != "RUNNING" {
 						status = 0
 					}
-				}
-				instanceID := ""
-				if ins.InstanceId != nil {
-					instanceID = strings.TrimSpace(*ins.InstanceId)
 				}
 				name := ""
 				if ins.InstanceName != nil {
@@ -297,10 +313,31 @@ func (p *TencentCloudProvider) QueryInstanceExpireAt(ctx context.Context, ak, sk
 	if raw == "" {
 		return nil, nil
 	}
-	if t, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil {
+	if t, ok := parseTencentExpiredTime(raw); ok {
 		return &t, nil
 	}
 	return nil, nil
+}
+
+func parseTencentExpiredTime(raw string) (time.Time, bool) {
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t, true
+	}
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return t, true
+	}
+	layouts := []string{
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04Z",
+		"2006-01-02",
+	}
+	for _, layout := range layouts {
+		if t, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func (p *TencentCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, region, instanceID string, oldTags, newTags map[string]string) error {

@@ -93,7 +93,11 @@ func (s *AlertService) evaluateOneCloudExpiryRule(ctx context.Context, rule *mod
 			}
 			region := strings.TrimSpace(ins.Region)
 			if len(regionFilter) > 0 {
-				if _, ok := regionFilter[region]; !ok {
+				if strings.EqualFold(strings.TrimSpace(acc.Provider), "tencent") {
+					if !instanceMatchesTencentRegionFilter(region, regionFilter) {
+						continue
+					}
+				} else if _, ok := regionFilter[region]; !ok {
 					continue
 				}
 			}

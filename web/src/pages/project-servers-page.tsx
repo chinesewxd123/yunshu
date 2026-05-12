@@ -10,6 +10,7 @@ import {
   UploadOutlined,
 } from "@ant-design/icons";
 import { Button, Card, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Tag, Tree, Typography, message } from "antd";
+import type { ColumnsType } from "antd/es/table";
 import type { DataNode } from "antd/es/tree";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -768,6 +769,180 @@ export function ProjectServersPage() {
     }
   }
 
+  const selfHostedColumns: ColumnsType<ServerItem> = [
+    { title: "名称", dataIndex: "name", width: 160 },
+    { title: "Host", dataIndex: "host", width: 180 },
+    { title: "Port", dataIndex: "port", width: 72 },
+    { title: "区域", dataIndex: "cloud_region", width: 140, ellipsis: true, render: (v: string) => v || "-" },
+    { title: "标签", dataIndex: "tags", width: 200, ellipsis: true, render: (v: string) => v || "-" },
+    { title: "OS / 架构", width: 130, render: (_: unknown, r: ServerItem) => `${r.os_type || "-"} / ${r.os_arch || "-"}` },
+    { title: "启用", dataIndex: "status", width: 88, render: (v: number) => (v === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">停用</Tag>) },
+    {
+      title: "连通",
+      width: 96,
+      render: (_: unknown, r: ServerItem) => {
+        if (!r.last_test_at) return <Tag>未测试</Tag>;
+        return r.last_test_error ? <Tag color="error">异常</Tag> : <Tag color="success">正常</Tag>;
+      },
+    },
+    { title: "上次测试", dataIndex: "last_test_at", width: 170, render: (v?: string | null) => (v ? formatDateTime(v) : "-") },
+    { title: "测试错误", dataIndex: "last_test_error", ellipsis: true, render: (v?: string | null) => (v ? <span title={v}>{v}</span> : "-") },
+    {
+      title: "操作",
+      width: 220,
+      fixed: "right",
+      render: (_: unknown, r: ServerItem) => (
+        <Space size={6} wrap>
+          <Button
+            size="small"
+            icon={<LinkOutlined />}
+            onClick={() => {
+              if (!projectId) return;
+              navigate(`/server-console?project_id=${projectId}&server_id=${r.id}`);
+            }}
+          >
+            连接
+          </Button>
+          <Button
+            size="small"
+            icon={<ApiOutlined />}
+            onClick={() =>
+              projectId &&
+              testProjectServer(projectId, r.id).then((x) => {
+                x.ok ? message.success(x.message || "连通性 OK") : message.error(x.message || "连通性失败");
+                void loadServers();
+              })
+            }
+          >
+            测试
+          </Button>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
+            编辑
+          </Button>
+          <Popconfirm title="确定删除该服务器？" onConfirm={() => void onDelete(r)}>
+            <Button size="small" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  const cloudColumns: ColumnsType<ServerItem> = [
+    { title: "名称", dataIndex: "name", width: 150 },
+    { title: "云厂商", dataIndex: "provider", width: 100, render: (v: string) => CLOUD_PROVIDER_LABEL[v] || v || "-" },
+    { title: "Host", dataIndex: "host", width: 180 },
+    { title: "Port", dataIndex: "port", width: 80 },
+    {
+      title: "来源",
+      width: 120,
+      render: (_: unknown, r: ServerItem) =>
+        r.source_type === "cloud" ? (
+          <Tag color="processing">{`云/${CLOUD_PROVIDER_LABEL[r.provider] || r.provider || "-"}`}</Tag>
+        ) : (
+          <Tag color="default">自建</Tag>
+        ),
+    },
+    { title: "区域", dataIndex: "cloud_region", width: 100, render: (v: string) => v || "-" },
+    { title: "可用区", dataIndex: "cloud_zone", width: 120, render: (v: string) => v || "-" },
+    { title: "规格", dataIndex: "cloud_spec", width: 140, render: (v: string) => v || "-" },
+    { title: "实例配置", dataIndex: "cloud_config_info", width: 180, render: (v: string) => v || "-" },
+    { title: "云OS", dataIndex: "cloud_os_name", width: 180, render: (v: string) => v || "-" },
+    { title: "网络信息", dataIndex: "cloud_network_info", width: 180, render: (v: string) => v || "-" },
+    { title: "实例计费", dataIndex: "cloud_charge_type", width: 140, render: (v: string) => mapChargeTypeZh(v) },
+    { title: "网络计费", dataIndex: "cloud_network_charge_type", width: 140, render: (v: string) => mapNetworkChargeTypeZh(v) },
+    { title: "标签", dataIndex: "cloud_tags_json", width: 220, render: (v: string) => renderCloudTags(v) },
+    { title: "公网IP", dataIndex: "cloud_public_ip", width: 140, render: (v: string) => v || "-" },
+    { title: "内网IP", dataIndex: "cloud_private_ip", width: 140, render: (v: string) => v || "-" },
+    {
+      title: "云状态",
+      dataIndex: "cloud_status_text",
+      width: 120,
+      render: (v: string) => {
+        const s = String(v || "").toUpperCase();
+        if (!s) return "-";
+        if (s.includes("RUNNING")) return <Tag color="success">{v}</Tag>;
+        if (s.includes("STOP") || s.includes("STOPPED")) return <Tag color="warning">{v}</Tag>;
+        return <Tag color="default">{v}</Tag>;
+      },
+    },
+    { title: "OS / 架构", width: 150, render: (_: unknown, r: ServerItem) => `${r.os_type || "-"} / ${r.os_arch || "-"}` },
+    { title: "启用状态", dataIndex: "status", width: 100, render: (v: number) => (v === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">停用</Tag>) },
+    {
+      title: "连通状态",
+      width: 120,
+      render: (_: unknown, r: ServerItem) => {
+        if (!r.last_test_at) return <Tag>未测试</Tag>;
+        return r.last_test_error ? <Tag color="error">异常</Tag> : <Tag color="success">正常</Tag>;
+      },
+    },
+    { title: "上次测试", dataIndex: "last_test_at", width: 180, render: (v?: string | null) => (v ? formatDateTime(v) : "-") },
+    { title: "测试错误", dataIndex: "last_test_error", ellipsis: true, render: (v?: string | null) => (v ? <span title={v}>{v}</span> : "-") },
+    {
+      title: "操作",
+      width: 260,
+      fixed: "right",
+      render: (_: unknown, r: ServerItem) => (
+        <Space size={6} wrap>
+          <Button
+            size="small"
+            icon={<LinkOutlined />}
+            onClick={() => {
+              if (!projectId) return;
+              navigate(`/server-console?project_id=${projectId}&server_id=${r.id}`);
+            }}
+          >
+            连接
+          </Button>
+          <Button
+            size="small"
+            icon={<ApiOutlined />}
+            onClick={() =>
+              projectId &&
+              testProjectServer(projectId, r.id).then((x) => {
+                x.ok ? message.success(x.message || "连通性 OK") : message.error(x.message || "连通性失败");
+                void loadServers();
+              })
+            }
+          >
+            测试
+          </Button>
+          {r.source_type === "cloud" ? (
+            <Button size="small" loading={cloudActionSubmitting} onClick={() => confirmRebootCloudServer(r)}>
+              重启
+            </Button>
+          ) : null}
+          {r.source_type === "cloud" ? (
+            <Button size="small" loading={cloudActionSubmitting} onClick={() => confirmShutdownCloudServer(r)}>
+              关机
+            </Button>
+          ) : null}
+          {r.source_type === "cloud" ? (
+            <Button
+              size="small"
+              loading={cloudActionSubmitting}
+              onClick={() => {
+                setResetPasswordTarget(r);
+                resetPasswordForm.resetFields();
+              }}
+            >
+              改密
+            </Button>
+          ) : null}
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
+            编辑
+          </Button>
+          <Popconfirm title="确定删除该服务器？" onConfirm={() => void onDelete(r)}>
+            <Button size="small" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
   return (
     <Card title="服务器管理" style={{ height: "calc(100vh - 130px)" }} bodyStyle={{ height: "100%", paddingBottom: 12 }}>
       <Row gutter={16} align="stretch" style={{ height: "100%" }}>
@@ -789,6 +964,9 @@ export function ProjectServersPage() {
                   setSelectedGroupId(id);
                   setSelectedGroup(item);
                   setQuery((q) => ({ ...q, page: 1 }));
+                  if (item?.category !== "cloud") {
+                    setSelectedCloudAccountId(undefined);
+                  }
                 }}
                 onDrop={async (info) => {
                   if (!projectId) return;
@@ -908,16 +1086,18 @@ export function ProjectServersPage() {
               title={selectedGroup ? `当前分组：${selectedGroup.name}` : "服务器列表"}
               extra={
                 <Space wrap>
-                  <Select
-                    allowClear
-                    showSearch
-                    placeholder="按云账号过滤"
-                    options={cloudAccounts.map((a) => ({ label: a.account_name || String(a.id), value: a.id }))}
-                    style={{ width: 220 }}
-                    value={selectedCloudAccountId}
-                    onChange={(v) => setSelectedCloudAccountId(v)}
-                    filterOption={(input, option) => (option?.label || "").toLowerCase().includes((input || "").toLowerCase())}
-                  />
+                  {isCloudCategory ? (
+                    <Select
+                      allowClear
+                      showSearch
+                      placeholder="按云账号过滤"
+                      options={cloudAccounts.map((a) => ({ label: a.account_name || String(a.id), value: a.id }))}
+                      style={{ width: 220 }}
+                      value={selectedCloudAccountId}
+                      onChange={(v) => setSelectedCloudAccountId(v)}
+                      filterOption={(input, option) => (option?.label || "").toLowerCase().includes((input || "").toLowerCase())}
+                    />
+                  ) : null}
                   <Input.Search allowClear placeholder="搜索 name/host/tags" onSearch={(keyword) => setQuery((q) => ({ ...q, keyword, page: 1 }))} style={{ width: 220 }} />
                   <Button icon={<ReloadOutlined />} onClick={() => void loadServers()} loading={loading}>刷新</Button>
                   <Button icon={<ApiOutlined />} onClick={() => void onBatchTest()} disabled={selectedRowKeys.length === 0} loading={batchTesting}>批量测试</Button>
@@ -940,107 +1120,18 @@ export function ProjectServersPage() {
                 rowKey="id"
                   dataSource={filteredServers}
                 loading={loading}
-                scroll={{ x: 2200, y: tableScrollY }}
+                scroll={{ x: isCloudCategory ? 2200 : 1280, y: tableScrollY }}
                 rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys as number[]) }}
                 pagination={{
                   current: query.page,
                   pageSize: query.page_size,
-                  total: selectedCloudAccountId ? filteredServers.length : total,
+                  total: isCloudCategory && selectedCloudAccountId ? filteredServers.length : total,
                   showSizeChanger: true,
                   pageSizeOptions: [10, 20, 50, 100],
                   showQuickJumper: true,
                   onChange: (page, pageSize) => setQuery((q) => ({ ...q, page, page_size: pageSize })),
                 }}
-                columns={[
-                  { title: "名称", dataIndex: "name", width: 150 },
-                  { title: "云厂商", dataIndex: "provider", width: 100, render: (v: string, r: ServerItem) => (r.source_type === "cloud" ? (CLOUD_PROVIDER_LABEL[v] || v || "-") : "-") },
-                  { title: "Host", dataIndex: "host", width: 180 },
-                  { title: "Port", dataIndex: "port", width: 80 },
-                  {
-                    title: "来源",
-                    width: 120,
-                    render: (_: unknown, r: ServerItem) =>
-                      r.source_type === "cloud" ? (
-                        <Tag color="processing">{`云/${CLOUD_PROVIDER_LABEL[r.provider] || r.provider || "-"}`}</Tag>
-                      ) : (
-                        <Tag color="default">自建</Tag>
-                      ),
-                  },
-                  { title: "区域", dataIndex: "cloud_region", width: 100, render: (v: string) => v || "-" },
-                  { title: "可用区", dataIndex: "cloud_zone", width: 120, render: (v: string) => v || "-" },
-                  { title: "规格", dataIndex: "cloud_spec", width: 140, render: (v: string) => v || "-" },
-                  { title: "实例配置", dataIndex: "cloud_config_info", width: 180, render: (v: string) => v || "-" },
-                  { title: "云OS", dataIndex: "cloud_os_name", width: 180, render: (v: string) => v || "-" },
-                  { title: "网络信息", dataIndex: "cloud_network_info", width: 180, render: (v: string) => v || "-" },
-                  { title: "实例计费", dataIndex: "cloud_charge_type", width: 140, render: (v: string) => mapChargeTypeZh(v) },
-                  { title: "网络计费", dataIndex: "cloud_network_charge_type", width: 140, render: (v: string) => mapNetworkChargeTypeZh(v) },
-                  { title: "标签", dataIndex: "cloud_tags_json", width: 220, render: (v: string) => renderCloudTags(v) },
-                  { title: "公网IP", dataIndex: "cloud_public_ip", width: 140, render: (v: string) => v || "-" },
-                  { title: "内网IP", dataIndex: "cloud_private_ip", width: 140, render: (v: string) => v || "-" },
-                  {
-                    title: "云状态",
-                    dataIndex: "cloud_status_text",
-                    width: 120,
-                    render: (v: string) => {
-                      const s = String(v || "").toUpperCase();
-                      if (!s) return "-";
-                      if (s.includes("RUNNING")) return <Tag color="success">{v}</Tag>;
-                      if (s.includes("STOP") || s.includes("STOPPED")) return <Tag color="warning">{v}</Tag>;
-                      return <Tag color="default">{v}</Tag>;
-                    },
-                  },
-                  { title: "OS / 架构", width: 150, render: (_: unknown, r: ServerItem) => `${r.os_type || "-"} / ${r.os_arch || "-"}` },
-                  { title: "启用状态", dataIndex: "status", width: 100, render: (v: number) => (v === 1 ? <Tag color="green">启用</Tag> : <Tag color="red">停用</Tag>) },
-                  {
-                    title: "连通状态",
-                    width: 120,
-                    render: (_: unknown, r: ServerItem) => {
-                      if (!r.last_test_at) return <Tag>未测试</Tag>;
-                      return r.last_test_error ? <Tag color="error">异常</Tag> : <Tag color="success">正常</Tag>;
-                    },
-                  },
-                  { title: "上次测试", dataIndex: "last_test_at", width: 180, render: (v?: string | null) => (v ? formatDateTime(v) : "-") },
-                  { title: "测试错误", dataIndex: "last_test_error", ellipsis: true, render: (v?: string | null) => (v ? <span title={v}>{v}</span> : "-") },
-                  {
-                    title: "操作",
-                    width: 260,
-                    fixed: "right",
-                    render: (_: unknown, r: ServerItem) => (
-                      <Space size={6} wrap>
-                        <Button size="small"
-                          icon={<LinkOutlined />}
-                          onClick={() => {
-                            if (!projectId) return;
-                            navigate(`/server-console?project_id=${projectId}&server_id=${r.id}`);
-                          }}
-                        >
-                          连接
-                        </Button>
-                        <Button size="small" icon={<ApiOutlined />} onClick={() => projectId && testProjectServer(projectId, r.id).then((x) => { x.ok ? message.success(x.message || "连通性 OK") : message.error(x.message || "连通性失败"); void loadServers(); })}>测试</Button>
-                        {r.source_type === "cloud" ? (
-                          <Button size="small" loading={cloudActionSubmitting} onClick={() => confirmRebootCloudServer(r)}>重启</Button>
-                        ) : null}
-                        {r.source_type === "cloud" ? (
-                          <Button size="small" loading={cloudActionSubmitting} onClick={() => confirmShutdownCloudServer(r)}>关机</Button>
-                        ) : null}
-                        {r.source_type === "cloud" ? (
-                          <Button
-                            size="small"
-                            loading={cloudActionSubmitting}
-                            onClick={() => {
-                              setResetPasswordTarget(r);
-                              resetPasswordForm.resetFields();
-                            }}
-                          >
-                            改密
-                          </Button>
-                        ) : null}
-                        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
-                        <Popconfirm title="确定删除该服务器？" onConfirm={() => void onDelete(r)}><Button size="small" danger icon={<DeleteOutlined />}>删除</Button></Popconfirm>
-                      </Space>
-                    ),
-                  },
-                ]}
+                columns={isCloudCategory ? cloudColumns : selfHostedColumns}
               />
               </div>
             </Card>
