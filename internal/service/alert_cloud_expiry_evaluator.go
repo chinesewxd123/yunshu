@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/constants"
 	cryptox "yunshu/internal/pkg/crypto"
 )
 
@@ -39,6 +40,10 @@ func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force b
 
 // EvaluateCloudExpiryRulesNow 手动触发一次云到期规则评估。
 func (s *AlertService) EvaluateCloudExpiryRulesNow(ctx context.Context) error {
+	if s.aead == nil {
+		return constants.ErrBadRequestWithMsg(
+			"未配置 security.encryption_key（或与保存云账号凭据时使用的密钥不一致），无法解密 AK/SK，云到期规则不会拉取云实例。配置密钥后重试「立即评估」。")
+	}
 	return s.tickCloudExpiryRulesWithMode(ctx, true)
 }
 

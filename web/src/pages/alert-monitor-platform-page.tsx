@@ -1821,7 +1821,11 @@ export function AlertMonitorPlatformPage() {
     setCloudExpiryEvaluating(true);
     try {
       await evaluateCloudExpiryRulesNow();
-      message.success("已触发一次云到期规则评估，请稍后到告警事件查看结果");
+      message.success({
+        content:
+          "评估已完成。历史记录仅在存在「剩余天数 ≤ 提前天数」的实例时产生 firing；无到期实例则不会有新记录。请在历史记录中搜索规则名，或数据源选「云资源到期」；未配置 encryption_key 时接口会报错。",
+        duration: 9,
+      });
     } finally {
       setCloudExpiryEvaluating(false);
     }
