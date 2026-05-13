@@ -8,6 +8,7 @@ import (
 	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/dictmask"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/repository"
 
@@ -64,8 +65,10 @@ type DictEntryUpdateRequest struct {
 }
 
 type DictEntryOption struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
+	ID        uint   `json:"id"`
+	Label     string `json:"label"`
+	Value     string `json:"value"` // 非敏感为真实值；敏感类型为脱敏预览（明文仅 POST reveal-value）
+	Sensitive bool   `json:"sensitive"`
 }
 
 type DictEntryService struct {
@@ -342,16 +345,41 @@ func (s *DictEntryService) Delete(ctx context.Context, id uint) error {
 
 func (s *DictEntryService) Options(ctx context.Context, dictType string) ([]DictEntryOption, error) {
 	s.ensureBuiltins(ctx)
-	list, err := s.repo.ListByTypeEnabled(ctx, canonicalDictType(dictType))
+	canon := canonicalDictType(dictType)
+	list, err := s.repo.ListByTypeEnabled(ctx, canon)
 	if err != nil {
 		return nil, err
 	}
+	sensitiveType := dictmask.SensitiveDictType(canon)
 	options := make([]DictEntryOption, 0, len(list))
 	for _, item := range list {
+		v := item.Value
+		if sensitiveType {
+			v = dictmask.Preview(item.Value)
+		}
 		options = append(options, DictEntryOption{
-			Label: item.Label,
-			Value: item.Value,
+			ID:        item.ID,
+			Label:     item.Label,
+			Value:     v,
+			Sensitive: sensitiveType,
 		})
 	}
 	return options, nil
+}
+
+// RevealValue 返回敏感字典条目的明文（仅用于表单从字典填充；需配合独立审计策略）。
+func (s *DictEntryService) RevealValue(ctx context.Context, id uint) (string, error) {
+	s.ensureBuiltins(ctx)
+	item, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return "", constants.ErrNotFoundWithMsg(constants.ErrMsg094b285159a4)
+		}
+		return "", err
+	}
+	dt := canonicalDictType(item.DictType)
+	if !dictmask.SensitiveDictType(dt) {
+		return "", constants.ErrBadRequestWithMsg("该字典类型不支持通过此接口获取明文")
+	}
+	return item.Value, nil
 }

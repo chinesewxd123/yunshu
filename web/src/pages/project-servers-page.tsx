@@ -246,6 +246,11 @@ export function ProjectServersPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [tableScrollY, setTableScrollY] = useState(360);
 
+  const isCloudCategory = selectedGroup?.category === "cloud";
+  const isCloudProviderNode = isCloudCategory && selectedGroup?.provider !== "custom";
+  const cloudProviderLabel = CLOUD_PROVIDER_LABEL[(selectedGroup?.provider || "").trim()] || (selectedGroup?.provider || "-");
+  const regionOptions = CLOUD_REGION_OPTIONS[(selectedGroup?.provider || "").trim()] || [];
+
   const projectOptions = useMemo(() => projects.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` })), [projects]);
   const serverGroupCategoryOptions = useDictOptions("server_group_category");
   const serverOsOptions = useDictOptions("server_os_type");
@@ -253,28 +258,24 @@ export function ProjectServersPage() {
   const serverPortDict = useDictOptions("server_port");
   const sshUserDict = useDictOptions("server_ssh_username");
   const sshPwdDict = useDictOptions("server_ssh_password");
-  const cloudAlibabaAKDict = useDictOptions("cloud_alibaba_ak");
-  const cloudAlibabaSKDict = useDictOptions("cloud_alibaba_sk");
-  const cloudTencentAKDict = useDictOptions("cloud_tencent_ak");
-  const cloudTencentSKDict = useDictOptions("cloud_tencent_sk");
-  const cloudJdAKDict = useDictOptions("cloud_jd_ak");
-  const cloudJdSKDict = useDictOptions("cloud_jd_sk");
-  const cloudAlibabaUserDict = useDictOptions("server_cloud_alibaba_username");
-  const cloudAlibabaPwdDict = useDictOptions("server_cloud_alibaba_password");
-  const cloudAlibabaKeyDict = useDictOptions("server_cloud_alibaba_private_key");
-  const cloudAlibabaPortDict = useDictOptions("server_cloud_alibaba_port");
-  const cloudTencentUserDict = useDictOptions("server_cloud_tencent_username");
-  const cloudTencentPwdDict = useDictOptions("server_cloud_tencent_password");
-  const cloudTencentKeyDict = useDictOptions("server_cloud_tencent_private_key");
-  const cloudTencentPortDict = useDictOptions("server_cloud_tencent_port");
-  const cloudJdUserDict = useDictOptions("server_cloud_jd_username");
-  const cloudJdPwdDict = useDictOptions("server_cloud_jd_password");
-  const cloudJdKeyDict = useDictOptions("server_cloud_jd_private_key");
-  const cloudJdPortDict = useDictOptions("server_cloud_jd_port");
-  const isCloudCategory = selectedGroup?.category === "cloud";
-  const isCloudProviderNode = isCloudCategory && selectedGroup?.provider !== "custom";
-  const cloudProviderLabel = CLOUD_PROVIDER_LABEL[(selectedGroup?.provider || "").trim()] || (selectedGroup?.provider || "-");
-  const regionOptions = CLOUD_REGION_OPTIONS[(selectedGroup?.provider || "").trim()] || [];
+  const cloudAlibabaAKDict = useDictOptions("cloud_alibaba_ak", isCloudCategory);
+  const cloudAlibabaSKDict = useDictOptions("cloud_alibaba_sk", isCloudCategory);
+  const cloudTencentAKDict = useDictOptions("cloud_tencent_ak", isCloudCategory);
+  const cloudTencentSKDict = useDictOptions("cloud_tencent_sk", isCloudCategory);
+  const cloudJdAKDict = useDictOptions("cloud_jd_ak", isCloudCategory);
+  const cloudJdSKDict = useDictOptions("cloud_jd_sk", isCloudCategory);
+  const cloudAlibabaUserDict = useDictOptions("server_cloud_alibaba_username", isCloudCategory);
+  const cloudAlibabaPwdDict = useDictOptions("server_cloud_alibaba_password", isCloudCategory);
+  const cloudAlibabaKeyDict = useDictOptions("server_cloud_alibaba_private_key", isCloudCategory);
+  const cloudAlibabaPortDict = useDictOptions("server_cloud_alibaba_port", isCloudCategory);
+  const cloudTencentUserDict = useDictOptions("server_cloud_tencent_username", isCloudCategory);
+  const cloudTencentPwdDict = useDictOptions("server_cloud_tencent_password", isCloudCategory);
+  const cloudTencentKeyDict = useDictOptions("server_cloud_tencent_private_key", isCloudCategory);
+  const cloudTencentPortDict = useDictOptions("server_cloud_tencent_port", isCloudCategory);
+  const cloudJdUserDict = useDictOptions("server_cloud_jd_username", isCloudCategory);
+  const cloudJdPwdDict = useDictOptions("server_cloud_jd_password", isCloudCategory);
+  const cloudJdKeyDict = useDictOptions("server_cloud_jd_private_key", isCloudCategory);
+  const cloudJdPortDict = useDictOptions("server_cloud_jd_port", isCloudCategory);
   const formProvider = (Form.useWatch("provider", form) as string | undefined) || current?.provider || selectedGroup?.provider || "";
   const currentCloudDictKey = CLOUD_DICT_BY_PROVIDER[(formProvider || "").trim()];
   const cloudAKDictOptions = useMemo(() => {

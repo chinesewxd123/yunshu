@@ -280,6 +280,29 @@ export function DashboardPage() {
 
   const uptimePct = Math.min(100, (health.uptime / 86400) * 100);
 
+  const trendDailyRows = useMemo(() => {
+    if (!trends?.days?.length) return [];
+    return trends.days.map((day, i) => ({
+      key: `${day}-${i}`,
+      day,
+      login_success: trends.login_success[i] ?? 0,
+      operation_total: trends.operation_total[i] ?? 0,
+      login_fail: trends.login_fail[i] ?? 0,
+    }));
+  }, [trends]);
+
+  const trendTotals = useMemo(() => {
+    if (!trends?.days?.length) return null;
+    const sum = (arr: number[]) => arr.reduce((a, b) => a + (Number(b) || 0), 0);
+    const n = trends.days.length;
+    return {
+      days: n,
+      login_success: sum(trends.login_success),
+      operation_total: sum(trends.operation_total),
+      login_fail: sum(trends.login_fail),
+    };
+  }, [trends]);
+
   const cellTextStyle = { color: "rgba(248, 250, 252, 0.96)" };
 
   return (
@@ -394,16 +417,77 @@ export function DashboardPage() {
             bordered={false}
           >
             {trends ? (
-              <LineChart
-                darkMode
-                labels={trends.days}
-                series={[
-                  { name: "登录成功", data: trends.login_success, color: "#38bdf8" },
-                  { name: "操作量", data: trends.operation_total, color: "#34d399" },
-                  { name: "登录失败", data: trends.login_fail, color: "#f87171" },
-                ]}
-                height={300}
-              />
+              <>
+                <LineChart
+                  darkMode
+                  labels={trends.days}
+                  series={[
+                    { name: "登录成功", data: trends.login_success, color: "#38bdf8" },
+                    { name: "操作量", data: trends.operation_total, color: "#34d399" },
+                    { name: "登录失败", data: trends.login_fail, color: "#f87171" },
+                  ]}
+                  height={300}
+                />
+                <Divider style={{ borderColor: "rgba(56, 189, 248, 0.15)", margin: "12px 0 8px" }} />
+                {trendTotals ? (
+                  <Typography.Paragraph style={{ marginBottom: 10, color: "rgba(186, 214, 238, 0.82)", fontSize: 12 }}>
+                    近 <strong style={{ color: "#e2e8f0" }}>{trendTotals.days}</strong> 日合计：登录成功{" "}
+                    <Typography.Text style={{ color: "#38bdf8" }}>{trendTotals.login_success}</Typography.Text>
+                    {" · "}
+                    接口操作{" "}
+                    <Typography.Text style={{ color: "#34d399" }}>{trendTotals.operation_total}</Typography.Text>
+                    {" · "}
+                    登录失败{" "}
+                    <Typography.Text style={{ color: "#f87171" }}>{trendTotals.login_fail}</Typography.Text>
+                    <span style={{ color: "rgba(148, 163, 184, 0.9)" }}>
+                      {" "}
+                      （日均{" "}
+                      {Math.round(trendTotals.login_success / trendTotals.days)} /{" "}
+                      {Math.round(trendTotals.operation_total / trendTotals.days)} /{" "}
+                      {Math.round(trendTotals.login_fail / trendTotals.days)}）
+                    </span>
+                  </Typography.Paragraph>
+                ) : null}
+                <Table
+                  size="small"
+                  rowKey="key"
+                  pagination={false}
+                  dataSource={trendDailyRows}
+                  tableLayout="fixed"
+                  locale={{ emptyText: "无分日数据" }}
+                  columns={[
+                    {
+                      title: "日期",
+                      dataIndex: "day",
+                      width: 108,
+                      render: (v: string) => <span style={cellTextStyle}>{v || "-"}</span>,
+                    },
+                    {
+                      title: "登录成功",
+                      dataIndex: "login_success",
+                      width: 96,
+                      align: "right" as const,
+                      render: (v: number) => <span style={{ ...cellTextStyle, color: "#38bdf8" }}>{v}</span>,
+                    },
+                    {
+                      title: "操作量",
+                      dataIndex: "operation_total",
+                      width: 96,
+                      align: "right" as const,
+                      render: (v: number) => <span style={{ ...cellTextStyle, color: "#34d399" }}>{v}</span>,
+                    },
+                    {
+                      title: "登录失败",
+                      dataIndex: "login_fail",
+                      width: 96,
+                      align: "right" as const,
+                      render: (v: number) => (
+                        <span style={{ ...cellTextStyle, color: v > 0 ? "#f87171" : "rgba(248, 250, 252, 0.5)" }}>{v}</span>
+                      ),
+                    },
+                  ]}
+                />
+              </>
             ) : (
               <Typography.Text type="secondary" style={{ color: "rgba(186, 214, 238, 0.65)" }}>
                 暂无趋势数据（未产生登录/操作日志或服务未启用统计）。

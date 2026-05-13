@@ -270,6 +270,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	dictEntries.Use(authMiddleware, authorize, opAudit)
 	dictEntries.GET("", dictEntryHandler.List)
 	dictEntries.POST("", dictEntryHandler.Create)
+	dictEntries.POST("/:id/reveal-value", dictEntryHandler.RevealValue)
 	dictEntries.PUT("/:id", dictEntryHandler.Update)
 	dictEntries.DELETE("/:id", dictEntryHandler.Delete)
 

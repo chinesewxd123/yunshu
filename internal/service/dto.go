@@ -198,17 +198,24 @@ type PermissionItem struct {
 	K8sScopeEnabled bool   `json:"k8s_scope_enabled"`
 }
 
+type UserGroupBrief struct {
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
 type UserDetailResponse struct {
-	ID             uint       `json:"id"`
-	Username       string     `json:"username"`
-	Email          string     `json:"email"`
-	Nickname       string     `json:"nickname"`
-	Status         int        `json:"status"`
-	DepartmentID   *uint      `json:"department_id,omitempty"`
-	DepartmentName string     `json:"department_name"`
-	Roles          []RoleItem `json:"roles"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID             uint             `json:"id"`
+	Username       string           `json:"username"`
+	Email          string           `json:"email"`
+	Nickname       string           `json:"nickname"`
+	Status         int              `json:"status"`
+	DepartmentID   *uint            `json:"department_id,omitempty"`
+	DepartmentName string          `json:"department_name"`
+	Roles          []RoleItem       `json:"roles"`
+	Groups         []UserGroupBrief `json:"groups"`
+	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      time.Time        `json:"updated_at"`
 }
 
 type PolicyItemResponse struct {
@@ -250,6 +257,11 @@ func NewUserDetailResponse(user model.User) UserDetailResponse {
 		roles = append(roles, NewRoleItem(role))
 	}
 
+	groups := make([]UserGroupBrief, 0, len(user.Groups))
+	for _, g := range user.Groups {
+		groups = append(groups, UserGroupBrief{ID: g.ID, Name: g.Name, Code: g.Code})
+	}
+
 	email := ""
 	if user.Email != nil {
 		email = *user.Email
@@ -269,6 +281,7 @@ func NewUserDetailResponse(user model.User) UserDetailResponse {
 			return ""
 		}(),
 		Roles:     roles,
+		Groups:    groups,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 	}

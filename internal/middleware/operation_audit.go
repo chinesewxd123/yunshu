@@ -78,6 +78,9 @@ func OperationAudit(opSvc *service.OperationLogService, logger *logx.Logger) gin
 
 		respStr := maskSensitiveJSON(blw.buf.String())
 		respStr = truncateRunes(respStr, maxStoredBodyRunes)
+		if shouldRedactAuditResponseBody(path) {
+			respStr = `{"redacted":true,"reason":"high_sensitivity_response"}`
+		}
 
 		// capture headers and mask sensitive values
 		headersMap := map[string][]string{}
@@ -141,6 +144,11 @@ func shouldCaptureRequestBody(c *gin.Context) bool {
 		return false
 	}
 	return true
+}
+
+func shouldRedactAuditResponseBody(fullPath string) bool {
+	// 字典敏感明文：审计不落库响应体，仅保留路径/状态码/耗时等元数据。
+	return fullPath == "/api/v1/dict/entries/:id/reveal-value"
 }
 
 func maskSensitiveJSON(s string) string {

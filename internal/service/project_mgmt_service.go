@@ -363,25 +363,30 @@ type ServerItem struct {
 	OSArch                 string  `json:"os_arch"`
 	Tags                   string  `json:"tags"`
 	SourceType             string  `json:"source_type"`
-	Provider               string  `json:"provider"`
-	CloudInstanceID        string  `json:"cloud_instance_id"`
-	CloudRegion            string  `json:"cloud_region"`
-	CloudZone              string  `json:"cloud_zone"`
-	CloudSpec              string  `json:"cloud_spec"`
-	CloudConfigInfo        string  `json:"cloud_config_info"`
-	CloudOSName            string  `json:"cloud_os_name"`
-	CloudNetworkInfo       string  `json:"cloud_network_info"`
-	CloudChargeType        string  `json:"cloud_charge_type"`
-	CloudNetworkChargeType string  `json:"cloud_network_charge_type"`
-	CloudTagsJSON          string  `json:"cloud_tags_json"`
-	CloudPublicIP          string  `json:"cloud_public_ip"`
-	CloudPrivateIP         string  `json:"cloud_private_ip"`
-	CloudStatusText        string  `json:"cloud_status_text"`
+	Provider               string  `json:"provider,omitempty"`
+	CloudInstanceID        string  `json:"cloud_instance_id,omitempty"`
+	CloudRegion            string  `json:"cloud_region,omitempty"`
+	CloudZone              string  `json:"cloud_zone,omitempty"`
+	CloudSpec              string  `json:"cloud_spec,omitempty"`
+	CloudConfigInfo        string  `json:"cloud_config_info,omitempty"`
+	CloudOSName            string  `json:"cloud_os_name,omitempty"`
+	CloudNetworkInfo       string  `json:"cloud_network_info,omitempty"`
+	CloudChargeType        string  `json:"cloud_charge_type,omitempty"`
+	CloudNetworkChargeType string  `json:"cloud_network_charge_type,omitempty"`
+	CloudTagsJSON          string  `json:"cloud_tags_json,omitempty"`
+	CloudPublicIP          string  `json:"cloud_public_ip,omitempty"`
+	CloudPrivateIP         string  `json:"cloud_private_ip,omitempty"`
+	CloudStatusText        string  `json:"cloud_status_text,omitempty"`
 	LastTestAt             *string `json:"last_test_at"`
 	LastTestErr            *string `json:"last_test_error"`
 	CreatedAt              string  `json:"created_at"`
 	LastSeenAt             *string `json:"last_seen_at"`
 	Status                 int     `json:"status"`
+}
+
+func isCloudServerSourceType(sourceType string) bool {
+	t := strings.TrimSpace(strings.ToLower(sourceType))
+	return t == model.ServerGroupCategoryCloud || t == "cloud"
 }
 
 func toServerItem(sv model.Server) ServerItem {
@@ -395,6 +400,7 @@ func toServerItem(sv model.Server) ServerItem {
 		x := sv.LastSeenAt.Format(time.RFC3339)
 		lastSeenAt = &x
 	}
+	isCloud := isCloudServerSourceType(sv.SourceType)
 	return ServerItem{
 		ID:                     sv.ID,
 		ProjectID:              sv.ProjectID,
@@ -406,26 +412,33 @@ func toServerItem(sv model.Server) ServerItem {
 		OSArch:                 sv.OSArch,
 		Tags:                   sv.Tags,
 		SourceType:             sv.SourceType,
-		Provider:               sv.Provider,
-		CloudInstanceID:        sv.CloudInstanceID,
-		CloudRegion:            sv.CloudRegion,
-		CloudZone:              sv.CloudZone,
-		CloudSpec:              sv.CloudSpec,
-		CloudConfigInfo:        sv.CloudConfigInfo,
-		CloudOSName:            sv.CloudOSName,
-		CloudNetworkInfo:       sv.CloudNetworkInfo,
-		CloudChargeType:        sv.CloudChargeType,
-		CloudNetworkChargeType: sv.CloudNetworkChargeType,
-		CloudTagsJSON:          sv.CloudTagsJSON,
-		CloudPublicIP:          sv.CloudPublicIP,
-		CloudPrivateIP:         sv.CloudPrivateIP,
-		CloudStatusText:        sv.CloudStatusText,
+		Provider:               pickCloudString(isCloud, sv.Provider),
+		CloudInstanceID:        pickCloudString(isCloud, sv.CloudInstanceID),
+		CloudRegion:            pickCloudString(isCloud, sv.CloudRegion),
+		CloudZone:              pickCloudString(isCloud, sv.CloudZone),
+		CloudSpec:              pickCloudString(isCloud, sv.CloudSpec),
+		CloudConfigInfo:        pickCloudString(isCloud, sv.CloudConfigInfo),
+		CloudOSName:            pickCloudString(isCloud, sv.CloudOSName),
+		CloudNetworkInfo:       pickCloudString(isCloud, sv.CloudNetworkInfo),
+		CloudChargeType:        pickCloudString(isCloud, sv.CloudChargeType),
+		CloudNetworkChargeType: pickCloudString(isCloud, sv.CloudNetworkChargeType),
+		CloudTagsJSON:          pickCloudString(isCloud, sv.CloudTagsJSON),
+		CloudPublicIP:          pickCloudString(isCloud, sv.CloudPublicIP),
+		CloudPrivateIP:         pickCloudString(isCloud, sv.CloudPrivateIP),
+		CloudStatusText:        pickCloudString(isCloud, sv.CloudStatusText),
 		LastTestAt:             lastTestAt,
 		LastTestErr:            sv.LastTestError,
 		CreatedAt:              sv.CreatedAt.Format(time.RFC3339),
 		LastSeenAt:             lastSeenAt,
 		Status:                 sv.Status,
 	}
+}
+
+func pickCloudString(isCloud bool, v string) string {
+	if !isCloud {
+		return ""
+	}
+	return v
 }
 
 // ServerDetailItem 在 ServerItem 基础上附带 SSH 凭据元数据（不含密钥明文）。
