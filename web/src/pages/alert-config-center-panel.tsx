@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, InputNumber, Popconfirm, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tree, Typography, message } from "antd";
+import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, InputNumber, Popconfirm, Popover, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tree, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getAlertHistoryStats,
@@ -145,6 +145,39 @@ function summarizeAlertHint(row: AlertEventItem): string {
   if (reason === "resolved_aggregate_suppressed") return "重复恢复事件已抑制（恢复仅发送一次）";
   if (/suppressed/i.test(reason)) return "已被系统策略抑制，本次未发送";
   return reason;
+}
+
+/** 从告警历史入库体中解析顶层 `labels`（与后端 hydrate 逻辑一致）。 */
+function parseLabelsFromAlertEventRequestPayload(raw?: string): Record<string, string> {
+  const s = String(raw || "").trim();
+  if (!s) return {};
+  try {
+    const payload = JSON.parse(s) as Record<string, unknown>;
+    const labels = payload?.labels;
+    if (labels && typeof labels === "object" && !Array.isArray(labels)) {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(labels as Record<string, unknown>)) {
+        const vs = String(v ?? "").trim();
+        if (vs && vs !== "<nil>") {
+          out[String(k).trim()] = vs;
+        }
+      }
+      return out;
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function prettifyAlertRequestPayload(raw?: string): string {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  try {
+    return stringifyPrettyJSON(JSON.parse(s) as unknown, s);
+  } catch {
+    return s;
+  }
 }
 
 export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, embedded, hideTabs }: AlertConfigCenterPanelProps) {
@@ -731,7 +764,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
             rowKey="id"
             loading={eventsLoading}
             dataSource={events}
-            scroll={{ x: 1640 }}
+            scroll={{ x: 2480 }}
             pagination={{
               current: eventsPage,
               pageSize: eventsPageSize,
@@ -821,7 +854,59 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                 width: 100,
                 render: (v: boolean) => (v ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>),
               },
-              { title: "HTTP", dataIndex: "httpStatusCode", width: 80 },
+              {
+                title: "标签组",
+                key: "labels_group",
+                width: 300,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const labels = parseLabelsFromAlertEventRequestPayload(row.requestPayload);
+                  const entries = Object.entries(labels);
+                  if (!entries.length) return <span>-</span>;
+                  return (
+                    <Space size={[4, 4]} wrap style={{ maxWidth: 280 }}>
+                      {entries.map(([k, v]) => (
+                        <Tag key={`${row.id}-${k}`} style={{ marginInlineEnd: 0 }}>
+                          {k}={v}
+                        </Tag>
+                      ))}
+                    </Space>
+                  );
+                },
+              },
+              {
+                title: "告警数据原始 JSON",
+                key: "raw_request_payload",
+                width: 160,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const raw = String(row.requestPayload || "").trim();
+                  if (!raw) return <span>-</span>;
+                  const pretty = prettifyAlertRequestPayload(raw);
+                  const http = row.httpStatusCode;
+                  return (
+                    <Popover
+                      title={`入库 requestPayload · HTTP ${http ?? "-"}`}
+                      trigger={["click"]}
+                      overlayStyle={{ maxWidth: 760 }}
+                      content={
+                        <pre
+                          style={{
+                            maxHeight: 480,
+                            overflow: "auto",
+                            margin: 0,
+                            fontSize: 12,
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {pretty}
+                        </pre>
+                      }
+                    >
+                      <Typography.Link>查看（{raw.length} 字符）</Typography.Link>
+                    </Popover>
+                  );
+                },
+              },
               {
                 title: "告警产生时间",
                 dataIndex: "alertStartedAt",
