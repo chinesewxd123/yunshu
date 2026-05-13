@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"strconv"
+
+	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
 
@@ -39,4 +42,19 @@ func (h *DictEntryHandler) Options(c *gin.Context) {
 		return
 	}
 	response.Success(c, list)
+}
+
+func (h *DictEntryHandler) RevealValue(c *gin.Context) {
+	idStr := c.Param("id")
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil || id64 == 0 {
+		response.Error(c, constants.ErrBadRequestWithMsg("字典条目 id 无效"))
+		return
+	}
+	val, err := h.svc.RevealValue(c.Request.Context(), uint(id64))
+	if err != nil {
+		response.Error(c, err)
+		return
+	}
+	response.Success(c, gin.H{"value": val})
 }

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { getDictOptions } from "../services/dict";
 
-type Option = { label: string; value: string | number };
+type Option = { label: string; value: string | number; id?: number; sensitive?: boolean };
 
-function shouldCastDictValueToNumber(dictType: string, value: string): boolean {
+function shouldCastDictValueToNumber(dictType: string, value: string, sensitive: boolean): boolean {
+  if (sensitive) return false;
   const rawType = String(dictType || "").trim();
   const rawValue = String(value || "").trim();
   if (!rawValue || !/^-?\d+$/.test(rawValue)) {
@@ -134,20 +135,25 @@ const fallbackMap: Record<string, Option[]> = {
   server_cloud_jd_port: [],
 };
 
-export function useDictOptions(dictType: string) {
+export function useDictOptions(dictType: string, enabled = true) {
   const [options, setOptions] = useState<Option[]>(fallbackMap[dictType] ?? []);
 
   useEffect(() => {
+    if (!enabled) {
+      setOptions(fallbackMap[dictType] ?? []);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
         const list = await getDictOptions(dictType);
         if (cancelled) return;
         const next = list.map((item) => {
-          if (shouldCastDictValueToNumber(dictType, item.value)) {
-            return { label: item.label, value: Number(item.value) };
+          const sensitive = Boolean(item.sensitive);
+          if (shouldCastDictValueToNumber(dictType, item.value, sensitive)) {
+            return { label: item.label, value: Number(item.value), id: item.id, sensitive };
           }
-          return { label: item.label, value: item.value };
+          return { label: item.label, value: item.value, id: item.id, sensitive };
         });
         setOptions(next.length ? next : fallbackMap[dictType] ?? []);
       } catch {
@@ -159,7 +165,7 @@ export function useDictOptions(dictType: string) {
     return () => {
       cancelled = true;
     };
-  }, [dictType]);
+  }, [dictType, enabled]);
 
   return useMemo(() => options, [options]);
 }

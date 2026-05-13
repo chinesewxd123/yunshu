@@ -13,8 +13,10 @@ export interface DictEntryItem {
 }
 
 export interface DictOptionItem {
+  id: number;
   label: string;
   value: string;
+  sensitive: boolean;
 }
 
 export interface DictQuery {
@@ -59,4 +61,8 @@ export function deleteDictEntry(id: number) {
 
 export function getDictOptions(dictType: string) {
   return getData<DictOptionItem[]>(http.get(`/dict/options/${dictType}`));
+}
+
+export function revealDictEntryValue(id: number) {
+  return getData<{ value: string }>(http.post(`/dict/entries/${id}/reveal-value`));
 }

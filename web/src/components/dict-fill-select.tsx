@@ -1,8 +1,9 @@
-import { Form, Select } from "antd";
+import { Form, Select, message } from "antd";
 import type { FormInstance } from "antd/es/form";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { revealDictEntryValue } from "../services/dict";
 
-export type DictFillOption = { label: string; value: string | number };
+export type DictFillOption = { label: string; value: string | number; id?: number; sensitive?: boolean };
 
 type DictFillSelectProps = {
   form: FormInstance;
@@ -25,12 +26,19 @@ function norm(v: unknown): string {
  */
 export function DictFillSelect({ form, fieldName, options, placeholder, allowClear = true, disabled, style }: DictFillSelectProps) {
   const raw = Form.useWatch(fieldName, form);
+  const [pickedSensitiveId, setPickedSensitiveId] = useState<number | undefined>();
+
+  useEffect(() => {
+    setPickedSensitiveId(undefined);
+  }, [fieldName]);
+
   const selectValue = useMemo(() => {
+    if (pickedSensitiveId != null) return pickedSensitiveId;
     const s = norm(raw);
     if (!s) return undefined;
-    const hit = options.find((o) => norm(o.value) === s);
+    const hit = options.find((o) => !o.sensitive && norm(o.value) === s);
     return hit ? hit.value : undefined;
-  }, [raw, options]);
+  }, [raw, options, pickedSensitiveId]);
 
   return (
     <Select
@@ -38,9 +46,32 @@ export function DictFillSelect({ form, fieldName, options, placeholder, allowCle
       disabled={disabled}
       placeholder={placeholder}
       style={style}
-      options={options.map((o) => ({ label: o.label, value: o.value }))}
+      options={options.map((o) => ({
+        label: o.label,
+        value: o.sensitive && o.id != null ? o.id : o.value,
+      }))}
       value={selectValue}
-      onChange={(v) => {
+      onChange={async (v) => {
+        if (v === undefined || v === null || v === "") {
+          setPickedSensitiveId(undefined);
+          form.setFieldValue(fieldName, "");
+          return;
+        }
+        const byId = options.find((o) => o.sensitive && o.id === v);
+        if (byId?.id != null) {
+          const hide = message.loading("正在获取字典值…", 0);
+          try {
+            const { value } = await revealDictEntryValue(byId.id);
+            setPickedSensitiveId(byId.id);
+            form.setFieldValue(fieldName, value);
+          } catch (e) {
+            message.error(e instanceof Error ? e.message : String(e));
+          } finally {
+            hide();
+          }
+          return;
+        }
+        setPickedSensitiveId(undefined);
         form.setFieldValue(fieldName, v === undefined || v === null ? "" : v);
       }}
     />
@@ -87,7 +118,7 @@ export function DictLabelFillSelect({
       if (byLabel) return byLabel.label;
     }
     if (!targetValueNorm) return undefined;
-    const byValue = options.find((o) => norm(o.value) === targetValueNorm);
+    const byValue = options.find((o) => !o.sensitive && norm(o.value) === targetValueNorm);
     return byValue ? byValue.label : undefined;
   }, [selectedLabel, targetValueNorm, options]);
 
@@ -96,6 +127,9 @@ export function DictLabelFillSelect({
     const byLabel = options.find((o) => norm(o.label) === selectedLabel);
     if (!byLabel) {
       form.setFieldValue(labelFieldName, undefined);
+      return;
+    }
+    if (byLabel.sensitive) {
       return;
     }
     if (targetValueNorm && norm(byLabel.value) !== targetValueNorm) {
@@ -111,13 +145,28 @@ export function DictLabelFillSelect({
       style={style}
       options={options.map((o) => ({ label: o.label, value: o.label }))}
       value={selectValue}
-      onChange={(label) => {
+      onChange={async (label) => {
         if (!label) {
-          form.setFieldsValue({ [labelFieldName]: undefined });
+          form.setFieldsValue({ [labelFieldName]: undefined, [targetFieldName]: "" });
           return;
         }
         const hit = options.find((o) => norm(o.label) === norm(label));
         if (!hit) return;
+        if (hit.sensitive && hit.id != null) {
+          const hide = message.loading("正在获取字典值…", 0);
+          try {
+            const { value } = await revealDictEntryValue(hit.id);
+            form.setFieldsValue({
+              [labelFieldName]: hit.label,
+              [targetFieldName]: value,
+            });
+          } catch (e) {
+            message.error(e instanceof Error ? e.message : String(e));
+          } finally {
+            hide();
+          }
+          return;
+        }
         form.setFieldsValue({
           [labelFieldName]: hit.label,
           [targetFieldName]: hit.value,
