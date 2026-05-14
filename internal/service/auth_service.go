@@ -290,6 +290,7 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID uint, req Update
 		}
 		user.Email = &email
 	}
+	user.Phone = strings.TrimSpace(req.Phone)
 
 	if err = s.userRepo.Save(ctx, user); err != nil {
 		return nil, err

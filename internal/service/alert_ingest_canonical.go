@@ -200,7 +200,15 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 
 		if status == "firing" {
 			_ = s.clearResolvedNotificationSent(ctx, alert.Fingerprint)
-			shouldSend, reason, aggCount, firstSeen, lastSeen := s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
+			var shouldSend bool
+			var reason string
+			var aggCount int64
+			var firstSeen, lastSeen string
+			if alert.SkipGroupTiming {
+				shouldSend, reason, aggCount, firstSeen, lastSeen = true, "skip_group_timing_immediate", 1, "", ""
+			} else {
+				shouldSend, reason, aggCount, firstSeen, lastSeen = s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
+			}
 			outgoing["agg_count"] = aggCount
 			outgoing["agg_first_seen"] = firstSeen
 			outgoing["agg_last_seen"] = lastSeen

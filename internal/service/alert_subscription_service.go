@@ -659,26 +659,39 @@ func (s *AlertSubscriptionService) matchNodeRecursiveDetailed(node *CachedSubscr
 		return AlertRouteResult{}, false
 	}
 	res := AlertRouteResult{
-		ReceiverGroupIDs: append([]uint{}, node.ReceiverGroupIDs...),
 		MatchedPath:      node.Path,
-		MatchedNodeIDs:   []uint{node.ID},
+		MatchedNodeIDs: []uint{node.ID},
 		MatchedNodeNames: []string{node.Name},
 		SilenceSeconds:   node.SilenceSeconds,
 	}
 	if !node.Continue {
+		res.ReceiverGroupIDs = uniqUint(append([]uint{}, node.ReceiverGroupIDs...))
 		return res, true
 	}
+	var childRGs []uint
+	var childNodeIDs []uint
+	var childNames []string
+	maxSilence := node.SilenceSeconds
 	for _, child := range node.Children {
 		cr, ok := s.matchNodeRecursiveDetailed(child, labels, severity, status)
 		if !ok {
 			continue
 		}
-		res.ReceiverGroupIDs = append(res.ReceiverGroupIDs, cr.ReceiverGroupIDs...)
-		res.MatchedNodeIDs = append(res.MatchedNodeIDs, cr.MatchedNodeIDs...)
-		res.MatchedNodeNames = append(res.MatchedNodeNames, cr.MatchedNodeNames...)
-		if cr.SilenceSeconds > res.SilenceSeconds {
-			res.SilenceSeconds = cr.SilenceSeconds
+		childRGs = append(childRGs, cr.ReceiverGroupIDs...)
+		childNodeIDs = append(childNodeIDs, cr.MatchedNodeIDs...)
+		childNames = append(childNames, cr.MatchedNodeNames...)
+		if cr.SilenceSeconds > maxSilence {
+			maxSilence = cr.SilenceSeconds
 		}
+	}
+	if len(node.Children) > 0 {
+		// 存在子节点且继续向下匹配时：仅采用子树命中的接收组，避免与根重复合并；子节点均未命中时无任何接收组。
+		res.ReceiverGroupIDs = uniqUint(childRGs)
+		res.MatchedNodeIDs = append(res.MatchedNodeIDs, childNodeIDs...)
+		res.MatchedNodeNames = append(res.MatchedNodeNames, childNames...)
+		res.SilenceSeconds = maxSilence
+	} else {
+		res.ReceiverGroupIDs = uniqUint(append([]uint{}, node.ReceiverGroupIDs...))
 	}
 	return res, true
 }

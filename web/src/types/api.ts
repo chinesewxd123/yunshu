@@ -44,6 +44,8 @@ export interface UserItem {
   id: number;
   username: string;
   email: string;
+  /** 与钉钉/企微告警 @ 手机号一致，便于处理人触达 */
+  phone?: string;
   nickname: string;
   status: number;
   department_id?: number;
@@ -136,6 +138,7 @@ export interface LoginResult {
 export interface UpdateProfilePayload {
   nickname: string;
   email?: string;
+  phone?: string;
 }
 
 export interface ChangePasswordPayload {
@@ -148,6 +151,7 @@ export interface UserCreatePayload {
   email: string;
   password: string;
   nickname: string;
+  phone?: string;
   status: number;
   department_id?: number;
   role_ids: number[];
@@ -156,6 +160,7 @@ export interface UserCreatePayload {
 export interface UserUpdatePayload {
   email?: string;
   nickname?: string;
+  phone?: string;
   password?: string;
   status?: number;
   department_id?: number;

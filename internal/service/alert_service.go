@@ -81,6 +81,8 @@ type AlertManagerAlert struct {
 	EndsAt       time.Time         `json:"endsAt"`
 	GeneratorURL string            `json:"generatorURL"`
 	Fingerprint  string            `json:"fingerprint"`
+	// SkipGroupTiming 仅服务端使用（不入 JSON）：云到期「立即评估」等路径为 true 时，跳过 Redis group_wait/repeat 节流，保证立刻投递。
+	SkipGroupTiming bool `json:"-"`
 }
 
 type AlertService struct {
@@ -98,6 +100,9 @@ type AlertService struct {
 	monitorEvalMu     sync.Mutex
 	aead              cipher.AEAD
 	cloudExpiryState  map[string]bool
+	cloudExpiryEvalMu sync.Mutex
+	// 无 Redis 时云到期规则按 synthetic rule id 记录上次评估时间
+	cloudExpiryNoRedisLastEval map[uint]time.Time
 
 	// 可选依赖：告警抑制、订阅树路由
 	inhibitionSvc      *AlertInhibitionService   // 告警抑制服务
@@ -1029,6 +1034,23 @@ func mergeNotifyEmailsUnique(emails []string) []string {
 	return out
 }
 
+func mergeNotifyPhonesUnique(phones []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, p := range phones {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
 func (s *AlertService) enrichAssigneeAndDutyEmails(ctx context.Context, outgoing map[string]interface{}, labels map[string]string) {
 	rid, ok := parseLabelUint(labels["monitor_rule_id"])
 	if !ok {
@@ -1046,6 +1068,19 @@ func (s *AlertService) enrichAssigneeAndDutyEmails(ctx context.Context, outgoing
 	emails = mergeNotifyEmailsUnique(emails)
 	if len(emails) > 0 {
 		outgoing["assignee_emails"] = emails
+	}
+	var phones []string
+	if s.assigneeSvc != nil {
+		p, _ := s.assigneeSvc.ResolveNotifyPhones(ctx, rid)
+		phones = append(phones, p...)
+	}
+	if s.dutySvc != nil {
+		p, _ := s.dutySvc.ResolveNotifyPhonesAtRule(ctx, rid, time.Now())
+		phones = append(phones, p...)
+	}
+	phones = mergeNotifyPhonesUnique(phones)
+	if len(phones) > 0 {
+		outgoing["assignee_phones"] = phones
 	}
 }
 

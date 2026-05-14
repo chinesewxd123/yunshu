@@ -1732,7 +1732,18 @@ export function AlertMonitorPlatformPage() {
     { title: "地域范围", dataIndex: "region_scope", width: 180, render: (v: string) => String(v || "").trim() || "全部" },
     { title: "提前天数", dataIndex: "advance_days", width: 100 },
     { title: "级别", dataIndex: "severity", width: 90 },
-    { title: "间隔(s)", dataIndex: "eval_interval_seconds", width: 100 },
+    { title: "定时", dataIndex: "schedule_enabled", width: 80, render: (v: boolean) => (v !== false ? <Tag color="blue">开</Tag> : <Tag>关</Tag>) },
+    { title: "间隔(s)", dataIndex: "eval_interval_seconds", width: 90 },
+    {
+      title: "Cron",
+      dataIndex: "eval_cron_spec",
+      width: 160,
+      ellipsis: true,
+      render: (v: string) => {
+        const s = String(v || "").trim();
+        return s ? <span title={s}>{s}</span> : <span style={{ color: "#999" }}>—</span>;
+      },
+    },
     { title: "启用", dataIndex: "enabled", width: 80, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
     { title: "创建时间", dataIndex: "created_at", width: 170, render: (v: string) => (v ? formatDateTime(v) : "-") },
     { title: "更新时间", dataIndex: "updated_at", width: 170, render: (v: string) => (v ? formatDateTime(v) : "-") },
@@ -1765,6 +1776,8 @@ export function AlertMonitorPlatformPage() {
       advance_days: 7,
       severity: "warning",
       eval_interval_seconds: 3600,
+      eval_cron_spec: "",
+      schedule_enabled: true,
       labels_json: "{}",
       enabled: true,
     });
@@ -1781,6 +1794,8 @@ export function AlertMonitorPlatformPage() {
       advance_days: row.advance_days,
       severity: row.severity || "warning",
       eval_interval_seconds: row.eval_interval_seconds,
+      eval_cron_spec: row.eval_cron_spec ?? "",
+      schedule_enabled: row.schedule_enabled !== false,
       labels_json: stringifyPrettyJSON(row.labels ?? {}, "{}"),
       enabled: row.enabled,
     });
@@ -1796,6 +1811,7 @@ export function AlertMonitorPlatformPage() {
         provider: String(v.provider || "").trim(),
         region_scope: String(v.region_scope || "").trim(),
         labels_json: String(v.labels_json || "{}").trim() || "{}",
+        eval_cron_spec: String(v.eval_cron_spec ?? "").trim(),
       };
       if (cloudExpiryCurrent) {
         await updateCloudExpiryRule(cloudExpiryCurrent.id, payload);
@@ -2369,9 +2385,9 @@ export function AlertMonitorPlatformPage() {
                   type="info"
                   showIcon
                   message="云到期规则说明"
-                  description="规则会按设定间隔巡检三家云实例到期时间，命中阈值触发 firing，恢复为 resolved，并复用已有告警通道派发。"
+                  description="后台在「启用定时评估」时按调度拉取云实例到期时间：可填「评估间隔秒」，或填写「Cron 表达式」优先按 Cron（与告警服务内置调度节拍配合，有 Redis 时记录上次执行时间）。命中阈值触发 firing，恢复为 resolved，并走订阅与告警通道。"
                 />
-                <Table rowKey="id" columns={cloudExpiryColumns} dataSource={cloudExpiryList} pagination={false} scroll={{ x: 1100 }} />
+                <Table rowKey="id" columns={cloudExpiryColumns} dataSource={cloudExpiryList} pagination={false} scroll={{ x: 1360 }} />
               </Space>
             ),
           },
@@ -2756,6 +2772,25 @@ export function AlertMonitorPlatformPage() {
           </Form.Item>
           <Form.Item name="eval_interval_seconds" label="评估间隔秒" rules={[{ required: true, message: "请输入评估间隔" }]}>
             <InputNumber min={60} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            name="eval_cron_spec"
+            label="Cron 表达式（可选）"
+            extra={
+              <span>
+                与「评估间隔秒」二选一生效：此处非空时<strong>优先按 Cron</strong> 决定何时拉云 API（robfig/cron，支持五/六段、<code>@every 1h</code> 等）。示例：<code>0 * * * *</code> 每小时整点；<code>0 9 * * *</code> 每天 9:00。留空则仅用间隔秒。
+              </span>
+            }
+          >
+            <Input allowClear placeholder="留空则按「评估间隔秒」；例如 @every 1h 或 0 9 * * *" />
+          </Form.Item>
+          <Form.Item
+            name="schedule_enabled"
+            label="启用定时自动评估"
+            valuePropName="checked"
+            extra="开启后由告警服务后台按本间隔拉取云 API。有 Redis 时写入上次评估时间以节流；无 Redis 时在进程内节流。关闭则仅「立即执行一次评估」会拉云。"
+          >
+            <Switch />
           </Form.Item>
           <Form.Item
             name="labels_json"

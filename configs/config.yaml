@@ -129,6 +129,8 @@ alert:
   webhook_queue_max_len: 10000
   # 多副本时仅一个实例跑内置 PromQL 监控规则 tick 的全局锁 TTL（秒）。应大于单轮评估最坏耗时。
   monitor_eval_leader_lock_seconds: 30
+  # 内置监控规则 + 云到期评估的调度节拍（robfig/cron 六段式，含秒）。空则默认 */5 * * * * *（每 5 秒）。
+  # monitor_eval_cron_spec: "*/5 * * * * *"
 
 # =========================
 # 配置源收敛说明（建议）

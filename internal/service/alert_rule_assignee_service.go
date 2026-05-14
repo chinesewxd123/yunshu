@@ -146,6 +146,52 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, rule
 	return out, nil
 }
 
+// ResolveNotifyPhones 合并规则处理人手机号（仅所选用户账号上的 phone，不含部门展开）。
+func (s *AlertRuleAssigneeService) ResolveNotifyPhones(ctx context.Context, ruleID uint) ([]string, error) {
+	list, err := s.ListByRule(ctx, ruleID)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(p string) {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return
+		}
+		if _, ok := seen[p]; ok {
+			return
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	if len(list) > 0 && s.userRepo != nil {
+		uidSet := map[uint]struct{}{}
+		for _, row := range list {
+			for _, id := range parseUintSliceJSON(row.UserIDsJSON) {
+				uidSet[id] = struct{}{}
+			}
+		}
+		var allUIDs []uint
+		for id := range uidSet {
+			allUIDs = append(allUIDs, id)
+		}
+		if len(allUIDs) > 0 {
+			users, err := s.userRepo.ListByIDs(ctx, allUIDs)
+			if err != nil {
+				return nil, err
+			}
+			for i := range users {
+				add(users[i].Phone)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
 func (s *AlertRuleAssigneeService) Delete(ctx context.Context, id uint) error {
 	res := s.db.WithContext(ctx).Delete(&model.AlertRuleAssignee{}, id)
 	if res.Error != nil {

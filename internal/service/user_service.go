@@ -106,6 +106,7 @@ func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserD
 	user := model.User{
 		Username:     strings.TrimSpace(req.Username),
 		Email:        &email,
+		Phone:        strings.TrimSpace(req.Phone),
 		Password:     hashedPassword,
 		Nickname:     strings.TrimSpace(req.Nickname),
 		Status:       status,
@@ -181,6 +182,9 @@ func (s *UserService) Update(ctx context.Context, id uint, req UserUpdateRequest
 			}
 			user.DepartmentID = req.DepartmentID
 		}
+	}
+	if req.Phone != nil {
+		user.Phone = strings.TrimSpace(*req.Phone)
 	}
 	if req.Password != nil && *req.Password != "" {
 		user.Password, err = password.Hash(*req.Password)

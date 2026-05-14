@@ -37,6 +37,28 @@ func (s *AlertService) monitorEvalLockRelease(ctx context.Context, ruleID uint) 
 	_ = s.redis.Del(ctx, monitorEvalLockKey(ruleID)).Err()
 }
 
+// redisLastEvalTime 读取上次评估时间（RFC3339Nano），无记录或解析失败时 has=false。
+func (s *AlertService) redisLastEvalTime(ctx context.Context, ruleID uint) (t time.Time, has bool) {
+	if s.redis == nil {
+		return time.Time{}, false
+	}
+	last, err := s.redis.HGet(ctx, monitorEvalStateKey(ruleID), "last_eval").Result()
+	if err != nil && err != redis.Nil {
+		return time.Time{}, false
+	}
+	if strings.TrimSpace(last) == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, last)
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339, last)
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	return parsed, true
+}
+
 func (s *AlertService) shouldEvalRuleRedis(ctx context.Context, ruleID uint, intervalSec int, now time.Time) bool {
 	if s.redis == nil {
 		return true

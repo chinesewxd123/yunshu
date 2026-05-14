@@ -20,7 +20,11 @@ type CloudExpiryRule struct {
 	LabelsJSON  string `json:"labels_json" gorm:"type:text;comment:附加 labels JSON"`
 
 	EvalIntervalSeconds int  `json:"eval_interval_seconds" gorm:"not null;default:3600;comment:评估间隔秒"`
-	Enabled             bool `json:"enabled" gorm:"not null;default:true;index;comment:是否启用"`
+	// EvalCronSpec 非空时按 robfig/cron（五/六段可选秒、支持 @every 描述符）调度，优先于 EvalIntervalSeconds；空则仅按间隔节流。
+	EvalCronSpec string `json:"eval_cron_spec" gorm:"size:256;not null;default:'';comment:可选Cron表达式"`
+	// ScheduleEnabled 为 true 时参与后台定时评估（按 EvalIntervalSeconds 节流）；为 false 时仅「立即评估」会执行拉云。
+	ScheduleEnabled bool `json:"schedule_enabled" gorm:"not null;default:true;index;comment:是否启用定时自动评估"`
+	Enabled         bool `json:"enabled" gorm:"not null;default:true;index;comment:是否启用"`
 
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

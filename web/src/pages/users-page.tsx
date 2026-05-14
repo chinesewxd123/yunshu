@@ -138,6 +138,7 @@ export function UsersPage() {
     detailForm.setFieldsValue({
       nickname: detail.nickname,
       email: detail.email || "",
+      phone: detail.phone || "",
       status: detail.status,
       department_id: detail.department_id,
     });
@@ -155,6 +156,7 @@ export function UsersPage() {
         department_id: values.department_id,
       };
       if (values.email) payload.email = values.email;
+      if (values.phone !== undefined) payload.phone = String(values.phone || "").trim();
       await updateUser(detailRecord.id, payload);
       message.success("用户详情已更新");
       setDetailOpen(false);
@@ -180,6 +182,7 @@ export function UsersPage() {
         email: values.email,
         password: values.password,
         nickname: values.nickname,
+        phone: String(values.phone || "").trim() || undefined,
         status: values.status ?? 1,
         department_id: values.department_id,
         role_ids: values.role_ids ?? [],
@@ -425,6 +428,12 @@ export function UsersPage() {
               },
             },
             { title: "所属部门", dataIndex: "department_name", render: (v: string) => v || <span className="inline-muted">未设置</span> },
+            {
+              title: "手机号",
+              dataIndex: "phone",
+              width: 130,
+              render: (v: string) => (v ? String(v) : <span className="inline-muted">—</span>),
+            },
             { title: "状态", dataIndex: "status", render: (value: number) => <StatusTag status={value} /> },
             { title: "创建时间", dataIndex: "created_at", render: formatDateTime },
             {
@@ -490,6 +499,9 @@ export function UsersPage() {
           </Form.Item>
           <Form.Item label="显示名称" name="nickname" rules={[{ required: true, message: "请输入显示名称" }]}>
             <Input placeholder="请输入显示名称" />
+          </Form.Item>
+          <Form.Item label="手机号" name="phone" extra="选填；与钉钉/企微账号一致时可被告警 @ 提及">
+            <Input placeholder="11 位手机号" maxLength={20} autoComplete="off" />
           </Form.Item>
           <Form.Item label="所属部门" name="department_id">
             <Select allowClear placeholder="可选，选择用户所属部门" options={departmentOptions} />
@@ -572,6 +584,9 @@ export function UsersPage() {
             </Form.Item>
             <Form.Item label="邮箱" name="email" rules={[{ type: "email", message: "请输入正确邮箱" }]}>
               <Input autoComplete="off" />
+            </Form.Item>
+            <Form.Item label="手机号" name="phone" extra="与钉钉/企微一致时可被监控规则处理人在 IM 通道 @">
+              <Input placeholder="选填" maxLength={20} autoComplete="off" />
             </Form.Item>
             <Form.Item label="状态" name="status" rules={[{ required: true, message: "请选择状态" }]}>
               <Select options={statusOptions} />

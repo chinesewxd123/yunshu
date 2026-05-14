@@ -8,22 +8,34 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/promapi"
 )
 
 func (s *AlertService) runMonitorRuleEvaluator(ctx context.Context) {
-	t := time.NewTicker(5 * time.Second)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
+	spec := strings.TrimSpace(s.cfg.MonitorEvalCronSpec)
+	if spec == "" {
+		spec = "*/5 * * * * *"
+	}
+	c := cron.New(cron.WithSeconds())
+	job := func() {
+		if ctx.Err() != nil {
 			return
-		case <-t.C:
-			_ = s.tickMonitorRules(ctx)
-			_ = s.tickCloudExpiryRules(ctx)
+		}
+		_ = s.tickMonitorRules(ctx)
+		_ = s.tickCloudExpiryRules(ctx)
+	}
+	if _, err := c.AddFunc(spec, job); err != nil {
+		if _, err2 := c.AddFunc("*/5 * * * * *", job); err2 != nil {
+			return
 		}
 	}
+	c.Start()
+	<-ctx.Done()
+	stopCtx := c.Stop()
+	<-stopCtx.Done()
 }
 
 func (s *AlertService) tickMonitorRules(ctx context.Context) error {

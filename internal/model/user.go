@@ -11,6 +11,7 @@ type User struct {
 	ID           uint           `json:"id" gorm:"primaryKey;comment:主键ID"`
 	Username     string         `json:"username" gorm:"size:64;not null;uniqueIndex;comment:用户名"`
 	Email        *string        `json:"email" gorm:"size:128;index;comment:邮箱"`
+	Phone        string         `json:"phone" gorm:"size:20;not null;default:'';index;comment:手机号，用于钉钉/企微@等告警触达"`
 	Password     string         `json:"-" gorm:"size:255;not null;comment:加密后的登录密码"`
 	Nickname     string         `json:"nickname" gorm:"size:128;not null;comment:昵称"`
 	Status       int            `json:"status" gorm:"not null;default:1;comment:状态 1启用 0禁用"`

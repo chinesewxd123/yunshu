@@ -28,6 +28,8 @@ type CloudExpiryRuleUpsertRequest struct {
 	Severity            string `json:"severity" binding:"omitempty,max=32"`
 	LabelsJSON          string `json:"labels_json"`
 	EvalIntervalSeconds int    `json:"eval_interval_seconds"`
+	EvalCronSpec        string `json:"eval_cron_spec"`
+	ScheduleEnabled     *bool  `json:"schedule_enabled"`
 	Enabled             *bool  `json:"enabled"`
 }
 
@@ -64,6 +66,9 @@ func (s *CloudExpiryRuleService) List(ctx context.Context, q CloudExpiryRuleList
 }
 
 func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRuleUpsertRequest) (*model.CloudExpiryRule, error) {
+	if err := ValidateCloudExpiryCronSpec(req.EvalCronSpec); err != nil {
+		return nil, err
+	}
 	ev := req.EvalIntervalSeconds
 	if ev <= 0 {
 		ev = 3600
@@ -79,6 +84,10 @@ func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRule
 	if sev == "" {
 		sev = "warning"
 	}
+	sched := true
+	if req.ScheduleEnabled != nil {
+		sched = *req.ScheduleEnabled
+	}
 	row := model.CloudExpiryRule{
 		ProjectID:           req.ProjectID,
 		Name:                strings.TrimSpace(req.Name),
@@ -88,6 +97,8 @@ func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRule
 		Severity:            sev,
 		LabelsJSON:          strings.TrimSpace(req.LabelsJSON),
 		EvalIntervalSeconds: ev,
+		EvalCronSpec:        strings.TrimSpace(req.EvalCronSpec),
+		ScheduleEnabled:     sched,
 		Enabled:             req.Enabled == nil || *req.Enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
@@ -102,6 +113,9 @@ func (s *CloudExpiryRuleService) Update(ctx context.Context, id uint, req CloudE
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg34cc3b1e5427)
 		}
+		return nil, err
+	}
+	if err := ValidateCloudExpiryCronSpec(req.EvalCronSpec); err != nil {
 		return nil, err
 	}
 	if req.ProjectID > 0 {
@@ -119,6 +133,7 @@ func (s *CloudExpiryRuleService) Update(ctx context.Context, id uint, req CloudE
 		row.Severity = v
 	}
 	row.LabelsJSON = strings.TrimSpace(req.LabelsJSON)
+	row.EvalCronSpec = strings.TrimSpace(req.EvalCronSpec)
 	if req.EvalIntervalSeconds > 0 {
 		row.EvalIntervalSeconds = req.EvalIntervalSeconds
 		if row.EvalIntervalSeconds < 60 {
@@ -127,6 +142,9 @@ func (s *CloudExpiryRuleService) Update(ctx context.Context, id uint, req CloudE
 	}
 	if req.Enabled != nil {
 		row.Enabled = *req.Enabled
+	}
+	if req.ScheduleEnabled != nil {
+		row.ScheduleEnabled = *req.ScheduleEnabled
 	}
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
 		return nil, err

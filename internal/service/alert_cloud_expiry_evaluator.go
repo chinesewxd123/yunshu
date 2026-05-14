@@ -8,10 +8,45 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
 	cryptox "yunshu/internal/pkg/crypto"
 )
+
+// cloudExpiryCronParser 支持五段/六段（可选秒）、以及 @every 等描述符（与 robfig/cron v3 一致）。
+var cloudExpiryCronParser = cron.NewParser(
+	cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+)
+
+func parseCloudExpiryCronSchedule(spec string) (cron.Schedule, error) {
+	return cloudExpiryCronParser.Parse(strings.TrimSpace(spec))
+}
+
+// ValidateCloudExpiryCronSpec 校验云到期规则的 Cron 表达式；空串表示不启用 Cron 调度。
+func ValidateCloudExpiryCronSpec(spec string) error {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil
+	}
+	if _, err := parseCloudExpiryCronSchedule(spec); err != nil {
+		return constants.ErrBadRequestWithMsg("无效的 eval_cron_spec：" + err.Error())
+	}
+	return nil
+}
+
+func shouldEvalCloudExpiryByCron(spec string, last time.Time, hasLast bool, now time.Time) bool {
+	sched, err := parseCloudExpiryCronSchedule(spec)
+	if err != nil {
+		return false
+	}
+	if !hasLast || last.IsZero() {
+		return true
+	}
+	next := sched.Next(last)
+	return !now.Before(next)
+}
 
 func (s *AlertService) tickCloudExpiryRules(ctx context.Context) error {
 	return s.tickCloudExpiryRulesWithMode(ctx, false)
@@ -25,15 +60,45 @@ func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force b
 	now := time.Now()
 	for i := range rules {
 		rule := &rules[i]
+		if !force && !rule.ScheduleEnabled {
+			continue
+		}
 		interval := rule.EvalIntervalSeconds
 		if interval <= 0 {
 			interval = 3600
 		}
 		syntheticID := uint(1000000) + rule.ID
-		if !force && !s.shouldEvalRuleRedis(ctx, syntheticID, interval, now) {
-			continue
+		if !force {
+			cronSpec := strings.TrimSpace(rule.EvalCronSpec)
+			var allow bool
+			if cronSpec != "" {
+				var last time.Time
+				var hasLast bool
+				if s.redis != nil {
+					last, hasLast = s.redisLastEvalTime(ctx, syntheticID)
+				} else {
+					last, hasLast = s.cloudExpiryLocalLastEval(syntheticID)
+				}
+				allow = shouldEvalCloudExpiryByCron(cronSpec, last, hasLast, now)
+			} else {
+				if s.redis != nil {
+					allow = s.shouldEvalRuleRedis(ctx, syntheticID, interval, now)
+				} else {
+					allow = s.shouldEvalCloudExpiryLocalThrottle(syntheticID, interval, now)
+				}
+			}
+			if !allow {
+				continue
+			}
 		}
-		s.evaluateOneCloudExpiryRule(ctx, rule, now)
+		s.evaluateOneCloudExpiryRule(ctx, rule, now, force)
+		if !force {
+			if s.redis != nil {
+				s.redisTouchLastEval(ctx, syntheticID, now)
+			} else {
+				s.touchCloudExpiryNoRedisLastEval(syntheticID, now)
+			}
+		}
 	}
 	return nil
 }
@@ -47,7 +112,7 @@ func (s *AlertService) EvaluateCloudExpiryRulesNow(ctx context.Context) error {
 	return s.tickCloudExpiryRulesWithMode(ctx, true)
 }
 
-func (s *AlertService) evaluateOneCloudExpiryRule(ctx context.Context, rule *model.CloudExpiryRule, now time.Time) {
+func (s *AlertService) evaluateOneCloudExpiryRule(ctx context.Context, rule *model.CloudExpiryRule, now time.Time, manualEval bool) {
 	if s.aead == nil {
 		return
 	}
@@ -134,35 +199,39 @@ func (s *AlertService) evaluateOneCloudExpiryRule(ctx context.Context, rule *mod
 				"summary":     fmt.Sprintf("云服务器到期提醒：%s/%s 剩余 %d 天", strings.TrimSpace(acc.Provider), instanceID, daysLeft),
 				"description": fmt.Sprintf("实例=%s(%s)，区域=%s，到期时间=%s，剩余天数=%d", strings.TrimSpace(ins.Name), instanceID, region, expireAt.Format(time.RFC3339), daysLeft),
 			}
-			s.emitCloudExpiryAlert(ctx, fp, firing, labels, annotations, now)
+			s.emitCloudExpiryAlert(ctx, fp, firing, labels, annotations, now, manualEval)
 		}
 	}
 }
 
-func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firing bool, labels, annotations map[string]string, now time.Time) {
+func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firing bool, labels, annotations map[string]string, now time.Time, manualEval bool) {
 	s.monitorEvalMu.Lock()
 	active := s.cloudExpiryState[fp]
 	if firing {
-		if active {
+		// 定时评估：同一实例已 firing 则不再重复入站。立即评估：始终再入站一次，满足「点击即查即发」。
+		if active && !manualEval {
 			s.monitorEvalMu.Unlock()
 			return
 		}
 		s.cloudExpiryState[fp] = true
 		s.monitorEvalMu.Unlock()
+		am := AlertManagerAlert{
+			Status:       "firing",
+			Labels:       labels,
+			Annotations:  annotations,
+			StartsAt:     now,
+			EndsAt:       now.Add(24 * time.Hour),
+			GeneratorURL: "",
+			Fingerprint:  fp,
+			// 定时/手动云到期均跳过 Redis group_wait，命中阈值后尽快入库与投递。
+			SkipGroupTiming: true,
+		}
 		_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
 			Receiver:     "cloud-expiry",
 			Status:       "firing",
 			GroupLabels:  map[string]string{"alertname": labels["alertname"]},
 			CommonLabels: labels,
-			Alerts: []AlertManagerAlert{{
-				Status:       "firing",
-				Labels:       labels,
-				Annotations:  annotations,
-				StartsAt:     now,
-				EndsAt:       now.Add(24 * time.Hour),
-				GeneratorURL: "",
-				Fingerprint:  fp,
-			}},
+			Alerts:       []AlertManagerAlert{am},
 		})
 		return
 	}
@@ -211,4 +280,43 @@ func parseRegionSet(scope string) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+// 无 Redis 时按进程内时间戳节流云到期评估，避免每 5s 全量拉云 API。
+func (s *AlertService) cloudExpiryLocalLastEval(syntheticID uint) (time.Time, bool) {
+	s.cloudExpiryEvalMu.Lock()
+	defer s.cloudExpiryEvalMu.Unlock()
+	if s.cloudExpiryNoRedisLastEval == nil {
+		return time.Time{}, false
+	}
+	last, ok := s.cloudExpiryNoRedisLastEval[syntheticID]
+	if !ok || last.IsZero() {
+		return time.Time{}, false
+	}
+	return last, true
+}
+
+func (s *AlertService) shouldEvalCloudExpiryLocalThrottle(syntheticID uint, intervalSec int, now time.Time) bool {
+	if intervalSec < 60 {
+		intervalSec = 60
+	}
+	s.cloudExpiryEvalMu.Lock()
+	defer s.cloudExpiryEvalMu.Unlock()
+	if s.cloudExpiryNoRedisLastEval == nil {
+		return true
+	}
+	last, ok := s.cloudExpiryNoRedisLastEval[syntheticID]
+	if !ok || last.IsZero() {
+		return true
+	}
+	return now.Sub(last) >= time.Duration(intervalSec)*time.Second
+}
+
+func (s *AlertService) touchCloudExpiryNoRedisLastEval(syntheticID uint, now time.Time) {
+	s.cloudExpiryEvalMu.Lock()
+	defer s.cloudExpiryEvalMu.Unlock()
+	if s.cloudExpiryNoRedisLastEval == nil {
+		s.cloudExpiryNoRedisLastEval = make(map[uint]time.Time)
+	}
+	s.cloudExpiryNoRedisLastEval[syntheticID] = now
 }

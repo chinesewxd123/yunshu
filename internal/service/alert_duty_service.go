@@ -196,3 +196,58 @@ func (s *AlertDutyService) ResolveNotifyEmailsAtRule(ctx context.Context, monito
 	}
 	return dedupeEmailsLower(emails), nil
 }
+
+// ResolveNotifyPhonesAtRule 合并当前时刻命中班次块内用户手机号（含部门子树用户，不含 extra 邮箱侧电话）。
+func (s *AlertDutyService) ResolveNotifyPhonesAtRule(ctx context.Context, monitorRuleID uint, t time.Time) ([]string, error) {
+	var blocks []model.AlertDutyBlock
+	if err := s.db.WithContext(ctx).
+		Where("monitor_rule_id = ? AND starts_at <= ? AND ends_at >= ?", monitorRuleID, t, t).
+		Order("id ASC").
+		Find(&blocks).Error; err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(p string) {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return
+		}
+		if _, ok := seen[p]; ok {
+			return
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	for _, b := range blocks {
+		uidSet := map[uint]struct{}{}
+		for _, id := range parseUintSliceJSON(b.UserIDsJSON) {
+			uidSet[id] = struct{}{}
+		}
+		deptRoots := parseUintSliceJSON(b.DepartmentIDsJSON)
+		more, err := s.userRepo.ListActiveIDsByDepartmentSubtree(ctx, deptRoots)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range more {
+			uidSet[id] = struct{}{}
+		}
+		var all []uint
+		for id := range uidSet {
+			all = append(all, id)
+		}
+		if len(all) > 0 {
+			users, err := s.userRepo.ListByIDs(ctx, all)
+			if err != nil {
+				return nil, err
+			}
+			for i := range users {
+				add(users[i].Phone)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
