@@ -764,7 +764,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
             rowKey="id"
             loading={eventsLoading}
             dataSource={events}
-            scroll={{ x: 2480 }}
+            scroll={{ x: 2280 }}
             pagination={{
               current: eventsPage,
               pageSize: eventsPageSize,
@@ -857,26 +857,37 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               {
                 title: "标签组",
                 key: "labels_group",
-                width: 300,
+                width: 110,
                 render: (_: unknown, row: AlertEventItem) => {
                   const labels = parseLabelsFromAlertEventRequestPayload(row.requestPayload);
                   const entries = Object.entries(labels);
                   if (!entries.length) return <span>-</span>;
                   return (
-                    <Space size={[4, 4]} wrap style={{ maxWidth: 280 }}>
-                      {entries.map(([k, v]) => (
-                        <Tag key={`${row.id}-${k}`} style={{ marginInlineEnd: 0 }}>
-                          {k}={v}
-                        </Tag>
-                      ))}
-                    </Space>
+                    <Popover
+                      title="标签组（labels）"
+                      trigger={["click"]}
+                      overlayStyle={{ maxWidth: 560 }}
+                      content={
+                        <div style={{ maxHeight: 400, overflow: "auto" }}>
+                          <Space size={[4, 8]} wrap>
+                            {entries.map(([k, v]) => (
+                              <Tag key={`${row.id}-${k}`} style={{ marginInlineEnd: 0 }}>
+                                {k}={v}
+                              </Tag>
+                            ))}
+                          </Space>
+                        </div>
+                      }
+                    >
+                      <Button size="small">查看标签</Button>
+                    </Popover>
                   );
                 },
               },
               {
                 title: "告警数据原始 JSON",
                 key: "raw_request_payload",
-                width: 160,
+                width: 110,
                 render: (_: unknown, row: AlertEventItem) => {
                   const raw = String(row.requestPayload || "").trim();
                   if (!raw) return <span>-</span>;
@@ -902,7 +913,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                         </pre>
                       }
                     >
-                      <Typography.Link>查看（{raw.length} 字符）</Typography.Link>
+                      <Button size="small">查看 JSON</Button>
                     </Popover>
                   );
                 },
