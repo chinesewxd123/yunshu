@@ -403,51 +403,183 @@ export function DashboardPage() {
         ))}
         </Row>
 
-        <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
-        <Col xs={24} xl={15}>
-          <Card
-            className="overview-big-screen__panel"
-            title={
-              <Space>
-                <InfoOutlined style={{ color: "#38bdf8" }} />
-                <span>平台活跃趋势（近 7 天）</span>
-              </Space>
-            }
-            loading={loading && !trends}
-            bordered={false}
-          >
-            {trends ? (
-              <>
-                <LineChart
-                  darkMode
-                  labels={trends.days}
-                  series={[
-                    { name: "登录成功", data: trends.login_success, color: "#38bdf8" },
-                    { name: "操作量", data: trends.operation_total, color: "#34d399" },
-                    { name: "登录失败", data: trends.login_fail, color: "#f87171" },
-                  ]}
-                  height={300}
-                />
-                <Divider style={{ borderColor: "rgba(56, 189, 248, 0.15)", margin: "12px 0 8px" }} />
-                {trendTotals ? (
-                  <Typography.Paragraph style={{ marginBottom: 10, color: "rgba(186, 214, 238, 0.82)", fontSize: 12 }}>
-                    近 <strong style={{ color: "#e2e8f0" }}>{trendTotals.days}</strong> 日合计：登录成功{" "}
-                    <Typography.Text style={{ color: "#38bdf8" }}>{trendTotals.login_success}</Typography.Text>
-                    {" · "}
-                    接口操作{" "}
-                    <Typography.Text style={{ color: "#34d399" }}>{trendTotals.operation_total}</Typography.Text>
-                    {" · "}
-                    登录失败{" "}
-                    <Typography.Text style={{ color: "#f87171" }}>{trendTotals.login_fail}</Typography.Text>
-                    <span style={{ color: "rgba(148, 163, 184, 0.9)" }}>
-                      {" "}
-                      （日均{" "}
-                      {Math.round(trendTotals.login_success / trendTotals.days)} /{" "}
-                      {Math.round(trendTotals.operation_total / trendTotals.days)} /{" "}
-                      {Math.round(trendTotals.login_fail / trendTotals.days)}）
-                    </span>
-                  </Typography.Paragraph>
-                ) : null}
+        <Row gutter={[16, 16]} align="stretch" className="overview-big-screen__trend-row" style={{ marginTop: 8 }}>
+          <Col xs={24} xl={15} className="overview-big-screen__trend-main-col">
+            <Card
+              className="overview-big-screen__panel overview-big-screen__trend-main-card"
+              title={
+                <Space>
+                  <InfoOutlined style={{ color: "#38bdf8" }} />
+                  <span>平台活跃趋势（近 7 天）</span>
+                </Space>
+              }
+              loading={loading && !trends}
+              bordered={false}
+              styles={{ body: { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 } }}
+            >
+              {trends ? (
+                <>
+                  <LineChart
+                    darkMode
+                    labels={trends.days}
+                    series={[
+                      { name: "登录成功", data: trends.login_success, color: "#38bdf8" },
+                      { name: "操作量", data: trends.operation_total, color: "#34d399" },
+                      { name: "登录失败", data: trends.login_fail, color: "#f87171" },
+                    ]}
+                    height={300}
+                  />
+                  <Divider style={{ borderColor: "rgba(56, 189, 248, 0.15)", margin: "12px 0 8px" }} />
+                  {trendTotals ? (
+                    <Typography.Paragraph style={{ marginBottom: 0, color: "rgba(186, 214, 238, 0.82)", fontSize: 12 }}>
+                      近 <strong style={{ color: "#e2e8f0" }}>{trendTotals.days}</strong> 日合计：登录成功{" "}
+                      <Typography.Text style={{ color: "#38bdf8" }}>{trendTotals.login_success}</Typography.Text>
+                      {" · "}
+                      接口操作{" "}
+                      <Typography.Text style={{ color: "#34d399" }}>{trendTotals.operation_total}</Typography.Text>
+                      {" · "}
+                      登录失败{" "}
+                      <Typography.Text style={{ color: "#f87171" }}>{trendTotals.login_fail}</Typography.Text>
+                      <span style={{ color: "rgba(148, 163, 184, 0.9)" }}>
+                        {" "}
+                        （日均{" "}
+                        {Math.round(trendTotals.login_success / trendTotals.days)} /{" "}
+                        {Math.round(trendTotals.operation_total / trendTotals.days)} /{" "}
+                        {Math.round(trendTotals.login_fail / trendTotals.days)}）
+                      </span>
+                    </Typography.Paragraph>
+                  ) : null}
+                  <div style={{ flex: 1, minHeight: 0 }} aria-hidden />
+                </>
+              ) : (
+                <Typography.Text type="secondary" style={{ color: "rgba(186, 214, 238, 0.65)" }}>
+                  暂无趋势数据（未产生登录/操作日志或服务未启用统计）。
+                </Typography.Text>
+              )}
+            </Card>
+          </Col>
+          <Col xs={24} xl={9} className="overview-big-screen__trend-rail-col">
+            <div className="overview-big-screen__trend-rail">
+              <Card
+                className="overview-big-screen__panel overview-big-screen__trend-rail-card"
+                title={
+                  <Space>
+                    <CheckCircleOutlined /> 系统状态
+                  </Space>
+                }
+                loading={health.loading}
+                bordered={false}
+                styles={{ body: { flex: 1, display: "flex", flexDirection: "column", minHeight: 0 } }}
+              >
+                <Row gutter={[12, 12]} style={{ flex: 1 }}>
+                  <Col span={24}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                      <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>服务</Typography.Text>
+                      {health.status === "ok" || health.status === "healthy" ? (
+                        <Tag color="success">运行正常</Tag>
+                      ) : health.status === "error" ? (
+                        <Tag color="error">连接异常</Tag>
+                      ) : (
+                        <Tag color="warning">{health.status}</Tag>
+                      )}
+                    </div>
+                  </Col>
+                  <Col span={24}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                      <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>版本</Typography.Text>
+                      <Tag style={{ marginInlineEnd: 0 }}>
+                        <InfoOutlined /> {health.version}
+                      </Tag>
+                    </div>
+                  </Col>
+                  <Col span={24} style={{ marginTop: "auto" }}>
+                    <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)", display: "block", marginBottom: 8 }}>
+                      运行时间 · {formatUptime(health.uptime)}
+                    </Typography.Text>
+                    <Progress
+                      percent={uptimePct}
+                      strokeColor={{ "0%": "#38bdf8", "100%": "#34d399" }}
+                      trailColor="rgba(148, 163, 184, 0.15)"
+                      format={(p) => `${Math.floor(((p ?? 0) / 100) * 24)}h / 24h`}
+                    />
+                  </Col>
+                </Row>
+              </Card>
+
+              <Card
+                className="overview-big-screen__panel overview-big-screen__trend-rail-card"
+                title={
+                  <Space>
+                    <ThunderboltOutlined /> Pod / Event 摘要
+                  </Space>
+                }
+                loading={loading}
+                bordered={false}
+                styles={{ body: { flex: 1, display: "flex", flexDirection: "column", minHeight: 0 } }}
+              >
+                <div className="overview-big-screen__trend-rail-pod-body">
+                  <div>
+                    <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>Pod 健康占比</Typography.Text>
+                    <Progress
+                      percent={metrics.clusters === 0 ? 0 : podHealthyPct}
+                      strokeColor="#34d399"
+                      trailColor="rgba(251, 113, 133, 0.35)"
+                      format={() => (metrics.clusters === 0 ? "未接入集群" : `${podHealthyPct}%`)}
+                    />
+                  </div>
+                  <div>
+                    <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>Warning 占采样 Events</Typography.Text>
+                    <Progress
+                      percent={metrics.eventTotal === 0 ? 0 : warnRatio}
+                      strokeColor="#f97316"
+                      trailColor="rgba(148, 163, 184, 0.2)"
+                      format={() => (metrics.eventTotal === 0 ? "无采样" : `${warnRatio}%`)}
+                    />
+                  </div>
+                  <div>
+                    <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>日志 Agent 在线占比</Typography.Text>
+                    <Progress
+                      percent={metrics.logAgentsOnline + metrics.logAgentsOffline === 0 ? 0 : agentOnlinePct}
+                      strokeColor="#4ade80"
+                      trailColor="rgba(148, 163, 184, 0.2)"
+                      format={() =>
+                        metrics.logAgentsOnline + metrics.logAgentsOffline === 0 ? "无启用 Agent" : `${agentOnlinePct}%`
+                      }
+                    />
+                  </div>
+                  <Divider style={{ borderColor: "rgba(56, 189, 248, 0.15)", margin: "8px 0" }} />
+                  {metrics.clusters > 0 && (metrics.podClusterErrors > 0 || metrics.eventClusterErrors > 0) ? (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto" }}>
+                      <Typography.Text style={{ color: "rgba(248, 250, 252, 0.75)" }}>采集失败集群（Pod / Event）</Typography.Text>
+                      <Tag color="warning">
+                        {metrics.podClusterErrors} / {metrics.eventClusterErrors}
+                      </Tag>
+                    </div>
+                  ) : (
+                    <Typography.Text style={{ color: "rgba(186, 214, 238, 0.55)", fontSize: 12, marginTop: "auto" }}>
+                      Events 为每集群最近 500 条采样；未接入集群时上方 K8s 指标可能为 0。
+                    </Typography.Text>
+                  )}
+                </div>
+              </Card>
+            </div>
+          </Col>
+        </Row>
+
+        {trends ? (
+          <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+            <Col span={24}>
+              <Card
+                className="overview-big-screen__panel"
+                title={
+                  <Space>
+                    <CalendarOutlined style={{ color: "#34d399" }} />
+                    <span>近 7 天分日明细</span>
+                  </Space>
+                }
+                loading={false}
+                bordered={false}
+              >
                 <Table
                   size="small"
                   rowKey="key"
@@ -487,101 +619,10 @@ export function DashboardPage() {
                     },
                   ]}
                 />
-              </>
-            ) : (
-              <Typography.Text type="secondary" style={{ color: "rgba(186, 214, 238, 0.65)" }}>
-                暂无趋势数据（未产生登录/操作日志或服务未启用统计）。
-              </Typography.Text>
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} xl={9}>
-          <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Card className="overview-big-screen__panel" title={<Space><CheckCircleOutlined /> 系统状态</Space>} loading={health.loading} bordered={false}>
-              <Row gutter={[12, 12]}>
-                <Col span={24}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                    <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>服务</Typography.Text>
-                    {health.status === "ok" || health.status === "healthy" ? (
-                      <Tag color="success">运行正常</Tag>
-                    ) : health.status === "error" ? (
-                      <Tag color="error">连接异常</Tag>
-                    ) : (
-                      <Tag color="warning">{health.status}</Tag>
-                    )}
-                  </div>
-                </Col>
-                <Col span={24}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                    <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>版本</Typography.Text>
-                    <Tag style={{ marginInlineEnd: 0 }}>
-                      <InfoOutlined /> {health.version}
-                    </Tag>
-                  </div>
-                </Col>
-                <Col span={24}>
-                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)", display: "block", marginBottom: 8 }}>
-                    运行时间 · {formatUptime(health.uptime)}
-                  </Typography.Text>
-                  <Progress
-                    percent={uptimePct}
-                    strokeColor={{ "0%": "#38bdf8", "100%": "#34d399" }}
-                    trailColor="rgba(148, 163, 184, 0.15)"
-                    format={(p) => `${Math.floor(((p ?? 0) / 100) * 24)}h / 24h`}
-                  />
-                </Col>
-              </Row>
-            </Card>
-
-            <Card className="overview-big-screen__panel" title={<Space><ThunderboltOutlined /> Pod / Event 摘要</Space>} loading={loading} bordered={false}>
-              <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                <div>
-                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>Pod 健康占比</Typography.Text>
-                  <Progress
-                    percent={metrics.clusters === 0 ? 0 : podHealthyPct}
-                    strokeColor="#34d399"
-                    trailColor="rgba(251, 113, 133, 0.35)"
-                    format={() => (metrics.clusters === 0 ? "未接入集群" : `${podHealthyPct}%`)}
-                  />
-                </div>
-                <div>
-                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>Warning 占采样 Events</Typography.Text>
-                  <Progress
-                    percent={metrics.eventTotal === 0 ? 0 : warnRatio}
-                    strokeColor="#f97316"
-                    trailColor="rgba(148, 163, 184, 0.2)"
-                    format={() => (metrics.eventTotal === 0 ? "无采样" : `${warnRatio}%`)}
-                  />
-                </div>
-                <div>
-                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.85)" }}>日志 Agent 在线占比</Typography.Text>
-                  <Progress
-                    percent={metrics.logAgentsOnline + metrics.logAgentsOffline === 0 ? 0 : agentOnlinePct}
-                    strokeColor="#4ade80"
-                    trailColor="rgba(148, 163, 184, 0.2)"
-                    format={() =>
-                      metrics.logAgentsOnline + metrics.logAgentsOffline === 0 ? "无启用 Agent" : `${agentOnlinePct}%`
-                    }
-                  />
-                </div>
-                <Divider style={{ borderColor: "rgba(56, 189, 248, 0.15)", margin: "8px 0" }} />
-                {metrics.clusters > 0 && (metrics.podClusterErrors > 0 || metrics.eventClusterErrors > 0) ? (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <Typography.Text style={{ color: "rgba(248, 250, 252, 0.75)" }}>采集失败集群（Pod / Event）</Typography.Text>
-                    <Tag color="warning">
-                      {metrics.podClusterErrors} / {metrics.eventClusterErrors}
-                    </Tag>
-                  </div>
-                ) : (
-                  <Typography.Text style={{ color: "rgba(186, 214, 238, 0.55)", fontSize: 12 }}>
-                    Events 为每集群最近 500 条采样；未接入集群时上方 K8s 指标可能为 0。
-                  </Typography.Text>
-                )}
-              </Space>
-            </Card>
-          </Space>
-        </Col>
-        </Row>
+              </Card>
+            </Col>
+          </Row>
+        ) : null}
       </div>
 
       <div className="overview-big-screen__tables">

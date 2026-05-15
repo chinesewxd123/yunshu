@@ -535,6 +535,69 @@ body {
   font-weight: 600;
 }
 
+/* 总览：趋势图与右侧状态同高，分日表全宽下移，避免右侧大块留白 */
+.overview-big-screen__trend-row.ant-row {
+  align-items: stretch;
+}
+
+.overview-big-screen__trend-main-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.overview-big-screen__trend-main-card.ant-card {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-big-screen__trend-main-card .ant-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-big-screen__trend-rail-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.overview-big-screen__trend-rail {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.overview-big-screen__trend-rail-card.ant-card {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-big-screen__trend-rail-card .ant-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-big-screen__trend-rail-pod-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
 .overview-big-screen .ant-table {
   background: transparent;
   color: rgba(248, 250, 252, 0.96);
