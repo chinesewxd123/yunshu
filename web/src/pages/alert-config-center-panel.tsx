@@ -764,7 +764,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
             rowKey="id"
             loading={eventsLoading}
             dataSource={events}
-            scroll={{ x: 2280 }}
+            scroll={{ x: 2460 }}
             pagination={{
               current: eventsPage,
               pageSize: eventsPageSize,
@@ -824,6 +824,29 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                 ),
               },
               { title: "状态", dataIndex: "status", width: 90, render: (v: string) => <Tag>{v || "-"}</Tag> },
+              {
+                title: "告警值 / 恢复时值",
+                key: "metric_values",
+                width: 200,
+                ellipsis: true,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const a = String(row.metricCurrent ?? "").trim();
+                  const b = String(row.metricResolved ?? "").trim();
+                  if (!a && !b) return <span className="inline-muted">-</span>;
+                  if (String(row.status).toLowerCase() === "resolved" && b) {
+                    return (
+                      <Typography.Text ellipsis={{ tooltip: `触发侧快照: ${a || "—"}\n恢复时再查: ${b}` }} style={{ fontSize: 12 }}>
+                        触发: {a || "—"} / 恢复: {b}
+                      </Typography.Text>
+                    );
+                  }
+                  return (
+                    <Typography.Text ellipsis={{ tooltip: a }} style={{ fontSize: 12 }}>
+                      {a || "—"}
+                    </Typography.Text>
+                  );
+                },
+              },
               {
                 title: "命中策略",
                 dataIndex: "matchedPolicyNames",

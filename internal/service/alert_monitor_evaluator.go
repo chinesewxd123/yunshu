@@ -25,7 +25,6 @@ func (s *AlertService) runMonitorRuleEvaluator(ctx context.Context) {
 			return
 		}
 		_ = s.tickMonitorRules(ctx)
-		_ = s.tickCloudExpiryRules(ctx)
 	}
 	if _, err := c.AddFunc(spec, job); err != nil {
 		if _, err2 := c.AddFunc("*/5 * * * * *", job); err2 != nil {

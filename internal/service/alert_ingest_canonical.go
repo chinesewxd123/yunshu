@@ -184,6 +184,11 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 				s.setCachedCurrentValue(ctx, alert.Fingerprint, currentValue)
 			}
 		}
+		if strings.EqualFold(status, "resolved") && strings.TrimSpace(s.cfg.PrometheusURL) != "" && strings.TrimSpace(alert.GeneratorURL) != "" {
+			if v, qerr := s.queryCurrentValueByGeneratorURL(ctxEnrich, alert.GeneratorURL); qerr == nil && strings.TrimSpace(v) != "" {
+				outgoing["current_resolved"] = strings.TrimSpace(v)
+			}
+		}
 		cancelEnrich()
 		if currentValue == "" {
 			currentValue = "-"

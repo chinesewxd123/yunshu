@@ -57,6 +57,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 		AssigneeSvc:   alertAssigneeSvc,
 		DutySvc:       alertDutySvc,
 		EncryptionKey: app.Config.Security.EncryptionKey,
+		InfoLog:       app.Logger.Info,
 	})
 	cloudExpiryRuleSvc := service.NewCloudExpiryRuleService(app.DB)
 	alertDatasourceSvc := service.NewAlertDatasourceService(app.DB)

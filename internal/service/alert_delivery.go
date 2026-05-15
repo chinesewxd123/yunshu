@@ -568,7 +568,7 @@ func enrichRequestMapWithAlertPayload(reqMap map[string]interface{}, alertPayloa
 	if reqMap == nil {
 		return
 	}
-	for _, key := range []string{"startsAt", "endsAt", "occurredAt", "generatorURL", "status", "severity", "groupKey", "monitorPipeline", "datasourceId", "datasourceName", "datasourceType"} {
+	for _, key := range []string{"startsAt", "endsAt", "occurredAt", "generatorURL", "status", "severity", "groupKey", "monitorPipeline", "datasourceId", "datasourceName", "datasourceType", "current", "current_resolved"} {
 		if existing, ok := reqMap[key]; ok && payloadMetaValueMeaningful(existing) {
 			continue
 		}

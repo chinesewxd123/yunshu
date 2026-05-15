@@ -28,6 +28,10 @@ type AlertEvent struct {
 	MatchedPolicyIDList   []uint      `json:"matchedPolicyIdList,omitempty" gorm:"-"`
 	MatchedPolicyNameList []string    `json:"matchedPolicyNameList,omitempty" gorm:"-"`
 	ReceiverList       []string       `json:"receiverList,omitempty" gorm:"-"`
+	// MetricCurrent：通知发出时快照的指标值（Prometheus 等）；云到期等无 PromQL 时多为 “-”。
+	MetricCurrent string `json:"metricCurrent,omitempty" gorm:"-"`
+	// MetricResolved：仅 resolved 通知且能二次查询时，恢复侧再查一次 Prom 得到的值。
+	MetricResolved string `json:"metricResolved,omitempty" gorm:"-"`
 	ChannelID          uint           `json:"channelId" gorm:"index;comment:通知渠道ID"`
 	ChannelName        string         `json:"channelName" gorm:"size:64;comment:通知渠道名称"`
 	Success            bool           `json:"success" gorm:"not null;default:false;index;comment:通知是否成功"`

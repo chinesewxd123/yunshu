@@ -26,9 +26,8 @@ type CloudExpiryRuleUpsertRequest struct {
 	RegionScope         string `json:"region_scope"`
 	AdvanceDays         int    `json:"advance_days"`
 	Severity            string `json:"severity" binding:"omitempty,max=32"`
-	LabelsJSON          string `json:"labels_json"`
-	EvalIntervalSeconds int    `json:"eval_interval_seconds"`
-	EvalCronSpec        string `json:"eval_cron_spec"`
+	LabelsJSON   string `json:"labels_json"`
+	EvalCronSpec string `json:"eval_cron_spec"`
 	ScheduleEnabled     *bool  `json:"schedule_enabled"`
 	Enabled             *bool  `json:"enabled"`
 }
@@ -69,13 +68,6 @@ func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRule
 	if err := ValidateCloudExpiryCronSpec(req.EvalCronSpec); err != nil {
 		return nil, err
 	}
-	ev := req.EvalIntervalSeconds
-	if ev <= 0 {
-		ev = 3600
-	}
-	if ev < 60 {
-		ev = 60
-	}
 	days := req.AdvanceDays
 	if days <= 0 {
 		days = 7
@@ -88,6 +80,9 @@ func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRule
 	if req.ScheduleEnabled != nil {
 		sched = *req.ScheduleEnabled
 	}
+	if sched && strings.TrimSpace(req.EvalCronSpec) == "" {
+		return nil, constants.ErrBadRequestWithMsg("已启用定时评估时必须填写 eval_cron_spec（Cron 表达式）")
+	}
 	row := model.CloudExpiryRule{
 		ProjectID:           req.ProjectID,
 		Name:                strings.TrimSpace(req.Name),
@@ -96,7 +91,7 @@ func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRule
 		AdvanceDays:         days,
 		Severity:            sev,
 		LabelsJSON:          strings.TrimSpace(req.LabelsJSON),
-		EvalIntervalSeconds: ev,
+		EvalIntervalSeconds: 0,
 		EvalCronSpec:        strings.TrimSpace(req.EvalCronSpec),
 		ScheduleEnabled:     sched,
 		Enabled:             req.Enabled == nil || *req.Enabled,
@@ -134,17 +129,15 @@ func (s *CloudExpiryRuleService) Update(ctx context.Context, id uint, req CloudE
 	}
 	row.LabelsJSON = strings.TrimSpace(req.LabelsJSON)
 	row.EvalCronSpec = strings.TrimSpace(req.EvalCronSpec)
-	if req.EvalIntervalSeconds > 0 {
-		row.EvalIntervalSeconds = req.EvalIntervalSeconds
-		if row.EvalIntervalSeconds < 60 {
-			row.EvalIntervalSeconds = 60
-		}
-	}
+	row.EvalIntervalSeconds = 0
 	if req.Enabled != nil {
 		row.Enabled = *req.Enabled
 	}
 	if req.ScheduleEnabled != nil {
 		row.ScheduleEnabled = *req.ScheduleEnabled
+	}
+	if row.ScheduleEnabled && strings.TrimSpace(row.EvalCronSpec) == "" {
+		return nil, constants.ErrBadRequestWithMsg("已启用定时评估时必须填写 eval_cron_spec（Cron 表达式）")
 	}
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
 		return nil, err

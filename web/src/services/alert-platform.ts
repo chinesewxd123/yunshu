@@ -94,8 +94,7 @@ export interface CloudExpiryRuleItem {
   severity: string;
   labels_json?: string;
   labels?: Record<string, string>;
-  eval_interval_seconds: number;
-  /** 非空时按 robfig/cron 调度（优先于间隔秒），如 @every 1h 或 0 9 * * * */
+  /** 六段含秒、五段或 @every；启用定时评估时必填 */
   eval_cron_spec?: string;
   schedule_enabled?: boolean;
   enabled: boolean;

@@ -125,11 +125,11 @@ alert:
   # Prometheus异步增强worker数量
   prometheus_enrich_workers: 4
   # Alertmanager Webhook：Redis 存在且未关闭异步时，鉴权通过后先入队由后台 worker 消费（HTTP 快速返回）。
-  webhook_async_disabled: false
+  webhook_async_disabled: true
   webhook_queue_max_len: 10000
   # 多副本时仅一个实例跑内置 PromQL 监控规则 tick 的全局锁 TTL（秒）。应大于单轮评估最坏耗时。
   monitor_eval_leader_lock_seconds: 30
-  # 内置监控规则 + 云到期评估的调度节拍（robfig/cron 六段式，含秒）。空则默认 */5 * * * * *（每 5 秒）。
+  # 仅内置 PromQL 监控规则的调度节拍（robfig/cron 六段式，含秒）。云到期规则在控制台配置 Cron，由服务内独立节拍轮询。空则默认 */5 * * * * *（每 5 秒）。
   # monitor_eval_cron_spec: "*/5 * * * * *"
 
 # =========================

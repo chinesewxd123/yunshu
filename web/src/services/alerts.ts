@@ -43,6 +43,10 @@ export interface AlertEventItem {
   requestPayload?: string;
   responsePayload?: string;
   createdAt: string;
+  /** 通知载荷中的 current（触发/最近一次快照） */
+  metricCurrent?: string;
+  /** 仅 resolved 且成功二次查询 Prom 时有值 */
+  metricResolved?: string;
 }
 
 export function listAlertChannels(params?: { keyword?: string }) {

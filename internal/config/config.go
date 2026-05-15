@@ -139,7 +139,7 @@ type AlertConfig struct {
 	WebhookQueueMaxLen int `mapstructure:"webhook_queue_max_len"`
 	// MonitorEvalLeaderLockSeconds: 多副本下内置监控规则 tick 全局锁 TTL（秒），需 Redis。
 	MonitorEvalLeaderLockSeconds int `mapstructure:"monitor_eval_leader_lock_seconds"`
-	// MonitorEvalCronSpec: robfig/cron 六段式（含秒），驱动内置监控规则与云到期评估的调度节拍；空则默认每 5 秒一次。
+	// MonitorEvalCronSpec: robfig/cron 六段式（含秒），仅驱动内置 PromQL 监控规则评估节拍；空则默认每 5 秒。云到期评估使用独立调度，不受此项影响。
 	MonitorEvalCronSpec string `mapstructure:"monitor_eval_cron_spec"`
 
 	PlatformLimits AlertPlatformLimits `mapstructure:"platform_limits"`

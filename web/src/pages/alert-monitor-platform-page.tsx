@@ -1733,7 +1733,6 @@ export function AlertMonitorPlatformPage() {
     { title: "提前天数", dataIndex: "advance_days", width: 100 },
     { title: "级别", dataIndex: "severity", width: 90 },
     { title: "定时", dataIndex: "schedule_enabled", width: 80, render: (v: boolean) => (v !== false ? <Tag color="blue">开</Tag> : <Tag>关</Tag>) },
-    { title: "间隔(s)", dataIndex: "eval_interval_seconds", width: 90 },
     {
       title: "Cron",
       dataIndex: "eval_cron_spec",
@@ -1775,8 +1774,7 @@ export function AlertMonitorPlatformPage() {
       region_scope: "",
       advance_days: 7,
       severity: "warning",
-      eval_interval_seconds: 3600,
-      eval_cron_spec: "",
+      eval_cron_spec: "0 9 * * *",
       schedule_enabled: true,
       labels_json: "{}",
       enabled: true,
@@ -1793,7 +1791,6 @@ export function AlertMonitorPlatformPage() {
       region_scope: row.region_scope || "",
       advance_days: row.advance_days,
       severity: row.severity || "warning",
-      eval_interval_seconds: row.eval_interval_seconds,
       eval_cron_spec: row.eval_cron_spec ?? "",
       schedule_enabled: row.schedule_enabled !== false,
       labels_json: stringifyPrettyJSON(row.labels ?? {}, "{}"),
@@ -2385,9 +2382,9 @@ export function AlertMonitorPlatformPage() {
                   type="info"
                   showIcon
                   message="云到期规则说明"
-                  description="后台在「启用定时评估」时按调度拉取云实例到期时间：可填「评估间隔秒」，或填写「Cron 表达式」优先按 Cron（与告警服务内置调度节拍配合，有 Redis 时记录上次执行时间）。命中阈值触发 firing，恢复为 resolved，并走订阅与告警通道。"
+                  description="后台在「启用定时自动评估」且已填写 Cron 时拉取云实例到期时间：① 告警服务以固定节拍（约每 5 秒）检查是否到达各规则在控制台配置的 Cron；② 与 YAML 中 alert.monitor_eval_cron_spec（仅用于内置 PromQL 监控规则）无关；③ 仅当剩余天数 ≤ 提前天数才 firing。须配置 security.encryption_key 且云账号可解密。订阅按 labels 匹配，route 等不会自动替代订阅节点。"
                 />
-                <Table rowKey="id" columns={cloudExpiryColumns} dataSource={cloudExpiryList} pagination={false} scroll={{ x: 1360 }} />
+                <Table rowKey="id" columns={cloudExpiryColumns} dataSource={cloudExpiryList} pagination={false} scroll={{ x: 1280 }} />
               </Space>
             ),
           },
@@ -2770,25 +2767,35 @@ export function AlertMonitorPlatformPage() {
           <Form.Item name="severity" label="告警级别" rules={[{ required: true, message: "请选择级别" }]}>
             <Select options={alertSeverityOpts} />
           </Form.Item>
-          <Form.Item name="eval_interval_seconds" label="评估间隔秒" rules={[{ required: true, message: "请输入评估间隔" }]}>
-            <InputNumber min={60} style={{ width: "100%" }} />
-          </Form.Item>
           <Form.Item
             name="eval_cron_spec"
-            label="Cron 表达式（可选）"
+            dependencies={["schedule_enabled"]}
+            label="Cron 表达式"
+            rules={[
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (getFieldValue("schedule_enabled") !== false && !String(value ?? "").trim()) {
+                    return Promise.reject(new Error("已启用定时评估时必须填写 Cron"));
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
             extra={
               <span>
-                与「评估间隔秒」二选一生效：此处非空时<strong>优先按 Cron</strong> 决定何时拉云 API（robfig/cron，支持五/六段、<code>@every 1h</code> 等）。示例：<code>0 * * * *</code> 每小时整点；<code>0 9 * * *</code> 每天 9:00。留空则仅用间隔秒。
+                启用「定时自动评估」时<strong>必填</strong>。robfig/cron：<strong>五段</strong>为「分 时 日 月 周」；亦支持<strong>六段</strong>「秒 分 时 日 月 周」及 <code>@every 1m</code> 等描述符。服务约每 5 秒检查一次是否到点，故 Cron 粒度不宜低于该量级。
+                <br />
+                示例：<code>*/1 * * * *</code> 每分；<code>0 * * * *</code> 每时整分；<code>0 9 * * *</code> 每天 9:00。
               </span>
             }
           >
-            <Input allowClear placeholder="留空则按「评估间隔秒」；例如 @every 1h 或 0 9 * * *" />
+            <Input allowClear placeholder="例如 0 9 * * * 或 @every 1h" />
           </Form.Item>
           <Form.Item
             name="schedule_enabled"
             label="启用定时自动评估"
             valuePropName="checked"
-            extra="开启后由告警服务后台按本间隔拉取云 API。有 Redis 时写入上次评估时间以节流；无 Redis 时在进程内节流。关闭则仅「立即执行一次评估」会拉云。"
+            extra="开启后由告警服务按上方 Cron 拉云 API；有 Redis 时写入上次评估时间；关闭则仅「立即执行一次评估」会拉云。"
           >
             <Switch />
           </Form.Item>

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/cipher"
+	"log/slog"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -98,10 +99,11 @@ type AlertService struct {
 
 	monitorEvalCancel context.CancelFunc
 	monitorEvalMu     sync.Mutex
+	infoLog           *slog.Logger
 	aead              cipher.AEAD
 	cloudExpiryState  map[string]bool
 	cloudExpiryEvalMu sync.Mutex
-	// 无 Redis 时云到期规则按 synthetic rule id 记录上次评估时间
+	// 无 Redis 时云到期规则按 synthetic rule id 记录上次「按 Cron 触发评估」时间
 	cloudExpiryNoRedisLastEval map[uint]time.Time
 
 	// 可选依赖：告警抑制、订阅树路由
@@ -120,6 +122,8 @@ type AlertServiceOptions struct {
 	DutySvc     *AlertDutyService
 	// EncryptionKey 与项目/云账号凭据加密一致；非空时用于云到期规则解密云账号 AK/SK。
 	EncryptionKey string
+	// InfoLog 可选；非空时输出云到期调度与单次规则评估等 info 级日志。
+	InfoLog *slog.Logger
 }
 
 type promEnrichTask struct {
@@ -191,6 +195,7 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 		svc.silenceSvc = opts.SilenceSvc
 		svc.assigneeSvc = opts.AssigneeSvc
 		svc.dutySvc = opts.DutySvc
+		svc.infoLog = opts.InfoLog
 		if key := strings.TrimSpace(opts.EncryptionKey); key != "" {
 			if aead, err := cryptox.NewAESGCMFromKeyString(key); err == nil {
 				svc.aead = aead
@@ -202,6 +207,7 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 	evalCtx, cancel := context.WithCancel(context.Background())
 	svc.monitorEvalCancel = cancel
 	go svc.runMonitorRuleEvaluator(evalCtx)
+	go svc.runCloudExpiryEvaluator(evalCtx)
 	svc.runAlertWebhookIngestWorker(evalCtx)
 	return svc
 }
@@ -832,6 +838,29 @@ func extractEventReceivers(requestPayload, channelName string) []string {
 	return nil
 }
 
+func fillMetricFieldsFromRequestPayload(ev *model.AlertEvent) {
+	if ev == nil {
+		return
+	}
+	raw := strings.TrimSpace(ev.RequestPayload)
+	if raw == "" {
+		return
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return
+	}
+	norm := func(v interface{}) string {
+		s := strings.TrimSpace(fmt.Sprintf("%v", v))
+		if s == "" || s == "<nil>" {
+			return ""
+		}
+		return s
+	}
+	ev.MetricCurrent = norm(m["current"])
+	ev.MetricResolved = norm(m["current_resolved"])
+}
+
 func hydrateAlertEvent(it *model.AlertEvent) {
 	if it == nil {
 		return
@@ -846,6 +875,7 @@ func hydrateAlertEvent(it *model.AlertEvent) {
 	it.MatchedPolicyIDList = parseUintCSV(it.MatchedPolicyIDs)
 	it.MatchedPolicyNameList = parseTrimmedCSV(it.MatchedPolicyNames)
 	it.ReceiverList = extractEventReceivers(it.RequestPayload, it.ChannelName)
+	fillMetricFieldsFromRequestPayload(it)
 }
 
 func previewPayloadFieldCatalog(payload map[string]interface{}) ([]string, []string, []string) {
