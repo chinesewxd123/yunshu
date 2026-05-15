@@ -483,18 +483,29 @@ export function AlertMonitorPlatformPage() {
     () => dsBasicUserDictOpts.map((o) => ({ label: o.label, value: String(o.value) })),
     [dsBasicUserDictOpts],
   );
-  const silenceMatcherNameOptions = useMemo(
-    () =>
-      promqlLabelKeyOpts
-        .map((o) => {
-          const value = String(o.value || "").trim();
-          const label = String(o.label || "").trim() || value;
-          return { label: `${label} (${value})`, value };
-        })
-        .filter((o) => o.value)
-        .sort((a, b) => a.value.localeCompare(b.value, "zh-CN")),
-    [promqlLabelKeyOpts],
-  );
+  const silenceMatcherNameOptions = useMemo(() => {
+    const platformKeys = [
+      { label: "monitor_rule_id（平台监控规则 ID）", value: "monitor_rule_id" },
+      { label: "alertname（规则/告警名）", value: "alertname" },
+      { label: "project_id（项目）", value: "project_id" },
+      { label: "source（来源，如 prometheus_monitor）", value: "source" },
+    ];
+    const fromProm = promqlLabelKeyOpts
+      .map((o) => {
+        const value = String(o.value || "").trim();
+        const label = String(o.label || "").trim() || value;
+        return { label: `${label} (${value})`, value };
+      })
+      .filter((o) => o.value);
+    const seen = new Set<string>();
+    const out = [...platformKeys, ...fromProm].filter((o) => {
+      if (seen.has(o.value)) return false;
+      seen.add(o.value);
+      return true;
+    });
+    out.sort((a, b) => a.value.localeCompare(b.value, "zh-CN"));
+    return out;
+  }, [promqlLabelKeyOpts]);
   const ruleComparatorOptions = useMemo(
     () => [
       { label: "大于 (>)", value: ">" },
@@ -1123,6 +1134,25 @@ export function AlertMonitorPlatformPage() {
     setSilModalOpen(true);
   }
 
+  /** 为平台内置监控规则预填静默（monitor_rule_id + alertname），与 Prometheus 活跃告警列表无关。 */
+  function openSilenceForMonitorRule(r: AlertMonitorRuleItem) {
+    setSilCurrent(null);
+    silForm.resetFields();
+    const ruleName = String(r.name || "").trim();
+    silForm.setFieldsValue({
+      name: ruleName ? `静默规则 ${ruleName}` : `静默 monitor_rule ${r.id}`,
+      matchers: [
+        { name: "monitor_rule_id", value: String(r.id), is_regex: false },
+        ...(ruleName ? [{ name: "alertname", value: ruleName, is_regex: false }] : []),
+      ],
+      comment: "平台监控规则一键静默",
+      enabled: true,
+      starts_at: dayjs(),
+      ends_at: dayjs().add(2, "hour"),
+    });
+    setSilModalOpen(true);
+  }
+
   function toQuickSilenceTarget(row: PromNativeAlertRow): QuickSilenceTarget {
     const now = dayjs();
     const n = String(row.alertname || "").trim() || "未命名告警";
@@ -1309,10 +1339,13 @@ export function AlertMonitorPlatformPage() {
     { title: "启用", dataIndex: "enabled", width: 70, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
     {
       title: "操作",
-      width: 260,
+      width: 320,
       fixed: "right" as const,
       render: (_: unknown, r: AlertMonitorRuleItem) => (
         <Space wrap>
+          <Button type="link" size="small" onClick={() => openSilenceForMonitorRule(r)}>
+            静默
+          </Button>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openRuleEdit(r)}>
             规则
           </Button>
@@ -2228,7 +2261,7 @@ export function AlertMonitorPlatformPage() {
                   description={
                     <Space direction="vertical" size={8} style={{ width: "100%" }}>
                       <span>
-                        下方「平台静默规则」在<strong>服务端处理 Webhook</strong>时按 matchers 与告警 labels 比对，命中则<strong>不再向通道发送</strong>（并可能落一条「silence suppressed」类记录）。不会调用 Alertmanager API 去创建静默；Prometheus / AM UI 里的告警状态不会因本列表而变化。若要与 AM 一致，请在 Alertmanager 侧配置 silences。
+                        下方「平台静默规则」在<strong>服务端入站分发前</strong>按 matchers 与告警 labels 比对（含<strong>平台内置监控规则</strong>与 Webhook），命中则<strong>不再向通道发送</strong>。不会调用 Alertmanager API；Prometheus 活跃告警列表仅用于对照 Prom 侧规则，其「静默」按钮与平台规则不是同一批告警名。静默平台规则请用「监控规则与策略」表格中的<strong>静默</strong>，或手动填写 <Typography.Text code>monitor_rule_id</Typography.Text> + <Typography.Text code>alertname</Typography.Text>。
                       </span>
                       <Space wrap>
                         <Button size="small" onClick={openHistoryTab}>查看静默后的历史记录</Button>
@@ -2329,7 +2362,11 @@ export function AlertMonitorPlatformPage() {
                         建议先确认四项：1) <Typography.Text code>datasource</Typography.Text> 选正确集群；2){" "}
                         <Typography.Text code>severity</Typography.Text> 与策略匹配（critical/warning/info）；3){" "}
                         <Typography.Text code>for_seconds</Typography.Text> 防抖时长；4) <Typography.Text code>eval_interval_seconds</Typography.Text>{" "}
-                        评估频率（常用 30s/60s）。
+                        评估频率（常用 30s/60s，只决定多久查一次 PromQL）。
+                      </span>
+                      <span>
+                        <strong>通知重复间隔</strong>不由「间隔(s)」控制，而由配置 <Typography.Text code>alert.repeat_interval_seconds</Typography.Text>（默认 300s）与{" "}
+                        <Typography.Text code>group_interval_seconds</Typography.Text>（默认 60s）控制；持续 firing 时不会每 30s 都发钉钉。
                       </span>
                       <Space wrap>
                         <Button size="small" onClick={openHistoryTab}>查看规则触发历史</Button>

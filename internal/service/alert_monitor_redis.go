@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/alertnotify"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -106,6 +107,36 @@ func parseRFC3339Ptr(s string) (*time.Time, error) {
 	return &t, nil
 }
 
+// monitorShouldReingressFiring 持续 firing 时：未成功外发过则重试入站；已外发则仅当 repeat/group 窗口允许时再入站，避免每轮评估写一条「分组节流」历史。
+func (s *AlertService) monitorShouldReingressFiring(ctx context.Context, fp string, labels map[string]string, alertname, severity string) bool {
+	if !s.alertFiringWasDelivered(ctx, fp) {
+		return true
+	}
+	dims := alertnotify.ExtractDims(labels)
+	groupKey := s.computeGroupKey("platform-monitor", "firing", severity, alertname, labels, dims)
+	labelsDigest := alertnotify.DigestLabels(labels)
+	shouldSend, _, _, _, _ := s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
+	return shouldSend
+}
+
+func (s *AlertService) emitMonitorPlatformFiring(ctx context.Context, rule *model.AlertMonitorRule, labels, annotations map[string]string, fp string, now time.Time) {
+	_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
+		Receiver:     "platform-monitor",
+		Status:       "firing",
+		GroupLabels:  map[string]string{"alertname": rule.Name},
+		CommonLabels: labels,
+		Alerts: []AlertManagerAlert{{
+			Status:       "firing",
+			Labels:       labels,
+			Annotations:  annotations,
+			StartsAt:     now,
+			EndsAt:       now.Add(24 * time.Hour),
+			GeneratorURL: "",
+			Fingerprint:  fp,
+		}},
+	})
+}
+
 func (s *AlertService) evaluateMonitorRuleWithRedis(ctx context.Context, rule *model.AlertMonitorRule, firing bool, labels map[string]string, annotations map[string]string, fp string, now time.Time) {
 	defer s.redisTouchLastEval(ctx, rule.ID, now)
 
@@ -120,24 +151,13 @@ func (s *AlertService) evaluateMonitorRuleWithRedis(ctx context.Context, rule *m
 
 	if firing {
 		if active {
-			// 持续 firing：仍需按评估周期入站；否则首轮已将 active_firing=1，
-			// 若那次 ingest 未匹配订阅或通道发送失败，将永远不再 retry，直至 PromQL 变非 firing。
-			// 重复通知由 ingest 的 group_wait / group_interval / repeat_interval 控制。
-			_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
-				Receiver:     "platform-monitor",
-				Status:       "firing",
-				GroupLabels:  map[string]string{"alertname": rule.Name},
-				CommonLabels: labels,
-				Alerts: []AlertManagerAlert{{
-					Status:       "firing",
-					Labels:       labels,
-					Annotations:  annotations,
-					StartsAt:     now,
-					EndsAt:       now.Add(24 * time.Hour),
-					GeneratorURL: "",
-					Fingerprint:  fp,
-				}},
-			})
+			sev := strings.TrimSpace(labels["severity"])
+			if sev == "" {
+				sev = "warning"
+			}
+			if s.monitorShouldReingressFiring(ctx, fp, labels, rule.Name, sev) {
+				s.emitMonitorPlatformFiring(ctx, rule, labels, annotations, fp, now)
+			}
 			return
 		}
 		if pendingSince == nil {
@@ -147,21 +167,7 @@ func (s *AlertService) evaluateMonitorRuleWithRedis(ctx context.Context, rule *m
 					"pending_since": "",
 				}).Err()
 				_ = s.redis.Expire(ctx, key, 7*24*time.Hour).Err()
-				_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
-					Receiver:     "platform-monitor",
-					Status:       "firing",
-					GroupLabels:  map[string]string{"alertname": rule.Name},
-					CommonLabels: labels,
-					Alerts: []AlertManagerAlert{{
-						Status:       "firing",
-						Labels:       labels,
-						Annotations:  annotations,
-						StartsAt:     now,
-						EndsAt:       now.Add(24 * time.Hour),
-						GeneratorURL: "",
-						Fingerprint:  fp,
-					}},
-				})
+				s.emitMonitorPlatformFiring(ctx, rule, labels, annotations, fp, now)
 				return
 			}
 			t := now.UTC()
@@ -178,21 +184,7 @@ func (s *AlertService) evaluateMonitorRuleWithRedis(ctx context.Context, rule *m
 				"active_firing": "1",
 				"pending_since": "",
 			}).Err()
-			_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
-				Receiver:     "platform-monitor",
-				Status:       "firing",
-				GroupLabels:  map[string]string{"alertname": rule.Name},
-				CommonLabels: labels,
-				Alerts: []AlertManagerAlert{{
-					Status:       "firing",
-					Labels:       labels,
-					Annotations:  annotations,
-					StartsAt:     now,
-					EndsAt:       now.Add(24 * time.Hour),
-					GeneratorURL: "",
-					Fingerprint:  fp,
-				}},
-			})
+			s.emitMonitorPlatformFiring(ctx, rule, labels, annotations, fp, now)
 			return
 		}
 		return
