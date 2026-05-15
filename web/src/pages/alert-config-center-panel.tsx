@@ -118,9 +118,13 @@ function describeAlertEvent(row: AlertEventItem): string {
     if (reason === "silence_suppressed") return "已命中平台静默，告警写入历史但未向通道发送。";
     if (reason === "subscription_suppressed") return "已命中订阅静默窗口，本次不再重复外发。";
     if (reason === "dedup_suppressed") return "已命中指纹去重，本次告警被去重抑制。";
-    if (reason === "group_wait_suppressed") return "已进入 group_wait 收集窗口，稍后会统一发送。";
-    if (reason === "group_interval_suppressed") return "组内发生新变化但仍处于 group_interval 窗口，本次暂不外发。";
-    if (reason === "repeat_suppressed") return "处于 repeat_interval 窗口，本次重复提醒被抑制。";
+    if (reason === "group_wait_suppressed")
+      return "已进入「首次同组等待」窗口：平台正在短暂收集同组告警，窗口结束后会尝试统一发送；本轮不向渠道推送。";
+    if (reason === "group_interval_suppressed")
+      return "同组告警的标签摘要相对上次已发送有变化，但仍在「同组变化间隔」内：本轮不向渠道推送，以免过于频繁；达到间隔后会再评估。";
+    if (reason === "repeat_suppressed")
+      return "告警仍在触发中，但距上次成功通知未满「重复提醒间隔」：本轮不向渠道重复推送，以免打扰；本条为留痕记录。";
+    if (reason === "group_throttled") return "同组告警在聚合限流窗口内，本轮不向渠道推送。";
     if (reason === "resolved_aggregate_suppressed") return "同一告警实例的重复恢复事件已抑制（恢复仅发送一次）。";
     if (row.channelName?.includes("静默抑制")) return "平台在分发前拦截了本次告警。";
     return `通道[${channelText}] 已发送，接收人[${receiverText}]。`;
@@ -139,9 +143,10 @@ function summarizeAlertHint(row: AlertEventItem): string {
   if (reason === "silence_suppressed") return "已命中平台静默，通知已拦截";
   if (reason === "subscription_suppressed") return "已命中订阅静默窗口，本次未外发";
   if (reason === "dedup_suppressed") return "已触发去重策略，本次不再重复发送";
-  if (reason === "group_wait_suppressed") return "group_wait 收集窗口";
-  if (reason === "group_interval_suppressed") return "group_interval 窗口";
-  if (reason === "repeat_suppressed") return "repeat_interval 窗口";
+  if (reason === "group_wait_suppressed") return "首次同组等待";
+  if (reason === "group_interval_suppressed") return "同组变化间隔";
+  if (reason === "repeat_suppressed") return "重复提醒间隔";
+  if (reason === "group_throttled") return "聚合限流";
   if (reason === "resolved_aggregate_suppressed") return "重复恢复事件已抑制（恢复仅发送一次）";
   if (/suppressed/i.test(reason)) return "已被系统策略抑制，本次未发送";
   return reason;

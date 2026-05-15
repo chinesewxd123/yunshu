@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"yunshu/internal/config"
 	"yunshu/internal/model"
 
 	"gorm.io/gorm/clause"
@@ -92,20 +93,20 @@ func (s *AlertService) logSuppressedGroupAggregateBySpec(ctx context.Context, sp
 func (s *AlertService) resolvedGroupAggregateSpec() groupAggregateSpec {
 	return groupAggregateSpec{
 		keyPrefix:      "alert:group:resolved:",
-		titleSuffix:    " (resolved aggregate suppressed)",
-		channelName:    "（未外发·恢复抑制）",
+		titleSuffix:    "（恢复通知：已合并）",
+		channelName:    "（未推送·恢复仅通知一次）",
 		errorMessage:   "resolved_aggregate_suppressed",
-		responsePrefix: "suppressed by resolved once: ",
+		responsePrefix: "同一告警实例的恢复通知已合并，本轮未重复推送：",
 	}
 }
 
 func (s *AlertService) firingGroupAggregateSpec() groupAggregateSpec {
 	return groupAggregateSpec{
 		keyPrefix:      "alert:group:",
-		titleSuffix:    " (aggregate suppressed)",
-		channelName:    "（未外发·分组节流抑制）",
+		titleSuffix:    "（通知聚合：本轮未推送）",
+		channelName:    "（未推送·聚合限流）",
 		errorMessage:   "group_throttled",
-		responsePrefix: "suppressed by group timing: ",
+		responsePrefix: "按聚合间隔控制本轮未推送：",
 	}
 }
 
@@ -377,23 +378,48 @@ func (s *AlertService) logResolvedSuppressedNoPriorFiringDelivery(ctx context.Co
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
+func humanReadableGroupTimingSuppression(reason string, cfg config.AlertConfig) string {
+	gw := cfg.GroupWaitSeconds
+	if gw < 0 {
+		gw = 0
+	}
+	gi := cfg.GroupIntervalSeconds
+	if gi < 0 {
+		gi = 0
+	}
+	ri := cfg.RepeatIntervalSeconds
+	if ri <= 0 {
+		ri = 300
+	}
+	switch strings.TrimSpace(reason) {
+	case "repeat_suppressed":
+		return fmt.Sprintf("告警仍处于触发状态。为避免短时间内重复打扰，平台按「重复提醒间隔」（当前 %d 秒）控制：距上次成功通知未满该间隔时，本轮不向各渠道再次推送；本条为留痕记录。", ri)
+	case "group_interval_suppressed":
+		return fmt.Sprintf("本次告警的标签摘要与上次已发送的不同（例如实例或采样标签变化）。平台按「同组变化间隔」（当前 %d 秒）控制：未满间隔时本轮不推送；达到间隔后会再评估是否发送。", gi)
+	case "group_wait_suppressed":
+		return fmt.Sprintf("平台按「首次同组等待」（当前 %d 秒）聚合同组告警，等待窗口结束前本轮不推送。", gw)
+	default:
+		return "本轮根据通知合并策略未向渠道推送，可能与「首次同组等待」「同组变化间隔」或「重复提醒间隔」有关，具体以平台告警配置为准。"
+	}
+}
+
 func (s *AlertService) logSuppressedFiringTiming(ctx context.Context, title, severity, status, groupKey, labelsDigest, reason string, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
 		Source:          alertEventSourceFromPayload(payload),
-		Title:           title + " (group timing suppressed)",
+		Title:           title + "（通知合并：本轮未推送）",
 		Severity:        severity,
 		Status:          status,
 		Cluster:         strings.TrimSpace(fmt.Sprintf("%v", payload["cluster"])),
 		MonitorPipeline: strings.TrimSpace(fmt.Sprintf("%v", payload["monitorPipeline"])),
 		GroupKey:        strings.TrimSpace(groupKey),
 		LabelsDigest:    strings.TrimSpace(labelsDigest),
-		ChannelName:     "（未外发·分组节流抑制）",
+		ChannelName:     "（未推送·合并降噪）",
 		Success:         true,
 		HTTPStatusCode:  200,
 		ErrorMessage:    strings.TrimSpace(reason),
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload: truncateText("suppressed by group timing: "+groupKey, s.cfg.MaxPayloadChars),
+		ResponsePayload: truncateText(humanReadableGroupTimingSuppression(reason, s.cfg), s.cfg.MaxPayloadChars),
 	}
 	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error

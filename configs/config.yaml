@@ -100,7 +100,7 @@ alert:
   # group_key 聚合维度（用于服务端收敛/聚合）
   group_by: ["alertname", "cluster", "namespace", "severity", "receiver"]
   # group 第一次发送前等待窗口（秒）：用于“先收集后发送”（对齐 Alertmanager/夜莺 group_wait）
-  group_wait_seconds: 0
+  group_wait_seconds: 15
   # group 已发送后，若有“新变化”（labelsDigest变化）再次发送的最小间隔（秒）（对齐 group_interval）
   group_interval_seconds: 60
   # group 持续 firing 且无新变化时的重复提醒间隔（秒）（对齐 repeat_interval）

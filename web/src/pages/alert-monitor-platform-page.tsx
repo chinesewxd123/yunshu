@@ -2822,7 +2822,7 @@ export function AlertMonitorPlatformPage() {
               <span>
                 启用「定时自动评估」时<strong>必填</strong>。robfig/cron：<strong>五段</strong>为「分 时 日 月 周」；亦支持<strong>六段</strong>「秒 分 时 日 月 周」及 <code>@every 1m</code> 等描述符。服务约每 5 秒检查一次是否到点，故 Cron 粒度不宜低于该量级。
                 <br />
-                示例：<code>*/1 * * * *</code> 每分；<code>0 * * * *</code> 每时整分；<code>0 9 * * *</code> 每天 9:00。
+                示例：<code>*/1 * * * *</code> 每分钟；<code>0 * * * *</code> 每小时整点；<code>0 */2 * * *</code> 每 2 小时整点（注意五段里首位是<strong>分</strong>，勿写成 <code>*/2 * * * *</code>，否则表示「每 2 分钟」）；<code>0 9 * * *</code> 每天 9:00。
               </span>
             }
           >

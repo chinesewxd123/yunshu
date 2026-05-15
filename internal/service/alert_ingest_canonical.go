@@ -201,11 +201,8 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 			var aggCount int64
 			var firstSeen, lastSeen string
 			if alert.SkipGroupTiming {
+				// 云到期等来源由上游 Cron/调度控制节奏，不再叠加全局 repeat_interval，否则会出现「规则 2 小时评估、渠道却约 5 分钟重复提醒」的割裂体验。
 				shouldSend, reason, aggCount, firstSeen, lastSeen = true, "skip_group_timing_immediate", 1, "", ""
-				// 云到期：去掉 emit 层「已 firing 则不再入站」后，对已真正外发过 firing 的实例按 repeat_interval 节流，避免每分钟刷屏。
-				if strings.EqualFold(ca.Source, "cloud_expiry") && s.alertFiringWasDelivered(ctx, alert.Fingerprint) {
-					shouldSend, reason, aggCount, firstSeen, lastSeen = s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
-				}
 			} else {
 				shouldSend, reason, aggCount, firstSeen, lastSeen = s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
 			}
