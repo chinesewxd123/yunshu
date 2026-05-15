@@ -66,6 +66,22 @@ func (r *ProjectMemberRepository) DeleteByUserID(ctx context.Context, userID uin
 	return r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&model.ProjectMember{}).Error
 }
 
+// ListRolesByUserAndProjectIDs 返回用户在给定项目 ID 集合内的角色（project_id -> role）。
+func (r *ProjectMemberRepository) ListRolesByUserAndProjectIDs(ctx context.Context, userID uint, projectIDs []uint) (map[uint]string, error) {
+	out := make(map[uint]string)
+	if r == nil || r.db == nil || userID == 0 || len(projectIDs) == 0 {
+		return out, nil
+	}
+	var rows []model.ProjectMember
+	if err := r.db.WithContext(ctx).Where("user_id = ? AND project_id IN ?", userID, projectIDs).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		out[rows[i].ProjectID] = rows[i].Role
+	}
+	return out, nil
+}
+
 // ListProjectIDsByUser 返回用户所在项目 ID（去重，按 project_id 升序）。
 func (r *ProjectMemberRepository) ListProjectIDsByUser(ctx context.Context, userID uint) ([]uint, error) {
 	if r == nil || r.db == nil || userID == 0 {

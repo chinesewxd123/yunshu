@@ -3166,6 +3166,9 @@ export function AlertMonitorPlatformPage() {
         <Typography.Paragraph type="secondary">
           通知优先级：已配置处理人邮箱时，仅发送处理人；未配置处理人时，才回退到邮件通道收件人。
         </Typography.Paragraph>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12 }}>
+          部门解析（与后端一致）：在<strong>规则所属项目</strong>下，将所选部门根展开为子树，取「项目成员 ∩ 部门用户」的邮箱/手机；每个部门根另含其<strong>部门负责人</strong>的邮箱/手机；再与上方显式选择的用户合并去重。
+        </Typography.Paragraph>
         <Form form={assignForm} layout="vertical">
           <Form.Item name="user_ids" label="用户">
             <Select mode="multiple" options={users} optionFilterProp="label" placeholder="选择用户" />
@@ -3175,7 +3178,11 @@ export function AlertMonitorPlatformPage() {
               用户资料邮箱：{assignUsersHint}
             </Typography.Paragraph>
           ) : null}
-          <Form.Item name="department_ids" label="部门（子树，已不参与通知收件人计算）">
+          <Form.Item
+            name="department_ids"
+            label="部门（子树）"
+            extra="在规则所属项目内解析：子树用户 ∩ 项目成员，并包含各根部门的负责人；与「用户」显式选择合并。"
+          >
             <TreeSelect treeData={deptTree} treeCheckable showSearch allowClear treeDefaultExpandAll style={{ width: "100%" }} placeholder="随用户带出，可改" />
           </Form.Item>
           {assignUserIds?.length === 1 ? (
@@ -3184,7 +3191,7 @@ export function AlertMonitorPlatformPage() {
             </Form.Item>
           ) : (
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              多人时通知按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。部门与项目成员不再扩散收件人，额外邮箱字段已废弃。
+              多人时通知按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。部门按规则项目解析为「项目成员∩子树」并含部门负责人，与显式用户合并去重。
             </Typography.Paragraph>
           )}
           <Form.Item name="notify_on_resolved" label="恢复时通知" valuePropName="checked">
@@ -3279,7 +3286,11 @@ export function AlertMonitorPlatformPage() {
               用户资料邮箱：{dutyUsersHint}
             </Typography.Paragraph>
           ) : null}
-          <Form.Item name="department_ids" label="部门（子树）">
+          <Form.Item
+            name="department_ids"
+            label="部门（子树）"
+            extra="当前班次解析仍为部门子树内用户（未按项目成员过滤）；与显式「用户」合并。若需项目交集与负责人，请用规则「处理人」侧配置。"
+          >
             <TreeSelect treeData={deptTree} treeCheckable showSearch allowClear treeDefaultExpandAll style={{ width: "100%" }} placeholder="随用户带出，可改" />
           </Form.Item>
           {blkUserIds?.length === 1 ? (

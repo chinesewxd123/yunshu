@@ -16,6 +16,7 @@ import { useDictOptions } from "../hooks/use-dict-options";
 import { formatDateTime } from "../utils/format";
 import { batchDeleteK8sClusterGrants, deleteK8sClusterGrant, listClusterAuthMatrix, type K8sAuthMatrixRow } from "../services/k8s-policies";
 import { createCluster, deleteCluster, getClusterDetail, getClusterStatus, getClusters, setClusterStatus, updateCluster, type ClusterItem, type ClusterCreatePayload, type ClusterUpdatePayload } from "../services/clusters";
+import { getProjects, type ProjectItem } from "../services/projects";
 
 type ClusterQuery = {
   keyword: string;
@@ -55,6 +56,7 @@ export function ClusterPage() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authSelectedKeys, setAuthSelectedKeys] = useState<React.Key[]>([]);
   const [current, setCurrent] = useState<ClusterItem | null>(null);
+  const [projectOptions, setProjectOptions] = useState<ProjectItem[]>([]);
   const [form] = Form.useForm<ClusterCreatePayload &
   Partial<ClusterUpdatePayload> & {
     kubeconfig_dict_label?: string;
@@ -96,6 +98,17 @@ export function ClusterPage() {
     void loadClusters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await getProjects({ page: 1, page_size: 500 });
+        setProjectOptions(res.list);
+      } catch {
+        setProjectOptions([]);
+      }
+    })();
+  }, []);
 
   async function loadClusters() {
     setLoading(true);
@@ -180,6 +193,10 @@ export function ClusterPage() {
       form.resetFields();
       form.setFieldsValue({
         name: current.name,
+        owning_project_id:
+          current.owning_project_id !== undefined && current.owning_project_id !== null && current.owning_project_id > 0
+            ? current.owning_project_id
+            : undefined,
         connection_mode: current.connection_mode || "kubeconfig",
         kubeconfig: current.kubeconfig || "",
         kubeconfig_dict_label: undefined,
@@ -199,6 +216,7 @@ export function ClusterPage() {
       form.resetFields();
       form.setFieldsValue({
         name: "",
+        owning_project_id: undefined,
         connection_mode: "kubeconfig",
         kubeconfig: "",
         kubeconfig_dict_label: undefined,
@@ -289,6 +307,17 @@ export function ClusterPage() {
         insecure_skip_tls_verify: Boolean(direct.insecure_skip_tls_verify),
       };
       delete (payload as { kubeconfig?: string }).kubeconfig;
+    }
+
+    const ownPid = values.owning_project_id;
+    if (current) {
+      if (ownPid !== undefined && ownPid !== null && Number(ownPid) > 0) {
+        (payload as ClusterUpdatePayload).owning_project_id = Number(ownPid);
+      } else if (current.owning_project_id) {
+        (payload as ClusterUpdatePayload).owning_project_id = 0;
+      }
+    } else if (ownPid !== undefined && ownPid !== null && Number(ownPid) > 0) {
+      (payload as ClusterCreatePayload).owning_project_id = Number(ownPid);
     }
 
     setSubmitting(true);
@@ -528,6 +557,22 @@ export function ClusterPage() {
             { title: "ID", dataIndex: "id", width: 90 },
             { title: "集群名称", dataIndex: "name" },
             {
+              title: "归属项目",
+              key: "owning_project_id",
+              width: 160,
+              ellipsis: true,
+              render: (_: unknown, record: ClusterItem) => {
+                const pid = record.owning_project_id;
+                if (!pid) return <span className="inline-muted">—</span>;
+                const pn = projectOptions.find((p) => p.id === pid)?.name;
+                return (
+                  <Typography.Text ellipsis={{ tooltip: true }}>
+                    {pn ?? `项目 #${pid}`}
+                  </Typography.Text>
+                );
+              },
+            },
+            {
               title: "K8s 版本",
               key: "k8s_version",
               width: 140,
@@ -651,6 +696,20 @@ export function ClusterPage() {
         <Form form={form} layout="vertical" initialValues={{ name: "", connection_mode: "kubeconfig", kubeconfig: "" }}>
           <Form.Item label="集群名称" name="name" rules={[{ required: true, message: "请输入集群名称" }]}>
             <Input placeholder="例如：prod-k8s" />
+          </Form.Item>
+
+          <Form.Item
+            label="归属项目"
+            name="owning_project_id"
+            extra="可选；指定后仅归属项目成员可按策略访问该集群（与后端隔离规则一致）。"
+          >
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="不选则不限定项目（全局可见性由后端策略决定）"
+              options={projectOptions.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))}
+            />
           </Form.Item>
 
           <Form.Item label="连接模式" name="connection_mode" rules={[{ required: true, message: "请选择连接模式" }]}>

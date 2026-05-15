@@ -7,6 +7,10 @@ export interface ProjectItem {
   code: string;
   description?: string | null;
   status: number;
+  /** 可选归属部门 */
+  owner_department_id?: number | null;
+  /** 当前登录用户在该项目中的成员角色（owner/admin/member/readonly）；超管列表可能为空 */
+  my_project_role?: string | null;
   created_at: string;
 }
 
@@ -15,6 +19,7 @@ export interface ProjectCreatePayload {
   code: string;
   description?: string;
   status: number;
+  owner_department_id?: number;
 }
 
 export interface ProjectUpdatePayload {
@@ -22,6 +27,8 @@ export interface ProjectUpdatePayload {
   code?: string;
   description?: string | null;
   status?: number;
+  /** 传 0 表示清空归属部门 */
+  owner_department_id?: number;
 }
 
 export async function getProjects(params: { keyword?: string; page?: number; page_size?: number }) {
@@ -47,6 +54,8 @@ export interface ProjectMemberItem {
   username: string;
   nickname: string;
   email?: string | null;
+  /** owner / admin / member / readonly，与后端 project_members.role 一致 */
+  role?: string;
   created_at: string;
 }
 
@@ -54,7 +63,7 @@ export async function listProjectMembers(projectId: number) {
   return await getData<{ list: ProjectMemberItem[] }>(http.get(`/projects/${projectId}/members`));
 }
 
-export async function addProjectMember(projectId: number, payload: { user_id: number }) {
+export async function addProjectMember(projectId: number, payload: { user_id: number; role?: string }) {
   return await getData<ProjectMemberItem>(http.post(`/projects/${projectId}/members`, payload));
 }
 

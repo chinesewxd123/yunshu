@@ -9,14 +9,21 @@ import {
   getUserGroup,
   listUserGroups,
   updateUserGroup,
+  type UserGroupCreatePayload,
   type UserGroupDetail,
   type UserGroupItem,
+  type UserGroupUpdatePayload,
 } from "../services/user-groups";
+import { getProjects } from "../services/projects";
 import { getUsers } from "../services/users";
 import type { UserItem } from "../types/api";
 import { formatDateTime } from "../utils/format";
 
-const defaultQuery = { keyword: "", page: 1, page_size: 10 };
+const defaultQuery: { keyword: string; page: number; page_size: number; scope_project_id?: number } = {
+  keyword: "",
+  page: 1,
+  page_size: 10,
+};
 
 export function UserGroupsPage() {
   const [list, setList] = useState<UserGroupItem[]>([]);
@@ -25,10 +32,11 @@ export function UserGroupsPage() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
-  const [form] = Form.useForm<{ name: string; code: string; description?: string; status: number }>();
+  const [form] = Form.useForm<{ name: string; code: string; description?: string; status: number; scope_project_id?: number }>();
   const [detailOpen, setDetailOpen] = useState(false);
   const [detail, setDetail] = useState<UserGroupDetail | null>(null);
-  const [detailForm] = Form.useForm<{ name: string; description?: string; status: number }>();
+  const [detailForm] = Form.useForm<{ name: string; description?: string; status: number; scope_project_id?: number }>();
+  const [projectOptions, setProjectOptions] = useState<{ id: number; name: string }[]>([]);
   const [membersOpen, setMembersOpen] = useState(false);
   const [memberGroup, setMemberGroup] = useState<UserGroupItem | null>(null);
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -39,6 +47,17 @@ export function UserGroupsPage() {
 
   useEffect(() => {
     void loadUsers();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await getProjects({ page: 1, page_size: 500 });
+        setProjectOptions(res.list.map((p) => ({ id: p.id, name: p.name })));
+      } catch {
+        setProjectOptions([]);
+      }
+    })();
   }, []);
 
   async function loadUsers() {
@@ -67,12 +86,16 @@ export function UserGroupsPage() {
     const v = await form.validateFields();
     setSubmitting(true);
     try {
-      await createUserGroup({
+      const payload: UserGroupCreatePayload = {
         name: v.name.trim(),
         code: v.code.trim(),
         description: v.description?.trim(),
         status: v.status,
-      });
+      };
+      if (v.scope_project_id !== undefined && v.scope_project_id !== null && Number(v.scope_project_id) > 0) {
+        payload.scope_project_id = Number(v.scope_project_id);
+      }
+      await createUserGroup(payload);
       message.success("用户组已创建");
       setOpen(false);
       form.resetFields();
@@ -91,6 +114,10 @@ export function UserGroupsPage() {
         name: d.name,
         description: d.description,
         status: d.status,
+        scope_project_id:
+          d.scope_project_id !== undefined && d.scope_project_id !== null && d.scope_project_id > 0
+            ? d.scope_project_id
+            : undefined,
       });
       setDetailOpen(true);
     } finally {
@@ -103,11 +130,18 @@ export function UserGroupsPage() {
     const v = await detailForm.validateFields();
     setSubmitting(true);
     try {
-      await updateUserGroup(detail.id, {
+      const payload: UserGroupUpdatePayload = {
         name: v.name.trim(),
         description: v.description?.trim(),
         status: v.status,
-      });
+      };
+      const sp = v.scope_project_id;
+      if (sp !== undefined && sp !== null && Number(sp) > 0) {
+        payload.scope_project_id = Number(sp);
+      } else if (detail.scope_project_id) {
+        payload.scope_project_id = 0;
+      }
+      await updateUserGroup(detail.id, payload);
       message.success("已保存");
       setDetailOpen(false);
       setDetail(null);
@@ -178,6 +212,14 @@ export function UserGroupsPage() {
             style={{ width: 260 }}
             onSearch={(keyword) => setQuery((q) => ({ ...q, keyword: keyword ?? "", page: 1 }))}
           />
+          <Select
+            allowClear
+            placeholder="按项目筛选作用域"
+            style={{ width: 240 }}
+            value={query.scope_project_id}
+            onChange={(v) => setQuery((q) => ({ ...q, scope_project_id: v ?? undefined, page: 1 }))}
+            options={projectOptions.map((p) => ({ value: p.id, label: p.name }))}
+          />
         </Space>
         <Table<UserGroupItem>
           rowKey="id"
@@ -194,6 +236,18 @@ export function UserGroupsPage() {
             { title: "ID", dataIndex: "id", width: 70 },
             { title: "名称", dataIndex: "name" },
             { title: "编码", dataIndex: "code", render: (c: string) => <Typography.Text code>{c}</Typography.Text> },
+            {
+              title: "作用域项目",
+              key: "scope_project_id",
+              width: 160,
+              ellipsis: true,
+              render: (_: unknown, r: UserGroupItem) => {
+                const pid = r.scope_project_id;
+                if (!pid) return <span className="inline-muted">全局</span>;
+                const name = projectOptions.find((p) => p.id === pid)?.name;
+                return <Typography.Text ellipsis={{ tooltip: true }}>{name ?? `项目 #${pid}`}</Typography.Text>;
+              },
+            },
             { title: "成员数", dataIndex: "member_count", width: 90 },
             {
               title: "状态",
@@ -263,6 +317,19 @@ export function UserGroupsPage() {
               ]}
             />
           </Form.Item>
+          <Form.Item
+            name="scope_project_id"
+            label="作用域项目"
+            extra="留空为全局组；指定后仅该项目管理员可改组，且成员须均为该项目成员。"
+          >
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="全局（不限定项目）"
+              options={projectOptions.map((p) => ({ value: p.id, label: p.name }))}
+            />
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -303,6 +370,19 @@ export function UserGroupsPage() {
                 ]}
               />
             </Form.Item>
+            <Form.Item
+              name="scope_project_id"
+              label="作用域项目"
+              extra="清空并保存可恢复为全局组（需有权限）。指定项目后成员须均为该项目成员。"
+            >
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                placeholder="全局（不限定项目）"
+                options={projectOptions.map((p) => ({ value: p.id, label: p.name }))}
+              />
+            </Form.Item>
           </Form>
         )}
       </Drawer>
@@ -326,6 +406,11 @@ export function UserGroupsPage() {
         }
       >
         <Typography.Paragraph type="secondary">选择属于该组的用户（全量覆盖）。</Typography.Paragraph>
+        {memberGroup?.scope_project_id ? (
+          <Typography.Paragraph type="warning">
+            该组已绑定项目作用域（ID {memberGroup.scope_project_id}），成员须均为该项目成员，否则保存会失败。
+          </Typography.Paragraph>
+        ) : null}
         <Select
           mode="multiple"
           allowClear

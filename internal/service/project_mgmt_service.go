@@ -80,6 +80,8 @@ type ProjectItem struct {
 	Description         *string `json:"description"`
 	Status              int     `json:"status"`
 	OwnerDepartmentID   *uint   `json:"owner_department_id,omitempty"`
+	// MyProjectRole 当前登录用户在该项目中的成员角色（owner/admin/member/readonly）；列表与更新接口在非超管时填充；超管可省略。
+	MyProjectRole       string  `json:"my_project_role,omitempty"`
 	CreatedAt           string  `json:"created_at"`
 }
 
@@ -92,6 +94,41 @@ func toProjectItem(p model.Project) ProjectItem {
 		Status:            p.Status,
 		OwnerDepartmentID: p.OwnerDepartmentID,
 		CreatedAt:         p.CreatedAt.Format(time.RFC3339),
+	}
+}
+
+func (s *ProjectMgmtService) enrichMyProjectRole(ctx context.Context, item *ProjectItem) {
+	if item == nil || s.memberRepo == nil {
+		return
+	}
+	u, ok := auth.RequestUserFromContext(ctx)
+	if !ok || u == nil || auth.IsSuperAdminRole(u.RoleCodes) {
+		return
+	}
+	m, err := s.memberRepo.GetByProjectAndUser(ctx, item.ID, u.ID)
+	if err != nil || m == nil {
+		return
+	}
+	item.MyProjectRole = m.Role
+}
+
+func (s *ProjectMgmtService) enrichMyProjectRolesBatch(ctx context.Context, items []ProjectItem) {
+	u, ok := auth.RequestUserFromContext(ctx)
+	if !ok || u == nil || auth.IsSuperAdminRole(u.RoleCodes) || s.memberRepo == nil || len(items) == 0 {
+		return
+	}
+	ids := make([]uint, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].ID)
+	}
+	roles, err := s.memberRepo.ListRolesByUserAndProjectIDs(ctx, u.ID, ids)
+	if err != nil {
+		return
+	}
+	for i := range items {
+		if r, ok := roles[items[i].ID]; ok {
+			items[i].MyProjectRole = r
+		}
 	}
 }
 
@@ -120,6 +157,7 @@ func (s *ProjectMgmtService) ListProjects(ctx context.Context, q ProjectListQuer
 	for _, it := range list {
 		out = append(out, toProjectItem(it))
 	}
+	s.enrichMyProjectRolesBatch(ctx, out)
 	return &pagination.Result[ProjectItem]{List: out, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
@@ -162,6 +200,9 @@ func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID ui
 		}
 	}
 	item := toProjectItem(p)
+	if creatorUserID > 0 {
+		item.MyProjectRole = "owner"
+	}
 	return &item, nil
 }
 
@@ -214,6 +255,7 @@ func (s *ProjectMgmtService) UpdateProject(ctx context.Context, id uint, req Pro
 		return nil, err
 	}
 	item := toProjectItem(*p)
+	s.enrichMyProjectRole(ctx, &item)
 	return &item, nil
 }
 

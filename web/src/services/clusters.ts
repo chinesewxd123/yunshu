@@ -3,6 +3,8 @@ import { getData, http } from "./http";
 export interface ClusterItem {
   id: number;
   name: string;
+  /** 可选归属项目；非空时按项目成员隔离可见性 */
+  owning_project_id?: number | null;
   connection_mode?: "kubeconfig" | "direct";
   kubeconfig?: string;
   direct_config?: DirectConfigPayload;
@@ -32,6 +34,7 @@ export interface DirectConfigPayload {
 
 export interface ClusterCreatePayload {
   name: string;
+  owning_project_id?: number;
   connection_mode?: "kubeconfig" | "direct";
   kubeconfig?: string;
   direct_config?: DirectConfigPayload;
@@ -39,6 +42,8 @@ export interface ClusterCreatePayload {
 
 export interface ClusterUpdatePayload {
   name?: string;
+  /** 传 0 表示清空归属项目 */
+  owning_project_id?: number;
   connection_mode?: "kubeconfig" | "direct";
   kubeconfig?: string;
   direct_config?: DirectConfigPayload;
