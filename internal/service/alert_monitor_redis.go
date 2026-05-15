@@ -120,6 +120,24 @@ func (s *AlertService) evaluateMonitorRuleWithRedis(ctx context.Context, rule *m
 
 	if firing {
 		if active {
+			// 持续 firing：仍需按评估周期入站；否则首轮已将 active_firing=1，
+			// 若那次 ingest 未匹配订阅或通道发送失败，将永远不再 retry，直至 PromQL 变非 firing。
+			// 重复通知由 ingest 的 group_wait / group_interval / repeat_interval 控制。
+			_ = s.receiveAlertmanagerPayloadSync(ctx, AlertManagerPayload{
+				Receiver:     "platform-monitor",
+				Status:       "firing",
+				GroupLabels:  map[string]string{"alertname": rule.Name},
+				CommonLabels: labels,
+				Alerts: []AlertManagerAlert{{
+					Status:       "firing",
+					Labels:       labels,
+					Annotations:  annotations,
+					StartsAt:     now,
+					EndsAt:       now.Add(24 * time.Hour),
+					GeneratorURL: "",
+					Fingerprint:  fp,
+				}},
+			})
 			return
 		}
 		if pendingSince == nil {

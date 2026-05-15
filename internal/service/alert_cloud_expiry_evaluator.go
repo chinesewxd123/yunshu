@@ -221,11 +221,8 @@ func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firi
 	s.monitorEvalMu.Lock()
 	active := s.cloudExpiryState[fp]
 	if firing {
-		// 定时评估：同一实例已 firing 则不再重复入站。立即评估：始终再入站一次，满足「点击即查即发」。
-		if active && !manualEval {
-			s.monitorEvalMu.Unlock()
-			return
-		}
+		// 不在此处短路「已 firing」：否则首次入站若未匹配订阅/通道失败，会永久不再重试。
+		// 持续 firing 时的外发频率由 ingest 层对 cloud_expiry + SkipGroupTiming 叠加 repeat_interval 控制。
 		s.cloudExpiryState[fp] = true
 		s.monitorEvalMu.Unlock()
 		am := AlertManagerAlert{
@@ -246,6 +243,9 @@ func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firi
 			CommonLabels: labels,
 			Alerts:       []AlertManagerAlert{am},
 		})
+		if s.infoLog != nil {
+			s.infoLog.Info("cloud_expiry_emit_firing", slog.String("fingerprint", fp), slog.String("alertname", labels["alertname"]))
+		}
 		return
 	}
 	if !active {
