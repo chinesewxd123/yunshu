@@ -16,12 +16,13 @@ import (
 )
 
 type DepartmentService struct {
-	repo     *repository.DepartmentRepository
-	userRepo *repository.UserRepository
+	repo          *repository.DepartmentRepository
+	userRepo      *repository.UserRepository
+	assigneeSvc   *AlertRuleAssigneeService
 }
 
-func NewDepartmentService(repo *repository.DepartmentRepository, userRepo *repository.UserRepository) *DepartmentService {
-	return &DepartmentService{repo: repo, userRepo: userRepo}
+func NewDepartmentService(repo *repository.DepartmentRepository, userRepo *repository.UserRepository, assigneeSvc *AlertRuleAssigneeService) *DepartmentService {
+	return &DepartmentService{repo: repo, userRepo: userRepo, assigneeSvc: assigneeSvc}
 }
 
 func (s *DepartmentService) actorDepartmentScopeIDs(ctx context.Context, actor *auth.CurrentUser) ([]uint, error) {
@@ -379,7 +380,13 @@ func (s *DepartmentService) Delete(ctx context.Context, id uint) error {
 	if users > 0 {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsga110c1191380)
 	}
-	return s.repo.DeleteByID(ctx, item.ID)
+	if err := s.repo.DeleteByID(ctx, item.ID); err != nil {
+		return err
+	}
+	if s.assigneeSvc != nil {
+		_ = s.assigneeSvc.PruneDepartmentFromAllAssignees(ctx, item.ID)
+	}
+	return nil
 }
 
 func (s *DepartmentService) DeleteByActor(ctx context.Context, actor *auth.CurrentUser, id uint) error {

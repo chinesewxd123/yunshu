@@ -7,14 +7,16 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/constants"
-
-	"yunshu/internal/model"
 	"yunshu/internal/pkg/k8sauth"
+	"yunshu/internal/pkg/projectaccess"
+	"yunshu/internal/model"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/repository"
 
 	corev1 "k8s.io/api/core/v1"
+	"gorm.io/gorm"
 )
 
 type K8sClusterListQuery struct {
@@ -24,10 +26,11 @@ type K8sClusterListQuery struct {
 }
 
 type K8sClusterCreateRequest struct {
-	Name           string        `json:"name" binding:"required,max=128"`
-	ConnectionMode string        `json:"connection_mode,omitempty" binding:"omitempty,oneof=kubeconfig direct"`
-	Kubeconfig     string        `json:"kubeconfig,omitempty"`
-	DirectConfig   *DirectConfig `json:"direct_config,omitempty"`
+	Name              string        `json:"name" binding:"required,max=128"`
+	ConnectionMode    string        `json:"connection_mode,omitempty" binding:"omitempty,oneof=kubeconfig direct"`
+	Kubeconfig        string        `json:"kubeconfig,omitempty"`
+	DirectConfig      *DirectConfig `json:"direct_config,omitempty"`
+	OwningProjectID   *uint         `json:"owning_project_id"`
 }
 
 type DirectConfig struct {
@@ -44,10 +47,11 @@ type DirectConfig struct {
 }
 
 type K8sClusterUpdateRequest struct {
-	Name           *string       `json:"name,omitempty" binding:"omitempty,max=128"`
-	ConnectionMode *string       `json:"connection_mode,omitempty" binding:"omitempty,oneof=kubeconfig direct"`
-	Kubeconfig     *string       `json:"kubeconfig,omitempty"`
-	DirectConfig   *DirectConfig `json:"direct_config,omitempty"`
+	Name              *string       `json:"name,omitempty" binding:"omitempty,max=128"`
+	ConnectionMode    *string       `json:"connection_mode,omitempty" binding:"omitempty,oneof=kubeconfig direct"`
+	Kubeconfig        *string       `json:"kubeconfig,omitempty"`
+	DirectConfig      *DirectConfig `json:"direct_config,omitempty"`
+	OwningProjectID   *uint         `json:"owning_project_id"`
 }
 
 type K8sClusterSetStatusRequest struct {
@@ -55,9 +59,10 @@ type K8sClusterSetStatusRequest struct {
 }
 
 type K8sClusterItem struct {
-	ID             uint          `json:"id"`
-	Name           string        `json:"name"`
-	ConnectionMode string        `json:"connection_mode,omitempty"`
+	ID                uint          `json:"id"`
+	Name              string        `json:"name"`
+	OwningProjectID   *uint         `json:"owning_project_id,omitempty"`
+	ConnectionMode    string        `json:"connection_mode,omitempty"`
 	Kubeconfig     string        `json:"kubeconfig,omitempty"`
 	DirectConfig   *DirectConfig `json:"direct_config,omitempty"`
 	Status         int           `json:"status"`
@@ -96,11 +101,12 @@ type ComponentStatusItem struct {
 }
 
 type K8sClusterService struct {
-	repo        *repository.K8sClusterRepository
-	dictRepo    *repository.DictEntryRepository
-	runtime     *K8sRuntimeService
-	nsDenyRepo  *repository.K8sNamespaceDenyRepository
-	nsAllowRepo *repository.K8sNamespaceAllowRepository
+	repo         *repository.K8sClusterRepository
+	dictRepo     *repository.DictEntryRepository
+	runtime      *K8sRuntimeService
+	nsDenyRepo   *repository.K8sNamespaceDenyRepository
+	nsAllowRepo  *repository.K8sNamespaceAllowRepository
+	memberRepo   *repository.ProjectMemberRepository
 }
 
 // NewK8sClusterService 创建相关逻辑。
@@ -110,6 +116,7 @@ func NewK8sClusterService(
 	runtime *K8sRuntimeService,
 	nsDeny *repository.K8sNamespaceDenyRepository,
 	nsAllow *repository.K8sNamespaceAllowRepository,
+	memberRepo *repository.ProjectMemberRepository,
 ) *K8sClusterService {
 	return &K8sClusterService{
 		repo:        repo,
@@ -117,17 +124,75 @@ func NewK8sClusterService(
 		runtime:     runtime,
 		nsDenyRepo:  nsDeny,
 		nsAllowRepo: nsAllow,
+		memberRepo:   memberRepo,
 	}
+}
+
+func (s *K8sClusterService) ensureClusterOwningProjectAccess(ctx context.Context, cl *model.K8sCluster) error {
+	if cl == nil || cl.OwningProjectID == nil || *cl.OwningProjectID == 0 {
+		return nil
+	}
+	u, ok := auth.RequestUserFromContext(ctx)
+	if !ok || u == nil {
+		return nil
+	}
+	if auth.IsSuperAdminRole(u.RoleCodes) {
+		return nil
+	}
+	if s.memberRepo == nil {
+		return nil
+	}
+	_, err := s.memberRepo.GetByProjectAndUser(ctx, *cl.OwningProjectID, u.ID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return constants.ErrK8sClusterProjectAccessDenied
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *K8sClusterService) validateAssignOwningProject(ctx context.Context, pid uint) error {
+	if pid == 0 {
+		return nil
+	}
+	u, ok := auth.RequestUserFromContext(ctx)
+	if !ok || u == nil {
+		return constants.ErrUnauthorized
+	}
+	if auth.IsSuperAdminRole(u.RoleCodes) {
+		return nil
+	}
+	if s.memberRepo == nil {
+		return constants.ErrInternal
+	}
+	m, err := s.memberRepo.GetByProjectAndUser(ctx, pid, u.ID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return constants.ErrK8sClusterProjectAccessDenied
+		}
+		return err
+	}
+	if !projectaccess.RoleAtLeast(m.Role, "admin") {
+		return constants.ErrProjectAdminRequired
+	}
+	return nil
 }
 
 // List 查询列表相关的业务逻辑。
 func (s *K8sClusterService) List(ctx context.Context, query K8sClusterListQuery) (*K8sClusterListResponse, error) {
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
-	clusters, total, err := s.repo.List(ctx, repository.K8sClusterListParams{
+	params := repository.K8sClusterListParams{
 		Keyword:  query.Keyword,
 		Page:     page,
 		PageSize: pageSize,
-	})
+	}
+	if u, ok := auth.RequestUserFromContext(ctx); ok && u != nil && !auth.IsSuperAdminRole(u.RoleCodes) && s.memberRepo != nil {
+		ids, _ := s.memberRepo.ListProjectIDsByUser(ctx, u.ID)
+		params.ProjectMemberFilter = true
+		params.ProjectMemberIDs = ids
+	}
+	clusters, total, err := s.repo.List(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -185,16 +250,25 @@ func (s *K8sClusterService) Create(ctx context.Context, req K8sClusterCreateRequ
 		c.Kubeconfig = req.Kubeconfig
 	}
 
+	if req.OwningProjectID != nil && *req.OwningProjectID > 0 {
+		if err := s.validateAssignOwningProject(ctx, *req.OwningProjectID); err != nil {
+			return nil, err
+		}
+		v := *req.OwningProjectID
+		c.OwningProjectID = &v
+	}
+
 	if err := s.repo.Create(ctx, c); err != nil {
 		return nil, err
 	}
 	return &K8sClusterItem{
-		ID:             c.ID,
-		Name:           c.Name,
-		ConnectionMode: c.ConnectionMode,
-		Status:         c.Status,
-		CreatedAt:      c.CreatedAt,
-		UpdatedAt:      c.UpdatedAt,
+		ID:                c.ID,
+		Name:              c.Name,
+		OwningProjectID:   c.OwningProjectID,
+		ConnectionMode:    c.ConnectionMode,
+		Status:            c.Status,
+		CreatedAt:         c.CreatedAt,
+		UpdatedAt:         c.UpdatedAt,
 	}, nil
 }
 
@@ -202,6 +276,9 @@ func (s *K8sClusterService) Create(ctx context.Context, req K8sClusterCreateRequ
 func (s *K8sClusterService) Detail(ctx context.Context, id uint) (*K8sClusterItem, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureClusterOwningProjectAccess(ctx, cluster); err != nil {
 		return nil, err
 	}
 	item := buildClusterItem(*cluster)
@@ -213,6 +290,9 @@ func (s *K8sClusterService) Detail(ctx context.Context, id uint) (*K8sClusterIte
 func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterUpdateRequest) (*K8sClusterItem, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureClusterOwningProjectAccess(ctx, cluster); err != nil {
 		return nil, err
 	}
 	if req.Name != nil {
@@ -256,21 +336,34 @@ func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterU
 		s.runtime.DeleteRegisterCache(cluster.ID)
 	}
 
+	if req.OwningProjectID != nil {
+		if *req.OwningProjectID == 0 {
+			cluster.OwningProjectID = nil
+		} else {
+			if err := s.validateAssignOwningProject(ctx, *req.OwningProjectID); err != nil {
+				return nil, err
+			}
+			v := *req.OwningProjectID
+			cluster.OwningProjectID = &v
+		}
+	}
+
 	if err := s.repo.Update(ctx, cluster); err != nil {
 		return nil, err
 	}
-	return &K8sClusterItem{
-		ID:             cluster.ID,
-		Name:           cluster.Name,
-		ConnectionMode: cluster.ConnectionMode,
-		Status:         cluster.Status,
-		CreatedAt:      cluster.CreatedAt,
-		UpdatedAt:      cluster.UpdatedAt,
-	}, nil
+	out := buildClusterItem(*cluster)
+	return &out, nil
 }
 
 // Delete 删除相关的业务逻辑。
 func (s *K8sClusterService) Delete(ctx context.Context, id uint) error {
+	cl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.ensureClusterOwningProjectAccess(ctx, cl); err != nil {
+		return err
+	}
 	s.runtime.DeleteRegisterCache(id)
 	return s.repo.Delete(ctx, id)
 }
@@ -279,6 +372,9 @@ func (s *K8sClusterService) Delete(ctx context.Context, id uint) error {
 func (s *K8sClusterService) SetStatus(ctx context.Context, id uint, status int) (*K8sClusterItem, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureClusterOwningProjectAccess(ctx, cluster); err != nil {
 		return nil, err
 	}
 	if status != 0 && status != 1 {
@@ -294,24 +390,19 @@ func (s *K8sClusterService) SetStatus(ctx context.Context, id uint, status int) 
 			return nil, err
 		}
 	}
-	return &K8sClusterItem{
-		ID:             cluster.ID,
-		Name:           cluster.Name,
-		ConnectionMode: cluster.ConnectionMode,
-		Status:         cluster.Status,
-		CreatedAt:      cluster.CreatedAt,
-		UpdatedAt:      cluster.UpdatedAt,
-	}, nil
+	out := buildClusterItem(*cluster)
+	return &out, nil
 }
 
 func buildClusterItem(c model.K8sCluster) K8sClusterItem {
 	item := K8sClusterItem{
-		ID:             c.ID,
-		Name:           c.Name,
-		ConnectionMode: c.ConnectionMode,
-		Status:         c.Status,
-		CreatedAt:      c.CreatedAt,
-		UpdatedAt:      c.UpdatedAt,
+		ID:                c.ID,
+		Name:              c.Name,
+		OwningProjectID:   c.OwningProjectID,
+		ConnectionMode:    c.ConnectionMode,
+		Status:            c.Status,
+		CreatedAt:         c.CreatedAt,
+		UpdatedAt:         c.UpdatedAt,
 	}
 	if c.ConnectionMode == "direct" && strings.TrimSpace(c.DirectConfig) != "" {
 		var dc DirectConfig
@@ -324,6 +415,13 @@ func buildClusterItem(c model.K8sCluster) K8sClusterItem {
 
 // Status 执行对应的业务逻辑。
 func (s *K8sClusterService) Status(ctx context.Context, id uint) (*K8sClusterStatusResponse, error) {
+	cl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureClusterOwningProjectAccess(ctx, cl); err != nil {
+		return nil, err
+	}
 	ver, state, err := s.runtime.CheckClusterHeartbeat(ctx, id)
 	if err != nil {
 		return nil, err
@@ -340,6 +438,13 @@ func (s *K8sClusterService) Status(ctx context.Context, id uint) (*K8sClusterSta
 
 // ListNamespaces 查询列表相关的业务逻辑；若传入 pack，则按命名空间黑/白名单过滤（与控制台下拉、K8sScopeAuthorize 对齐）。
 func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint, pack *k8sauth.PrincipalPack) ([]NamespaceItem, error) {
+	cl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureClusterOwningProjectAccess(ctx, cl); err != nil {
+		return nil, err
+	}
 	_, k, err := s.runtime.GetClusterKubectl(ctx, id)
 	if err != nil {
 		return nil, err
@@ -378,6 +483,13 @@ func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint, pack *k
 
 // ListComponentStatuses 查询列表相关的业务逻辑。
 func (s *K8sClusterService) ListComponentStatuses(ctx context.Context, id uint) ([]ComponentStatusItem, error) {
+	cl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureClusterOwningProjectAccess(ctx, cl); err != nil {
+		return nil, err
+	}
 	_, k, err := s.runtime.GetClusterKubectl(ctx, id)
 	if err != nil {
 		return nil, err

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/constants"
 	cryptox "yunshu/internal/pkg/crypto"
 	"yunshu/internal/pkg/pagination"
@@ -34,6 +35,7 @@ type ProjectMgmtService struct {
 	logRepo          *repository.LogSourceRepository
 	memberRepo       *repository.ProjectMemberRepository
 	userRepo         *repository.UserRepository
+	departmentRepo   *repository.DepartmentRepository
 	aead             cipher.AEAD
 	ensureMu         sync.Mutex
 	ensuredProjectAt map[uint]time.Time
@@ -49,6 +51,7 @@ func NewProjectMgmtService(
 	logRepo *repository.LogSourceRepository,
 	memberRepo *repository.ProjectMemberRepository,
 	userRepo *repository.UserRepository,
+	departmentRepo *repository.DepartmentRepository,
 	encryptionKey string,
 ) (*ProjectMgmtService, error) {
 	aead, err := cryptox.NewAESGCMFromKeyString(encryptionKey)
@@ -64,28 +67,31 @@ func NewProjectMgmtService(
 		logRepo:          logRepo,
 		memberRepo:       memberRepo,
 		userRepo:         userRepo,
+		departmentRepo:   departmentRepo,
 		aead:             aead,
 		ensuredProjectAt: make(map[uint]time.Time),
 	}, nil
 }
 
 type ProjectItem struct {
-	ID          uint    `json:"id"`
-	Name        string  `json:"name"`
-	Code        string  `json:"code"`
-	Description *string `json:"description"`
-	Status      int     `json:"status"`
-	CreatedAt   string  `json:"created_at"`
+	ID                  uint    `json:"id"`
+	Name                string  `json:"name"`
+	Code                string  `json:"code"`
+	Description         *string `json:"description"`
+	Status              int     `json:"status"`
+	OwnerDepartmentID   *uint   `json:"owner_department_id,omitempty"`
+	CreatedAt           string  `json:"created_at"`
 }
 
 func toProjectItem(p model.Project) ProjectItem {
 	return ProjectItem{
-		ID:          p.ID,
-		Name:        p.Name,
-		Code:        p.Code,
-		Description: p.Description,
-		Status:      p.Status,
-		CreatedAt:   p.CreatedAt.Format(time.RFC3339),
+		ID:                p.ID,
+		Name:              p.Name,
+		Code:              p.Code,
+		Description:       p.Description,
+		Status:            p.Status,
+		OwnerDepartmentID: p.OwnerDepartmentID,
+		CreatedAt:         p.CreatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -95,10 +101,18 @@ type ProjectListQuery struct {
 	PageSize int    `form:"page_size"`
 }
 
-// ListProjects 查询列表相关的业务逻辑。
+// ListProjects 查询列表相关的业务逻辑。非超级管理员仅能看到自己作为成员的项目。
 func (s *ProjectMgmtService) ListProjects(ctx context.Context, q ProjectListQuery) (*pagination.Result[ProjectItem], error) {
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
-	list, total, err := s.projectRepo.List(ctx, repository.ProjectListParams{Keyword: strings.TrimSpace(q.Keyword), Page: page, PageSize: pageSize})
+	params := repository.ProjectListParams{Keyword: strings.TrimSpace(q.Keyword), Page: page, PageSize: pageSize}
+	var list []model.Project
+	var total int64
+	var err error
+	if u, ok := auth.RequestUserFromContext(ctx); ok && u != nil && !auth.IsSuperAdminRole(u.RoleCodes) {
+		list, total, err = s.projectRepo.ListVisibleToUser(ctx, u.ID, params)
+	} else {
+		list, total, err = s.projectRepo.List(ctx, params)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -110,10 +124,11 @@ func (s *ProjectMgmtService) ListProjects(ctx context.Context, q ProjectListQuer
 }
 
 type ProjectCreateRequest struct {
-	Name        string  `json:"name" binding:"required,max=128"`
-	Code        string  `json:"code" binding:"required,max=64"`
-	Description *string `json:"description"`
-	Status      int     `json:"status"`
+	Name                string  `json:"name" binding:"required,max=128"`
+	Code                string  `json:"code" binding:"required,max=64"`
+	Description         *string `json:"description"`
+	Status              int     `json:"status"`
+	OwnerDepartmentID   *uint   `json:"owner_department_id"`
 }
 
 // CreateProject 创建项目；creatorUserID>0 时自动将创建人写入 project_members 为 owner。
@@ -122,7 +137,20 @@ func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID ui
 	if status != model.StatusDisabled {
 		status = model.StatusEnabled
 	}
-	p := model.Project{Name: strings.TrimSpace(req.Name), Code: strings.TrimSpace(req.Code), Description: req.Description, Status: status}
+	if req.OwnerDepartmentID != nil && *req.OwnerDepartmentID > 0 && s.departmentRepo != nil {
+		if _, err := s.departmentRepo.GetByID(ctx, *req.OwnerDepartmentID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, constants.ErrDepartmentNotFound
+			}
+			return nil, err
+		}
+	}
+	var ownerDept *uint
+	if req.OwnerDepartmentID != nil && *req.OwnerDepartmentID > 0 {
+		v := *req.OwnerDepartmentID
+		ownerDept = &v
+	}
+	p := model.Project{Name: strings.TrimSpace(req.Name), Code: strings.TrimSpace(req.Code), Description: req.Description, Status: status, OwnerDepartmentID: ownerDept}
 	if err := s.projectRepo.Create(ctx, &p); err != nil {
 		return nil, err
 	}
@@ -138,10 +166,11 @@ func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID ui
 }
 
 type ProjectUpdateRequest struct {
-	Name        *string `json:"name"`
-	Code        *string `json:"code"`
-	Description *string `json:"description"`
-	Status      *int    `json:"status"`
+	Name                *string `json:"name"`
+	Code                *string `json:"code"`
+	Description         *string `json:"description"`
+	Status              *int    `json:"status"`
+	OwnerDepartmentID   *uint   `json:"owner_department_id"`
 }
 
 // UpdateProject 更新相关的业务逻辑。
@@ -164,6 +193,22 @@ func (s *ProjectMgmtService) UpdateProject(ctx context.Context, id uint, req Pro
 	}
 	if req.Status != nil {
 		p.Status = *req.Status
+	}
+	if req.OwnerDepartmentID != nil {
+		if *req.OwnerDepartmentID == 0 {
+			p.OwnerDepartmentID = nil
+		} else {
+			if s.departmentRepo != nil {
+				if _, err := s.departmentRepo.GetByID(ctx, *req.OwnerDepartmentID); err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return nil, constants.ErrDepartmentNotFound
+					}
+					return nil, err
+				}
+			}
+			v := *req.OwnerDepartmentID
+			p.OwnerDepartmentID = &v
+		}
 	}
 	if err := s.projectRepo.Save(ctx, p); err != nil {
 		return nil, err

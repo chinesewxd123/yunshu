@@ -38,7 +38,7 @@ func (h *ClusterHandler) Detail(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	data, err := h.svc.Detail(c.Request.Context(), id)
+	data, err := h.svc.Detail(auth.RequestContext(c), id)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -64,7 +64,7 @@ func (h *ClusterHandler) Status(c *gin.Context) {
 		return
 	}
 
-	data, err := h.svc.Status(c.Request.Context(), id)
+	data, err := h.svc.Status(auth.RequestContext(c), id)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -86,7 +86,7 @@ func (h *ClusterHandler) Namespaces(c *gin.Context) {
 		p := k8sauth.PackFromCurrentUser(user)
 		pack = &p
 	}
-	list, err := h.svc.ListNamespaces(c.Request.Context(), id, pack)
+	list, err := h.svc.ListNamespaces(auth.RequestContext(c), id, pack)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -101,7 +101,7 @@ func (h *ClusterHandler) ComponentStatuses(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	list, err := h.svc.ListComponentStatuses(c.Request.Context(), id)
+	list, err := h.svc.ListComponentStatuses(auth.RequestContext(c), id)
 	if err != nil {
 		response.Error(c, err)
 		return

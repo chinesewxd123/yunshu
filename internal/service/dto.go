@@ -132,22 +132,25 @@ type RoleListQuery struct {
 }
 
 type UserGroupCreateRequest struct {
-	Name        string `json:"name" binding:"required,max=64"`
-	Code        string `json:"code" binding:"required,max=64"`
-	Description string `json:"description" binding:"omitempty,max=255"`
-	Status      int    `json:"status"`
+	Name             string `json:"name" binding:"required,max=64"`
+	Code             string `json:"code" binding:"required,max=64"`
+	Description      string `json:"description" binding:"omitempty,max=255"`
+	Status           int    `json:"status"`
+	ScopeProjectID   *uint  `json:"scope_project_id"`
 }
 
 type UserGroupUpdateRequest struct {
-	Name        *string `json:"name" binding:"omitempty,max=64"`
-	Description *string `json:"description" binding:"omitempty,max=255"`
-	Status      *int    `json:"status"`
+	Name             *string `json:"name" binding:"omitempty,max=64"`
+	Description      *string `json:"description" binding:"omitempty,max=255"`
+	Status           *int    `json:"status"`
+	ScopeProjectID   *uint   `json:"scope_project_id"`
 }
 
 type UserGroupListQuery struct {
-	Keyword  string `form:"keyword"`
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
+	Keyword          string `form:"keyword"`
+	Page             int    `form:"page"`
+	PageSize         int    `form:"page_size"`
+	ScopeProjectID   *uint  `form:"scope_project_id"`
 }
 
 type UserGroupAssignUsersRequest struct {

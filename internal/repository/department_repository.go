@@ -34,6 +34,14 @@ func (r *DepartmentRepository) DeleteByID(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&model.Department{}, id).Error
 }
 
+// ClearLeaderByUserID 将部门负责人指向该用户的记录清空（用户删除前调用）。
+func (r *DepartmentRepository) ClearLeaderByUserID(ctx context.Context, userID uint) error {
+	if r == nil || r.db == nil || userID == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&model.Department{}).Where("leader_id = ?", userID).Update("leader_id", nil).Error
+}
+
 func (r *DepartmentRepository) GetByID(ctx context.Context, id uint) (*model.Department, error) {
 	var item model.Department
 	if err := r.db.WithContext(ctx).First(&item, id).Error; err != nil {

@@ -20,10 +20,12 @@ import (
 )
 
 type UserService struct {
-	userRepo       *repository.UserRepository
-	roleRepo       *repository.RoleRepository
-	departmentRepo *repository.DepartmentRepository
-	enforcer       *casbin.SyncedEnforcer
+	userRepo         *repository.UserRepository
+	roleRepo         *repository.RoleRepository
+	departmentRepo   *repository.DepartmentRepository
+	projectMemberRepo *repository.ProjectMemberRepository
+	assigneeSvc      *AlertRuleAssigneeService
+	enforcer         *casbin.SyncedEnforcer
 }
 
 // NewUserService 创建相关逻辑。
@@ -32,12 +34,16 @@ func NewUserService(
 	roleRepo *repository.RoleRepository,
 	departmentRepo *repository.DepartmentRepository,
 	enforcer *casbin.SyncedEnforcer,
+	projectMemberRepo *repository.ProjectMemberRepository,
+	assigneeSvc *AlertRuleAssigneeService,
 ) *UserService {
 	return &UserService{
-		userRepo:       userRepo,
-		roleRepo:       roleRepo,
-		departmentRepo: departmentRepo,
-		enforcer:       enforcer,
+		userRepo:          userRepo,
+		roleRepo:          roleRepo,
+		departmentRepo:    departmentRepo,
+		projectMemberRepo: projectMemberRepo,
+		assigneeSvc:       assigneeSvc,
+		enforcer:          enforcer,
 	}
 }
 
@@ -250,6 +256,15 @@ func (s *UserService) Delete(ctx context.Context, id uint) error {
 
 	if err = s.userRepo.Delete(ctx, user); err != nil {
 		return err
+	}
+	if s.departmentRepo != nil {
+		_ = s.departmentRepo.ClearLeaderByUserID(ctx, id)
+	}
+	if s.projectMemberRepo != nil {
+		_ = s.projectMemberRepo.DeleteByUserID(ctx, id)
+	}
+	if s.assigneeSvc != nil {
+		_ = s.assigneeSvc.PruneUserFromAllAssignees(ctx, id)
 	}
 	_, err = s.enforcer.DeleteUser(UserSubject(id))
 	return err

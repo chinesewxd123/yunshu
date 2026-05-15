@@ -73,8 +73,9 @@ var serverCmd = &cobra.Command{
 		agentDiscoveryRepo := repository.NewAgentDiscoveryRepository(app.DB)
 
 		userRepo := repository.NewUserRepository(app.DB)
+		departmentRepo := repository.NewDepartmentRepository(app.DB)
 		projectMemberRepo := repository.NewProjectMemberRepository(app.DB)
-		projectSvc, err := service.NewProjectMgmtService(projectRepo, serverRepo, serverGroupRepo, cloudAccountRepo, serviceRepo, logRepo, projectMemberRepo, userRepo, app.Config.Security.EncryptionKey)
+		projectSvc, err := service.NewProjectMgmtService(projectRepo, serverRepo, serverGroupRepo, cloudAccountRepo, serviceRepo, logRepo, projectMemberRepo, userRepo, departmentRepo, app.Config.Security.EncryptionKey)
 		if err != nil {
 			return err
 		}

@@ -14,9 +14,10 @@ type UserGroupRepository struct {
 }
 
 type UserGroupListParams struct {
-	Keyword  string
-	Page     int
-	PageSize int
+	Keyword         string
+	Page            int
+	PageSize        int
+	ScopeProjectID  *uint // 非空时仅返回全局组或该项目的组
 }
 
 func NewUserGroupRepository(db *gorm.DB) *UserGroupRepository {
@@ -78,6 +79,10 @@ func (r *UserGroupRepository) List(ctx context.Context, params UserGroupListPara
 	if kw := strings.TrimSpace(params.Keyword); kw != "" {
 		like := "%" + kw + "%"
 		q = q.Where("name LIKE ? OR code LIKE ?", like, like)
+	}
+	if params.ScopeProjectID != nil && *params.ScopeProjectID > 0 {
+		sp := *params.ScopeProjectID
+		q = q.Where("(scope_project_id IS NULL OR scope_project_id = ?)", sp)
 	}
 	var list []model.UserGroup
 	total, err := listWithPagination(q, params.Page, params.PageSize, "id DESC", &list)

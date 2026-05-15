@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -69,6 +70,33 @@ func ParseToken(secret, tokenString string) (*Claims, error) {
 		return nil, errors.New("token expired")
 	}
 	return claims, nil
+}
+
+type requestUserCtxKey struct{}
+
+// RequestContext 将当前登录用户写入标准 context，供 service 层做租户/项目等校验（无登录态时等价于 c.Request.Context()）。
+func RequestContext(c *gin.Context) context.Context {
+	if c == nil {
+		return context.Background()
+	}
+	base := c.Request.Context()
+	if u, ok := CurrentUserFromContext(c); ok && u != nil {
+		return context.WithValue(base, requestUserCtxKey{}, u)
+	}
+	return base
+}
+
+// RequestUserFromContext 读取由 RequestContext 注入的当前用户；不存在则 ok=false。
+func RequestUserFromContext(ctx context.Context) (*CurrentUser, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	v := ctx.Value(requestUserCtxKey{})
+	if v == nil {
+		return nil, false
+	}
+	u, ok := v.(*CurrentUser)
+	return u, ok
 }
 
 func CurrentUserFromContext(c *gin.Context) (*CurrentUser, bool) {

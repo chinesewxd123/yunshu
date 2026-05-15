@@ -15,6 +15,10 @@ type Project struct {
 	Description *string `json:"description" gorm:"type:text;comment:项目描述"`
 	Status      int     `json:"status" gorm:"not null;default:1;comment:状态 1启用 0禁用"`
 
+	// OwnerDepartmentID 可选归属部门，用于组织维度筛选与报表（不自动决定成员权限）。
+	OwnerDepartmentID *uint       `json:"owner_department_id,omitempty" gorm:"index;comment:可选归属部门ID"`
+	OwnerDepartment   *Department `json:"owner_department,omitempty" gorm:"foreignKey:OwnerDepartmentID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
+
 	CreatedAt time.Time      `json:"created_at" gorm:"comment:创建时间"`
 	UpdatedAt time.Time      `json:"updated_at" gorm:"comment:更新时间"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index;comment:删除时间"`

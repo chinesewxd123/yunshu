@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 
+	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -59,7 +60,7 @@ func ServeDelete(c *gin.Context, fn func(context.Context, uint) error, idParam s
 		response.Error(c, err)
 		return
 	}
-	if err := fn(c.Request.Context(), id); err != nil {
+	if err := fn(auth.RequestContext(c), id); err != nil {
 		response.Error(c, err)
 		return
 	}

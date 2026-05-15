@@ -59,6 +59,41 @@ func (r *ProjectMemberRepository) ListUserIDsByProject(ctx context.Context, proj
 	return out, nil
 }
 
+func (r *ProjectMemberRepository) DeleteByUserID(ctx context.Context, userID uint) error {
+	if r == nil || r.db == nil || userID == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&model.ProjectMember{}).Error
+}
+
+// ListProjectIDsByUser 返回用户所在项目 ID（去重，按 project_id 升序）。
+func (r *ProjectMemberRepository) ListProjectIDsByUser(ctx context.Context, userID uint) ([]uint, error) {
+	if r == nil || r.db == nil || userID == 0 {
+		return nil, nil
+	}
+	var ids []uint
+	err := r.db.WithContext(ctx).Model(&model.ProjectMember{}).
+		Where("user_id = ?", userID).
+		Order("project_id ASC").
+		Pluck("project_id", &ids).Error
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[uint]struct{})
+	var out []uint
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
 func (r *ProjectMemberRepository) GetByID(ctx context.Context, id uint) (*model.ProjectMember, error) {
 	var row model.ProjectMember
 	err := r.db.WithContext(ctx).First(&row, id).Error
