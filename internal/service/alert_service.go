@@ -859,6 +859,12 @@ func fillMetricFieldsFromRequestPayload(ev *model.AlertEvent) {
 	}
 	ev.MetricCurrent = norm(m["current"])
 	ev.MetricResolved = norm(m["current_resolved"])
+	if ev.MetricCurrent == "-" {
+		ev.MetricCurrent = ""
+	}
+	if ev.MetricResolved == "-" {
+		ev.MetricResolved = ""
+	}
 }
 
 func hydrateAlertEvent(it *model.AlertEvent) {

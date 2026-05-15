@@ -238,6 +238,9 @@ func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.A
 		}
 	}
 	annotations := buildMonitorRuleAnnotations(rule, labels, sampleValue)
+	if v := strings.TrimSpace(sampleValue); v != "" {
+		annotations["value"] = v
+	}
 	fp := fmt.Sprintf("monitor_rule_%d", rule.ID)
 	now := time.Now()
 

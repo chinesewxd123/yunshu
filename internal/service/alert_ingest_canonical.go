@@ -177,23 +177,14 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 		}
 
 		ctxEnrich, cancelEnrich := context.WithTimeout(ctx, time.Duration(maxInt(1, s.cfg.PromQueryTimeout))*time.Second)
-		currentValue := strings.TrimSpace(s.getCachedCurrentValue(ctx, alert.Fingerprint))
-		if currentValue == "" && strings.TrimSpace(s.cfg.PrometheusURL) != "" && strings.TrimSpace(alert.GeneratorURL) != "" {
-			if v, qerr := s.queryCurrentValueByGeneratorURL(ctxEnrich, alert.GeneratorURL); qerr == nil && strings.TrimSpace(v) != "" {
-				currentValue = strings.TrimSpace(v)
-				s.setCachedCurrentValue(ctx, alert.Fingerprint, currentValue)
-			}
-		}
-		if strings.EqualFold(status, "resolved") && strings.TrimSpace(s.cfg.PrometheusURL) != "" && strings.TrimSpace(alert.GeneratorURL) != "" {
-			if v, qerr := s.queryCurrentValueByGeneratorURL(ctxEnrich, alert.GeneratorURL); qerr == nil && strings.TrimSpace(v) != "" {
-				outgoing["current_resolved"] = strings.TrimSpace(v)
-			}
-		}
+		currentValue, resolvedValue := s.resolveIngressMetricValues(ctxEnrich, ca.Source, status, labels, annotations, alert)
 		cancelEnrich()
-		if currentValue == "" {
-			currentValue = "-"
+		if currentValue != "" {
+			outgoing["current"] = currentValue
 		}
-		outgoing["current"] = currentValue
+		if resolvedValue != "" {
+			outgoing["current_resolved"] = resolvedValue
+		}
 		if status == "firing" {
 			s.enqueuePrometheusEnrich(promEnrichTask{
 				Fingerprint:  alert.Fingerprint,

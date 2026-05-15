@@ -208,6 +208,7 @@ func (s *AlertService) evaluateOneCloudExpiryRule(ctx context.Context, rule *mod
 			annotations := map[string]string{
 				"summary":     fmt.Sprintf("云服务器到期提醒：%s/%s 剩余 %d 天", strings.TrimSpace(acc.Provider), instanceID, daysLeft),
 				"description": fmt.Sprintf("实例=%s(%s)，区域=%s，到期时间=%s，剩余天数=%d", strings.TrimSpace(ins.Name), instanceID, region, expireAt.Format(time.RFC3339), daysLeft),
+				"value":       fmt.Sprintf("%d", daysLeft),
 			}
 			s.emitCloudExpiryAlert(ctx, fp, firing, labels, annotations, now, manualEval)
 		}
