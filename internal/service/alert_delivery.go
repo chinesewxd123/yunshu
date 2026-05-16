@@ -81,6 +81,23 @@ func (s *AlertService) renderChannelMessage(ctx context.Context, title, severity
 	return rendered
 }
 
+func appendAssigneePhonesToAtMobiles(atMobiles []string, payload map[string]interface{}) []string {
+	if payload == nil {
+		return atMobiles
+	}
+	raw, ok := payload["assignee_phones"]
+	if !ok || raw == nil {
+		return atMobiles
+	}
+	for _, p := range normalizeRecipientList(raw) {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			atMobiles = append(atMobiles, p)
+		}
+	}
+	return atMobiles
+}
+
 func (s *AlertService) buildUnifiedNotifyTitle(ctx context.Context, rawTitle, severity, status string, payload map[string]interface{}) string {
 	statusNorm := strings.ToLower(strings.TrimSpace(status))
 	prefix := "告警通知"
@@ -300,6 +317,7 @@ func (s *AlertService) notifyWeComWebhook(ctx context.Context, channel *model.Al
 		return s.notifyWeComApp(ctx, channel, source, title, severity, status, payload, settings)
 	}
 	atMobiles := parseutil.ParseStringList(settings["atMobiles"])
+	atMobiles = appendAssigneePhonesToAtMobiles(atMobiles, payload)
 	atUsers := parseutil.ParseStringList(settings["atUserIds"])
 	if len(atMobiles) > 0 {
 		resolved, _ := s.resolveWeComUserIDsByMobiles(ctx, settings, atMobiles)
@@ -323,7 +341,9 @@ func (s *AlertService) notifyDingTalkWebhook(ctx context.Context, channel *model
 	if mode == "app_chat" {
 		return s.notifyDingTalkAppChat(ctx, channel, source, title, severity, status, payload, settings)
 	}
-	atMobiles := parseutil.UniqueStrings(parseutil.ParseStringList(settings["atMobiles"]))
+	atMobiles := parseutil.ParseStringList(settings["atMobiles"])
+	atMobiles = appendAssigneePhonesToAtMobiles(atMobiles, payload)
+	atMobiles = parseutil.UniqueStrings(atMobiles)
 	atUsers := parseutil.UniqueStrings(parseutil.ParseStringList(settings["atUserIds"]))
 	isAtAll := parseutil.ParseBool(settings["isAtAll"])
 	message := s.renderChannelMessage(ctx, title, severity, status, payload, settings)
@@ -343,6 +363,7 @@ func (s *AlertService) notifyWeComApp(ctx context.Context, channel *model.AlertC
 		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsg5fcdf3f22c91)
 	}
 	atMobiles := parseutil.ParseStringList(settings["atMobiles"])
+	atMobiles = appendAssigneePhonesToAtMobiles(atMobiles, payload)
 	atUsers := parseutil.ParseStringList(settings["atUserIds"])
 	if len(atMobiles) > 0 {
 		resolved, _ := s.resolveWeComUserIDsByMobiles(ctx, settings, atMobiles)
@@ -366,7 +387,7 @@ func (s *AlertService) notifyWeComApp(ctx context.Context, channel *model.AlertC
 		"msgtype": "markdown",
 		"agentid": agentID,
 		"markdown": map[string]string{
-			"content": alertnotify.RenderMarkdownCard(title, payload),
+			"content": s.renderChannelMessage(ctx, title, severity, status, payload, settings),
 		},
 		"safe": 0,
 	}
@@ -386,6 +407,7 @@ func (s *AlertService) notifyDingTalkAppChat(ctx context.Context, channel *model
 		return 0, "", err
 	}
 	atMobiles := parseutil.ParseStringList(settings["atMobiles"])
+	atMobiles = appendAssigneePhonesToAtMobiles(atMobiles, payload)
 	atUsers := parseutil.ParseStringList(settings["atUserIds"])
 	if len(atMobiles) > 0 {
 		resolved, _ := s.resolveDingTalkUserIDsByMobiles(ctx, token, atMobiles)
@@ -546,7 +568,7 @@ func enrichRequestMapWithAlertPayload(reqMap map[string]interface{}, alertPayloa
 	if reqMap == nil {
 		return
 	}
-	for _, key := range []string{"startsAt", "endsAt", "occurredAt", "generatorURL", "status", "severity", "groupKey", "monitorPipeline", "datasourceId", "datasourceName", "datasourceType"} {
+	for _, key := range []string{"startsAt", "endsAt", "occurredAt", "generatorURL", "status", "severity", "groupKey", "monitorPipeline", "datasourceId", "datasourceName", "datasourceType", "current", "current_resolved"} {
 		if existing, ok := reqMap[key]; ok && payloadMetaValueMeaningful(existing) {
 			continue
 		}

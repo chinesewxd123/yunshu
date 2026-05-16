@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"yunshu/internal/config"
 	"yunshu/internal/model"
 
 	"gorm.io/gorm/clause"
@@ -19,45 +20,6 @@ type groupAggregateSpec struct {
 	channelName    string
 	errorMessage   string
 	responsePrefix string
-}
-
-func (s *AlertService) updateGroupAggregateStateBySpec(ctx context.Context, spec groupAggregateSpec, groupKey string, interval time.Duration) (shouldSend bool, count int64, firstSeen string, lastSeen string) {
-	if s.redis == nil || strings.TrimSpace(groupKey) == "" {
-		return true, 1, "", ""
-	}
-	key := spec.keyPrefix + strings.TrimSpace(groupKey)
-	now := time.Now().UTC()
-	nowStr := now.Format(time.RFC3339)
-	pipe := s.redis.TxPipeline()
-	pipe.HSet(ctx, key, "last_seen", nowStr)
-	pipe.HSetNX(ctx, key, "first_seen", nowStr)
-	incr := pipe.HIncrBy(ctx, key, "count", 1)
-	lastSentCmd := pipe.HGet(ctx, key, "last_sent")
-	pipe.Expire(ctx, key, time.Duration(s.cfg.AggregateTTLSeconds)*time.Second)
-	_, _ = pipe.Exec(ctx)
-	c, err := incr.Result()
-	if err != nil || c <= 0 {
-		c = 1
-	}
-	lastSent, _ := lastSentCmd.Result()
-	if c == 1 || strings.TrimSpace(lastSent) == "" {
-		_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-		first, _ := s.redis.HGet(ctx, key, "first_seen").Result()
-		return true, c, first, nowStr
-	}
-	ls, err := time.Parse(time.RFC3339, strings.TrimSpace(lastSent))
-	if err != nil {
-		_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-		first, _ := s.redis.HGet(ctx, key, "first_seen").Result()
-		return true, c, first, nowStr
-	}
-	if now.Sub(ls) >= interval {
-		_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-		first, _ := s.redis.HGet(ctx, key, "first_seen").Result()
-		return true, c, first, nowStr
-	}
-	first, _ := s.redis.HGet(ctx, key, "first_seen").Result()
-	return false, c, first, nowStr
 }
 
 func (s *AlertService) clearGroupAggregateStateBySpec(ctx context.Context, spec groupAggregateSpec, groupKey string) error {
@@ -92,26 +54,21 @@ func (s *AlertService) logSuppressedGroupAggregateBySpec(ctx context.Context, sp
 func (s *AlertService) resolvedGroupAggregateSpec() groupAggregateSpec {
 	return groupAggregateSpec{
 		keyPrefix:      "alert:group:resolved:",
-		titleSuffix:    " (resolved aggregate suppressed)",
-		channelName:    "（未外发·恢复抑制）",
+		titleSuffix:    "（恢复通知：已合并）",
+		channelName:    "（未推送·恢复仅通知一次）",
 		errorMessage:   "resolved_aggregate_suppressed",
-		responsePrefix: "suppressed by resolved once: ",
+		responsePrefix: "同一告警实例的恢复通知已合并，本轮未重复推送：",
 	}
 }
 
 func (s *AlertService) firingGroupAggregateSpec() groupAggregateSpec {
 	return groupAggregateSpec{
 		keyPrefix:      "alert:group:",
-		titleSuffix:    " (aggregate suppressed)",
-		channelName:    "（未外发·分组节流抑制）",
+		titleSuffix:    "（通知聚合：本轮未推送）",
+		channelName:    "（未推送·聚合限流）",
 		errorMessage:   "group_throttled",
-		responsePrefix: "suppressed by group timing: ",
+		responsePrefix: "按聚合间隔控制本轮未推送：",
 	}
-}
-
-func (s *AlertService) updateGroupResolvedState(ctx context.Context, groupKey string) (shouldSend bool, count int64, firstSeen string, lastSeen string) {
-	// resolved 已改为“同 fingerprint 仅发送一次”，此处仅保留接口形态（不会参与抑制判断）。
-	return s.updateGroupAggregateStateBySpec(ctx, s.resolvedGroupAggregateSpec(), groupKey, 0)
 }
 
 func (s *AlertService) clearGroupResolvedState(ctx context.Context, groupKey string) error {
@@ -122,17 +79,8 @@ func (s *AlertService) logSuppressedResolvedAggregate(ctx context.Context, title
 	s.logSuppressedGroupAggregateBySpec(ctx, s.resolvedGroupAggregateSpec(), title, severity, status, groupKey, payload)
 }
 
-func (s *AlertService) updateGroupAggregateState(ctx context.Context, groupKey string) (shouldSend bool, count int64, firstSeen string, lastSeen string) {
-	// 保留旧接口：等价于 repeat_interval_seconds 的简单节流（不含 group_wait/group_interval）。
-	return s.updateGroupAggregateStateBySpec(ctx, s.firingGroupAggregateSpec(), groupKey, time.Duration(s.cfg.RepeatIntervalSeconds)*time.Second)
-}
-
 func (s *AlertService) clearGroupAggregateState(ctx context.Context, groupKey string) error {
 	return s.clearGroupAggregateStateBySpec(ctx, s.firingGroupAggregateSpec(), groupKey)
-}
-
-func (s *AlertService) logSuppressedAggregate(ctx context.Context, title, severity, status, groupKey string, payload map[string]interface{}) {
-	s.logSuppressedGroupAggregateBySpec(ctx, s.firingGroupAggregateSpec(), title, severity, status, groupKey, payload)
 }
 
 func (s *AlertService) updateFingerprintState(ctx context.Context, fingerprint, status string) (count int64, deduped bool, err error) {
@@ -187,28 +135,6 @@ func (s *AlertService) clearResolvedNotificationSent(ctx context.Context, finger
 		return nil
 	}
 	return s.redis.Del(ctx, "alert:resolved:sent:"+strings.TrimSpace(fingerprint)).Err()
-}
-
-func (s *AlertService) logSuppressedDedup(ctx context.Context, title, severity, status, fingerprint string, payload map[string]interface{}) {
-	reqBytes, _ := json.Marshal(payload)
-	event := model.AlertEvent{
-		Source:          alertEventSourceFromPayload(payload),
-		Title:           title + " (dedup suppressed)",
-		Severity:        severity,
-		Status:          status,
-		Cluster:         strings.TrimSpace(fmt.Sprintf("%v", payload["cluster"])),
-		MonitorPipeline: strings.TrimSpace(fmt.Sprintf("%v", payload["monitorPipeline"])),
-		GroupKey:        strings.TrimSpace(fmt.Sprintf("%v", payload["groupKey"])),
-		LabelsDigest:    strings.TrimSpace(fmt.Sprintf("%v", payload["labelsDigest"])),
-		ChannelName:     "（未外发·指纹去重抑制）",
-		Success:         true,
-		HTTPStatusCode:  200,
-		ErrorMessage:    "dedup_suppressed",
-		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload: truncateText("suppressed by fingerprint dedup: "+fingerprint, s.cfg.MaxPayloadChars),
-	}
-	fillAlertEventDatasourceFromPayload(&event, payload)
-	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
 // decideFiringGroupTiming 对齐 Alertmanager/N9E 的 group_wait/group_interval/repeat_interval 语义（基于 groupKey + labelsDigest）。
@@ -328,7 +254,7 @@ func (s *AlertService) markAlertFiringDelivered(ctx context.Context, fingerprint
 func (s *AlertService) alertFiringWasDelivered(ctx context.Context, fingerprint string) bool {
 	fp := strings.TrimSpace(fingerprint)
 	if fp == "" {
-		return true
+		return false
 	}
 	if s.redis != nil {
 		v, err := s.redis.Get(ctx, firingDeliveredRedisKey(fp)).Result()
@@ -377,23 +303,48 @@ func (s *AlertService) logResolvedSuppressedNoPriorFiringDelivery(ctx context.Co
 	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
+func humanReadableGroupTimingSuppression(reason string, cfg config.AlertConfig) string {
+	gw := cfg.GroupWaitSeconds
+	if gw < 0 {
+		gw = 0
+	}
+	gi := cfg.GroupIntervalSeconds
+	if gi < 0 {
+		gi = 0
+	}
+	ri := cfg.RepeatIntervalSeconds
+	if ri <= 0 {
+		ri = 300
+	}
+	switch strings.TrimSpace(reason) {
+	case "repeat_suppressed":
+		return fmt.Sprintf("告警仍处于触发状态。为避免短时间内重复打扰，平台按「重复提醒间隔」（当前 %d 秒）控制：距上次成功通知未满该间隔时，本轮不向各渠道再次推送；本条为留痕记录。", ri)
+	case "group_interval_suppressed":
+		return fmt.Sprintf("本次告警的标签摘要与上次已发送的不同（例如实例或采样标签变化）。平台按「同组变化间隔」（当前 %d 秒）控制：未满间隔时本轮不推送；达到间隔后会再评估是否发送。", gi)
+	case "group_wait_suppressed":
+		return fmt.Sprintf("平台按「首次同组等待」（当前 %d 秒）聚合同组告警，等待窗口结束前本轮不推送。", gw)
+	default:
+		return "本轮根据通知合并策略未向渠道推送，可能与「首次同组等待」「同组变化间隔」或「重复提醒间隔」有关，具体以平台告警配置为准。"
+	}
+}
+
 func (s *AlertService) logSuppressedFiringTiming(ctx context.Context, title, severity, status, groupKey, labelsDigest, reason string, payload map[string]interface{}) {
 	reqBytes, _ := json.Marshal(payload)
 	event := model.AlertEvent{
 		Source:          alertEventSourceFromPayload(payload),
-		Title:           title + " (group timing suppressed)",
+		Title:           title + "（通知合并：本轮未推送）",
 		Severity:        severity,
 		Status:          status,
 		Cluster:         strings.TrimSpace(fmt.Sprintf("%v", payload["cluster"])),
 		MonitorPipeline: strings.TrimSpace(fmt.Sprintf("%v", payload["monitorPipeline"])),
 		GroupKey:        strings.TrimSpace(groupKey),
 		LabelsDigest:    strings.TrimSpace(labelsDigest),
-		ChannelName:     "（未外发·分组节流抑制）",
+		ChannelName:     "（未推送·合并降噪）",
 		Success:         true,
 		HTTPStatusCode:  200,
 		ErrorMessage:    strings.TrimSpace(reason),
 		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload: truncateText("suppressed by group timing: "+groupKey, s.cfg.MaxPayloadChars),
+		ResponsePayload: truncateText(humanReadableGroupTimingSuppression(reason, s.cfg), s.cfg.MaxPayloadChars),
 	}
 	fillAlertEventDatasourceFromPayload(&event, payload)
 	_ = s.db.WithContext(ctx).Create(&event).Error

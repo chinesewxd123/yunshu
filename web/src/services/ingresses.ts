@@ -54,7 +54,12 @@ export function applyIngress(clusterId: number, manifest: string) {
 }
 
 export function restartIngressNginxPods(clusterId: number, namespace?: string, selector?: string) {
-  return ingressesSvc.post<IngressNginxRestartResult>("/nginx/restart", { cluster_id: clusterId, namespace, selector });
+  return ingressesSvc.post<IngressNginxRestartResult>("/nginx/restart", {
+    cluster_id: clusterId,
+    namespace,
+    selector,
+    confirm: true,
+  });
 }
 
 export function deleteIngress(clusterId: number, namespace: string, name: string) {

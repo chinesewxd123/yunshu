@@ -554,6 +554,11 @@ func (h *ProjectHandler) StreamLogs(c *gin.Context) {
 	}
 	q.ProjectID = projectID
 
+	if err := h.svc.ValidateLogSourceAccess(c.Request.Context(), q.ProjectID, q.ServerID, q.LogSourceID); err != nil {
+		response.Error(c, err)
+		return
+	}
+
 	streamKey := service.BuildLogStreamKey(q.ProjectID, q.ServerID, q.LogSourceID)
 	var includeRe *regexp.Regexp
 	if q.Include != nil && strings.TrimSpace(*q.Include) != "" {
@@ -586,7 +591,7 @@ func (h *ProjectHandler) StreamLogs(c *gin.Context) {
 		replayLines = 200
 	}
 
-	ch, cancelSub := service.AgentLogBroker.Subscribe(streamKey, replayLines)
+	ch, cancelSub := service.AgentLogBroker.Subscribe(streamKey, replayLines, q.AfterID)
 	defer cancelSub()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -621,7 +626,11 @@ func (h *ProjectHandler) StreamLogs(c *gin.Context) {
 			if len(line) > 4096 {
 				line = line[:4096] + " ...<truncated>"
 			}
-			c.SSEvent("log", gin.H{"line": line, "file_path": strings.TrimSpace(event.FilePath)})
+			c.SSEvent("log", gin.H{
+				"id":        event.ID,
+				"line":      line,
+				"file_path": strings.TrimSpace(event.FilePath),
+			})
 			c.Writer.Flush()
 		}
 	}

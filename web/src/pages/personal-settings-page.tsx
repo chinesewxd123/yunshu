@@ -14,7 +14,7 @@ export function PersonalSettingsPage() {
   const [tab, setTab] = useState<SettingsTab>("basic");
   const [profileLoading, setProfileLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
-  const [profileForm] = Form.useForm<{ nickname: string; email?: string }>();
+  const [profileForm] = Form.useForm<{ nickname: string; email?: string; phone?: string }>();
   const [passwordForm] = Form.useForm<{ old_password: string; new_password: string; confirm_password: string }>();
 
   // 使用受控组件状态，直接管理输入值
@@ -45,8 +45,9 @@ export function PersonalSettingsPage() {
     profileForm.setFieldsValue({
       nickname: user?.nickname ?? "",
       email: user?.email ?? "",
+      phone: user?.phone ?? "",
     });
-  }, [profileForm, user?.nickname, user?.email]);
+  }, [profileForm, user?.nickname, user?.email, user?.phone]);
 
   // 切换到修改密码页面时，清空输入
   useEffect(() => {
@@ -65,6 +66,7 @@ export function PersonalSettingsPage() {
       await updateProfile({
         nickname: values.nickname,
         email: values.email?.trim() || undefined,
+        phone: values.phone?.trim() || undefined,
       });
       await refreshUser();
       message.success("基本信息已更新");
@@ -132,7 +134,7 @@ export function PersonalSettingsPage() {
               <Form
                 form={profileForm}
                 layout="vertical"
-                initialValues={{ nickname: user?.nickname ?? "", email: user?.email ?? "" }}
+                initialValues={{ nickname: user?.nickname ?? "", email: user?.email ?? "", phone: user?.phone ?? "" }}
                 className="personal-settings__form"
                 autoComplete="off"
               >
@@ -144,6 +146,9 @@ export function PersonalSettingsPage() {
                 </Form.Item>
                 <Form.Item label="邮箱" name="email" rules={[{ type: "email", message: "请输入正确邮箱地址" }]}>
                   <Input placeholder="请输入邮箱地址" autoComplete="off" />
+                </Form.Item>
+                <Form.Item label="手机号" name="phone" extra="选填；与钉钉/企微一致时，作为监控规则处理人可被 @ 提醒">
+                  <Input placeholder="选填" maxLength={20} autoComplete="off" />
                 </Form.Item>
                 <Button type="primary" loading={profileLoading} onClick={() => void submitProfile()}>
                   更新基本信息

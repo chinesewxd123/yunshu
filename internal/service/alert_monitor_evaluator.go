@@ -8,22 +8,33 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/promapi"
 )
 
 func (s *AlertService) runMonitorRuleEvaluator(ctx context.Context) {
-	t := time.NewTicker(5 * time.Second)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
+	spec := strings.TrimSpace(s.cfg.MonitorEvalCronSpec)
+	if spec == "" {
+		spec = "*/5 * * * * *"
+	}
+	c := cron.New(cron.WithSeconds())
+	job := func() {
+		if ctx.Err() != nil {
 			return
-		case <-t.C:
-			_ = s.tickMonitorRules(ctx)
-			_ = s.tickCloudExpiryRules(ctx)
+		}
+		_ = s.tickMonitorRules(ctx)
+	}
+	if _, err := c.AddFunc(spec, job); err != nil {
+		if _, err2 := c.AddFunc("*/5 * * * * *", job); err2 != nil {
+			return
 		}
 	}
+	c.Start()
+	<-ctx.Done()
+	stopCtx := c.Stop()
+	<-stopCtx.Done()
 }
 
 func (s *AlertService) tickMonitorRules(ctx context.Context) error {
@@ -71,7 +82,12 @@ func (s *AlertService) tickMonitorRules(ctx context.Context) error {
 				defer s.monitorEvalLockRelease(ctx, r.ID)
 				s.evaluateOneMonitorRule(ctx, &r.AlertMonitorRule, r.ProjectID)
 			}(rule)
+			continue
 		}
+		if !s.shouldEvalRuleNoRedis(rule.ID, rule.EvalIntervalSeconds, now) {
+			continue
+		}
+		s.evaluateOneMonitorRule(ctx, &rule.AlertMonitorRule, rule.ProjectID)
 	}
 	return nil
 }
@@ -227,8 +243,15 @@ func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.A
 		}
 	}
 	annotations := buildMonitorRuleAnnotations(rule, labels, sampleValue)
+	if v := strings.TrimSpace(sampleValue); v != "" {
+		annotations["value"] = v
+	}
 	fp := fmt.Sprintf("monitor_rule_%d", rule.ID)
 	now := time.Now()
 
+	if s.redis == nil {
+		s.evaluateMonitorRuleNoRedis(ctx, rule, firing, labels, annotations, fp, now)
+		return
+	}
 	s.evaluateMonitorRuleWithRedis(ctx, rule, firing, labels, annotations, fp, now)
 }

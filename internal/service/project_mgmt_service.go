@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/constants"
 	cryptox "yunshu/internal/pkg/crypto"
 	"yunshu/internal/pkg/pagination"
@@ -34,6 +35,7 @@ type ProjectMgmtService struct {
 	logRepo          *repository.LogSourceRepository
 	memberRepo       *repository.ProjectMemberRepository
 	userRepo         *repository.UserRepository
+	departmentRepo   *repository.DepartmentRepository
 	aead             cipher.AEAD
 	ensureMu         sync.Mutex
 	ensuredProjectAt map[uint]time.Time
@@ -49,6 +51,7 @@ func NewProjectMgmtService(
 	logRepo *repository.LogSourceRepository,
 	memberRepo *repository.ProjectMemberRepository,
 	userRepo *repository.UserRepository,
+	departmentRepo *repository.DepartmentRepository,
 	encryptionKey string,
 ) (*ProjectMgmtService, error) {
 	aead, err := cryptox.NewAESGCMFromKeyString(encryptionKey)
@@ -64,28 +67,68 @@ func NewProjectMgmtService(
 		logRepo:          logRepo,
 		memberRepo:       memberRepo,
 		userRepo:         userRepo,
+		departmentRepo:   departmentRepo,
 		aead:             aead,
 		ensuredProjectAt: make(map[uint]time.Time),
 	}, nil
 }
 
 type ProjectItem struct {
-	ID          uint    `json:"id"`
-	Name        string  `json:"name"`
-	Code        string  `json:"code"`
-	Description *string `json:"description"`
-	Status      int     `json:"status"`
-	CreatedAt   string  `json:"created_at"`
+	ID                  uint    `json:"id"`
+	Name                string  `json:"name"`
+	Code                string  `json:"code"`
+	Description         *string `json:"description"`
+	Status              int     `json:"status"`
+	OwnerDepartmentID   *uint   `json:"owner_department_id,omitempty"`
+	// MyProjectRole 当前登录用户在该项目中的成员角色（owner/admin/member/readonly）；列表与更新接口在非超管时填充；超管可省略。
+	MyProjectRole       string  `json:"my_project_role,omitempty"`
+	CreatedAt           string  `json:"created_at"`
 }
 
 func toProjectItem(p model.Project) ProjectItem {
 	return ProjectItem{
-		ID:          p.ID,
-		Name:        p.Name,
-		Code:        p.Code,
-		Description: p.Description,
-		Status:      p.Status,
-		CreatedAt:   p.CreatedAt.Format(time.RFC3339),
+		ID:                p.ID,
+		Name:              p.Name,
+		Code:              p.Code,
+		Description:       p.Description,
+		Status:            p.Status,
+		OwnerDepartmentID: p.OwnerDepartmentID,
+		CreatedAt:         p.CreatedAt.Format(time.RFC3339),
+	}
+}
+
+func (s *ProjectMgmtService) enrichMyProjectRole(ctx context.Context, item *ProjectItem) {
+	if item == nil || s.memberRepo == nil {
+		return
+	}
+	u, ok := auth.RequestUserFromContext(ctx)
+	if !ok || u == nil || auth.IsSuperAdminRole(u.RoleCodes) {
+		return
+	}
+	m, err := s.memberRepo.GetByProjectAndUser(ctx, item.ID, u.ID)
+	if err != nil || m == nil {
+		return
+	}
+	item.MyProjectRole = m.Role
+}
+
+func (s *ProjectMgmtService) enrichMyProjectRolesBatch(ctx context.Context, items []ProjectItem) {
+	u, ok := auth.RequestUserFromContext(ctx)
+	if !ok || u == nil || auth.IsSuperAdminRole(u.RoleCodes) || s.memberRepo == nil || len(items) == 0 {
+		return
+	}
+	ids := make([]uint, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].ID)
+	}
+	roles, err := s.memberRepo.ListRolesByUserAndProjectIDs(ctx, u.ID, ids)
+	if err != nil {
+		return
+	}
+	for i := range items {
+		if r, ok := roles[items[i].ID]; ok {
+			items[i].MyProjectRole = r
+		}
 	}
 }
 
@@ -95,10 +138,18 @@ type ProjectListQuery struct {
 	PageSize int    `form:"page_size"`
 }
 
-// ListProjects 查询列表相关的业务逻辑。
+// ListProjects 查询列表相关的业务逻辑。非超级管理员仅能看到自己作为成员的项目。
 func (s *ProjectMgmtService) ListProjects(ctx context.Context, q ProjectListQuery) (*pagination.Result[ProjectItem], error) {
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
-	list, total, err := s.projectRepo.List(ctx, repository.ProjectListParams{Keyword: strings.TrimSpace(q.Keyword), Page: page, PageSize: pageSize})
+	params := repository.ProjectListParams{Keyword: strings.TrimSpace(q.Keyword), Page: page, PageSize: pageSize}
+	var list []model.Project
+	var total int64
+	var err error
+	if u, ok := auth.RequestUserFromContext(ctx); ok && u != nil && !auth.IsSuperAdminRole(u.RoleCodes) {
+		list, total, err = s.projectRepo.ListVisibleToUser(ctx, u.ID, params)
+	} else {
+		list, total, err = s.projectRepo.List(ctx, params)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -106,14 +157,16 @@ func (s *ProjectMgmtService) ListProjects(ctx context.Context, q ProjectListQuer
 	for _, it := range list {
 		out = append(out, toProjectItem(it))
 	}
+	s.enrichMyProjectRolesBatch(ctx, out)
 	return &pagination.Result[ProjectItem]{List: out, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
 type ProjectCreateRequest struct {
-	Name        string  `json:"name" binding:"required,max=128"`
-	Code        string  `json:"code" binding:"required,max=64"`
-	Description *string `json:"description"`
-	Status      int     `json:"status"`
+	Name                string  `json:"name" binding:"required,max=128"`
+	Code                string  `json:"code" binding:"required,max=64"`
+	Description         *string `json:"description"`
+	Status              int     `json:"status"`
+	OwnerDepartmentID   *uint   `json:"owner_department_id"`
 }
 
 // CreateProject 创建项目；creatorUserID>0 时自动将创建人写入 project_members 为 owner。
@@ -122,7 +175,20 @@ func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID ui
 	if status != model.StatusDisabled {
 		status = model.StatusEnabled
 	}
-	p := model.Project{Name: strings.TrimSpace(req.Name), Code: strings.TrimSpace(req.Code), Description: req.Description, Status: status}
+	if req.OwnerDepartmentID != nil && *req.OwnerDepartmentID > 0 && s.departmentRepo != nil {
+		if _, err := s.departmentRepo.GetByID(ctx, *req.OwnerDepartmentID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, constants.ErrDepartmentNotFound
+			}
+			return nil, err
+		}
+	}
+	var ownerDept *uint
+	if req.OwnerDepartmentID != nil && *req.OwnerDepartmentID > 0 {
+		v := *req.OwnerDepartmentID
+		ownerDept = &v
+	}
+	p := model.Project{Name: strings.TrimSpace(req.Name), Code: strings.TrimSpace(req.Code), Description: req.Description, Status: status, OwnerDepartmentID: ownerDept}
 	if err := s.projectRepo.Create(ctx, &p); err != nil {
 		return nil, err
 	}
@@ -134,14 +200,18 @@ func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID ui
 		}
 	}
 	item := toProjectItem(p)
+	if creatorUserID > 0 {
+		item.MyProjectRole = "owner"
+	}
 	return &item, nil
 }
 
 type ProjectUpdateRequest struct {
-	Name        *string `json:"name"`
-	Code        *string `json:"code"`
-	Description *string `json:"description"`
-	Status      *int    `json:"status"`
+	Name                *string `json:"name"`
+	Code                *string `json:"code"`
+	Description         *string `json:"description"`
+	Status              *int    `json:"status"`
+	OwnerDepartmentID   *uint   `json:"owner_department_id"`
 }
 
 // UpdateProject 更新相关的业务逻辑。
@@ -165,10 +235,27 @@ func (s *ProjectMgmtService) UpdateProject(ctx context.Context, id uint, req Pro
 	if req.Status != nil {
 		p.Status = *req.Status
 	}
+	if req.OwnerDepartmentID != nil {
+		if *req.OwnerDepartmentID == 0 {
+			p.OwnerDepartmentID = nil
+		} else {
+			if s.departmentRepo != nil {
+				if _, err := s.departmentRepo.GetByID(ctx, *req.OwnerDepartmentID); err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return nil, constants.ErrDepartmentNotFound
+					}
+					return nil, err
+				}
+			}
+			v := *req.OwnerDepartmentID
+			p.OwnerDepartmentID = &v
+		}
+	}
 	if err := s.projectRepo.Save(ctx, p); err != nil {
 		return nil, err
 	}
 	item := toProjectItem(*p)
+	s.enrichMyProjectRole(ctx, &item)
 	return &item, nil
 }
 
@@ -2318,6 +2405,7 @@ type LogStreamQuery struct {
 	ServerID    uint    `form:"server_id" binding:"required"`
 	LogSourceID uint    `form:"log_source_id" binding:"required"`
 	TailLines   int     `form:"tail_lines"`
+	AfterID     uint64  `form:"after_id"`
 	Include     *string `form:"include"`
 	Exclude     *string `form:"exclude"`
 	Highlight   *string `form:"highlight"`
@@ -2361,40 +2449,39 @@ func (s *ProjectMgmtService) ListRemoteLogUnits(ctx context.Context, q RemoteLog
 	return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg255ca1122356)
 }
 
+// ValidateLogSourceAccess 校验日志源属于项目下指定服务器（SSE/导出/审计共用）。
+func (s *ProjectMgmtService) ValidateLogSourceAccess(ctx context.Context, projectID, serverID, logSourceID uint) error {
+	if projectID == 0 {
+		return constants.ErrProjectIDRequired
+	}
+	sv, err := s.serverRepo.GetByID(ctx, serverID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrLogSourceServerNotFound
+		}
+		return err
+	}
+	if sv.ProjectID != projectID {
+		return constants.ErrServerNotInCurrentProject
+	}
+	ok, err := s.logRepo.BelongsToProjectServer(ctx, projectID, serverID, logSourceID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
+	}
+	return nil
+}
+
 // ExportLogs 导出相关的业务逻辑。
 func (s *ProjectMgmtService) ExportLogs(ctx context.Context, q LogExportQuery) ([]byte, string, error) {
-	if q.ProjectID == 0 {
-		return nil, "", constants.ErrProjectIDRequired
-	}
-	sv, err := s.serverRepo.GetByID(ctx, q.ServerID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", constants.ErrLogSourceServerNotFound
-		}
+	if err := s.ValidateLogSourceAccess(ctx, q.ProjectID, q.ServerID, q.LogSourceID); err != nil {
 		return nil, "", err
-	}
-	if sv.ProjectID != q.ProjectID {
-		return nil, "", constants.ErrServerNotInCurrentProject
-	}
-	src, err := s.logRepo.GetByIDInProject(ctx, q.ProjectID, q.LogSourceID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
-		}
-		return nil, "", err
-	}
-	svcRow, err := s.serviceRepo.GetByID(ctx, src.ServiceID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", constants.ErrNotFoundWithMsg(constants.ErrMsgce1b3b846df9)
-		}
-		return nil, "", err
-	}
-	if svcRow.ServerID != q.ServerID {
-		return nil, "", constants.ErrBadRequestWithMsg(constants.ErrMsgf528977ae67a)
 	}
 
 	var includeRe *regexp.Regexp
+	var err error
 	if q.Include != nil && strings.TrimSpace(*q.Include) != "" {
 		includeRe, err = regexp.Compile(strings.TrimSpace(*q.Include))
 		if err != nil {

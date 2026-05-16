@@ -2,11 +2,16 @@ package server
 
 import (
 	"context"
+	"io"
 	"strings"
 	"time"
 
 	pb "yunshu/internal/grpc/proto"
 	"yunshu/internal/service"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type LogPlatformServer struct {
@@ -381,27 +386,58 @@ func (s *LogPlatformServer) ListDiscovery(ctx context.Context, req *pb.ListDisco
 	return resp, nil
 }
 
+func agentTokenFromIncoming(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	for _, key := range []string{"x-agent-token", "agent-token"} {
+		if vals := md.Get(key); len(vals) > 0 {
+			if v := strings.TrimSpace(vals[0]); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
 func (s *LogPlatformServer) IngestLogs(stream pb.AgentRuntimeService_IngestLogsServer) error {
+	ctx := stream.Context()
+	agent, err := s.agentSvc.AuthenticateByToken(ctx, agentTokenFromIncoming(ctx))
+	if err != nil {
+		return toStatusErr(err)
+	}
+	allowed, err := s.agentSvc.AllowedLogSourceIDs(ctx, agent)
+	if err != nil {
+		return toStatusErr(err)
+	}
+
 	lastSeenTouch := time.Time{}
-	touchSeen := func(projectID, serverID uint) {
+	touchSeen := func() {
 		now := time.Now()
-		// Avoid touching DB on every batch; 30s is enough for 90s online window.
 		if !lastSeenTouch.IsZero() && now.Sub(lastSeenTouch) < 30*time.Second {
 			return
 		}
-		s.agentSvc.TouchSeenByProjectServer(stream.Context(), projectID, serverID)
+		s.agentSvc.TouchSeen(ctx, agent.ID)
 		lastSeenTouch = now
 	}
 
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
-			return nil
+			if err == io.EOF {
+				return nil
+			}
+			return status.Errorf(codes.Internal, "ingest recv: %v", err)
 		}
 		projectID := uint(msg.GetProjectId())
 		serverID := uint(msg.GetServerId())
-		touchSeen(projectID, serverID)
-		key := service.BuildLogStreamKey(projectID, serverID, uint(msg.GetLogSourceId()))
+		logSourceID := uint(msg.GetLogSourceId())
+		if err := s.agentSvc.AuthorizeIngestBatch(agent, projectID, serverID, logSourceID, allowed); err != nil {
+			return toStatusErr(err)
+		}
+		touchSeen()
+		key := service.BuildLogStreamKey(projectID, serverID, logSourceID)
 		for _, it := range msg.GetEntries() {
 			if strings.TrimSpace(it.GetLine()) == "" {
 				continue
@@ -413,7 +449,7 @@ func (s *LogPlatformServer) IngestLogs(stream pb.AgentRuntimeService_IngestLogsS
 		}
 		if msg.GetSeq() > 0 {
 			if err := stream.Send(&pb.IngestLogsResponse{Seq: msg.GetSeq(), TsUnixMs: time.Now().UnixMilli()}); err != nil {
-				return nil
+				return status.Errorf(codes.Internal, "ingest ack: %v", err)
 			}
 		}
 	}

@@ -87,11 +87,10 @@ func (s *AuthService) SendEmailCode(ctx context.Context, req SendEmailCodeReques
 	codeKey := store.EmailCodeKey(scene, email)
 	cooldownKey := store.EmailCodeCooldownKey(scene, email)
 
-	if err = s.redis.Set(ctx, codeKey, code, codeTTL).Err(); err != nil {
-		return nil, err
-	}
-	if err = s.redis.Set(ctx, cooldownKey, "1", cooldownTTL).Err(); err != nil {
-		_ = s.redis.Del(ctx, codeKey).Err()
+	pipe := s.redis.Pipeline()
+	pipe.Set(ctx, codeKey, code, codeTTL)
+	pipe.Set(ctx, cooldownKey, "1", cooldownTTL)
+	if _, err = pipe.Exec(ctx); err != nil {
 		return nil, err
 	}
 
@@ -244,7 +243,7 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*Regis
 // Logout 退出登录相关的业务逻辑。
 func (s *AuthService) Logout(ctx context.Context, tokenID string) error {
 	if s.redis == nil {
-		return nil
+		return constants.ErrInternalWithMsg(constants.ErrMsgaf4823214b6e)
 	}
 	return s.redis.Del(ctx, store.AccessTokenKey(tokenID)).Err()
 }
@@ -290,6 +289,7 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID uint, req Update
 		}
 		user.Email = &email
 	}
+	user.Phone = strings.TrimSpace(req.Phone)
 
 	if err = s.userRepo.Save(ctx, user); err != nil {
 		return nil, err
@@ -357,10 +357,11 @@ func (s *AuthService) issueLoginResponse(ctx context.Context, user *model.User) 
 		return nil, err
 	}
 
-	if s.redis != nil {
-		if err = s.redis.Set(ctx, store.AccessTokenKey(tokenID), user.ID, time.Until(expiresAt)).Err(); err != nil {
-			return nil, err
-		}
+	if s.redis == nil {
+		return nil, constants.ErrInternalWithMsg(constants.ErrMsgaf4823214b6e)
+	}
+	if err = s.redis.Set(ctx, store.AccessTokenKey(tokenID), user.ID, time.Until(expiresAt)).Err(); err != nil {
+		return nil, err
 	}
 
 	return &LoginResponse{

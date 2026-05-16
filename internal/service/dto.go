@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"time"
 
 	"yunshu/internal/model"
@@ -71,6 +72,7 @@ type LoginResponse struct {
 type UpdateProfileRequest struct {
 	Nickname string `json:"nickname" binding:"required,max=128"`
 	Email    string `json:"email" binding:"omitempty,email,max=128"`
+	Phone    string `json:"phone" binding:"omitempty,max=20"`
 }
 
 type ChangePasswordRequest struct {
@@ -83,6 +85,7 @@ type UserCreateRequest struct {
 	Email        string `json:"email" binding:"required,email,max=128"`
 	Password     string `json:"password" binding:"required,min=6,max=64"`
 	Nickname     string `json:"nickname" binding:"required,max=128"`
+	Phone        string `json:"phone" binding:"omitempty,max=20"`
 	Status       int    `json:"status"`
 	DepartmentID *uint  `json:"department_id"`
 	RoleIDs      []uint `json:"role_ids"`
@@ -91,6 +94,7 @@ type UserCreateRequest struct {
 type UserUpdateRequest struct {
 	Email        *string `json:"email" binding:"omitempty,email,max=128"`
 	Nickname     *string `json:"nickname" binding:"omitempty,max=128"`
+	Phone        *string `json:"phone" binding:"omitempty,max=20"`
 	Password     *string `json:"password" binding:"omitempty,min=6,max=64"`
 	Status       *int    `json:"status"`
 	DepartmentID *uint   `json:"department_id"`
@@ -128,22 +132,25 @@ type RoleListQuery struct {
 }
 
 type UserGroupCreateRequest struct {
-	Name        string `json:"name" binding:"required,max=64"`
-	Code        string `json:"code" binding:"required,max=64"`
-	Description string `json:"description" binding:"omitempty,max=255"`
-	Status      int    `json:"status"`
+	Name             string `json:"name" binding:"required,max=64"`
+	Code             string `json:"code" binding:"required,max=64"`
+	Description      string `json:"description" binding:"omitempty,max=255"`
+	Status           int    `json:"status"`
+	ScopeProjectID   *uint  `json:"scope_project_id"`
 }
 
 type UserGroupUpdateRequest struct {
-	Name        *string `json:"name" binding:"omitempty,max=64"`
-	Description *string `json:"description" binding:"omitempty,max=255"`
-	Status      *int    `json:"status"`
+	Name             *string `json:"name" binding:"omitempty,max=64"`
+	Description      *string `json:"description" binding:"omitempty,max=255"`
+	Status           *int    `json:"status"`
+	ScopeProjectID   *uint   `json:"scope_project_id"`
 }
 
 type UserGroupListQuery struct {
-	Keyword  string `form:"keyword"`
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
+	Keyword          string `form:"keyword"`
+	Page             int    `form:"page"`
+	PageSize         int    `form:"page_size"`
+	ScopeProjectID   *uint  `form:"scope_project_id"`
 }
 
 type UserGroupAssignUsersRequest struct {
@@ -208,6 +215,7 @@ type UserDetailResponse struct {
 	ID             uint             `json:"id"`
 	Username       string           `json:"username"`
 	Email          string           `json:"email"`
+	Phone          string           `json:"phone"`
 	Nickname       string           `json:"nickname"`
 	Status         int              `json:"status"`
 	DepartmentID   *uint            `json:"department_id,omitempty"`
@@ -271,6 +279,7 @@ func NewUserDetailResponse(user model.User) UserDetailResponse {
 		ID:           user.ID,
 		Username:     user.Username,
 		Email:        email,
+		Phone:        strings.TrimSpace(user.Phone),
 		Nickname:     user.Nickname,
 		Status:       user.Status,
 		DepartmentID: user.DepartmentID,

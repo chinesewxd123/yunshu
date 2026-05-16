@@ -87,10 +87,12 @@ import type { UserUpdatePayload } from "../types/api";
 import { getUser, updateUser } from "../services/users";
 import { formatDateTime } from "../utils/format";
 import { AlertConfigCenterPanel, type AlertConfigTab } from "./alert-config-center-panel";
+import { AlertInhibitionPanel } from "./alert-inhibition-panel";
+import type { AlertEventCategory } from "../utils/alert-event-reasons";
 
 dayjs.locale("zh-cn");
 
-type TabKey = "datasources" | "policies" | "silences" | "rules" | "history" | "cloud-expiry" | "promql";
+type TabKey = "datasources" | "policies" | "silences" | "inhibition" | "rules" | "history" | "cloud-expiry" | "promql";
 
 type SilenceMatcherForm = { name: string; value: string; is_regex: boolean };
 
@@ -371,12 +373,29 @@ export function AlertMonitorPlatformPage() {
     if (!Number.isFinite(n) || n <= 0) return undefined;
     return n;
   }, [searchParams]);
+  const historyEventCategory = useMemo((): AlertEventCategory | undefined => {
+    const raw = String(searchParams.get("event_category") || "").trim().toLowerCase();
+    const allowed: AlertEventCategory[] = [
+      "delivery",
+      "routing",
+      "silence",
+      "inhibition",
+      "timing",
+      "resolved",
+      "failure",
+      "other",
+    ];
+    return (allowed as string[]).includes(raw) ? (raw as AlertEventCategory) : undefined;
+  }, [searchParams]);
+
   const tab: TabKey = useMemo(() => {
     const t = searchParams.get("tab");
     if (t === "config") {
       return searchParams.get("cfg") === "history" ? "history" : "policies";
     }
-    if (t === "policies" || t === "silences" || t === "rules" || t === "history" || t === "cloud-expiry" || t === "promql") return t;
+    if (t === "policies" || t === "silences" || t === "inhibition" || t === "rules" || t === "history" || t === "cloud-expiry" || t === "promql") {
+      return t;
+    }
     return "datasources";
   }, [searchParams]);
 
@@ -483,18 +502,29 @@ export function AlertMonitorPlatformPage() {
     () => dsBasicUserDictOpts.map((o) => ({ label: o.label, value: String(o.value) })),
     [dsBasicUserDictOpts],
   );
-  const silenceMatcherNameOptions = useMemo(
-    () =>
-      promqlLabelKeyOpts
-        .map((o) => {
-          const value = String(o.value || "").trim();
-          const label = String(o.label || "").trim() || value;
-          return { label: `${label} (${value})`, value };
-        })
-        .filter((o) => o.value)
-        .sort((a, b) => a.value.localeCompare(b.value, "zh-CN")),
-    [promqlLabelKeyOpts],
-  );
+  const silenceMatcherNameOptions = useMemo(() => {
+    const platformKeys = [
+      { label: "monitor_rule_id（平台监控规则 ID）", value: "monitor_rule_id" },
+      { label: "alertname（规则/告警名）", value: "alertname" },
+      { label: "project_id（项目）", value: "project_id" },
+      { label: "source（来源，如 prometheus_monitor）", value: "source" },
+    ];
+    const fromProm = promqlLabelKeyOpts
+      .map((o) => {
+        const value = String(o.value || "").trim();
+        const label = String(o.label || "").trim() || value;
+        return { label: `${label} (${value})`, value };
+      })
+      .filter((o) => o.value);
+    const seen = new Set<string>();
+    const out = [...platformKeys, ...fromProm].filter((o) => {
+      if (seen.has(o.value)) return false;
+      seen.add(o.value);
+      return true;
+    });
+    out.sort((a, b) => a.value.localeCompare(b.value, "zh-CN"));
+    return out;
+  }, [promqlLabelKeyOpts]);
   const ruleComparatorOptions = useMemo(
     () => [
       { label: "大于 (>)", value: ">" },
@@ -1123,6 +1153,25 @@ export function AlertMonitorPlatformPage() {
     setSilModalOpen(true);
   }
 
+  /** 为平台内置监控规则预填静默（monitor_rule_id + alertname），与 Prometheus 活跃告警列表无关。 */
+  function openSilenceForMonitorRule(r: AlertMonitorRuleItem) {
+    setSilCurrent(null);
+    silForm.resetFields();
+    const ruleName = String(r.name || "").trim();
+    silForm.setFieldsValue({
+      name: ruleName ? `静默规则 ${ruleName}` : `静默 monitor_rule ${r.id}`,
+      matchers: [
+        { name: "monitor_rule_id", value: String(r.id), is_regex: false },
+        ...(ruleName ? [{ name: "alertname", value: ruleName, is_regex: false }] : []),
+      ],
+      comment: "平台监控规则一键静默",
+      enabled: true,
+      starts_at: dayjs(),
+      ends_at: dayjs().add(2, "hour"),
+    });
+    setSilModalOpen(true);
+  }
+
   function toQuickSilenceTarget(row: PromNativeAlertRow): QuickSilenceTarget {
     const now = dayjs();
     const n = String(row.alertname || "").trim() || "未命名告警";
@@ -1309,10 +1358,13 @@ export function AlertMonitorPlatformPage() {
     { title: "启用", dataIndex: "enabled", width: 70, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
     {
       title: "操作",
-      width: 260,
+      width: 320,
       fixed: "right" as const,
       render: (_: unknown, r: AlertMonitorRuleItem) => (
         <Space wrap>
+          <Button type="link" size="small" onClick={() => openSilenceForMonitorRule(r)}>
+            静默
+          </Button>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openRuleEdit(r)}>
             规则
           </Button>
@@ -1732,7 +1784,17 @@ export function AlertMonitorPlatformPage() {
     { title: "地域范围", dataIndex: "region_scope", width: 180, render: (v: string) => String(v || "").trim() || "全部" },
     { title: "提前天数", dataIndex: "advance_days", width: 100 },
     { title: "级别", dataIndex: "severity", width: 90 },
-    { title: "间隔(s)", dataIndex: "eval_interval_seconds", width: 100 },
+    { title: "定时", dataIndex: "schedule_enabled", width: 80, render: (v: boolean) => (v !== false ? <Tag color="blue">开</Tag> : <Tag>关</Tag>) },
+    {
+      title: "Cron",
+      dataIndex: "eval_cron_spec",
+      width: 160,
+      ellipsis: true,
+      render: (v: string) => {
+        const s = String(v || "").trim();
+        return s ? <span title={s}>{s}</span> : <span style={{ color: "#999" }}>—</span>;
+      },
+    },
     { title: "启用", dataIndex: "enabled", width: 80, render: (v: boolean) => (v ? <Tag color="green">是</Tag> : <Tag>否</Tag>) },
     { title: "创建时间", dataIndex: "created_at", width: 170, render: (v: string) => (v ? formatDateTime(v) : "-") },
     { title: "更新时间", dataIndex: "updated_at", width: 170, render: (v: string) => (v ? formatDateTime(v) : "-") },
@@ -1764,7 +1826,8 @@ export function AlertMonitorPlatformPage() {
       region_scope: "",
       advance_days: 7,
       severity: "warning",
-      eval_interval_seconds: 3600,
+      eval_cron_spec: "0 9 * * *",
+      schedule_enabled: true,
       labels_json: "{}",
       enabled: true,
     });
@@ -1780,7 +1843,8 @@ export function AlertMonitorPlatformPage() {
       region_scope: row.region_scope || "",
       advance_days: row.advance_days,
       severity: row.severity || "warning",
-      eval_interval_seconds: row.eval_interval_seconds,
+      eval_cron_spec: row.eval_cron_spec ?? "",
+      schedule_enabled: row.schedule_enabled !== false,
       labels_json: stringifyPrettyJSON(row.labels ?? {}, "{}"),
       enabled: row.enabled,
     });
@@ -1796,6 +1860,7 @@ export function AlertMonitorPlatformPage() {
         provider: String(v.provider || "").trim(),
         region_scope: String(v.region_scope || "").trim(),
         labels_json: String(v.labels_json || "{}").trim() || "{}",
+        eval_cron_spec: String(v.eval_cron_spec ?? "").trim(),
       };
       if (cloudExpiryCurrent) {
         await updateCloudExpiryRule(cloudExpiryCurrent.id, payload);
@@ -2176,7 +2241,10 @@ export function AlertMonitorPlatformPage() {
                               <strong>监控规则与值班</strong>：平台定时向已登记数据源执行 PromQL，命中后走同一套通知链路。
                             </li>
                             <li>
-                              <strong>历史记录</strong>：统一查看命中、抑制、发送成功/失败的结果证据。
+                              <strong>告警抑制</strong>：源告警触发时抑制目标告警（类似 Alertmanager inhibit_rules），见「告警抑制」Tab。
+                            </li>
+                            <li>
+                              <strong>历史记录</strong>：统一查看命中、抑制原因码、发送成功/失败的结果证据。
                             </li>
                           </ul>
                         </Typography.Paragraph>
@@ -2197,11 +2265,22 @@ export function AlertMonitorPlatformPage() {
                   type="info"
                   showIcon
                   message="历史记录是统一观测出口"
-                  description="无论告警来自 Prometheus + Alertmanager，还是来自平台监控规则，最终都会在这里查看命中策略、抑制原因、通道结果与错误信息。"
+                  description="无论告警来自 Prometheus + Alertmanager，还是来自平台监控规则，最终都会在这里查看命中订阅、抑制原因码（error_message）、通道结果与错误信息。success=留痕 表示策略拦截未外发。"
                 />
-                <AlertConfigCenterPanel embedded hideTabs activeTab="history" onTabChange={() => undefined} />
+                <AlertConfigCenterPanel
+                  embedded
+                  hideTabs
+                  activeTab="history"
+                  onTabChange={() => undefined}
+                  initialEventCategory={historyEventCategory}
+                />
               </Space>
             ),
+          },
+          {
+            key: "inhibition",
+            label: "告警抑制",
+            children: <AlertInhibitionPanel />,
           },
           {
             key: "silences",
@@ -2215,7 +2294,7 @@ export function AlertMonitorPlatformPage() {
                   description={
                     <Space direction="vertical" size={8} style={{ width: "100%" }}>
                       <span>
-                        下方「平台静默规则」在<strong>服务端处理 Webhook</strong>时按 matchers 与告警 labels 比对，命中则<strong>不再向通道发送</strong>（并可能落一条「silence suppressed」类记录）。不会调用 Alertmanager API 去创建静默；Prometheus / AM UI 里的告警状态不会因本列表而变化。若要与 AM 一致，请在 Alertmanager 侧配置 silences。
+                        下方「平台静默规则」在<strong>服务端入站分发前</strong>按 matchers 与告警 labels 比对（含<strong>平台内置监控规则</strong>与 Webhook），命中则<strong>不再向通道发送</strong>。不会调用 Alertmanager API；Prometheus 活跃告警列表仅用于对照 Prom 侧规则，其「静默」按钮与平台规则不是同一批告警名。静默平台规则请用「监控规则与策略」表格中的<strong>静默</strong>，或手动填写 <Typography.Text code>monitor_rule_id</Typography.Text> + <Typography.Text code>alertname</Typography.Text>。
                       </span>
                       <Space wrap>
                         <Button size="small" onClick={openHistoryTab}>查看静默后的历史记录</Button>
@@ -2316,7 +2395,11 @@ export function AlertMonitorPlatformPage() {
                         建议先确认四项：1) <Typography.Text code>datasource</Typography.Text> 选正确集群；2){" "}
                         <Typography.Text code>severity</Typography.Text> 与策略匹配（critical/warning/info）；3){" "}
                         <Typography.Text code>for_seconds</Typography.Text> 防抖时长；4) <Typography.Text code>eval_interval_seconds</Typography.Text>{" "}
-                        评估频率（常用 30s/60s）。
+                        评估频率（常用 30s/60s，只决定多久查一次 PromQL）。
+                      </span>
+                      <span>
+                        <strong>通知重复间隔</strong>不由「间隔(s)」控制，而由配置 <Typography.Text code>alert.repeat_interval_seconds</Typography.Text>（默认 300s）与{" "}
+                        <Typography.Text code>group_interval_seconds</Typography.Text>（默认 60s）控制；持续 firing 时不会每 30s 都发钉钉。
                       </span>
                       <Space wrap>
                         <Button size="small" onClick={openHistoryTab}>查看规则触发历史</Button>
@@ -2369,9 +2452,9 @@ export function AlertMonitorPlatformPage() {
                   type="info"
                   showIcon
                   message="云到期规则说明"
-                  description="规则会按设定间隔巡检三家云实例到期时间，命中阈值触发 firing，恢复为 resolved，并复用已有告警通道派发。"
+                  description="后台在「启用定时自动评估」且已填写 Cron 时拉取云实例到期时间：① 告警服务以固定节拍（约每 5 秒）检查是否到达各规则在控制台配置的 Cron；② 与 YAML 中 alert.monitor_eval_cron_spec（仅用于内置 PromQL 监控规则）无关；③ 仅当剩余天数 ≤ 提前天数才 firing。须配置 security.encryption_key 且云账号可解密。订阅按 labels 匹配，route 等不会自动替代订阅节点。"
                 />
-                <Table rowKey="id" columns={cloudExpiryColumns} dataSource={cloudExpiryList} pagination={false} scroll={{ x: 1100 }} />
+                <Table rowKey="id" columns={cloudExpiryColumns} dataSource={cloudExpiryList} pagination={false} scroll={{ x: 1280 }} />
               </Space>
             ),
           },
@@ -2754,8 +2837,37 @@ export function AlertMonitorPlatformPage() {
           <Form.Item name="severity" label="告警级别" rules={[{ required: true, message: "请选择级别" }]}>
             <Select options={alertSeverityOpts} />
           </Form.Item>
-          <Form.Item name="eval_interval_seconds" label="评估间隔秒" rules={[{ required: true, message: "请输入评估间隔" }]}>
-            <InputNumber min={60} style={{ width: "100%" }} />
+          <Form.Item
+            name="eval_cron_spec"
+            dependencies={["schedule_enabled"]}
+            label="Cron 表达式"
+            rules={[
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (getFieldValue("schedule_enabled") !== false && !String(value ?? "").trim()) {
+                    return Promise.reject(new Error("已启用定时评估时必须填写 Cron"));
+                  }
+                  return Promise.resolve();
+                },
+              }),
+            ]}
+            extra={
+              <span>
+                启用「定时自动评估」时<strong>必填</strong>。robfig/cron：<strong>五段</strong>为「分 时 日 月 周」；亦支持<strong>六段</strong>「秒 分 时 日 月 周」及 <code>@every 1m</code> 等描述符。服务约每 5 秒检查一次是否到点，故 Cron 粒度不宜低于该量级。
+                <br />
+                示例：<code>*/1 * * * *</code> 每分钟；<code>0 * * * *</code> 每小时整点；<code>0 */2 * * *</code> 每 2 小时整点（注意五段里首位是<strong>分</strong>，勿写成 <code>*/2 * * * *</code>，否则表示「每 2 分钟」）；<code>0 9 * * *</code> 每天 9:00。
+              </span>
+            }
+          >
+            <Input allowClear placeholder="例如 0 9 * * * 或 @every 1h" />
+          </Form.Item>
+          <Form.Item
+            name="schedule_enabled"
+            label="启用定时自动评估"
+            valuePropName="checked"
+            extra="开启后由告警服务按上方 Cron 拉云 API；有 Redis 时写入上次评估时间；关闭则仅「立即执行一次评估」会拉云。"
+          >
+            <Switch />
           </Form.Item>
           <Form.Item
             name="labels_json"
@@ -3087,6 +3199,9 @@ export function AlertMonitorPlatformPage() {
         <Typography.Paragraph type="secondary">
           通知优先级：已配置处理人邮箱时，仅发送处理人；未配置处理人时，才回退到邮件通道收件人。
         </Typography.Paragraph>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12 }}>
+          部门解析（与后端一致）：在<strong>规则所属项目</strong>下，将所选部门根展开为子树，取「项目成员 ∩ 部门用户」的邮箱/手机；每个部门根另含其<strong>部门负责人</strong>的邮箱/手机；再与上方显式选择的用户合并去重。
+        </Typography.Paragraph>
         <Form form={assignForm} layout="vertical">
           <Form.Item name="user_ids" label="用户">
             <Select mode="multiple" options={users} optionFilterProp="label" placeholder="选择用户" />
@@ -3096,7 +3211,11 @@ export function AlertMonitorPlatformPage() {
               用户资料邮箱：{assignUsersHint}
             </Typography.Paragraph>
           ) : null}
-          <Form.Item name="department_ids" label="部门（子树，已不参与通知收件人计算）">
+          <Form.Item
+            name="department_ids"
+            label="部门（子树）"
+            extra="在规则所属项目内解析：子树用户 ∩ 项目成员，并包含各根部门的负责人；与「用户」显式选择合并。"
+          >
             <TreeSelect treeData={deptTree} treeCheckable showSearch allowClear treeDefaultExpandAll style={{ width: "100%" }} placeholder="随用户带出，可改" />
           </Form.Item>
           {assignUserIds?.length === 1 ? (
@@ -3105,7 +3224,7 @@ export function AlertMonitorPlatformPage() {
             </Form.Item>
           ) : (
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              多人时通知按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。部门与项目成员不再扩散收件人，额外邮箱字段已废弃。
+              多人时通知按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。部门按规则项目解析为「项目成员∩子树」并含部门负责人，与显式用户合并去重。
             </Typography.Paragraph>
           )}
           <Form.Item name="notify_on_resolved" label="恢复时通知" valuePropName="checked">
@@ -3200,7 +3319,11 @@ export function AlertMonitorPlatformPage() {
               用户资料邮箱：{dutyUsersHint}
             </Typography.Paragraph>
           ) : null}
-          <Form.Item name="department_ids" label="部门（子树）">
+          <Form.Item
+            name="department_ids"
+            label="部门（子树）"
+            extra="当前班次解析仍为部门子树内用户（未按项目成员过滤）；与显式「用户」合并。若需项目交集与负责人，请用规则「处理人」侧配置。"
+          >
             <TreeSelect treeData={deptTree} treeCheckable showSearch allowClear treeDefaultExpandAll style={{ width: "100%" }} placeholder="随用户带出，可改" />
           </Form.Item>
           {blkUserIds?.length === 1 ? (

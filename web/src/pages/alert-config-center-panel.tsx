@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, InputNumber, Popconfirm, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tree, Typography, message } from "antd";
+import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, InputNumber, Popconfirm, Popover, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tree, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getAlertHistoryStats,
@@ -11,6 +11,13 @@ import {
 import { stringifyPrettyJSON } from "../services/alert-mappers";
 import { useDictOptions } from "../hooks/use-dict-options";
 import { formatDateTime } from "../utils/format";
+import {
+  ALERT_EVENT_CATEGORY_OPTIONS,
+  ALERT_HISTORY_PIPELINE_HELP,
+  describeAlertEvent,
+  summarizeAlertEventHint,
+  type AlertEventCategory,
+} from "../utils/alert-event-reasons";
 import { getProjects } from "../services/projects";
 import {
   createSubscriptionNode,
@@ -32,6 +39,8 @@ export type AlertConfigCenterPanelProps = {
   embedded?: boolean;
   /** 嵌入主页面时，仅展示当前视图内容，不再显示内部 tabs */
   hideTabs?: boolean;
+  /** 历史 Tab 初始策略分类（如从抑制页跳转 ?event_category=inhibition） */
+  initialEventCategory?: AlertEventCategory;
 };
 
 const webhookPayloadTemplates: Record<string, Record<string, unknown>> = {
@@ -109,45 +118,46 @@ const webhookPayloadTemplates: Record<string, Record<string, unknown>> = {
   },
 };
 
-function describeAlertEvent(row: AlertEventItem): string {
-  const reason = String(row.errorMessage || "").trim();
-  const channelText = String(row.channelName || "").trim() || "未匹配通道";
-  const receiverText = row.receiverList?.length ? row.receiverList.join(", ") : "-";
-  const hasMatchedPolicy = !!row.matchedPolicyNameList?.length;
-  if (row.success) {
-    if (reason === "silence_suppressed") return "已命中平台静默，告警写入历史但未向通道发送。";
-    if (reason === "subscription_suppressed") return "已命中订阅静默窗口，本次不再重复外发。";
-    if (reason === "dedup_suppressed") return "已命中指纹去重，本次告警被去重抑制。";
-    if (reason === "group_wait_suppressed") return "已进入 group_wait 收集窗口，稍后会统一发送。";
-    if (reason === "group_interval_suppressed") return "组内发生新变化但仍处于 group_interval 窗口，本次暂不外发。";
-    if (reason === "repeat_suppressed") return "处于 repeat_interval 窗口，本次重复提醒被抑制。";
-    if (reason === "resolved_aggregate_suppressed") return "同一告警实例的重复恢复事件已抑制（恢复仅发送一次）。";
-    if (row.channelName?.includes("静默抑制")) return "平台在分发前拦截了本次告警。";
-    return `通道[${channelText}] 已发送，接收人[${receiverText}]。`;
+/** 从告警历史入库体中解析顶层 `labels`（与后端 hydrate 逻辑一致）。 */
+function parseLabelsFromAlertEventRequestPayload(raw?: string): Record<string, string> {
+  const s = String(raw || "").trim();
+  if (!s) return {};
+  try {
+    const payload = JSON.parse(s) as Record<string, unknown>;
+    const labels = payload?.labels;
+    if (labels && typeof labels === "object" && !Array.isArray(labels)) {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(labels as Record<string, unknown>)) {
+        const vs = String(v ?? "").trim();
+        if (vs && vs !== "<nil>") {
+          out[String(k).trim()] = vs;
+        }
+      }
+      return out;
+    }
+  } catch {
+    /* ignore */
   }
-  if (reason === "no_enabled_channels") return "当前没有启用的通知通道，因此仅记录历史。";
-  if (reason === "no_policy_matched") return "未命中任何订阅节点，已按订阅树门禁拦截，不会发送到通道。";
-  if (reason === "no_channel_matched") return "有通道存在，但本次告警未匹配到可发送通道。";
-  if (reason) return `通道[${channelText}] 发送失败，接收人[${receiverText}]，原因：${reason}`;
-  return "告警进入了平台链路，但未获取到更多说明。";
+  return {};
 }
 
-function summarizeAlertHint(row: AlertEventItem): string {
-  const reason = String(row.errorMessage || "").trim();
-  if (!row.success) return "-";
-  if (!reason) return "-";
-  if (reason === "silence_suppressed") return "已命中平台静默，通知已拦截";
-  if (reason === "subscription_suppressed") return "已命中订阅静默窗口，本次未外发";
-  if (reason === "dedup_suppressed") return "已触发去重策略，本次不再重复发送";
-  if (reason === "group_wait_suppressed") return "group_wait 收集窗口";
-  if (reason === "group_interval_suppressed") return "group_interval 窗口";
-  if (reason === "repeat_suppressed") return "repeat_interval 窗口";
-  if (reason === "resolved_aggregate_suppressed") return "重复恢复事件已抑制（恢复仅发送一次）";
-  if (/suppressed/i.test(reason)) return "已被系统策略抑制，本次未发送";
-  return reason;
+function prettifyAlertRequestPayload(raw?: string): string {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  try {
+    return stringifyPrettyJSON(JSON.parse(s) as unknown, s);
+  } catch {
+    return s;
+  }
 }
 
-export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, embedded, hideTabs }: AlertConfigCenterPanelProps) {
+export function AlertConfigCenterPanel({
+  activeTab: tab,
+  onTabChange: setTab,
+  embedded,
+  hideTabs,
+  initialEventCategory,
+}: AlertConfigCenterPanelProps) {
   const [stats, setStats] = useState<{
     total: number;
     firing: number;
@@ -182,6 +192,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
   /** 格式：`ds:<数据源ID>` 或 `mp:<monitor_pipeline slug>`（兼容历史 prometheus/platform） */
   const [eventSourceFilter, setEventSourceFilter] = useState("");
   const [eventGroupKey, setEventGroupKey] = useState("");
+  const [eventCategory, setEventCategory] = useState<AlertEventCategory | "">(initialEventCategory ?? "");
   const eventsPageSizeRef = useRef(eventsPageSize);
   eventsPageSizeRef.current = eventsPageSize;
   const [webhookSending, setWebhookSending] = useState(false);
@@ -477,6 +488,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
           monitorPipeline,
           datasourceId,
           groupKey: eventGroupKey.trim() || undefined,
+          category: eventCategory || undefined,
         });
         setEvents(res.list ?? []);
         setEventsTotal(res.total ?? 0);
@@ -486,8 +498,14 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
         setEventsLoading(false);
       }
     },
-    [eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey],
+    [eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey, eventCategory],
   );
+
+  useEffect(() => {
+    if (initialEventCategory) {
+      setEventCategory(initialEventCategory);
+    }
+  }, [initialEventCategory]);
 
   useEffect(() => {
     void loadBase();
@@ -498,12 +516,13 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
     if (tab !== "history") {
       return;
     }
-    const delay = eventKeyword || eventAlertIP || eventStatus || eventSourceFilter || eventGroupKey ? 300 : 0;
+    const delay =
+      eventKeyword || eventAlertIP || eventStatus || eventSourceFilter || eventGroupKey || eventCategory ? 300 : 0;
     const timer = window.setTimeout(() => {
       void loadEvents(1, eventsPageSizeRef.current);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [tab, eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey, loadEvents]);
+  }, [tab, eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey, eventCategory, loadEvents]);
 
   useEffect(() => {
     if (tab !== "subscriptions") {
@@ -655,23 +674,24 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message="历史告警与「当前活跃」说明"
+            message="历史告警：通知投递审计与抑制原因码"
             description={
               <>
                 <p style={{ marginBottom: 8 }}>
-                  本表为<strong>通知投递审计</strong>（每次向通道外发或抑制链路写入的记录），对应 WatchAlert
-                  文档中的<strong>历史告警 / 推送结果查询</strong>语义；可按 firing / resolved、监控链路、订阅命中等筛选。
+                  每一行对应一次<strong>外发尝试或策略留痕</strong>（<Typography.Text code>alert_events</Typography.Text>
+                  ）。<Typography.Text code>success=true</Typography.Text> 且带 <Typography.Text code>error_message</Typography.Text>{" "}
+                  时，通常表示「未外发但已记录原因」，并非通道 HTTP 失败。
                 </p>
+                <ul style={{ marginBottom: 8, paddingLeft: 18 }}>
+                  {ALERT_HISTORY_PIPELINE_HELP.map((item) => (
+                    <li key={item.title}>
+                      <strong>{item.title}</strong>：{item.body}
+                    </li>
+                  ))}
+                </ul>
                 <p style={{ marginBottom: 0 }}>
-                  <strong>Prometheus 当前仍在触发的活跃告警</strong>请在「告警监控平台 → PromQL」使用数据源联查（如「活跃告警」）或自建
-                  PromQL；平台内规则触发明细见「监控规则」与下方统计卡片。
-                </p>
-                <p style={{ marginTop: 8, marginBottom: 0 }}>
-                  设计参考：{" "}
-                  <Typography.Link href="https://cairry.github.io/docs/" target="_blank" rel="noreferrer">
-                    WatchAlert 功能介绍
-                  </Typography.Link>
-                  。
+                  <strong>Prometheus 活跃告警</strong>（/api/v1/alerts）请在「告警监控平台 → PromQL / 平台静默」查看；与本表「是否已进 Webhook
+                  链路」不是同一数据源。抑制规则配置见「告警监控平台 → 告警抑制」。
                 </p>
               </>
             }
@@ -716,6 +736,14 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               allowClear
               onChange={(v) => setEventStatus((v as string) || "")}
             />
+            <Select
+              style={{ width: 160 }}
+              placeholder="策略分类"
+              value={eventCategory || undefined}
+              options={ALERT_EVENT_CATEGORY_OPTIONS}
+              allowClear
+              onChange={(v) => setEventCategory((v as AlertEventCategory) || "")}
+            />
             <Input
               style={{ width: 220 }}
               placeholder="groupKey"
@@ -731,7 +759,7 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
             rowKey="id"
             loading={eventsLoading}
             dataSource={events}
-            scroll={{ x: 1640 }}
+            scroll={{ x: 2460 }}
             pagination={{
               current: eventsPage,
               pageSize: eventsPageSize,
@@ -792,6 +820,29 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
               },
               { title: "状态", dataIndex: "status", width: 90, render: (v: string) => <Tag>{v || "-"}</Tag> },
               {
+                title: "告警值 / 恢复时值",
+                key: "metric_values",
+                width: 200,
+                ellipsis: true,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const a = String(row.metricCurrent ?? "").trim();
+                  const b = String(row.metricResolved ?? "").trim();
+                  if (!a && !b) return <span className="inline-muted">-</span>;
+                  if (String(row.status).toLowerCase() === "resolved" && b) {
+                    return (
+                      <Typography.Text ellipsis={{ tooltip: `触发侧快照: ${a || "—"}\n恢复时再查: ${b}` }} style={{ fontSize: 12 }}>
+                        触发: {a || "—"} / 恢复: {b}
+                      </Typography.Text>
+                    );
+                  }
+                  return (
+                    <Typography.Text ellipsis={{ tooltip: a }} style={{ fontSize: 12 }}>
+                      {a || "—"}
+                    </Typography.Text>
+                  );
+                },
+              },
+              {
                 title: "命中策略",
                 dataIndex: "matchedPolicyNames",
                 width: 200,
@@ -819,9 +870,92 @@ export function AlertConfigCenterPanel({ activeTab: tab, onTabChange: setTab, em
                 title: "发送结果",
                 dataIndex: "success",
                 width: 100,
-                render: (v: boolean) => (v ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>),
+                render: (v: boolean, row: AlertEventItem) => {
+                  const reason = String(row.errorMessage || "").trim();
+                  if (v && reason) {
+                    return <Tag color="default">留痕</Tag>;
+                  }
+                  return v ? <Tag color="success">成功</Tag> : <Tag color="error">失败</Tag>;
+                },
               },
-              { title: "HTTP", dataIndex: "httpStatusCode", width: 80 },
+              {
+                title: "策略摘要",
+                key: "reason_hint",
+                width: 120,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const hint = summarizeAlertEventHint(row);
+                  if (hint === "-") return <span>-</span>;
+                  return (
+                    <Typography.Text ellipsis={{ tooltip: describeAlertEvent(row) }} style={{ fontSize: 12 }}>
+                      {hint}
+                    </Typography.Text>
+                  );
+                },
+              },
+              {
+                title: "标签组",
+                key: "labels_group",
+                width: 110,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const labels = parseLabelsFromAlertEventRequestPayload(row.requestPayload);
+                  const entries = Object.entries(labels);
+                  if (!entries.length) return <span>-</span>;
+                  return (
+                    <Popover
+                      title="标签组（labels）"
+                      trigger={["click"]}
+                      overlayStyle={{ maxWidth: 560 }}
+                      content={
+                        <div style={{ maxHeight: 400, overflow: "auto" }}>
+                          <Space size={[4, 8]} wrap>
+                            {entries.map(([k, v]) => (
+                              <Tag key={`${row.id}-${k}`} style={{ marginInlineEnd: 0 }}>
+                                {k}={v}
+                              </Tag>
+                            ))}
+                          </Space>
+                        </div>
+                      }
+                    >
+                      <Button size="small">查看标签</Button>
+                    </Popover>
+                  );
+                },
+              },
+              {
+                title: "告警数据原始 JSON",
+                key: "raw_request_payload",
+                width: 110,
+                render: (_: unknown, row: AlertEventItem) => {
+                  const raw = String(row.requestPayload || "").trim();
+                  if (!raw) return <span>-</span>;
+                  const pretty = prettifyAlertRequestPayload(raw);
+                  const http = row.httpStatusCode;
+                  return (
+                    <Popover
+                      title={`入库 requestPayload · HTTP ${http ?? "-"}`}
+                      trigger={["click"]}
+                      overlayStyle={{ maxWidth: 760 }}
+                      content={
+                        <pre
+                          style={{
+                            maxHeight: 480,
+                            overflow: "auto",
+                            margin: 0,
+                            fontSize: 12,
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {pretty}
+                        </pre>
+                      }
+                    >
+                      <Button size="small">查看 JSON</Button>
+                    </Popover>
+                  );
+                },
+              },
               {
                 title: "告警产生时间",
                 dataIndex: "alertStartedAt",

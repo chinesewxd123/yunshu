@@ -79,6 +79,14 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 		if strings.TrimSpace(dsType) != "" {
 			labels["datasource_type"] = strings.TrimSpace(dsType)
 		}
+		fp := strings.TrimSpace(alert.Fingerprint)
+		if fp == "" {
+			fp = stableLabelsFingerprint(labels)
+		}
+		if fp != "" {
+			labels["fingerprint"] = fp
+			alert.Fingerprint = fp
+		}
 		monitorPipeline := pipelineSlug
 		annotations := mergeStringMap(ca.CommonAnnotations, alert.Annotations)
 		status := strings.TrimSpace(alert.Status)
@@ -177,18 +185,14 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 		}
 
 		ctxEnrich, cancelEnrich := context.WithTimeout(ctx, time.Duration(maxInt(1, s.cfg.PromQueryTimeout))*time.Second)
-		currentValue := strings.TrimSpace(s.getCachedCurrentValue(ctx, alert.Fingerprint))
-		if currentValue == "" && strings.TrimSpace(s.cfg.PrometheusURL) != "" && strings.TrimSpace(alert.GeneratorURL) != "" {
-			if v, qerr := s.queryCurrentValueByGeneratorURL(ctxEnrich, alert.GeneratorURL); qerr == nil && strings.TrimSpace(v) != "" {
-				currentValue = strings.TrimSpace(v)
-				s.setCachedCurrentValue(ctx, alert.Fingerprint, currentValue)
-			}
-		}
+		currentValue, resolvedValue := s.resolveIngressMetricValues(ctxEnrich, ca.Source, status, labels, annotations, alert)
 		cancelEnrich()
-		if currentValue == "" {
-			currentValue = "-"
+		if currentValue != "" {
+			outgoing["current"] = currentValue
 		}
-		outgoing["current"] = currentValue
+		if resolvedValue != "" {
+			outgoing["current_resolved"] = resolvedValue
+		}
 		if status == "firing" {
 			s.enqueuePrometheusEnrich(promEnrichTask{
 				Fingerprint:  alert.Fingerprint,
@@ -200,7 +204,16 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 
 		if status == "firing" {
 			_ = s.clearResolvedNotificationSent(ctx, alert.Fingerprint)
-			shouldSend, reason, aggCount, firstSeen, lastSeen := s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
+			var shouldSend bool
+			var reason string
+			var aggCount int64
+			var firstSeen, lastSeen string
+			if alert.SkipGroupTiming {
+				// 云到期等来源由上游 Cron/调度控制节奏，不再叠加全局 repeat_interval，否则会出现「规则 2 小时评估、渠道却约 5 分钟重复提醒」的割裂体验。
+				shouldSend, reason, aggCount, firstSeen, lastSeen = true, "skip_group_timing_immediate", 1, "", ""
+			} else {
+				shouldSend, reason, aggCount, firstSeen, lastSeen = s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
+			}
 			outgoing["agg_count"] = aggCount
 			outgoing["agg_first_seen"] = firstSeen
 			outgoing["agg_last_seen"] = lastSeen

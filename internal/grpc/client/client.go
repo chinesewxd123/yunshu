@@ -15,13 +15,21 @@ type RuntimeClient struct {
 	ProjectSrv   pb.ProjectServerServiceClient
 	LogSourceSrv pb.LogSourceServiceClient
 	AgentSrv     pb.AgentRuntimeServiceClient
+	callTimeout  time.Duration
 }
 
-func Dial(addr string, timeout time.Duration, maxRecvBytes, maxSendBytes int) (*RuntimeClient, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func Dial(addr string, dialTimeout time.Duration, maxRecvBytes, maxSendBytes int, callTimeout time.Duration) (*RuntimeClient, error) {
+	if dialTimeout <= 0 {
+		dialTimeout = 5 * time.Second
+	}
+	if callTimeout <= 0 {
+		callTimeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
 	defer cancel()
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(unaryTimeoutInterceptor(callTimeout)),
 	}
 	if maxRecvBytes > 0 {
 		opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxRecvBytes)))
@@ -38,7 +46,26 @@ func Dial(addr string, timeout time.Duration, maxRecvBytes, maxSendBytes int) (*
 		ProjectSrv:   pb.NewProjectServerServiceClient(conn),
 		LogSourceSrv: pb.NewLogSourceServiceClient(conn),
 		AgentSrv:     pb.NewAgentRuntimeServiceClient(conn),
+		callTimeout:  callTimeout,
 	}, nil
+}
+
+func unaryTimeoutInterceptor(timeout time.Duration) grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply interface{},
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		opts ...grpc.CallOption,
+	) error {
+		if _, ok := ctx.Deadline(); !ok && timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
 
 func (c *RuntimeClient) Close() error {

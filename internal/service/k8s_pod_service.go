@@ -577,6 +577,9 @@ func (s *K8sPodService) ListFiles(ctx context.Context, query PodFileQuery) ([]Po
 	if path == "" {
 		path = "/"
 	}
+	if err := k8sutil.ValidatePodContainerPath(path); err != nil {
+		return nil, err
+	}
 	files, err := k.WithContext(ctx).
 		Namespace(query.Namespace).
 		Name(query.Name).
@@ -614,8 +617,8 @@ func (s *K8sPodService) ReadFile(ctx context.Context, query PodFileQuery) ([]byt
 		return nil, err
 	}
 	path := strings.TrimSpace(query.Path)
-	if path == "" {
-		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg72b2ecec3b64)
+	if err := k8sutil.ValidatePodContainerPath(path); err != nil {
+		return nil, err
 	}
 	data, err := k.WithContext(ctx).
 		Namespace(query.Namespace).
@@ -637,8 +640,8 @@ func (s *K8sPodService) DeleteFile(ctx context.Context, query PodFileQuery) erro
 		return err
 	}
 	path := strings.TrimSpace(query.Path)
-	if path == "" {
-		return constants.ErrBadRequestWithMsg(constants.ErrMsg72b2ecec3b64)
+	if err := k8sutil.ValidatePodContainerPath(path); err != nil {
+		return err
 	}
 	if _, err := k.WithContext(ctx).
 		Namespace(query.Namespace).
@@ -661,6 +664,9 @@ func (s *K8sPodService) UploadFile(ctx context.Context, query PodFileQuery, file
 	dest := strings.TrimSpace(query.Path)
 	if dest == "" {
 		dest = "/tmp"
+	}
+	if err := k8sutil.ValidatePodContainerPath(dest); err != nil {
+		return err
 	}
 	tmp, err := os.CreateTemp("", "pod-upload-*"+filepath.Ext(filename))
 	if err != nil {
@@ -692,7 +698,9 @@ func (s *K8sPodService) CreateByYAML(ctx context.Context, req PodCreateYAMLReque
 	if err != nil {
 		return err
 	}
-	_ = k.WithContext(ctx).Applier().Apply(req.Manifest)
+	if msgs := k.WithContext(ctx).Applier().Apply(req.Manifest); len(msgs) > 0 {
+		return constants.ErrInternalWithMsg(strings.Join(msgs, "; "))
+	}
 	return nil
 }
 

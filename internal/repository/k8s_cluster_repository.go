@@ -14,9 +14,12 @@ type K8sClusterRepository struct {
 }
 
 type K8sClusterListParams struct {
-	Keyword  string
-	Page     int
+	Keyword string
+	Page    int
 	PageSize int
+	// ProjectMemberFilter 为 true 时：仅返回 owning_project_id 为空，或落在 ProjectMemberIDs 中的集群。
+	ProjectMemberFilter bool
+	ProjectMemberIDs    []uint
 }
 
 func NewK8sClusterRepository(db *gorm.DB) *K8sClusterRepository {
@@ -51,6 +54,13 @@ func (r *K8sClusterRepository) List(ctx context.Context, params K8sClusterListPa
 	if params.Keyword != "" {
 		kw := "%" + params.Keyword + "%"
 		query = query.Where("name LIKE ?", kw)
+	}
+	if params.ProjectMemberFilter {
+		if len(params.ProjectMemberIDs) == 0 {
+			query = query.Where("owning_project_id IS NULL")
+		} else {
+			query = query.Where("(owning_project_id IS NULL OR owning_project_id IN ?)", params.ProjectMemberIDs)
+		}
 	}
 
 	var total int64

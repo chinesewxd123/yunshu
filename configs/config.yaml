@@ -80,6 +80,9 @@ security:
 agent:
   # log-agent 启动后用于自注册的共享密钥（建议生产环境改为强随机字符串）
   register_secret: "YunshuAgentRegisterSecret2026Secure!!"
+  # 引导 Agent 扫描的额外根目录（经 runtime-config 以 _discovery_root 下发）
+  discovery_roots:
+    - /var/log
 
 # 下列键的常见取值可在「系统 → 数据字典」中按类型选用，便于团队统一录入（如 config_yaml_mysql_host、alert_enrich_prometheus_url、k8s_kubeconfig_template 等）。
 alert:
@@ -100,7 +103,7 @@ alert:
   # group_key 聚合维度（用于服务端收敛/聚合）
   group_by: ["alertname", "cluster", "namespace", "severity", "receiver"]
   # group 第一次发送前等待窗口（秒）：用于“先收集后发送”（对齐 Alertmanager/夜莺 group_wait）
-  group_wait_seconds: 0
+  group_wait_seconds: 15
   # group 已发送后，若有“新变化”（labelsDigest变化）再次发送的最小间隔（秒）（对齐 group_interval）
   group_interval_seconds: 60
   # group 持续 firing 且无新变化时的重复提醒间隔（秒）（对齐 repeat_interval）
@@ -125,10 +128,12 @@ alert:
   # Prometheus异步增强worker数量
   prometheus_enrich_workers: 4
   # Alertmanager Webhook：Redis 存在且未关闭异步时，鉴权通过后先入队由后台 worker 消费（HTTP 快速返回）。
-  webhook_async_disabled: false
+  webhook_async_disabled: true
   webhook_queue_max_len: 10000
   # 多副本时仅一个实例跑内置 PromQL 监控规则 tick 的全局锁 TTL（秒）。应大于单轮评估最坏耗时。
   monitor_eval_leader_lock_seconds: 30
+  # 仅内置 PromQL 监控规则的调度节拍（robfig/cron 六段式，含秒）。云到期规则在控制台配置 Cron，由服务内独立节拍轮询。空则默认 */5 * * * * *（每 5 秒）。
+  # monitor_eval_cron_spec: "*/5 * * * * *"
 
 # =========================
 # 配置源收敛说明（建议）

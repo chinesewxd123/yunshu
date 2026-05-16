@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"strings"
 	"yunshu/internal/pkg/constants"
 
@@ -12,8 +13,25 @@ import (
 	"yunshu/internal/store"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
+	"github.com/redis/go-redis/v9" // redis.Client 由路由注入
 )
+
+func respondSessionStoreError(c *gin.Context, logger *logx.Logger, err error) {
+	switch {
+	case errors.Is(err, store.ErrSessionNotFound):
+		response.Error(c, constants.ErrLoginSessionExpired)
+	case errors.Is(err, store.ErrRedisRequired), errors.Is(err, store.ErrRedisUnavailable):
+		if logger != nil {
+			logger.Error.Error("redis session validation failed", "error", err)
+		}
+		response.Error(c, constants.ErrInternal)
+	default:
+		if logger != nil {
+			logger.Error.Error("session validation failed", "error", err)
+		}
+		response.Error(c, constants.ErrInternal)
+	}
+}
 
 func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRepository, logger *logx.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -33,12 +51,11 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 			return
 		}
 
-		if redisClient != nil {
-			if _, err = redisClient.Get(c.Request.Context(), store.AccessTokenKey(claims.TokenID)).Result(); err != nil {
-				response.Error(c, constants.ErrLoginSessionExpired)
-				c.Abort()
-				return
-			}
+		// 会话白名单：redis.Nil=已过期；Redis 故障=500，禁止无 Redis 时放行
+		if err = store.ValidateAccessTokenSession(c.Request.Context(), redisClient, claims.TokenID); err != nil {
+			respondSessionStoreError(c, logger, err)
+			c.Abort()
+			return
 		}
 
 		user, err := userRepo.GetByID(c.Request.Context(), claims.UserID)

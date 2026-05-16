@@ -274,7 +274,30 @@ func AutoMigrateModels(db *gorm.DB) error {
 	if err := migrateLogAgentsClearPlaceholderListenPort(db); err != nil {
 		return err
 	}
+	if err := migrateAgentDiscoveryUniqueIndex(db); err != nil {
+		return err
+	}
 	if err := dropLegacyUnusedTables(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// migrateAgentDiscoveryUniqueIndex 为发现项 upsert 提供唯一键（MySQL value 前缀索引）。
+func migrateAgentDiscoveryUniqueIndex(db *gorm.DB) error {
+	if db == nil || db.Dialector.Name() != "mysql" {
+		return nil
+	}
+	if !db.Migrator().HasTable("agent_discoveries") {
+		return nil
+	}
+	if db.Migrator().HasIndex("agent_discoveries", "idx_agent_discovery_unique") {
+		return nil
+	}
+	err := db.Exec(
+		"CREATE UNIQUE INDEX idx_agent_discovery_unique ON agent_discoveries (project_id, server_id, kind, value(512))",
+	).Error
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 		return err
 	}
 	return nil

@@ -72,6 +72,28 @@ func (r *LogSourceRepository) List(ctx context.Context, p LogSourceListParams) (
 	return list, total, nil
 }
 
+// BelongsToProjectServer 校验日志源属于项目下指定服务器（经 services 关联）。
+func (r *LogSourceRepository) BelongsToProjectServer(ctx context.Context, projectID, serverID, logSourceID uint) (bool, error) {
+	if projectID == 0 || serverID == 0 || logSourceID == 0 {
+		return false, nil
+	}
+	var n int64
+	err := r.db.WithContext(ctx).
+		Model(&model.ServiceLogSource{}).
+		Joins("JOIN services ON services.id = service_log_sources.service_id").
+		Joins("JOIN servers ON servers.id = services.server_id").
+		Where("servers.project_id = ?", projectID).
+		Where("services.server_id = ?", serverID).
+		Where("service_log_sources.id = ?", logSourceID).
+		Where("services.status = ?", model.StatusEnabled).
+		Where("service_log_sources.status = ?", model.StatusEnabled).
+		Count(&n).Error
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 func (r *LogSourceRepository) ListByProjectAndServer(ctx context.Context, projectID, serverID uint) ([]model.ServiceLogSource, error) {
 	var list []model.ServiceLogSource
 	err := r.db.WithContext(ctx).

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"sync"
@@ -32,8 +31,9 @@ func (h *ProjectHandler) ServerTerminalWS(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
+	sess := newWSSession(c.Request.Context(), nil)
+	defer sess.Cancel()
+	defer sess.Wait()
 
 	stdinR, stdinW := io.Pipe()
 	defer stdinR.Close()
@@ -65,26 +65,30 @@ func (h *ProjectHandler) ServerTerminalWS(c *gin.Context) {
 		return nil
 	})
 
-	go func() {
+	sess.Go("ping", func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-sess.Context().Done():
 				return
 			case <-ticker.C:
 				writeMu.Lock()
-				_ = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
+				err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
 				writeMu.Unlock()
+				if err != nil {
+					sess.Cancel()
+					return
+				}
 			}
 		}
-	}()
+	})
 
-	go func() {
+	sess.Go("read", func() {
 		for {
 			_, raw, err := conn.ReadMessage()
 			if err != nil {
-				cancel()
+				sess.Cancel()
 				_ = stdinW.Close()
 				return
 			}
@@ -105,19 +109,23 @@ func (h *ProjectHandler) ServerTerminalWS(c *gin.Context) {
 					}
 				}
 			case "close":
-				cancel()
+				sess.Cancel()
 				_ = stdinW.Close()
 				return
 			default:
 			}
 		}
-	}()
+	})
 
 	writeJSON(wsExecMessage{Type: "ready"})
 
-	if err := h.svc.StreamServerTerminal(ctx, projectID, serverID, stdinR, wsWriter, wsWriter, sizeCh); err != nil {
+	if err := h.svc.StreamServerTerminal(sess.Context(), projectID, serverID, stdinR, wsWriter, wsWriter, sizeCh); err != nil {
 		writeJSON(wsExecMessage{Type: "error", Data: err.Error()})
+		sess.Cancel()
+		sess.Wait()
 		return
 	}
 	writeJSON(wsExecMessage{Type: "exit"})
+	sess.Cancel()
+	sess.Wait()
 }

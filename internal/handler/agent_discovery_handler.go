@@ -62,26 +62,10 @@ func (h *AgentDiscoveryHandler) List(c *gin.Context) {
 		return
 	}
 	q.ProjectID = projectID
-	req := &pb.ListDiscoveryRequest{
-		ProjectId: uint64(q.ProjectID),
-		ServerId:  uint64(q.ServerID),
-		Limit:     int32(q.Limit),
-	}
-	if q.Kind != nil {
-		req.Kind = *q.Kind
-	}
-	listResp, err := h.agentClient.ListDiscovery(c.Request.Context(), req)
+	list, err := h.svc.List(c.Request.Context(), q)
 	if err != nil {
-		response.Error(c, grpcToAppError(err))
+		response.Error(c, err)
 		return
-	}
-	list := make([]service.AgentDiscoveryListItem, 0, len(listResp.GetList()))
-	for _, it := range listResp.GetList() {
-		list = append(list, service.AgentDiscoveryListItem{
-			Kind:       it.GetKind(),
-			Value:      it.GetValue(),
-			LastSeenAt: it.GetLastSeenAt(),
-		})
 	}
 	response.Success(c, gin.H{"list": list})
 }

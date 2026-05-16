@@ -12,6 +12,8 @@ export type UserGroupItem = {
   code: string;
   description: string;
   status: number;
+  /** 非空时仅该项目成员可维护该组；成员须为项目成员 */
+  scope_project_id?: number | null;
   member_count: number;
   created_at: string;
   updated_at: string;
@@ -25,6 +27,8 @@ export type UserGroupQuery = {
   keyword?: string;
   page?: number;
   page_size?: number;
+  /** 仅列出该项目的专属组或全局组（与后端一致） */
+  scope_project_id?: number;
 };
 
 export type UserGroupCreatePayload = {
@@ -32,12 +36,15 @@ export type UserGroupCreatePayload = {
   code: string;
   description?: string;
   status?: number;
+  scope_project_id?: number;
 };
 
 export type UserGroupUpdatePayload = {
   name?: string;
   description?: string;
   status?: number;
+  /** 传 0 表示取消项目专属作用域 */
+  scope_project_id?: number;
 };
 
 export function listUserGroups(params: UserGroupQuery) {

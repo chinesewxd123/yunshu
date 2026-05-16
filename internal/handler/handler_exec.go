@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/response"
 
@@ -94,7 +95,7 @@ func handleQuery[T any, R any](c *gin.Context, call func(context.Context, T) (R,
 		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
-	data, err := call(c.Request.Context(), req)
+	data, err := call(auth.RequestContext(c), req)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -117,7 +118,7 @@ func handleJSON[T any, R any](c *gin.Context, call func(context.Context, T) (R, 
 		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
-	data, err := call(c.Request.Context(), req)
+	data, err := call(auth.RequestContext(c), req)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -131,7 +132,7 @@ func handleJSONCreated[T any, R any](c *gin.Context, call func(context.Context, 
 		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
-	data, err := call(c.Request.Context(), req)
+	data, err := call(auth.RequestContext(c), req)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -145,7 +146,7 @@ func handleQueryOK[T any](c *gin.Context, okData any, call func(context.Context,
 		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
-	if err := call(c.Request.Context(), req); err != nil {
+	if err := call(auth.RequestContext(c), req); err != nil {
 		response.Error(c, err)
 		return
 	}
@@ -158,7 +159,7 @@ func handleJSONOK[T any](c *gin.Context, okData any, call func(context.Context, 
 		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
-	if err := call(c.Request.Context(), req); err != nil {
+	if err := call(auth.RequestContext(c), req); err != nil {
 		response.Error(c, err)
 		return
 	}
@@ -172,7 +173,7 @@ func handleQueryWithKind[T any, R any](c *gin.Context, call func(context.Context
 		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
-	data, err := call(c.Request.Context(), kind, req)
+	data, err := call(auth.RequestContext(c), kind, req)
 	if err != nil {
 		response.Error(c, err)
 		return
@@ -187,7 +188,7 @@ func handleQueryWithKindOK[T any](c *gin.Context, okData any, call func(context.
 		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
-	if err := call(c.Request.Context(), kind, req); err != nil {
+	if err := call(auth.RequestContext(c), kind, req); err != nil {
 		response.Error(c, err)
 		return
 	}

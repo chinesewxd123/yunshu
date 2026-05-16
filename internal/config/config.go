@@ -28,6 +28,10 @@ type GRPCConfig struct {
 	TargetAddr      string `mapstructure:"target_addr"`
 	MaxRecvMsgBytes int    `mapstructure:"max_recv_msg_bytes"`
 	MaxSendMsgBytes int    `mapstructure:"max_send_msg_bytes"`
+	// CallTimeoutSeconds 单次 unary RPC 默认超时（客户端）。
+	CallTimeoutSeconds int `mapstructure:"call_timeout_seconds"`
+	// ShutdownTimeoutSeconds 优雅关闭 gRPC Server 的最长等待。
+	ShutdownTimeoutSeconds int `mapstructure:"shutdown_timeout_seconds"`
 }
 
 type AppConfig struct {
@@ -41,6 +45,8 @@ type HTTPConfig struct {
 	ReadTimeoutSeconds       int `mapstructure:"read_timeout_seconds"`
 	WriteTimeoutSeconds      int `mapstructure:"write_timeout_seconds"`
 	IdleTimeoutSeconds       int `mapstructure:"idle_timeout_seconds"`
+	// ShutdownTimeoutSeconds 优雅关闭 HTTP Server 的最长等待（与 gRPC 分离）。
+	ShutdownTimeoutSeconds int `mapstructure:"shutdown_timeout_seconds"`
 }
 
 type LogConfig struct {
@@ -106,6 +112,8 @@ type AgentConfig struct {
 	// RegisterSecret is a shared secret used by log-agent to register itself and obtain an ingest token.
 	// If empty, public registration endpoint is disabled.
 	RegisterSecret string `mapstructure:"register_secret"`
+	// DiscoveryRoots are optional bootstrap paths reported to agents via runtime-config (_discovery_root).
+	DiscoveryRoots []string `mapstructure:"discovery_roots"`
 }
 
 type AlertConfig struct {
@@ -139,6 +147,8 @@ type AlertConfig struct {
 	WebhookQueueMaxLen int `mapstructure:"webhook_queue_max_len"`
 	// MonitorEvalLeaderLockSeconds: 多副本下内置监控规则 tick 全局锁 TTL（秒），需 Redis。
 	MonitorEvalLeaderLockSeconds int `mapstructure:"monitor_eval_leader_lock_seconds"`
+	// MonitorEvalCronSpec: robfig/cron 六段式（含秒），仅驱动内置 PromQL 监控规则评估节拍；空则默认每 5 秒。云到期评估使用独立调度，不受此项影响。
+	MonitorEvalCronSpec string `mapstructure:"monitor_eval_cron_spec"`
 
 	PlatformLimits AlertPlatformLimits `mapstructure:"platform_limits"`
 }
@@ -153,7 +163,11 @@ func Load(path string) (*Config, error) {
 	v := viper.New()
 	v.SetConfigFile(path)
 	v.SetConfigType("yaml")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+	if err := bindEnv(v); err != nil {
+		return nil, err
+	}
 
 	if err := v.ReadInConfig(); err != nil {
 		return nil, err
@@ -162,6 +176,15 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
+	}
+	if cfg.Auth.AccessTokenTTLMinutes <= 0 {
+		cfg.Auth.AccessTokenTTLMinutes = 120
+	}
+	if cfg.Auth.EmailCodeTTLSeconds <= 0 {
+		cfg.Auth.EmailCodeTTLSeconds = 600
+	}
+	if cfg.Auth.EmailCodeCooldownSeconds <= 0 {
+		cfg.Auth.EmailCodeCooldownSeconds = 60
 	}
 	if cfg.Alert.DefaultTimeoutMS <= 0 {
 		cfg.Alert.DefaultTimeoutMS = 5000
@@ -199,6 +222,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Alert.MonitorEvalLeaderLockSeconds <= 0 {
 		cfg.Alert.MonitorEvalLeaderLockSeconds = 30
 	}
+	if strings.TrimSpace(cfg.Alert.MonitorEvalCronSpec) == "" {
+		cfg.Alert.MonitorEvalCronSpec = "*/5 * * * * *"
+	}
 	if len(cfg.Alert.GroupBy) == 0 {
 		cfg.Alert.GroupBy = []string{"alertname", "cluster", "namespace", "severity", "receiver"}
 	}
@@ -225,4 +251,83 @@ func Load(path string) (*Config, error) {
 		cfg.GRPC.MaxSendMsgBytes = 8 * 1024 * 1024
 	}
 	return &cfg, nil
+}
+
+func bindEnv(v *viper.Viper) error {
+	bindings := map[string][]string{
+		"app.name":                                 nil,
+		"app.env":                                  nil,
+		"app.port":                                 nil,
+		"http.read_header_timeout_seconds":         nil,
+		"http.read_timeout_seconds":                nil,
+		"http.write_timeout_seconds":               nil,
+		"http.idle_timeout_seconds":                nil,
+		"grpc.listen_addr":                         nil,
+		"grpc.target_addr":                         nil,
+		"grpc.max_recv_msg_bytes":                  nil,
+		"grpc.max_send_msg_bytes":                  nil,
+		"log.level":                                nil,
+		"log.format":                               nil,
+		"log.output":                               nil,
+		"log.file_path":                            nil,
+		"mysql.host":                               nil,
+		"mysql.port":                               nil,
+		"mysql.user":                               nil,
+		"mysql.password":                           nil,
+		"mysql.db_name":                            nil,
+		"mysql.charset":                            nil,
+		"mysql.loc":                                nil,
+		"mysql.max_idle_conns":                     nil,
+		"mysql.max_open_conns":                     nil,
+		"mysql.conn_max_lifetime_seconds":          nil,
+		"redis.addr":                               nil,
+		"redis.password":                           nil,
+		"redis.db":                                 nil,
+		"redis.pool_size":                          nil,
+		"mail.host":                                nil,
+		"mail.port":                                nil,
+		"mail.username":                            nil,
+		"mail.password":                            nil,
+		"mail.from_email":                          nil,
+		"mail.from_name":                           nil,
+		"mail.use_tls":                             nil,
+		"auth.jwt_secret":                          {"JWT_SECRET"},
+		"auth.access_token_ttl_minutes":            nil,
+		"auth.email_code_ttl_seconds":              nil,
+		"auth.email_code_cooldown_seconds":         nil,
+		"casbin.model_path":                        nil,
+		"swagger.enabled":                          nil,
+		"swagger.path":                             nil,
+		"security.encryption_key":                  {"ENCRYPTION_KEY"},
+		"agent.register_secret":                    nil,
+		"alert.webhook_token":                      nil,
+		"alert.default_timeout_ms":                 nil,
+		"alert.max_payload_chars":                  nil,
+		"alert.dedup_ttl_seconds":                  nil,
+		"alert.prometheus_url":                     nil,
+		"alert.prometheus_token":                   nil,
+		"alert.prom_query_timeout_seconds":         nil,
+		"alert.prometheus_enrich_enabled":          nil,
+		"alert.prometheus_enrich_queue_size":       nil,
+		"alert.prometheus_enrich_workers":          nil,
+		"alert.group_by":                           nil,
+		"alert.group_wait_seconds":                 nil,
+		"alert.group_interval_seconds":             nil,
+		"alert.repeat_interval_seconds":            nil,
+		"alert.aggregate_ttl_seconds":              nil,
+		"alert.webhook_async_disabled":             nil,
+		"alert.webhook_queue_max_len":              nil,
+		"alert.monitor_eval_leader_lock_seconds":   nil,
+		"alert.monitor_eval_cron_spec":             nil,
+		"alert.platform_limits.dingding_max_chars": nil,
+		"alert.platform_limits.wecom_max_chars":    nil,
+		"alert.platform_limits.generic_max_chars":  nil,
+	}
+	for key, aliases := range bindings {
+		args := append([]string{key}, aliases...)
+		if err := v.BindEnv(args...); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -40,12 +40,10 @@ func WSAuth(secret string, redisClient *redis.Client, userRepo *repository.UserR
 			return
 		}
 
-		if redisClient != nil {
-			if _, err = redisClient.Get(c.Request.Context(), store.AccessTokenKey(claims.TokenID)).Result(); err != nil {
-				response.Error(c, constants.ErrLoginSessionExpired)
-				c.Abort()
-				return
-			}
+		if err = store.ValidateAccessTokenSession(c.Request.Context(), redisClient, claims.TokenID); err != nil {
+			respondSessionStoreError(c, logger, err)
+			c.Abort()
+			return
 		}
 
 		user, err := userRepo.GetByID(c.Request.Context(), claims.UserID)

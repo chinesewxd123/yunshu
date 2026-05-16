@@ -26,8 +26,9 @@ type CloudExpiryRuleUpsertRequest struct {
 	RegionScope         string `json:"region_scope"`
 	AdvanceDays         int    `json:"advance_days"`
 	Severity            string `json:"severity" binding:"omitempty,max=32"`
-	LabelsJSON          string `json:"labels_json"`
-	EvalIntervalSeconds int    `json:"eval_interval_seconds"`
+	LabelsJSON   string `json:"labels_json"`
+	EvalCronSpec string `json:"eval_cron_spec"`
+	ScheduleEnabled     *bool  `json:"schedule_enabled"`
 	Enabled             *bool  `json:"enabled"`
 }
 
@@ -64,12 +65,8 @@ func (s *CloudExpiryRuleService) List(ctx context.Context, q CloudExpiryRuleList
 }
 
 func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRuleUpsertRequest) (*model.CloudExpiryRule, error) {
-	ev := req.EvalIntervalSeconds
-	if ev <= 0 {
-		ev = 3600
-	}
-	if ev < 60 {
-		ev = 60
+	if err := ValidateCloudExpiryCronSpec(req.EvalCronSpec); err != nil {
+		return nil, err
 	}
 	days := req.AdvanceDays
 	if days <= 0 {
@@ -79,6 +76,13 @@ func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRule
 	if sev == "" {
 		sev = "warning"
 	}
+	sched := true
+	if req.ScheduleEnabled != nil {
+		sched = *req.ScheduleEnabled
+	}
+	if sched && strings.TrimSpace(req.EvalCronSpec) == "" {
+		return nil, constants.ErrBadRequestWithMsg("已启用定时评估时必须填写 eval_cron_spec（Cron 表达式）")
+	}
 	row := model.CloudExpiryRule{
 		ProjectID:           req.ProjectID,
 		Name:                strings.TrimSpace(req.Name),
@@ -87,7 +91,9 @@ func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRule
 		AdvanceDays:         days,
 		Severity:            sev,
 		LabelsJSON:          strings.TrimSpace(req.LabelsJSON),
-		EvalIntervalSeconds: ev,
+		EvalIntervalSeconds: 0,
+		EvalCronSpec:        strings.TrimSpace(req.EvalCronSpec),
+		ScheduleEnabled:     sched,
 		Enabled:             req.Enabled == nil || *req.Enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
@@ -102,6 +108,9 @@ func (s *CloudExpiryRuleService) Update(ctx context.Context, id uint, req CloudE
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg34cc3b1e5427)
 		}
+		return nil, err
+	}
+	if err := ValidateCloudExpiryCronSpec(req.EvalCronSpec); err != nil {
 		return nil, err
 	}
 	if req.ProjectID > 0 {
@@ -119,14 +128,16 @@ func (s *CloudExpiryRuleService) Update(ctx context.Context, id uint, req CloudE
 		row.Severity = v
 	}
 	row.LabelsJSON = strings.TrimSpace(req.LabelsJSON)
-	if req.EvalIntervalSeconds > 0 {
-		row.EvalIntervalSeconds = req.EvalIntervalSeconds
-		if row.EvalIntervalSeconds < 60 {
-			row.EvalIntervalSeconds = 60
-		}
-	}
+	row.EvalCronSpec = strings.TrimSpace(req.EvalCronSpec)
+	row.EvalIntervalSeconds = 0
 	if req.Enabled != nil {
 		row.Enabled = *req.Enabled
+	}
+	if req.ScheduleEnabled != nil {
+		row.ScheduleEnabled = *req.ScheduleEnabled
+	}
+	if row.ScheduleEnabled && strings.TrimSpace(row.EvalCronSpec) == "" {
+		return nil, constants.ErrBadRequestWithMsg("已启用定时评估时必须填写 eval_cron_spec（Cron 表达式）")
 	}
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
 		return nil, err

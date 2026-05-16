@@ -121,6 +121,10 @@ var (
 	ErrUploadFailed                = BizError(http.StatusBadRequest, 23007, "文件上传失败，请检查网络或文件大小后重试")
 	ErrServerNotInProject          = BizError(http.StatusBadRequest, 23008, "该服务器不在当前项目中，请刷新或切换范围后重试")
 	ErrServerNotInProjectForbidden = BizError(http.StatusForbidden, 23009, "该服务器不在当前项目中，当前账号无权访问")
+	ErrProjectMemberRequired         = BizError(http.StatusForbidden, 23010, "您不是该项目的成员，无权访问或操作该项目资源")
+	ErrProjectAdminRequired          = BizError(http.StatusForbidden, 23011, "该操作需要项目管理员或负责人权限")
+	ErrProjectReadonlyMember         = BizError(http.StatusForbidden, 23012, "项目只读成员不能执行此修改类操作")
+	ErrK8sClusterProjectAccessDenied  = BizError(http.StatusForbidden, 23013, "该集群已绑定到其他业务项目，当前账号不在允许范围内")
 )
 
 // —— RBAC / 组织 24xxx ——

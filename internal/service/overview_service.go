@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/pkg/k8sauth"
 
 	"yunshu/internal/model"
+	"yunshu/internal/repository"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -53,14 +57,22 @@ type OverviewTrendsResponse struct {
 }
 
 type OverviewService struct {
-	db      *gorm.DB
-	runtime *K8sRuntimeService
-	redis   *redis.Client
+	db         *gorm.DB
+	runtime    *K8sRuntimeService
+	redis      *redis.Client
+	memberRepo *repository.ProjectMemberRepository
+	accessRepo *repository.K8sClusterAccessRepository
 }
 
 // NewOverviewService 创建相关逻辑。
-func NewOverviewService(db *gorm.DB, runtime *K8sRuntimeService, redisClient *redis.Client) *OverviewService {
-	return &OverviewService{db: db, runtime: runtime, redis: redisClient}
+func NewOverviewService(
+	db *gorm.DB,
+	runtime *K8sRuntimeService,
+	redisClient *redis.Client,
+	memberRepo *repository.ProjectMemberRepository,
+	accessRepo *repository.K8sClusterAccessRepository,
+) *OverviewService {
+	return &OverviewService{db: db, runtime: runtime, redis: redisClient, memberRepo: memberRepo, accessRepo: accessRepo}
 }
 
 // Trends 执行对应的业务逻辑。
@@ -172,7 +184,7 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 		return nil, constants.ErrInternal
 	}
 
-	cacheKey := "overview:metrics:v3"
+	cacheKey := overviewMetricsCacheKey(ctx)
 	if s.redis != nil {
 		if raw, err := s.redis.Get(ctx, cacheKey).Result(); err == nil && raw != "" {
 			var cached OverviewResponse
@@ -196,11 +208,21 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 
 	s.fillOverviewAlertAndAgents(ctx, out)
 
-	// Pod stats: aggregate across enabled clusters.
+	// Pod stats: aggregate across enabled clusters visible to current user.
 	var clusters []model.K8sCluster
-	if err := s.db.WithContext(ctx).Model(&model.K8sCluster{}).Where("status = ?", 1).Find(&clusters).Error; err != nil {
+	clusterQ := s.db.WithContext(ctx).Model(&model.K8sCluster{}).Where("status = ?", 1)
+	if u, ok := auth.RequestUserFromContext(ctx); ok && u != nil && !auth.IsSuperAdminRole(u.RoleCodes) && s.memberRepo != nil {
+		ids, _ := s.memberRepo.ListProjectIDsByUser(ctx, u.ID)
+		if len(ids) == 0 {
+			clusterQ = clusterQ.Where("owning_project_id IS NULL")
+		} else {
+			clusterQ = clusterQ.Where("(owning_project_id IS NULL OR owning_project_id IN ?)", ids)
+		}
+	}
+	if err := clusterQ.Find(&clusters).Error; err != nil {
 		return nil, err
 	}
+	clusters = s.filterOverviewClusters(ctx, clusters)
 	if len(clusters) == 0 {
 		if s.redis != nil {
 			if b, err := json.Marshal(out); err == nil {
@@ -369,6 +391,46 @@ func isPodNormal(p corev1.Pod) bool {
 		}
 	}
 	return true
+}
+
+func overviewMetricsCacheKey(ctx context.Context) string {
+	base := "overview:metrics:v4"
+	u, ok := auth.RequestUserFromContext(ctx)
+	if !ok || u == nil {
+		return base + ":anon"
+	}
+	if auth.IsSuperAdminRole(u.RoleCodes) {
+		return base + ":super"
+	}
+	return fmt.Sprintf("%s:u:%d", base, u.ID)
+}
+
+func (s *OverviewService) filterOverviewClusters(ctx context.Context, clusters []model.K8sCluster) []model.K8sCluster {
+	if len(clusters) == 0 {
+		return clusters
+	}
+	u, ok := auth.RequestUserFromContext(ctx)
+	if !ok || u == nil || auth.IsSuperAdminRole(u.RoleCodes) {
+		return clusters
+	}
+	if s.accessRepo == nil {
+		return nil
+	}
+	pack := k8sauth.PackFromCurrentUser(u)
+	idx, err := s.accessRepo.BuildEffectiveTierIndex(ctx, pack)
+	if err != nil {
+		return nil
+	}
+	if idx.GlobalRank < K8sAccessRankReadonly && len(idx.PerCluster) == 0 {
+		return nil
+	}
+	out := make([]model.K8sCluster, 0, len(clusters))
+	for _, c := range clusters {
+		if idx.ClusterAccessible(c.ID, K8sAccessRankReadonly) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // String 的功能实现。

@@ -71,18 +71,56 @@ func preserveDirectAuthFromStored(storedJSON string, next *DirectConfig) {
 	if err := json.Unmarshal([]byte(storedJSON), &prev); err != nil {
 		return
 	}
-	if strings.TrimSpace(next.Token) == "" && strings.TrimSpace(prev.Token) != "" {
+	if shouldPreserveSecret(next.Token, prev.Token) {
 		next.Token = prev.Token
 	}
-	if strings.TrimSpace(next.Password) == "" && strings.TrimSpace(prev.Password) != "" {
+	if shouldPreserveSecret(next.Password, prev.Password) {
 		next.Password = prev.Password
 	}
-	if strings.TrimSpace(next.ClientCertData) == "" && strings.TrimSpace(prev.ClientCertData) != "" {
+	if shouldPreserveSecret(next.ClientCertData, prev.ClientCertData) {
 		next.ClientCertData = prev.ClientCertData
 	}
-	if strings.TrimSpace(next.ClientKeyData) == "" && strings.TrimSpace(prev.ClientKeyData) != "" {
+	if shouldPreserveSecret(next.ClientKeyData, prev.ClientKeyData) {
 		next.ClientKeyData = prev.ClientKeyData
 	}
+	if shouldPreserveSecret(next.CAData, prev.CAData) {
+		next.CAData = prev.CAData
+	}
+}
+
+func shouldPreserveSecret(incoming, stored string) bool {
+	in := strings.TrimSpace(incoming)
+	if in == "" || isMaskedSecretValue(in) {
+		return strings.TrimSpace(stored) != ""
+	}
+	return false
+}
+
+func isMaskedSecretValue(s string) bool {
+	return strings.Contains(s, "***")
+}
+
+func maskDirectConfigForAPI(dc *DirectConfig) *DirectConfig {
+	if dc == nil {
+		return nil
+	}
+	out := *dc
+	if strings.TrimSpace(out.Token) != "" {
+		out.Token = maskSecretEdge(out.Token, 4)
+	}
+	if strings.TrimSpace(out.Password) != "" {
+		out.Password = maskSecretEdge(out.Password, 0)
+	}
+	if strings.TrimSpace(out.ClientCertData) != "" {
+		out.ClientCertData = maskSecretEdge(out.ClientCertData, 6)
+	}
+	if strings.TrimSpace(out.ClientKeyData) != "" {
+		out.ClientKeyData = maskSecretEdge(out.ClientKeyData, 6)
+	}
+	if strings.TrimSpace(out.CAData) != "" {
+		out.CAData = maskSecretEdge(out.CAData, 6)
+	}
+	return &out
 }
 
 // buildKubeconfigFromDirectConfig 从直连配置生成kubeconfig

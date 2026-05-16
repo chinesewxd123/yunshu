@@ -27,7 +27,9 @@ import { Avatar, Button, Drawer, Dropdown, Layout, Menu, Space, Spin, Switch, Ta
 import { useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { BRAND_DESCRIPTION, BRAND_NAME, BRAND_SUBTITLE } from "../constants/brand";
+import { LogStreamDockBar } from "../components/log-stream-dock-bar";
 import { useAuth } from "../contexts/auth-context";
+import { LogStreamProvider } from "../contexts/log-stream-context";
 import { getMenuTree } from "../services/menus";
 import type { MenuItem } from "../services/menus";
 import { buildSiderMenuItems, matchMenuSelectedKey, type AntdMenuItem } from "../utils/admin-menu";
@@ -265,6 +267,7 @@ export function AdminLayout() {
   ];
 
   return (
+    <LogStreamProvider>
     <Layout className={layoutClassName}>
       <Sider width={288} className="admin-sider" breakpoint="lg" collapsedWidth={0}>
         <div className="brand-block">
@@ -360,6 +363,7 @@ export function AdminLayout() {
           </div>
         </Header>
 
+        <LogStreamDockBar />
         <Content className="admin-content">
           {loading ? (
             <div className="page-loading">
@@ -515,5 +519,6 @@ export function AdminLayout() {
         </Drawer>
       </Layout>
     </Layout>
+    </LogStreamProvider>
   );
 }

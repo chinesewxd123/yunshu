@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"yunshu/internal/config"
@@ -153,6 +154,10 @@ func (b *Builder) WithRedis() *Builder {
 		DB:       cfg.DB,
 		PoolSize: cfg.PoolSize,
 	})
+	if err := b.app.Redis.Ping(context.Background()).Err(); err != nil {
+		b.err = fmt.Errorf("redis ping: %w", err)
+		return b
+	}
 	return b
 }
 
@@ -182,7 +187,21 @@ func (b *Builder) WithCasbin() *Builder {
 		return b
 	}
 	if err = enforcer.LoadPolicy(); err != nil {
-		b.err = err
+		b.err = fmt.Errorf("casbin load policy: %w", err)
+		return b
+	}
+	policyCount := len(enforcer.GetPolicy())
+	groupingCount := len(enforcer.GetGroupingPolicy())
+	if policyCount == 0 && groupingCount == 0 {
+		if b.app.Logger != nil {
+			b.app.Logger.Info.Warn("casbin loaded zero p/g rules; authorize may deny all until policies are seeded")
+		}
+	} else if b.app.Logger != nil {
+		b.app.Logger.Info.Info("casbin policy loaded", "p_rules", policyCount, "g_rules", groupingCount)
+	}
+	// 冒烟：确认 model 可执行 Enforce（adapter/模型损坏时此处会报错）
+	if _, err = enforcer.Enforce("__casbin_smoke__", "/__smoke__", "GET"); err != nil {
+		b.err = fmt.Errorf("casbin enforce smoke test: %w", err)
 		return b
 	}
 
@@ -224,6 +243,15 @@ func (b *Builder) WithGin() *Builder {
 }
 
 func (b *Builder) Build() (*App, error) {
+	if b.err != nil {
+		return nil, b.err
+	}
+
+	// 安全性检查：EncryptionKey必须配置
+	if strings.TrimSpace(b.app.Config.Security.EncryptionKey) == "" {
+		return nil, fmt.Errorf("security.encryption_key is required but not configured. please configure a base64-encoded 32-byte key")
+	}
+
 	return b.app, b.err
 }
 

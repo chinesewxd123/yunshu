@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/cipher"
+	"log/slog"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -43,6 +44,8 @@ type AlertEventListQuery struct {
 	MonitorPipeline string `form:"monitorPipeline"`
 	DatasourceID    uint   `form:"datasourceId"`
 	GroupKey        string `form:"groupKey"`
+	// Category 策略分类：delivery|routing|silence|inhibition|timing|resolved|failure|other
+	Category string `form:"category"`
 }
 
 type AlertChannelUpsertRequest struct {
@@ -81,6 +84,8 @@ type AlertManagerAlert struct {
 	EndsAt       time.Time         `json:"endsAt"`
 	GeneratorURL string            `json:"generatorURL"`
 	Fingerprint  string            `json:"fingerprint"`
+	// SkipGroupTiming 仅服务端使用（不入 JSON）：云到期「立即评估」等路径为 true 时，跳过 Redis group_wait/repeat 节流，保证立刻投递。
+	SkipGroupTiming bool `json:"-"`
 }
 
 type AlertService struct {
@@ -96,8 +101,14 @@ type AlertService struct {
 
 	monitorEvalCancel context.CancelFunc
 	monitorEvalMu     sync.Mutex
+	infoLog           *slog.Logger
 	aead              cipher.AEAD
 	cloudExpiryState  map[string]bool
+	cloudExpiryEvalMu sync.Mutex
+	// 无 Redis 时云到期规则按 synthetic rule id 记录上次「按 Cron 触发评估」时间
+	cloudExpiryNoRedisLastEval map[uint]time.Time
+	// 无 Redis 时内置监控规则 firing 状态（key=monitor_rule_{id}）
+	monitorNoRedisActive map[string]bool
 
 	// 可选依赖：告警抑制、订阅树路由
 	inhibitionSvc      *AlertInhibitionService   // 告警抑制服务
@@ -115,6 +126,8 @@ type AlertServiceOptions struct {
 	DutySvc     *AlertDutyService
 	// EncryptionKey 与项目/云账号凭据加密一致；非空时用于云到期规则解密云账号 AK/SK。
 	EncryptionKey string
+	// InfoLog 可选；非空时输出云到期调度与单次规则评估等 info 级日志。
+	InfoLog *slog.Logger
 }
 
 type promEnrichTask struct {
@@ -186,6 +199,7 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 		svc.silenceSvc = opts.SilenceSvc
 		svc.assigneeSvc = opts.AssigneeSvc
 		svc.dutySvc = opts.DutySvc
+		svc.infoLog = opts.InfoLog
 		if key := strings.TrimSpace(opts.EncryptionKey); key != "" {
 			if aead, err := cryptox.NewAESGCMFromKeyString(key); err == nil {
 				svc.aead = aead
@@ -197,6 +211,7 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 	evalCtx, cancel := context.WithCancel(context.Background())
 	svc.monitorEvalCancel = cancel
 	go svc.runMonitorRuleEvaluator(evalCtx)
+	go svc.runCloudExpiryEvaluator(evalCtx)
 	svc.runAlertWebhookIngestWorker(evalCtx)
 	return svc
 }
@@ -205,19 +220,44 @@ func (s *AlertService) GetSubscriptionService() *AlertSubscriptionService {
 	return s.subscriptionSvc
 }
 
+func (s *AlertService) GetInhibitionService() *AlertInhibitionService {
+	return s.inhibitionSvc
+}
+
 func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, labels map[string]string) (map[uint]struct{}, string, string, int) {
 	// 彻底弃用旧策略：仅使用订阅树路由（订阅节点 -> 接收组 -> 通道）
 	if s.subscriptionSvc == nil || s.receiverGroupCache == nil {
 		return nil, "", "", 0
 	}
-	projectID := parseLabelUintOrZero(labels["project_id"])
+	projectID := s.resolveProjectIDForAlertRouting(ctx, labels)
 	severity := strings.TrimSpace(labels["severity"])
-	route, ok := s.subscriptionSvc.MatchRouteDetailed(ctx, projectID, labels, severity, status)
-	if !ok || len(route.ReceiverGroupIDs) == 0 {
+	var merged AlertRouteResult
+	var anyMatched bool
+	tryMatch := func(pid uint) {
+		route, ok := s.subscriptionSvc.MatchRouteDetailed(ctx, pid, labels, severity, status)
+		if !ok || len(route.ReceiverGroupIDs) == 0 {
+			return
+		}
+		anyMatched = true
+		merged.ReceiverGroupIDs = append(merged.ReceiverGroupIDs, route.ReceiverGroupIDs...)
+		merged.MatchedNodeIDs = append(merged.MatchedNodeIDs, route.MatchedNodeIDs...)
+		merged.MatchedNodeNames = append(merged.MatchedNodeNames, route.MatchedNodeNames...)
+		if route.SilenceSeconds > merged.SilenceSeconds {
+			merged.SilenceSeconds = route.SilenceSeconds
+		}
+		if merged.MatchedPath == "" && route.MatchedPath != "" {
+			merged.MatchedPath = route.MatchedPath
+		}
+	}
+	if projectID > 0 {
+		tryMatch(projectID)
+	}
+	tryMatch(0)
+	if !anyMatched {
 		return nil, "", "", 0
 	}
 	out := map[uint]struct{}{}
-	for _, gid := range route.ReceiverGroupIDs {
+	for _, gid := range merged.ReceiverGroupIDs {
 		g, err := s.receiverGroupCache.Get(gid)
 		if err != nil || g == nil {
 			continue
@@ -231,11 +271,29 @@ func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, 
 			}
 		}
 	}
-	ids := make([]string, 0, len(route.MatchedNodeIDs))
-	for _, id := range route.MatchedNodeIDs {
+	ids := make([]string, 0, len(merged.MatchedNodeIDs))
+	for _, id := range merged.MatchedNodeIDs {
 		ids = append(ids, fmt.Sprintf("%d", id))
 	}
-	return out, strings.Join(ids, ","), strings.Join(route.MatchedNodeNames, ","), route.SilenceSeconds
+	return out, strings.Join(ids, ","), strings.Join(merged.MatchedNodeNames, ","), merged.SilenceSeconds
+}
+
+func (s *AlertService) resolveProjectIDForAlertRouting(ctx context.Context, labels map[string]string) uint {
+	if labels == nil {
+		return 0
+	}
+	if pid := parseLabelUintOrZero(labels["project_id"]); pid > 0 {
+		return pid
+	}
+	for _, key := range []string{"datasource_id", "yunshu_datasource_id"} {
+		if dsID, ok := parseLabelUint(labels[key]); ok && dsID > 0 {
+			var ds model.AlertDatasource
+			if err := s.db.WithContext(ctx).Select("project_id").First(&ds, dsID).Error; err == nil && ds.ProjectID > 0 {
+				return ds.ProjectID
+			}
+		}
+	}
+	return 0
 }
 
 func parseLabelUintOrZero(s string) uint {
@@ -598,6 +656,11 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 	if v := strings.TrimSpace(q.GroupKey); v != "" {
 		tx = tx.Where("group_key = ?", v)
 	}
+	if v := strings.TrimSpace(q.Category); v != "" {
+		if ValidAlertEventCategory(v) {
+			tx = applyAlertEventCategoryFilter(tx, v)
+		}
+	}
 	if err = tx.Count(&total).Error; err != nil {
 		return nil, 0, page, pageSize, err
 	}
@@ -827,6 +890,35 @@ func extractEventReceivers(requestPayload, channelName string) []string {
 	return nil
 }
 
+func fillMetricFieldsFromRequestPayload(ev *model.AlertEvent) {
+	if ev == nil {
+		return
+	}
+	raw := strings.TrimSpace(ev.RequestPayload)
+	if raw == "" {
+		return
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return
+	}
+	norm := func(v interface{}) string {
+		s := strings.TrimSpace(fmt.Sprintf("%v", v))
+		if s == "" || s == "<nil>" {
+			return ""
+		}
+		return s
+	}
+	ev.MetricCurrent = norm(m["current"])
+	ev.MetricResolved = norm(m["current_resolved"])
+	if ev.MetricCurrent == "-" {
+		ev.MetricCurrent = ""
+	}
+	if ev.MetricResolved == "-" {
+		ev.MetricResolved = ""
+	}
+}
+
 func hydrateAlertEvent(it *model.AlertEvent) {
 	if it == nil {
 		return
@@ -841,6 +933,7 @@ func hydrateAlertEvent(it *model.AlertEvent) {
 	it.MatchedPolicyIDList = parseUintCSV(it.MatchedPolicyIDs)
 	it.MatchedPolicyNameList = parseTrimmedCSV(it.MatchedPolicyNames)
 	it.ReceiverList = extractEventReceivers(it.RequestPayload, it.ChannelName)
+	fillMetricFieldsFromRequestPayload(it)
 }
 
 func previewPayloadFieldCatalog(payload map[string]interface{}) ([]string, []string, []string) {
@@ -1029,13 +1122,31 @@ func mergeNotifyEmailsUnique(emails []string) []string {
 	return out
 }
 
+func mergeNotifyPhonesUnique(phones []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, p := range phones {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
 func (s *AlertService) enrichAssigneeAndDutyEmails(ctx context.Context, outgoing map[string]interface{}, labels map[string]string) {
 	rid, ok := parseLabelUint(labels["monitor_rule_id"])
 	if !ok {
 		return
 	}
+	status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", outgoing["status"])))
 	var emails []string
-	if s.assigneeSvc != nil {
+	if s.assigneeSvc != nil && (status != "resolved" || s.assigneeSvc.NotifyOnResolvedEnabled(ctx, rid)) {
 		e, _ := s.assigneeSvc.ResolveNotifyEmails(ctx, rid)
 		emails = append(emails, e...)
 	}
@@ -1046,6 +1157,19 @@ func (s *AlertService) enrichAssigneeAndDutyEmails(ctx context.Context, outgoing
 	emails = mergeNotifyEmailsUnique(emails)
 	if len(emails) > 0 {
 		outgoing["assignee_emails"] = emails
+	}
+	var phones []string
+	if s.assigneeSvc != nil && (status != "resolved" || s.assigneeSvc.NotifyOnResolvedEnabled(ctx, rid)) {
+		p, _ := s.assigneeSvc.ResolveNotifyPhones(ctx, rid)
+		phones = append(phones, p...)
+	}
+	if s.dutySvc != nil {
+		p, _ := s.dutySvc.ResolveNotifyPhonesAtRule(ctx, rid, time.Now())
+		phones = append(phones, p...)
+	}
+	phones = mergeNotifyPhonesUnique(phones)
+	if len(phones) > 0 {
+		outgoing["assignee_phones"] = phones
 	}
 }
 
@@ -1126,7 +1250,12 @@ func (s *AlertService) logAllChannelsDeliveryFailed(ctx context.Context, title, 
 // 配置启用且 Redis 可用时，Webhook 先入队异步消费；内置评估路径应调用 receiveAlertmanagerPayloadSync 避免二次入队。
 func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertManagerPayload) error {
 	if s.shouldEnqueueAlertmanagerWebhook() {
-		return s.enqueueAlertmanagerWebhook(ctx, payload)
+		if err := s.enqueueAlertmanagerWebhook(ctx, payload); err != nil {
+			s.logWebhook("warn", "alert webhook enqueue failed, processing synchronously",
+				append(webhookPayloadLogAttrs(payload), slog.Any("error", err))...)
+			return s.receiveAlertmanagerPayloadSync(ctx, payload)
+		}
+		return nil
 	}
 	return s.receiveAlertmanagerPayloadSync(ctx, payload)
 }

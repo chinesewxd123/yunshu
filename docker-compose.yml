@@ -8,7 +8,7 @@ services:
     mem_limit: 400m
     cpus: 0.6
     environment:
-      MYSQL_ROOT_PASSWORD: "YunshuDB@2026Secure!"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-YunshuDB@2026Secure!}"
       MYSQL_DATABASE: yunshu
       TZ: Asia/Shanghai
     ports:
@@ -33,7 +33,7 @@ services:
     networks:
       - yunshu-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-Yunshu@2026!}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-YunshuDB@2026Secure!}"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -50,7 +50,7 @@ services:
     command:
       - redis-server
       - --requirepass
-      - "YunshuRedis@2026Secure!"
+      - "${REDIS_PASSWORD:-YunshuRedis@2026Secure!}"
       - --maxmemory
       - "96mb"
       - --maxmemory-policy
@@ -70,7 +70,7 @@ services:
     networks:
       - yunshu-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-YunshuRedis@2026}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-YunshuRedis@2026Secure!}", "ping"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -95,10 +95,10 @@ services:
       - MYSQL_HOST=yunshu-mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=root
-      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD:-Yunshu@2026!}
+      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD:-YunshuDB@2026Secure!}
       - MYSQL_DB_NAME=yunshu
       - REDIS_ADDR=yunshu-redis:6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-YunshuRedis@2026}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-YunshuRedis@2026Secure!}
       - JWT_SECRET=${JWT_SECRET:-YunshuJWTSecretKey2026ChangeInProduction}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-32-byte-base64-encoded-key-here}
     volumes:

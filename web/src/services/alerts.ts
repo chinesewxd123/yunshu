@@ -43,6 +43,10 @@ export interface AlertEventItem {
   requestPayload?: string;
   responsePayload?: string;
   createdAt: string;
+  /** 通知载荷中的 current（触发/最近一次快照） */
+  metricCurrent?: string;
+  /** 仅 resolved 且成功二次查询 Prom 时有值 */
+  metricResolved?: string;
 }
 
 export function listAlertChannels(params?: { keyword?: string }) {
@@ -128,6 +132,8 @@ export function listAlertEvents(params: {
   /** 与后端 datasourceId 一致，按已配置 Prometheus 数据源筛选 */
   datasourceId?: number;
   groupKey?: string;
+  /** 策略分类，与后端 category 一致：inhibition|silence|timing|… */
+  category?: string;
 }) {
   return getData<{ list?: AlertEventItem[]; items?: AlertEventItem[]; total: number; page: number; page_size: number }>(
     http.get("/alerts/events", { params }),

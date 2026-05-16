@@ -87,6 +87,8 @@ func (c *k8sScopeCatalogCache) refresh() {
 	}
 	perms, err := c.repo.ListAll(context.Background())
 	if err != nil {
+		// 失败也标记已刷新，避免每个请求都打 DB。
+		c.loadedAt = time.Now()
 		return
 	}
 	actionByKey, scopedKeys := service.BuildK8sScopeMappings(perms)
@@ -129,7 +131,13 @@ func K8sScopeAuthorize(
 		clusterID, namespace := extractClusterNamespaceFromRequest(c)
 		if clusterID == 0 {
 			if forceTier {
-				response.Error(c, constants.ErrBadRequestWithMsg("Pod Exec 须在请求中携带 cluster_id（及 namespace），以便集群档位校验"))
+				msg := "须在请求中携带 cluster_id，以便集群档位校验"
+				if strings.HasSuffix(strings.TrimSpace(routePath), "/ingresses/nginx/restart") {
+					msg = "重启 Ingress-Nginx 须在请求体中携带 cluster_id，且需集群 admin 档位"
+				} else if strings.Contains(strings.TrimSpace(routePath), "exec") {
+					msg = "Pod Exec 须在请求中携带 cluster_id（及 namespace），以便集群档位校验"
+				}
+				response.Error(c, constants.ErrBadRequestWithMsg(msg))
 				c.Abort()
 				return
 			}
@@ -217,7 +225,7 @@ func k8sScopeForceTierCheck(routePath, method string) bool {
 	m := strings.ToUpper(strings.TrimSpace(method))
 	switch m {
 	case "POST":
-		return strings.HasSuffix(p, "/pods/exec")
+		return strings.HasSuffix(p, "/pods/exec") || strings.HasSuffix(p, "/ingresses/nginx/restart")
 	case "GET":
 		return strings.HasSuffix(p, "/pods/exec/ws")
 	default:

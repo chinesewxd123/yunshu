@@ -1,11 +1,12 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"yunshu/internal/pkg/constants"
@@ -40,8 +41,28 @@ var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  32 * 1024,
 	WriteBufferSize: 32 * 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		// same-origin by default; allow if origin is empty (some clients)
-		return true
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
+		if origin == "" {
+			return true
+		}
+		oh, err := url.Parse(origin)
+		if err != nil || oh.Host == "" {
+			return false
+		}
+		reqHost := strings.TrimSpace(r.Host)
+		if reqHost == "" {
+			return false
+		}
+		// 允许同源；开发环境 localhost 不同端口也放行。
+		if strings.EqualFold(oh.Host, reqHost) {
+			return true
+		}
+		ohName := strings.Split(oh.Host, ":")[0]
+		reqName := strings.Split(reqHost, ":")[0]
+		if ohName == reqName && (ohName == "localhost" || ohName == "127.0.0.1") {
+			return true
+		}
+		return false
 	},
 }
 
@@ -61,8 +82,9 @@ func (h *PodHandler) ExecWS(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
+	sess := newWSSession(c.Request.Context(), nil)
+	defer sess.Cancel()
+	defer sess.Wait()
 
 	stdinR, stdinW := io.Pipe()
 	defer stdinR.Close()
@@ -71,7 +93,6 @@ func (h *PodHandler) ExecWS(c *gin.Context) {
 	sizeCh := make(chan remotecommand.TerminalSize, 10)
 	defer close(sizeCh)
 
-	// ws write must be serialized
 	var writeMu sync.Mutex
 	writeJSON := func(msg wsExecMessage) {
 		writeMu.Lock()
@@ -84,7 +105,6 @@ func (h *PodHandler) ExecWS(c *gin.Context) {
 		_ = conn.WriteMessage(websocket.TextMessage, []byte(s))
 	}
 
-	// output writer -> websocket
 	wsWriter := &wsTextWriter{write: func(p []byte) (int, error) {
 		writeMu.Lock()
 		defer writeMu.Unlock()
@@ -95,34 +115,37 @@ func (h *PodHandler) ExecWS(c *gin.Context) {
 		return len(p), nil
 	}}
 
-	// read loop: stdin + resize + ping
-	conn.SetReadLimit(2 * 1024 * 1024)
+	conn.SetReadLimit(32 * 1024)
 	_ = conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 	conn.SetPongHandler(func(string) error {
 		_ = conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		return nil
 	})
 
-	go func() {
+	sess.Go("ping", func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-sess.Context().Done():
 				return
 			case <-ticker.C:
 				writeMu.Lock()
-				_ = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
+				err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
 				writeMu.Unlock()
+				if err != nil {
+					sess.Cancel()
+					return
+				}
 			}
 		}
-	}()
+	})
 
-	go func() {
+	sess.Go("read", func() {
 		for {
 			_, raw, err := conn.ReadMessage()
 			if err != nil {
-				cancel()
+				sess.Cancel()
 				_ = stdinW.Close()
 				return
 			}
@@ -143,20 +166,19 @@ func (h *PodHandler) ExecWS(c *gin.Context) {
 					}
 				}
 			case "close":
-				cancel()
+				sess.Cancel()
 				_ = stdinW.Close()
 				return
 			default:
-				// ignore
 			}
 		}
-	}()
+	})
 
 	writeJSON(wsExecMessage{Type: "ready"})
 	writeText("\r\n")
 
 	err = h.svc.ExecTTYStream(
-		ctx,
+		sess.Context(),
 		uint(clusterID64),
 		namespace,
 		name,
@@ -171,6 +193,8 @@ func (h *PodHandler) ExecWS(c *gin.Context) {
 	} else {
 		writeJSON(wsExecMessage{Type: "exit"})
 	}
+	sess.Cancel()
+	sess.Wait()
 }
 
 type wsTextWriter struct {

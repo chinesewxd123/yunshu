@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"yunshu/internal/model"
@@ -23,9 +22,9 @@ func (s *AlertService) RecordSourceInhibition(ctx context.Context, labels map[st
 	}
 
 	// 提取指纹
-	fp := labels["fingerprint"]
-	if fp == "" {
-		fp = s.computeFingerprintFromLabels(labels)
+	fp := stableLabelsFingerprint(labels)
+	if fp != "" && labels["fingerprint"] == "" {
+		labels["fingerprint"] = fp
 	}
 
 	// 记录每个匹配的源规则
@@ -63,9 +62,9 @@ func (s *AlertService) ClearSourceInhibition(ctx context.Context, labels map[str
 		return err
 	}
 
-	fp := labels["fingerprint"]
-	if fp == "" {
-		fp = s.computeFingerprintFromLabels(labels)
+	fp := stableLabelsFingerprint(labels)
+	if fp != "" && labels["fingerprint"] == "" {
+		labels["fingerprint"] = fp
 	}
 
 	for _, ruleID := range ruleIDs {
@@ -75,31 +74,6 @@ func (s *AlertService) ClearSourceInhibition(ctx context.Context, labels map[str
 	}
 
 	return nil
-}
-
-// computeFingerprintFromLabels 从标签计算简易指纹
-func (s *AlertService) computeFingerprintFromLabels(labels map[string]string) string {
-	var sb strings.Builder
-	keys := []string{"alertname", "cluster", "namespace", "instance", "pod", "node"}
-	for _, k := range keys {
-		if v := labels[k]; v != "" {
-			sb.WriteString(k)
-			sb.WriteString("=")
-			sb.WriteString(v)
-			sb.WriteString(";")
-		}
-	}
-	// 如果没有标准标签，使用所有标签
-	if sb.Len() == 0 {
-		for k, v := range labels {
-			sb.WriteString(k)
-			sb.WriteString("=")
-			sb.WriteString(v)
-			sb.WriteString(";")
-		}
-	}
-
-	return fmt.Sprintf("%x", sb.String())[:32]
 }
 
 // logInhibitionEvent 记录抑制事件到告警历史
@@ -124,18 +98,6 @@ func (s *AlertService) logInhibitionEvent(ctx context.Context, title, severity, 
 	}
 	fillAlertEventDatasourceFromPayload(&e, payload)
 	_ = s.db.WithContext(ctx).Create(&e).Error
-}
-
-// shouldInhibit 简化的抑制检查入口
-func (s *AlertService) shouldInhibit(ctx context.Context, labels map[string]string) (bool, *model.AlertInhibitionEvent) {
-	if s.inhibitionSvc == nil {
-		return false, nil
-	}
-	inhibited, event, err := s.inhibitionSvc.CheckInhibition(ctx, labels)
-	if err != nil {
-		return false, nil
-	}
-	return inhibited, event
 }
 
 // startInhibitionPruner 启动抑制记录清理任务
