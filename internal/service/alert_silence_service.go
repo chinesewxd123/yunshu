@@ -24,12 +24,14 @@ type SilenceMatcher struct {
 }
 
 type AlertSilenceListQuery struct {
-	Keyword  string `form:"keyword"`
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
+	ProjectID uint   `form:"project_id"`
+	Keyword   string `form:"keyword"`
+	Page      int    `form:"page"`
+	PageSize  int    `form:"page_size"`
 }
 
 type AlertSilenceUpsertRequest struct {
+	ProjectID    uint      `json:"project_id"`
 	Name         string    `json:"name" binding:"required,max=128"`
 	MatchersJSON string    `json:"matchers_json" binding:"required"`
 	StartsAt     time.Time `json:"starts_at" binding:"required"`
@@ -167,6 +169,9 @@ func (s *AlertSilenceService) List(ctx context.Context, q AlertSilenceListQuery)
 	s.disableExpiredSilences(ctx, time.Now())
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
 	tx := s.db.WithContext(ctx).Model(&model.AlertSilence{})
+	if q.ProjectID > 0 {
+		tx = tx.Where("project_id = ?", q.ProjectID)
+	}
 	if kw := strings.TrimSpace(q.Keyword); kw != "" {
 		like := "%" + kw + "%"
 		tx = tx.Where("name LIKE ? OR comment LIKE ?", like, like)
@@ -231,6 +236,7 @@ func (s *AlertSilenceService) Create(ctx context.Context, userID uint, req Alert
 		EndsAt:       req.EndsAt,
 		Comment:      strings.TrimSpace(req.Comment),
 		CreatedBy:    userID,
+		ProjectID:    req.ProjectID,
 		Enabled:      req.Enabled == nil || *req.Enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {

@@ -46,6 +46,8 @@ type AlertEventListQuery struct {
 	GroupKey        string `form:"groupKey"`
 	// Category 策略分类：delivery|routing|silence|inhibition|timing|resolved|failure|other
 	Category string `form:"category"`
+	// ProjectID 按项目过滤：匹配数据源归属或 payload 中的 project_id
+	ProjectID uint `form:"projectId"`
 }
 
 type AlertChannelUpsertRequest struct {
@@ -224,10 +226,10 @@ func (s *AlertService) GetInhibitionService() *AlertInhibitionService {
 	return s.inhibitionSvc
 }
 
-func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, labels map[string]string) (map[uint]struct{}, string, string, int) {
+func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, labels map[string]string) (map[uint]struct{}, string, string, int, []uint) {
 	// 彻底弃用旧策略：仅使用订阅树路由（订阅节点 -> 接收组 -> 通道）
 	if s.subscriptionSvc == nil || s.receiverGroupCache == nil {
-		return nil, "", "", 0
+		return nil, "", "", 0, nil
 	}
 	projectID := s.resolveProjectIDForAlertRouting(ctx, labels)
 	severity := strings.TrimSpace(labels["severity"])
@@ -254,7 +256,7 @@ func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, 
 	}
 	tryMatch(0)
 	if !anyMatched {
-		return nil, "", "", 0
+		return nil, "", "", 0, nil
 	}
 	out := map[uint]struct{}{}
 	for _, gid := range merged.ReceiverGroupIDs {
@@ -275,7 +277,27 @@ func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, 
 	for _, id := range merged.MatchedNodeIDs {
 		ids = append(ids, fmt.Sprintf("%d", id))
 	}
-	return out, strings.Join(ids, ","), strings.Join(merged.MatchedNodeNames, ","), merged.SilenceSeconds
+	return out, strings.Join(ids, ","), strings.Join(merged.MatchedNodeNames, ","), merged.SilenceSeconds, uniqUint(merged.ReceiverGroupIDs)
+}
+
+// ChannelRouteForAlert 订阅匹配后的通道与接收组信息。
+type ChannelRouteForAlert struct {
+	ChannelIDs       map[uint]struct{}
+	MatchedPolicyIDs string
+	MatchedPolicyNames string
+	SilenceSeconds   int
+	ReceiverGroupIDs []uint
+}
+
+func (s *AlertService) channelRouteForAlert(ctx context.Context, status string, labels map[string]string) ChannelRouteForAlert {
+	ch, ids, names, silence, rgs := s.channelIDSetForAlert(ctx, status, labels)
+	return ChannelRouteForAlert{
+		ChannelIDs:         ch,
+		MatchedPolicyIDs:   ids,
+		MatchedPolicyNames: names,
+		SilenceSeconds:     silence,
+		ReceiverGroupIDs:   rgs,
+	}
 }
 
 func (s *AlertService) resolveProjectIDForAlertRouting(ctx context.Context, labels map[string]string) uint {
@@ -652,6 +674,9 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 	}
 	if q.DatasourceID > 0 {
 		tx = tx.Where("datasource_id = ?", q.DatasourceID)
+	}
+	if q.ProjectID > 0 {
+		tx = applyAlertEventProjectFilter(tx, s.db, q.ProjectID)
 	}
 	if v := strings.TrimSpace(q.GroupKey); v != "" {
 		tx = tx.Where("group_key = ?", v)
@@ -1515,4 +1540,19 @@ func (s *AlertService) HistoryStats(ctx context.Context) (*AlertHistoryStats, er
 	}
 	stats.DatasourceFilterOptions = dsRows
 	return stats, nil
+}
+
+// applyAlertEventProjectFilter 按项目收窄历史告警：数据源归属或 request_payload 中的 project_id。
+func applyAlertEventProjectFilter(tx *gorm.DB, db *gorm.DB, projectID uint) *gorm.DB {
+	if projectID == 0 || tx == nil || db == nil {
+		return tx
+	}
+	dsSub := db.Model(&model.AlertDatasource{}).Select("id").Where("project_id = ?", projectID)
+	pid := fmt.Sprintf("%d", projectID)
+	return tx.Where(
+		"datasource_id IN (?) OR request_payload LIKE ? OR request_payload LIKE ?",
+		dsSub,
+		`%"project_id":"`+pid+`"%`,
+		`%"project_id":`+pid+`,%`,
+	)
 }

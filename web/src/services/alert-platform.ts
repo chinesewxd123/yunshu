@@ -190,7 +190,7 @@ export function promRangeQuery(id: number, payload: { query: string; start: stri
   return getData<{ data: unknown }>(http.post(`/alerts/datasources/${id}/query_range`, payload));
 }
 
-export function listAlertSilences(params?: { keyword?: string; page?: number; page_size?: number }) {
+export function listAlertSilences(params?: { project_id?: number; keyword?: string; page?: number; page_size?: number }) {
   return getData<{ list?: AlertSilenceItem[]; items?: AlertSilenceItem[]; total: number; page: number; page_size: number }>(
     http.get("/alerts/silences", { params }),
   ).then((payload) =>

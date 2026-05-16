@@ -74,6 +74,22 @@ export function moveSubscriptionNode(id: number, payload: { new_parent_id?: numb
   return getData<AlertSubscriptionNode>(http.post(`/alerts/subscriptions/${id}/move`, payload));
 }
 
+export function cloneSubscriptionFromProject(payload: {
+  source_project_id: number;
+  target_project_id: number;
+  replace_cluster?: string;
+  replace_route?: string;
+  include_disabled?: boolean;
+  skip_if_target_has_nodes?: boolean;
+}) {
+  return getData<{
+    receiver_groups_created: number;
+    nodes_created: number;
+    skipped: boolean;
+    message?: string;
+  }>(http.post("/alerts/subscriptions/clone-from-project", payload));
+}
+
 export function migratePoliciesToSubscriptions(payload?: {
   disable_old?: boolean;
   /** 未在 match_labels 中写 project_id 的策略归入该项目；不传则由服务端取首个启用项目 */

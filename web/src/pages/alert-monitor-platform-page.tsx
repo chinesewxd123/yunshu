@@ -815,9 +815,13 @@ export function AlertMonitorPlatformPage() {
   }, []);
 
   const loadSilences = useCallback(async () => {
-    const r = await listAlertSilences({ page: 1, page_size: 200 });
+    const r = await listAlertSilences({
+      page: 1,
+      page_size: 200,
+      project_id: projectContextId && projectContextId > 0 ? projectContextId : undefined,
+    });
     setSilenceList(r.list ?? []);
-  }, []);
+  }, [projectContextId]);
 
   const loadNativeSilAlerts = useCallback(async () => {
     if (!silNativeDsId) {
@@ -877,7 +881,9 @@ export function AlertMonitorPlatformPage() {
       try {
         if (tab === "datasources") await loadDatasources(projectContextId);
         if (tab === "promql") await loadDatasources(projectContextId);
-        if (tab === "silences") await Promise.all([loadSilences(), loadDatasources(projectContextId)]);
+        if (tab === "silences") {
+          await Promise.all([loadSilences(), loadDatasources(projectContextId)]);
+        }
         if (tab === "rules") {
           await Promise.all([loadDatasources(projectContextId), loadRules(projectContextId)]);
         }
@@ -1224,6 +1230,7 @@ export function AlertMonitorPlatformPage() {
             enabled: true,
             starts_at: it.startsAt.toISOString(),
             ends_at: it.endsAt.toISOString(),
+            project_id: projectContextId && projectContextId > 0 ? projectContextId : undefined,
           }),
         ),
       );
@@ -1274,6 +1281,7 @@ export function AlertMonitorPlatformPage() {
         enabled: v.enabled,
         starts_at: (v.starts_at as Dayjs).toISOString(),
         ends_at: (v.ends_at as Dayjs).toISOString(),
+        project_id: projectContextId && projectContextId > 0 ? projectContextId : undefined,
       };
       if (silCurrent) {
         await updateAlertSilence(silCurrent.id, payload);
@@ -2209,13 +2217,13 @@ export function AlertMonitorPlatformPage() {
           },
           {
             key: "policies",
-            label: "订阅树路由",
+            label: "告警路由",
             children: (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
                 <Alert
                   type="info"
                   showIcon
-                  message="订阅树统一处理 Webhook 入站告警与平台规则告警"
+                  message="告警路由树统一处理 Webhook 入站告警与平台规则告警"
                   description={
                     <Space direction="vertical" size={8} style={{ width: "100%" }}>
                       <span>订阅节点按 labels / regex 命中接收组与通道，并执行节点静默窗口与恢复通知；它不等于 Prometheus 规则，也不直接改 Alertmanager 的静默状态。</span>
@@ -2235,7 +2243,7 @@ export function AlertMonitorPlatformPage() {
                         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                           <ul style={{ margin: 0, paddingLeft: 18 }}>
                             <li>
-                              <strong>订阅树</strong>：对 Alertmanager Webhook 入站告警和平台规则告警统一生效，决定命中节点、接收组与通道，并执行订阅静默窗口。
+                              <strong>告警路由树</strong>：对 Alertmanager Webhook 入站告警和平台规则告警统一生效，决定命中路由节点、通知接收组与通道，并执行路由静默窗口。
                             </li>
                             <li>
                               <strong>监控规则与值班</strong>：平台定时向已登记数据源执行 PromQL，命中后走同一套通知链路。
@@ -2252,7 +2260,13 @@ export function AlertMonitorPlatformPage() {
                     },
                   ]}
                 />
-                <AlertConfigCenterPanel embedded hideTabs activeTab="subscriptions" onTabChange={() => undefined} />
+                <AlertConfigCenterPanel
+                  embedded
+                  hideTabs
+                  activeTab="subscriptions"
+                  onTabChange={() => undefined}
+                  projectContextId={projectContextId}
+                />
               </Space>
             ),
           },
@@ -2273,6 +2287,7 @@ export function AlertMonitorPlatformPage() {
                   activeTab="history"
                   onTabChange={() => undefined}
                   initialEventCategory={historyEventCategory}
+                  projectContextId={projectContextId}
                 />
               </Space>
             ),
@@ -2280,7 +2295,7 @@ export function AlertMonitorPlatformPage() {
           {
             key: "inhibition",
             label: "告警抑制",
-            children: <AlertInhibitionPanel />,
+            children: <AlertInhibitionPanel projectId={projectContextId} />,
           },
           {
             key: "silences",
@@ -2346,6 +2361,13 @@ export function AlertMonitorPlatformPage() {
                 <Typography.Title level={5} style={{ margin: 0 }}>
                   静默列表
                 </Typography.Title>
+                {projectContextId ? (
+                  <Typography.Text type="secondary">
+                    已按顶栏项目 #{projectContextId} 筛选；新建静默将写入该项目
+                  </Typography.Text>
+                ) : (
+                  <Typography.Text type="secondary">未选顶栏项目时显示全部静默（含历史全局记录）</Typography.Text>
+                )}
                 <Space>
                   <Button type="primary" onClick={() => void releaseSelectedSilences()} disabled={selectedSilenceIds.length === 0}>
                     批量解除静默

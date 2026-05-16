@@ -224,7 +224,12 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 			}
 		}
 
-		subscriptionChannels, matchedPolicyIDs, matchedPolicyNames, subscriptionSilenceSeconds := s.channelIDSetForAlert(ctx, status, labels)
+		route := s.channelRouteForAlert(ctx, status, labels)
+		subscriptionChannels := route.ChannelIDs
+		matchedPolicyIDs := route.MatchedPolicyIDs
+		matchedPolicyNames := route.MatchedPolicyNames
+		subscriptionSilenceSeconds := route.SilenceSeconds
+		s.expandChannelSetForAssigneeNotification(ctx, subscriptionChannels, route.ReceiverGroupIDs, outgoing)
 		outgoing["matchedPolicyIds"] = matchedPolicyIDs
 		outgoing["matchedPolicyNames"] = matchedPolicyNames
 		outgoing["subscription_silence_seconds"] = subscriptionSilenceSeconds
