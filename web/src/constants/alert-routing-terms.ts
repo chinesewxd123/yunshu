@@ -11,11 +11,22 @@ export const ALERT_ROUTING_TERMS = {
   matchSeverity: "匹配级别",
   copyTemplate: "从项目复制路由模板",
   historySourceFilter: "告警来源",
+  receiverGroupManage: "通知接收组管理",
+  receiverGroupManageHint:
+    "接收组绑定告警通道（钉钉/邮件/企微等）。路由节点上选择接收组后，告警命中该节点即按组内通道投递；可在组内配置额外邮箱作邮件兜底。",
 } as const;
 
-/** 树节点展示名：迁移前缀与内部编码友好化 */
+/** 历史节点名 → 产品展示名 */
+const LEGACY_ROUTE_NODE_DISPLAY_NAMES: Record<string, string> = {
+  通知策略: "路由策略",
+};
+
+/** 树节点展示名：迁移前缀、历史名称与内部编码友好化 */
 export function formatRouteNodeTreeTitle(name: string, enabled: boolean): string {
   let n = String(name ?? "").trim();
+  if (LEGACY_ROUTE_NODE_DISPLAY_NAMES[n]) {
+    n = LEGACY_ROUTE_NODE_DISPLAY_NAMES[n];
+  }
   if (n.startsWith("migrated:")) {
     n = n.slice("migrated:".length);
   }

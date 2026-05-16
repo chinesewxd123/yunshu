@@ -564,7 +564,6 @@ export function AlertMonitorPlatformPage() {
   const [labelValueOptions, setLabelValueOptions] = useState<string[]>([]);
   const [selectedPromFunc, setSelectedPromFunc] = useState<string>("none");
 
-  const [silNativeDsId, setSilNativeDsId] = useState<number | undefined>();
   const [nativeAlertsLoading, setNativeAlertsLoading] = useState(false);
   const [nativeAlertsRows, setNativeAlertsRows] = useState<PromNativeAlertRow[]>([]);
   const [selectedNativeAlertKeys, setSelectedNativeAlertKeys] = useState<string[]>([]);
@@ -580,6 +579,13 @@ export function AlertMonitorPlatformPage() {
     const p = projects.find((it) => it.id === projectContextId);
     return p ? `${p.name} (${p.code})` : `项目 ${projectContextId}`;
   }, [projects, projectContextId]);
+
+  /** 平台静默：Prometheus 活跃告警跟随顶栏项目，默认取首个已启用数据源 */
+  const silenceDatasource = useMemo(() => {
+    const enabled = dsList.filter((d) => d.enabled !== false);
+    return (enabled.length ? enabled : dsList)[0];
+  }, [dsList]);
+  const silenceDatasourceId = silenceDatasource?.id;
 
   const promTableView = useMemo(() => buildPromTableView(promDataInner), [promDataInner]);
   const promScalarText = useMemo(() => formatPromScalarSummary(promDataInner), [promDataInner]);
@@ -824,13 +830,15 @@ export function AlertMonitorPlatformPage() {
   }, [projectContextId]);
 
   const loadNativeSilAlerts = useCallback(async () => {
-    if (!silNativeDsId) {
-      message.warning("请先选择 Prometheus 数据源");
+    if (!silenceDatasourceId) {
+      message.warning(
+        projectContextId ? "当前项目下暂无 Prometheus 数据源，请先在「数据源」Tab 创建并启用" : "请先在顶栏选择项目",
+      );
       return;
     }
     setNativeAlertsLoading(true);
     try {
-      const raw = await promActiveAlerts(silNativeDsId);
+      const raw = await promActiveAlerts(silenceDatasourceId);
       const rows = parsePrometheusActiveAlertsTable(raw);
       setNativeAlertsRows(rows);
       setSelectedNativeAlertKeys((prev) => prev.filter((k) => rows.some((r) => r.key === k)));
@@ -840,7 +848,7 @@ export function AlertMonitorPlatformPage() {
     } finally {
       setNativeAlertsLoading(false);
     }
-  }, [silNativeDsId]);
+  }, [silenceDatasourceId, projectContextId]);
 
   const loadRules = useCallback(async (projectID?: number) => {
     const r = await listAlertMonitorRules({ project_id: projectID, page: 1, page_size: 200 });
@@ -899,12 +907,6 @@ export function AlertMonitorPlatformPage() {
     };
   }, [tab, projectContextId, loadDatasources, loadSilences, loadRules, loadCloudExpiryRules, cloudExpiryProviderFilter, cloudExpiryKeyword]);
 
-  useEffect(() => {
-    if (tab !== "silences") return;
-    if (silNativeDsId != null && dsList.some((d) => d.id === silNativeDsId)) return;
-    const first = dsList.find((d) => d.enabled)?.id ?? dsList[0]?.id;
-    setSilNativeDsId(first);
-  }, [tab, dsList, silNativeDsId]);
   useEffect(() => {
     if (tab !== "promql") return;
     if (promDsId != null && dsList.some((d) => d.id === promDsId)) return;
@@ -2321,16 +2323,19 @@ export function AlertMonitorPlatformPage() {
                   Prometheus 活跃告警（只读快照）
                 </Typography.Title>
                 <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  与「历史告警记录」不同：此处直接查询已选数据源的 <Typography.Text code>/api/v1/alerts</Typography.Text>，用于对照 Prometheus UI 中 Firing 的条目是否已进 Webhook 链路。
+                  与「历史告警记录」不同：此处直接查询当前项目下数据源的 <Typography.Text code>/api/v1/alerts</Typography.Text>
+                  （跟随顶栏「全局项目上下文」），用于对照 Prometheus UI 中 Firing 的条目是否已进 Webhook 链路。
+                  {silenceDatasource ? (
+                    <>
+                      {" "}
+                      当前使用数据源：<Typography.Text strong>{silenceDatasource.name}</Typography.Text>
+                      {dsList.length > 1 ? `（本项目共 ${dsList.length} 个，默认首个已启用）` : null}。
+                    </>
+                  ) : (
+                    <> 当前项目暂无可用数据源。</>
+                  )}
                 </Typography.Paragraph>
                 <Space wrap>
-                  <Select
-                    style={{ minWidth: 240 }}
-                    placeholder="数据源"
-                    value={silNativeDsId}
-                    onChange={(v) => setSilNativeDsId(v)}
-                    options={dsList.map((d) => ({ label: d.project_name ? `${d.project_name} / ${d.name}` : d.name, value: d.id }))}
-                  />
                   <Button type="primary" loading={nativeAlertsLoading} onClick={() => void loadNativeSilAlerts()}>
                     拉取活跃告警
                   </Button>
@@ -2356,7 +2361,11 @@ export function AlertMonitorPlatformPage() {
                     onChange: (keys) => setSelectedNativeAlertKeys(keys.map((k) => String(k))),
                   }}
                   pagination={{ pageSize: 8 }}
-                  locale={{ emptyText: "暂无数据，请选择数据源后点击「拉取活跃告警」" }}
+                  locale={{
+                    emptyText: silenceDatasourceId
+                      ? "暂无数据，请点击「拉取活跃告警」"
+                      : "请先在「数据源」Tab 为当前项目创建 Prometheus 数据源",
+                  }}
                 />
                 <Typography.Title level={5} style={{ margin: 0 }}>
                   静默列表

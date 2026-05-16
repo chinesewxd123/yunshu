@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +58,26 @@ func (s *AlertService) receiveAlertmanagerPayloadSync(ctx context.Context, paylo
 	return s.ingestCanonicalAlerts(ctx, CanonicalAlertsFromAlertmanagerPayload(payload))
 }
 
+// enrichCanonicalIngressLabels 与入站 ingest 使用同一套标签补全，保证 groupKey / labelsDigest 与分组节流 Redis 状态一致。
+func (s *AlertService) enrichCanonicalIngressLabels(ctx context.Context, labels map[string]string, payloadReceiver, fingerprint string) map[string]string {
+	out := mergeStringMap(nil, labels)
+	dsID, dsName, dsType, pipelineSlug := s.resolveAlertDatasourceMeta(ctx, out, payloadReceiver)
+	out["monitor_pipeline"] = pipelineSlug
+	if dsID > 0 {
+		out["datasource_id"] = fmt.Sprintf("%d", dsID)
+	}
+	if strings.TrimSpace(dsName) != "" {
+		out["datasource_name"] = strings.TrimSpace(dsName)
+	}
+	if strings.TrimSpace(dsType) != "" {
+		out["datasource_type"] = strings.TrimSpace(dsType)
+	}
+	if fp := strings.TrimSpace(fingerprint); fp != "" {
+		out["fingerprint"] = fp
+	}
+	return out
+}
+
 func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []CanonicalIngressAlert) error {
 	var channels []model.AlertChannel
 	if err := s.db.WithContext(ctx).Model(&model.AlertChannel{}).
@@ -68,25 +89,23 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 	for _, ca := range items {
 		alert := ca.Alert
 		labels := mergeStringMap(ca.CommonLabels, alert.Labels)
-		dsID, dsName, dsType, pipelineSlug := s.resolveAlertDatasourceMeta(ctx, labels, ca.PayloadReceiver)
-		labels["monitor_pipeline"] = pipelineSlug
-		if dsID > 0 {
-			labels["datasource_id"] = fmt.Sprintf("%d", dsID)
-		}
-		if strings.TrimSpace(dsName) != "" {
-			labels["datasource_name"] = strings.TrimSpace(dsName)
-		}
-		if strings.TrimSpace(dsType) != "" {
-			labels["datasource_type"] = strings.TrimSpace(dsType)
-		}
 		fp := strings.TrimSpace(alert.Fingerprint)
 		if fp == "" {
 			fp = stableLabelsFingerprint(labels)
 		}
+		labels = s.enrichCanonicalIngressLabels(ctx, labels, ca.PayloadReceiver, fp)
 		if fp != "" {
-			labels["fingerprint"] = fp
 			alert.Fingerprint = fp
 		}
+		var dsID uint
+		if v := strings.TrimSpace(labels["datasource_id"]); v != "" {
+			if n, err := strconv.ParseUint(v, 10, 64); err == nil {
+				dsID = uint(n)
+			}
+		}
+		dsName := strings.TrimSpace(labels["datasource_name"])
+		dsType := strings.TrimSpace(labels["datasource_type"])
+		pipelineSlug := strings.TrimSpace(labels["monitor_pipeline"])
 		monitorPipeline := pipelineSlug
 		annotations := mergeStringMap(ca.CommonAnnotations, alert.Annotations)
 		status := strings.TrimSpace(alert.Status)
@@ -212,7 +231,7 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 				// 云到期等来源由上游 Cron/调度控制节奏，不再叠加全局 repeat_interval，否则会出现「规则 2 小时评估、渠道却约 5 分钟重复提醒」的割裂体验。
 				shouldSend, reason, aggCount, firstSeen, lastSeen = true, "skip_group_timing_immediate", 1, "", ""
 			} else {
-				shouldSend, reason, aggCount, firstSeen, lastSeen = s.decideFiringGroupTiming(ctx, groupKey, labelsDigest)
+				shouldSend, reason, aggCount, firstSeen, lastSeen = s.peekFiringGroupTiming(ctx, groupKey, labelsDigest)
 			}
 			outgoing["agg_count"] = aggCount
 			outgoing["agg_first_seen"] = firstSeen
@@ -277,6 +296,7 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 			}
 		}
 		if status == "firing" && okDeliveries > 0 {
+			s.commitFiringGroupTimingSend(ctx, groupKey, labelsDigest)
 			s.markAlertFiringDelivered(ctx, alert.Fingerprint)
 		}
 		if status == "resolved" && okDeliveries == 0 {

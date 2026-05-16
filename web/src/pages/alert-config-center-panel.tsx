@@ -23,10 +23,13 @@ import { listAlertDatasources, type AlertDatasourceItem } from "../services/aler
 import { getProjects } from "../services/projects";
 import {
   cloneSubscriptionFromProject,
+  createReceiverGroup,
   createSubscriptionNode,
+  deleteReceiverGroup,
   deleteSubscriptionNode,
   getSubscriptionTree,
   listReceiverGroups,
+  updateReceiverGroup,
   updateSubscriptionNode,
   type AlertReceiverGroup,
   type AlertSubscriptionNode,
@@ -146,6 +149,36 @@ function parseLabelsFromAlertEventRequestPayload(raw?: string): Record<string, s
   return {};
 }
 
+function parseReceiverGroupChannelIds(g: AlertReceiverGroup): number[] {
+  if (Array.isArray(g.channel_ids) && g.channel_ids.length) {
+    return g.channel_ids.map((id) => Number(id)).filter((id) => id > 0);
+  }
+  try {
+    const parsed = JSON.parse(String(g.channel_ids_json || "[]")) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.map((id) => Number(id)).filter((id) => id > 0);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+function parseReceiverGroupEmails(g: AlertReceiverGroup): string[] {
+  if (Array.isArray(g.email_recipients) && g.email_recipients.length) {
+    return g.email_recipients.map((e) => String(e).trim()).filter(Boolean);
+  }
+  try {
+    const parsed = JSON.parse(String(g.email_recipients_json || "[]")) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.map((e) => String(e).trim()).filter(Boolean);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
 function prettifyAlertRequestPayload(raw?: string): string {
   const s = String(raw || "").trim();
   if (!s) return "";
@@ -196,6 +229,17 @@ export function AlertConfigCenterPanel({
     replace_route?: string;
     include_disabled?: boolean;
     skip_if_target_has_nodes?: boolean;
+  }>();
+  const [rgDrawerOpen, setRgDrawerOpen] = useState(false);
+  const [rgModalOpen, setRgModalOpen] = useState(false);
+  const [rgEditingId, setRgEditingId] = useState<number | null>(null);
+  const [rgSaving, setRgSaving] = useState(false);
+  const [rgForm] = Form.useForm<{
+    name: string;
+    description?: string;
+    channel_ids?: number[];
+    email_recipients?: string[];
+    enabled?: boolean;
   }>();
 
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -371,6 +415,61 @@ export function AlertConfigCenterPanel({
       setSubLoading(false);
     }
   }, [subProjectID, projectContextId]);
+
+  function openReceiverGroupCreate() {
+    setRgEditingId(null);
+    rgForm.resetFields();
+    rgForm.setFieldsValue({ enabled: true, channel_ids: [], email_recipients: [] });
+    setRgModalOpen(true);
+  }
+
+  function openReceiverGroupEdit(g: AlertReceiverGroup) {
+    setRgEditingId(g.id);
+    rgForm.setFieldsValue({
+      name: g.name,
+      description: g.description ?? "",
+      channel_ids: parseReceiverGroupChannelIds(g),
+      email_recipients: parseReceiverGroupEmails(g),
+      enabled: g.enabled,
+    });
+    setRgModalOpen(true);
+  }
+
+  async function saveReceiverGroup() {
+    const pid = effectiveProjectId;
+    if (!pid) {
+      message.warning("请先选择项目");
+      return;
+    }
+    const values = await rgForm.validateFields();
+    const payload = {
+      project_id: pid,
+      name: String(values.name ?? "").trim(),
+      description: String(values.description ?? "").trim(),
+      channel_ids_json: JSON.stringify(values.channel_ids ?? []),
+      email_recipients_json: JSON.stringify(values.email_recipients ?? []),
+      enabled: values.enabled !== false,
+    };
+    setRgSaving(true);
+    try {
+      if (rgEditingId) {
+        await updateReceiverGroup(rgEditingId, payload);
+      } else {
+        await createReceiverGroup(payload);
+      }
+      message.success("接收组已保存");
+      setRgModalOpen(false);
+      await loadSubscriptions();
+    } finally {
+      setRgSaving(false);
+    }
+  }
+
+  async function removeReceiverGroup(id: number) {
+    await deleteReceiverGroup(id);
+    message.success("已删除");
+    await loadSubscriptions();
+  }
 
   async function onSelectSubscriptionNode(id: number) {
     setSubSelectedID(id);
@@ -612,6 +711,9 @@ export function AlertConfigCenterPanel({
             <Button icon={<ReloadOutlined />} loading={subLoading} onClick={() => void loadSubscriptions()}>
               刷新
             </Button>
+            <Button disabled={!effectiveProjectId} onClick={() => setRgDrawerOpen(true)}>
+              {ALERT_ROUTING_TERMS.receiverGroupManage}
+            </Button>
             <Button
               icon={<CopyOutlined />}
               disabled={projects.length < 2}
@@ -658,7 +760,11 @@ export function AlertConfigCenterPanel({
             </Card>
             <Card
               size="small"
-              title={selectedSubscriptionNode ? `编辑路由节点：${selectedSubscriptionNode.name}` : ALERT_ROUTING_TERMS.selectNodeHint}
+              title={
+                selectedSubscriptionNode
+                  ? `编辑路由节点：${formatRouteNodeTreeTitle(selectedSubscriptionNode.name, true)}`
+                  : ALERT_ROUTING_TERMS.selectNodeHint
+              }
             >
               <Form form={subForm} layout="vertical">
                 <Form.Item name="id" hidden>
@@ -716,9 +822,14 @@ export function AlertConfigCenterPanel({
                       },
                     },
                   ]}
-                  extra="根节点可留空：仅作路由分流，通知由子节点上的接收组发出。"
+                  extra={
+                    <>
+                      根节点可留空：仅作路由分流，通知由子节点上的接收组发出。请先点击上方「
+                      {ALERT_ROUTING_TERMS.receiverGroupManage}」创建接收组并绑定告警通道。
+                    </>
+                  }
                 >
-                  <Select mode="multiple" options={receiverGroupOptions} placeholder="选择接收组（先在接收组里配置通道）" allowClear />
+                  <Select mode="multiple" options={receiverGroupOptions} placeholder="选择通知接收组" allowClear />
                 </Form.Item>
                 <Form.Item name="match_labels_json" label="match_labels_json（精确匹配 JSON）">
                   <Input.TextArea rows={4} />
@@ -1148,6 +1259,116 @@ export function AlertConfigCenterPanel({
       ) : (
         <Tabs activeKey={tab} onChange={(k) => setTab(k as AlertConfigTab)} items={tabItems as never} />
       )}
+
+      <Drawer
+        title={ALERT_ROUTING_TERMS.receiverGroupManage}
+        width={720}
+        open={rgDrawerOpen}
+        onClose={() => setRgDrawerOpen(false)}
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} disabled={!effectiveProjectId} onClick={openReceiverGroupCreate}>
+            新建接收组
+          </Button>
+        }
+      >
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={ALERT_ROUTING_TERMS.receiverGroupManageHint} />
+        <Table
+          rowKey="id"
+          size="small"
+          loading={subLoading}
+          dataSource={receiverGroups}
+          pagination={false}
+          columns={[
+            { title: "名称", dataIndex: "name", width: 160, render: (n: string, r: AlertReceiverGroup) => formatReceiverGroupLabel(n, r.id) },
+            {
+              title: "告警通道",
+              render: (_: unknown, r: AlertReceiverGroup) => {
+                const ids = parseReceiverGroupChannelIds(r);
+                if (!ids.length) return <Typography.Text type="secondary">未绑定</Typography.Text>;
+                return ids
+                  .map((id) => channels.find((c) => c.id === id)?.name ?? `#${id}`)
+                  .join("、");
+              },
+            },
+            {
+              title: "额外邮箱",
+              render: (_: unknown, r: AlertReceiverGroup) => {
+                const emails = parseReceiverGroupEmails(r);
+                return emails.length ? emails.join("、") : "—";
+              },
+            },
+            {
+              title: "状态",
+              dataIndex: "enabled",
+              width: 72,
+              render: (v: boolean) => (v ? <Tag color="green">启用</Tag> : <Tag>停用</Tag>),
+            },
+            {
+              title: "操作",
+              width: 120,
+              render: (_: unknown, r: AlertReceiverGroup) => (
+                <Space>
+                  <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openReceiverGroupEdit(r)}>
+                    编辑
+                  </Button>
+                  <Popconfirm title="确认删除该接收组？" onConfirm={() => void removeReceiverGroup(r.id)}>
+                    <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      </Drawer>
+
+      <Modal
+        title={rgEditingId ? "编辑通知接收组" : "新建通知接收组"}
+        open={rgModalOpen}
+        confirmLoading={rgSaving}
+        onCancel={() => setRgModalOpen(false)}
+        onOk={() => void saveReceiverGroup()}
+        destroyOnClose
+      >
+        <Form form={rgForm} layout="vertical">
+          <Form.Item name="name" label="接收组名称" rules={[{ required: true, message: "请输入名称" }]}>
+            <Input placeholder="例如 prod-critical-dingding" />
+          </Form.Item>
+          <Form.Item name="description" label="说明">
+            <Input.TextArea rows={2} placeholder="可选" />
+          </Form.Item>
+          <Form.Item
+            name="channel_ids"
+            label="绑定告警通道"
+            rules={[
+              {
+                validator: async (_, value) => {
+                  const ids = Array.isArray(value) ? value : [];
+                  const emails = rgForm.getFieldValue("email_recipients") as string[] | undefined;
+                  if (ids.length === 0 && (!emails || emails.length === 0)) {
+                    throw new Error("请至少绑定一个告警通道或填写额外邮箱");
+                  }
+                },
+              },
+            ]}
+            extra="通道在「告警通道」菜单维护；此处选择后，命中该接收组的路由节点将按通道类型投递。"
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="选择钉钉 / 邮件 / 企微等通道"
+              options={channels.map((c) => ({ label: c.name, value: c.id }))}
+            />
+          </Form.Item>
+          <Form.Item name="email_recipients" label="额外邮箱（邮件兜底）">
+            <Select mode="tags" tokenSeparators={[",", " ", ";"]} placeholder="输入邮箱后回车，可与通道并存" />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title={ALERT_ROUTING_TERMS.copyTemplate}

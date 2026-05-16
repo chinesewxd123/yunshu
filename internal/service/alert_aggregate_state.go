@@ -137,19 +137,55 @@ func (s *AlertService) clearResolvedNotificationSent(ctx context.Context, finger
 	return s.redis.Del(ctx, "alert:resolved:sent:"+strings.TrimSpace(fingerprint)).Err()
 }
 
-// decideFiringGroupTiming 对齐 Alertmanager/N9E 的 group_wait/group_interval/repeat_interval 语义（基于 groupKey + labelsDigest）。
-//
-// - group_wait: 首次见到该 groupKey 后，延迟一段时间再首次发送（收集同组告警）。
-// - group_interval: 已发送后，若 labelsDigest 变化（视为“新变化”），至少间隔 group_interval 才可再次发送。
-// - repeat_interval: 持续 firing 且无新变化时，按 repeat_interval 重复发送。
-//
-// 说明：为保持当前架构“单条告警投递”的形态，这里用 labelsDigest 近似表示“组内容变化”。
-func (s *AlertService) decideFiringGroupTiming(ctx context.Context, groupKey, labelsDigest string) (shouldSend bool, reason string, count int64, firstSeen string, lastSeen string) {
+func firingGroupTimingRedisKey(groupKey string) string {
+	return "alert:group:timing:" + strings.TrimSpace(groupKey)
+}
+
+// evaluateFiringGroupTiming 纯判定：不写入 last_sent / last_digest（须在通道发送成功后 commit）。
+func evaluateFiringGroupTiming(cfg config.AlertConfig, now time.Time, firstSeen, lastSentRaw, lastDigest, labelsDigest string) (shouldSend bool, reason string) {
+	groupWait := time.Duration(maxInt(0, cfg.GroupWaitSeconds)) * time.Second
+	groupInterval := time.Duration(maxInt(0, cfg.GroupIntervalSeconds)) * time.Second
+	repeatInterval := time.Duration(maxInt(1, cfg.RepeatIntervalSeconds)) * time.Second
+
+	if strings.TrimSpace(lastSentRaw) == "" {
+		if groupWait > 0 && strings.TrimSpace(firstSeen) != "" {
+			if fst, e := time.Parse(time.RFC3339, strings.TrimSpace(firstSeen)); e == nil {
+				if now.Sub(fst) < groupWait {
+					return false, "group_wait_suppressed"
+				}
+			}
+		}
+		return true, ""
+	}
+
+	lastSent, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(lastSentRaw))
+	if parseErr != nil {
+		return true, ""
+	}
+
+	curDigest := strings.TrimSpace(labelsDigest)
+	prevDigest := strings.TrimSpace(lastDigest)
+	changed := curDigest != "" && prevDigest != "" && curDigest != prevDigest
+
+	if changed {
+		if groupInterval > 0 && now.Sub(lastSent) < groupInterval {
+			return false, "group_interval_suppressed"
+		}
+		return true, ""
+	}
+
+	if now.Sub(lastSent) < repeatInterval {
+		return false, "repeat_suppressed"
+	}
+	return true, ""
+}
+
+// peekFiringGroupTiming 只读判定分组节流（更新观测字段 count/first_seen/last_seen，不写 last_sent）。
+func (s *AlertService) peekFiringGroupTiming(ctx context.Context, groupKey, labelsDigest string) (shouldSend bool, reason string, count int64, firstSeen string, lastSeen string) {
 	if s.redis == nil || strings.TrimSpace(groupKey) == "" {
 		return true, "", 1, "", ""
 	}
-	gk := strings.TrimSpace(groupKey)
-	key := "alert:group:timing:" + gk
+	key := firingGroupTimingRedisKey(groupKey)
 	now := time.Now().UTC()
 	nowStr := now.Format(time.RFC3339)
 
@@ -173,59 +209,27 @@ func (s *AlertService) decideFiringGroupTiming(ctx context.Context, groupKey, la
 
 	firstSeen = strings.TrimSpace(fs)
 	lastSeen = nowStr
+	shouldSend, reason = evaluateFiringGroupTiming(s.cfg, now, firstSeen, lsRaw, lastDigest, labelsDigest)
+	return shouldSend, reason, c, firstSeen, lastSeen
+}
 
-	groupWait := time.Duration(maxInt(0, s.cfg.GroupWaitSeconds)) * time.Second
-	groupInterval := time.Duration(maxInt(0, s.cfg.GroupIntervalSeconds)) * time.Second
-	repeatInterval := time.Duration(maxInt(1, s.cfg.RepeatIntervalSeconds)) * time.Second
-
-	// 首次发送：受 group_wait 控制
-	if strings.TrimSpace(lsRaw) == "" {
-		if groupWait > 0 && strings.TrimSpace(firstSeen) != "" {
-			if fst, e := time.Parse(time.RFC3339, strings.TrimSpace(firstSeen)); e == nil {
-				if now.Sub(fst) < groupWait {
-					return false, "group_wait_suppressed", c, firstSeen, lastSeen
-				}
-			}
-		}
-		_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-		if strings.TrimSpace(labelsDigest) != "" {
-			_ = s.redis.HSet(ctx, key, "last_digest", strings.TrimSpace(labelsDigest)).Err()
-		}
-		return true, "", c, firstSeen, lastSeen
+// commitFiringGroupTimingSend 在至少一个通道 HTTP 发送成功后调用，记录「上次成功通知」时间。
+func (s *AlertService) commitFiringGroupTimingSend(ctx context.Context, groupKey, labelsDigest string) {
+	if s.redis == nil || strings.TrimSpace(groupKey) == "" {
+		return
 	}
-
-	lastSent, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(lsRaw))
-	if parseErr != nil {
-		_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-		if strings.TrimSpace(labelsDigest) != "" {
-			_ = s.redis.HSet(ctx, key, "last_digest", strings.TrimSpace(labelsDigest)).Err()
-		}
-		return true, "", c, firstSeen, lastSeen
-	}
-
-	curDigest := strings.TrimSpace(labelsDigest)
-	prevDigest := strings.TrimSpace(lastDigest)
-	changed := curDigest != "" && prevDigest != "" && curDigest != prevDigest
-
-	// 组有“新变化”：受 group_interval 控制
-	if changed {
-		if groupInterval > 0 && now.Sub(lastSent) < groupInterval {
-			return false, "group_interval_suppressed", c, firstSeen, lastSeen
-		}
-		_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-		_ = s.redis.HSet(ctx, key, "last_digest", curDigest).Err()
-		return true, "", c, firstSeen, lastSeen
-	}
-
-	// 无新变化：受 repeat_interval 控制
-	if now.Sub(lastSent) < repeatInterval {
-		return false, "repeat_suppressed", c, firstSeen, lastSeen
-	}
+	key := firingGroupTimingRedisKey(groupKey)
+	nowStr := time.Now().UTC().Format(time.RFC3339)
 	_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-	if curDigest != "" {
-		_ = s.redis.HSet(ctx, key, "last_digest", curDigest).Err()
+	if d := strings.TrimSpace(labelsDigest); d != "" {
+		_ = s.redis.HSet(ctx, key, "last_digest", d).Err()
 	}
-	return true, "", c, firstSeen, lastSeen
+	_ = s.redis.Expire(ctx, key, time.Duration(s.cfg.AggregateTTLSeconds)*time.Second).Err()
+}
+
+// decideFiringGroupTiming 兼容旧调用：等价于 peek（不再预写 last_sent）。
+func (s *AlertService) decideFiringGroupTiming(ctx context.Context, groupKey, labelsDigest string) (shouldSend bool, reason string, count int64, firstSeen string, lastSeen string) {
+	return s.peekFiringGroupTiming(ctx, groupKey, labelsDigest)
 }
 
 func firingDeliveredRedisKey(fingerprint string) string {

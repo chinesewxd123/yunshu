@@ -56,7 +56,7 @@ const EXACT: Record<string, AlertEventReasonMeta> = {
     category: "timing",
     hint: "同组变化间隔",
     detail:
-      "labelsDigest 相对上次成功发送有变化，但距上次发送未满 alert.group_interval_seconds，本轮不推送。",
+      "labelsDigest 相对上次成功通知有变化，但距上次成功通知未满 alert.group_interval_seconds（默认 60s），本轮不推送。若持续 firing 且标签不变，则按 repeat_interval_seconds（默认 300s）重复提醒。",
   },
   repeat_suppressed: {
     category: "timing",
