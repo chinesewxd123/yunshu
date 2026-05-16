@@ -2036,7 +2036,9 @@ export function AlertMonitorPlatformPage() {
     { title: "结束", dataIndex: "ends_at", width: 160, render: (t: string) => formatDateTime(t) },
     {
       title: "操作",
+      key: "actions",
       width: 120,
+      fixed: "right" as const,
       render: (_: unknown, r: AlertDutyBlockItem) => (
         <Space>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openBlkEdit(r)}>
@@ -3306,7 +3308,7 @@ export function AlertMonitorPlatformPage() {
           <Button type="primary" icon={<PlusOutlined />} disabled={!dutyRuleId} onClick={openBlkCreate}>
             新建班次
           </Button>
-          <Table rowKey="id" columns={blkColumns} dataSource={blockList} pagination={false} size="small" scroll={{ x: 720 }} />
+          <Table rowKey="id" columns={blkColumns} dataSource={blockList} pagination={false} size="small" scroll={{ x: 800 }} />
         </Space>
       </Drawer>
 

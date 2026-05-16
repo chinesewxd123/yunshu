@@ -114,7 +114,20 @@ func (s *AlertService) buildUnifiedNotifyTitle(ctx context.Context, rawTitle, se
 	}
 	alertName := resolveNotifyAlertName(rawTitle, payload)
 	projectName := s.resolveNotifyProjectName(ctx, payload)
-	return fmt.Sprintf("[%s][%s][%s][%s]", prefix, level, projectName, alertName)
+	title := fmt.Sprintf("[%s][%s][%s][%s]", prefix, level, projectName, alertName)
+	if s.shouldPrefixDutyOnNotifyTitle(ctx, payload) {
+		title = "值班" + title
+	}
+	return title
+}
+
+func (s *AlertService) shouldPrefixDutyOnNotifyTitle(ctx context.Context, payload map[string]interface{}) bool {
+	rid, ok := monitorRuleIDFromPayload(payload)
+	if !ok || rid == 0 || s.dutySvc == nil {
+		return false
+	}
+	active, err := s.dutySvc.HasActiveBlockAtRule(ctx, rid, time.Now())
+	return err == nil && active
 }
 
 func resolveNotifyAlertName(rawTitle string, payload map[string]interface{}) string {

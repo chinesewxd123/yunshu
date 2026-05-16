@@ -153,6 +153,19 @@ func dedupeEmailsLower(emails []string) []string {
 	return out
 }
 
+// HasActiveBlockAtRule 判断指定时刻是否存在覆盖该监控规则的值班班次。
+func (s *AlertDutyService) HasActiveBlockAtRule(ctx context.Context, monitorRuleID uint, t time.Time) (bool, error) {
+	if monitorRuleID == 0 {
+		return false, nil
+	}
+	var n int64
+	err := s.db.WithContext(ctx).Model(&model.AlertDutyBlock{}).
+		Where("monitor_rule_id = ? AND starts_at <= ? AND ends_at >= ?", monitorRuleID, t, t).
+		Limit(1).
+		Count(&n).Error
+	return n > 0, err
+}
+
 // ResolveNotifyEmailsAtRule 合并当前时刻命中的班次块内的用户/部门子树/额外邮箱（直接绑定到监控规则）。
 func (s *AlertDutyService) ResolveNotifyEmailsAtRule(ctx context.Context, monitorRuleID uint, t time.Time) ([]string, error) {
 	var blocks []model.AlertDutyBlock

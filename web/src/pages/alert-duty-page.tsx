@@ -334,7 +334,7 @@ export function AlertDutyPage() {
         loading={loading}
         dataSource={list}
         pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }}
-        scroll={{ x: 1400 }}
+        scroll={{ x: 1500 }}
         columns={[
           { title: "ID", dataIndex: "id", width: 80 },
           { title: "规则", width: 220, render: (_, row) => <Tag>{ruleNameMap.get(row.monitor_rule_id) || "未命名规则"}</Tag> },
@@ -388,7 +388,9 @@ export function AlertDutyPage() {
           },
           {
             title: "操作",
+            key: "actions",
             width: 150,
+            fixed: "right",
             render: (_, row) => (
               <Space>
                 <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(row)}>
