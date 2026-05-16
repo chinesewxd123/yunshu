@@ -4,15 +4,6 @@ import (
 	"testing"
 )
 
-func TestIsCriticalAlertSeverity(t *testing.T) {
-	if !isCriticalAlertSeverity(map[string]interface{}{"severity": "critical"}) {
-		t.Fatal("expected critical")
-	}
-	if isCriticalAlertSeverity(map[string]interface{}{"severity": "warning"}) {
-		t.Fatal("expected non-critical")
-	}
-}
-
 func TestMonitorRuleIDFromPayload(t *testing.T) {
 	id, ok := monitorRuleIDFromPayload(map[string]interface{}{
 		"labels": map[string]string{"monitor_rule_id": "42"},

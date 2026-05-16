@@ -1154,6 +1154,7 @@ func (s *AlertService) enrichAssigneeAndDutyEmails(ctx context.Context, outgoing
 	status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", outgoing["status"])))
 	var emails []string
 	if s.assigneeSvc != nil && (status != "resolved" || s.assigneeSvc.NotifyOnResolvedEnabled(ctx, rid)) {
+		// 邮件仅发往规则「处理人」解析结果（显式用户/部门/额外邮箱），不含项目全员
 		e, _ := s.assigneeSvc.ResolveNotifyEmails(ctx, rid)
 		emails = append(emails, e...)
 	}

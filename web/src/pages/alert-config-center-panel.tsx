@@ -824,7 +824,7 @@ export function AlertConfigCenterPanel({
                   ]}
                   extra={
                     <>
-                      根节点可留空：仅作路由分流，通知由子节点上的接收组发出。邮件兜底使用「监控规则 → 处理人」邮箱（接收组仅绑钉钉时也会补发邮件）。请先点击上方「
+                      根节点可留空：仅作路由分流，通知由子节点上的接收组发出。处理人邮件：wechat 等补发；钉钉/企微在无法 @ 时补发。请先点击上方「
                       {ALERT_ROUTING_TERMS.receiverGroupManage}」创建接收组并绑定通道。
                     </>
                   }
@@ -1342,7 +1342,7 @@ export function AlertConfigCenterPanel({
             name="channel_ids"
             label="绑定告警通道"
             rules={[{ required: true, message: "请至少绑定一个告警通道" }]}
-            extra="通道在「告警通道」菜单维护。critical 且本组仅绑钉钉/企微时，系统会向规则「处理人」中显式用户的邮箱自动补发邮件（非项目全员）。"
+            extra="钉钉/企微：处理人手机号不在企业通讯录或无法 @ 时自动补邮件；wechat 等会补邮件。已在钉钉/企微群内可 @ 的处理人不重复发邮件。"
           >
             <Select
               mode="multiple"
