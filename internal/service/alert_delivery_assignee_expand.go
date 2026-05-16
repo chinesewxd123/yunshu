@@ -8,8 +8,8 @@ import (
 	"yunshu/internal/model"
 )
 
-// expandChannelSetForAssigneeNotification 处理人/值班有邮箱时：若命中接收组配置了邮件通道或额外邮箱，确保纳入邮件投递。
-// 场景：仅配置钉钉时处理人不在群内，接收组同时绑定邮件通道或填写 email_recipients 时仍发邮件。
+// expandChannelSetForAssigneeNotification 规则处理人/值班有邮箱且命中接收组时，补启邮件通道投递至 assignee_emails。
+// 场景：接收组仅绑钉钉、处理人不在群内时，仍向监控规则「处理人」邮箱发信（不依赖接收组 email_recipients）。
 func (s *AlertService) expandChannelSetForAssigneeNotification(
 	ctx context.Context,
 	channelSet map[uint]struct{},
@@ -57,15 +57,12 @@ func (s *AlertService) expandChannelSetForAssigneeNotification(
 			break
 		}
 	}
-	if hasEmailInSet {
-		return
+	if !hasEmailInSet {
+		if id := s.firstEnabledEmailChannelID(ctx); id > 0 {
+			channelSet[id] = struct{}{}
+		}
 	}
-	if !hasEmailChannelInGroups && len(rgEmails) == 0 {
-		return
-	}
-	if id := s.firstEnabledEmailChannelID(ctx); id > 0 {
-		channelSet[id] = struct{}{}
-	}
+	_ = hasEmailChannelInGroups // 接收组是否含邮件通道仅影响是否已选入 channelSet，不阻断处理人邮件兜底
 }
 
 func collectEmailsFromPayload(payload map[string]interface{}, key string) []string {

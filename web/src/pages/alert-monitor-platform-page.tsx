@@ -3228,7 +3228,7 @@ export function AlertMonitorPlatformPage() {
         }
       >
         <Typography.Paragraph type="secondary">
-          通知优先级：已配置处理人邮箱时，仅发送处理人；未配置处理人时，才回退到邮件通道收件人。
+          邮件通道：已配置处理人邮箱时，优先发往处理人（忽略邮件通道固定收件人）；未配置处理人时使用通道收件人。接收组仅绑钉钉/企微时，仍会向处理人邮箱补发邮件。
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12 }}>
           部门解析（与后端一致）：在<strong>规则所属项目</strong>下，将所选部门根展开为子树，取「项目成员 ∩ 部门用户」的邮箱/手机；每个部门根另含其<strong>部门负责人</strong>的邮箱/手机；再与上方显式选择的用户合并去重。
