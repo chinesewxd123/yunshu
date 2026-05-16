@@ -7,6 +7,7 @@ var K8sClusterPermissionPathPrefixes = []string{
 	"/api/v1/clusters",
 	"/api/v1/pods",
 	"/api/v1/namespaces",
+	"/api/v1/nodes",
 	"/api/v1/deployments",
 	"/api/v1/statefulsets",
 	"/api/v1/daemonsets",

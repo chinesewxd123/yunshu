@@ -7,6 +7,8 @@ export interface ClusterItem {
   owning_project_id?: number | null;
   connection_mode?: "kubeconfig" | "direct";
   kubeconfig?: string;
+  /** 后端不回传明文 kubeconfig，仅标识是否已配置 */
+  kubeconfig_configured?: boolean;
   direct_config?: DirectConfigPayload;
   status: number;
   created_at: string;

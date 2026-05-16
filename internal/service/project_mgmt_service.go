@@ -2405,6 +2405,7 @@ type LogStreamQuery struct {
 	ServerID    uint    `form:"server_id" binding:"required"`
 	LogSourceID uint    `form:"log_source_id" binding:"required"`
 	TailLines   int     `form:"tail_lines"`
+	AfterID     uint64  `form:"after_id"`
 	Include     *string `form:"include"`
 	Exclude     *string `form:"exclude"`
 	Highlight   *string `form:"highlight"`
@@ -2448,40 +2449,39 @@ func (s *ProjectMgmtService) ListRemoteLogUnits(ctx context.Context, q RemoteLog
 	return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg255ca1122356)
 }
 
+// ValidateLogSourceAccess 校验日志源属于项目下指定服务器（SSE/导出/审计共用）。
+func (s *ProjectMgmtService) ValidateLogSourceAccess(ctx context.Context, projectID, serverID, logSourceID uint) error {
+	if projectID == 0 {
+		return constants.ErrProjectIDRequired
+	}
+	sv, err := s.serverRepo.GetByID(ctx, serverID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrLogSourceServerNotFound
+		}
+		return err
+	}
+	if sv.ProjectID != projectID {
+		return constants.ErrServerNotInCurrentProject
+	}
+	ok, err := s.logRepo.BelongsToProjectServer(ctx, projectID, serverID, logSourceID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
+	}
+	return nil
+}
+
 // ExportLogs 导出相关的业务逻辑。
 func (s *ProjectMgmtService) ExportLogs(ctx context.Context, q LogExportQuery) ([]byte, string, error) {
-	if q.ProjectID == 0 {
-		return nil, "", constants.ErrProjectIDRequired
-	}
-	sv, err := s.serverRepo.GetByID(ctx, q.ServerID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", constants.ErrLogSourceServerNotFound
-		}
+	if err := s.ValidateLogSourceAccess(ctx, q.ProjectID, q.ServerID, q.LogSourceID); err != nil {
 		return nil, "", err
-	}
-	if sv.ProjectID != q.ProjectID {
-		return nil, "", constants.ErrServerNotInCurrentProject
-	}
-	src, err := s.logRepo.GetByIDInProject(ctx, q.ProjectID, q.LogSourceID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
-		}
-		return nil, "", err
-	}
-	svcRow, err := s.serviceRepo.GetByID(ctx, src.ServiceID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", constants.ErrNotFoundWithMsg(constants.ErrMsgce1b3b846df9)
-		}
-		return nil, "", err
-	}
-	if svcRow.ServerID != q.ServerID {
-		return nil, "", constants.ErrBadRequestWithMsg(constants.ErrMsgf528977ae67a)
 	}
 
 	var includeRe *regexp.Regexp
+	var err error
 	if q.Include != nil && strings.TrimSpace(*q.Include) != "" {
 		includeRe, err = regexp.Compile(strings.TrimSpace(*q.Include))
 		if err != nil {

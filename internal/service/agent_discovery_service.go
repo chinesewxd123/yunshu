@@ -5,21 +5,30 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
-	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
+	"yunshu/internal/pkg/constants"
+	"yunshu/internal/pkg/logpath"
 	"yunshu/internal/repository"
 )
+
+const discoveryStaleRetention = 7 * 24 * time.Hour
 
 type AgentDiscoveryService struct {
 	repo       *repository.AgentDiscoveryRepository
 	agentRepo  *repository.LogAgentRepository
 	serverRepo *repository.ServerRepository
+	logRepo    *repository.LogSourceRepository
 }
 
 // NewAgentDiscoveryService 创建相关逻辑。
-func NewAgentDiscoveryService(repo *repository.AgentDiscoveryRepository, agentRepo *repository.LogAgentRepository, serverRepo *repository.ServerRepository) *AgentDiscoveryService {
-	return &AgentDiscoveryService{repo: repo, agentRepo: agentRepo, serverRepo: serverRepo}
+func NewAgentDiscoveryService(
+	repo *repository.AgentDiscoveryRepository,
+	agentRepo *repository.LogAgentRepository,
+	serverRepo *repository.ServerRepository,
+	logRepo *repository.LogSourceRepository,
+) *AgentDiscoveryService {
+	return &AgentDiscoveryService{repo: repo, agentRepo: agentRepo, serverRepo: serverRepo, logRepo: logRepo}
 }
 
 type AgentDiscoveryItem struct {
@@ -43,7 +52,7 @@ func (s *AgentDiscoveryService) Report(ctx context.Context, req AgentDiscoveryRe
 	if token == "" {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg488a8dce8ef5)
 	}
-	agentSvc := NewLogAgentService(s.agentRepo, s.serverRepo, nil, "")
+	agentSvc := NewLogAgentService(s.agentRepo, s.serverRepo, s.logRepo, "", nil)
 	agent, err := agentSvc.AuthenticateByToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -80,14 +89,19 @@ func (s *AgentDiscoveryService) Report(ctx context.Context, req AgentDiscoveryRe
 	if err := s.repo.UpsertMany(ctx, agent.ProjectID, agent.ServerID, items); err != nil {
 		return nil, err
 	}
+	_ = s.repo.PruneStale(ctx, agent.ProjectID, agent.ServerID, now.Add(-discoveryStaleRetention))
 	return &AgentDiscoveryReportResult{Accepted: len(items)}, nil
 }
 
 type AgentDiscoveryListQuery struct {
-	ProjectID uint    `form:"project_id"`
-	ServerID  uint    `form:"server_id" binding:"required"`
-	Kind      *string `form:"kind"`
-	Limit     int     `form:"limit"`
+	ProjectID     uint   `form:"project_id"`
+	ServerID      uint   `form:"server_id" binding:"required"`
+	Kind          *string `form:"kind"`
+	Limit         int    `form:"limit"`
+	LogSourceID   uint   `form:"log_source_id"`
+	UnmatchedOnly bool   `form:"unmatched_only"`
+	Prefix        string `form:"prefix"`
+	FreshHours    int    `form:"fresh_hours"`
 }
 
 type AgentDiscoveryListItem struct {
@@ -99,7 +113,6 @@ type AgentDiscoveryListItem struct {
 
 // List 查询列表相关的业务逻辑。
 func (s *AgentDiscoveryService) List(ctx context.Context, q AgentDiscoveryListQuery) ([]AgentDiscoveryListItem, error) {
-	// Validate server belongs to project.
 	sv, err := s.serverRepo.GetByID(ctx, q.ServerID)
 	if err != nil {
 		return nil, err
@@ -107,12 +120,72 @@ func (s *AgentDiscoveryService) List(ctx context.Context, q AgentDiscoveryListQu
 	if sv.ProjectID != q.ProjectID {
 		return nil, constants.ErrServerNotInProjectForbidden
 	}
-	list, err := s.repo.List(ctx, q.ProjectID, q.ServerID, q.Kind, q.Limit)
+
+	freshHours := q.FreshHours
+	if freshHours == 0 {
+		freshHours = 24 * 7
+	}
+	var freshSince *time.Time
+	if freshHours > 0 {
+		t := time.Now().Add(-time.Duration(freshHours) * time.Hour)
+		freshSince = &t
+	}
+	_ = s.repo.PruneStale(ctx, q.ProjectID, q.ServerID, time.Now().Add(-discoveryStaleRetention))
+
+	kind := q.Kind
+	if kind == nil {
+		file := "file"
+		kind = &file
+	}
+	list, err := s.repo.List(ctx, repository.AgentDiscoveryListFilter{
+		ProjectID:  q.ProjectID,
+		ServerID:   q.ServerID,
+		Kind:       kind,
+		Limit:      q.Limit,
+		Prefix:     strings.TrimSpace(q.Prefix),
+		FreshSince: freshSince,
+	})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]AgentDiscoveryListItem, 0, len(list))
+
+	sources, _ := s.logRepo.ListByProjectAndServer(ctx, q.ProjectID, q.ServerID)
+	var matchSourcePath string
+	if q.LogSourceID > 0 {
+		for _, src := range sources {
+			if src.ID == q.LogSourceID {
+				matchSourcePath = src.Path
+				break
+			}
+		}
+	}
+
+	filtered := make([]model.AgentDiscovery, 0, len(list))
 	for _, it := range list {
+		if matchSourcePath != "" {
+			if !logpath.PathMatchesSource(it.Value, matchSourcePath) {
+				continue
+			}
+			filtered = append(filtered, it)
+			continue
+		}
+		if q.UnmatchedOnly {
+			matched := false
+			for _, src := range sources {
+				if logpath.PathMatchesSource(it.Value, src.Path) {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				continue
+			}
+		}
+		filtered = append(filtered, it)
+	}
+
+	out := make([]AgentDiscoveryListItem, 0, len(filtered))
+	for _, it := range filtered {
 		out = append(out, AgentDiscoveryListItem{
 			Kind:       it.Kind,
 			Value:      it.Value,

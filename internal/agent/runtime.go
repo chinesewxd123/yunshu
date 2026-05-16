@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,6 +21,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 type Config struct {
@@ -46,6 +46,12 @@ type Config struct {
 	EnableFallback    bool
 	EnableDiscovery   bool
 	EnableHealth      bool
+	// RuntimeReloadInterval 拉取平台 runtime-config 的间隔；变更后重启采集会话。
+	RuntimeReloadInterval time.Duration
+	// DiscoveryRoots 额外扫描根目录（逗号分隔 CLI）；与平台 _discovery_root 源合并。
+	DiscoveryRoots []string
+	// DiscoveryInterval 周期性补扫间隔；0 表示仅启动与配置变更时扫描。
+	DiscoveryInterval time.Duration
 }
 
 func logInfof(format string, args ...any) {
@@ -175,115 +181,6 @@ type discoveryItem struct {
 	Extra map[string]any `json:"extra,omitempty"`
 }
 
-func scanDiscovery(ctx context.Context, sources []runtimeSource) []discoveryItem {
-	out := make([]discoveryItem, 0, 256)
-	seen := map[string]struct{}{}
-	add := func(kind, value string) {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return
-		}
-		key := kind + "\n" + value
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		out = append(out, discoveryItem{Kind: kind, Value: value})
-	}
-
-	expandPatternRoot := func(p string) string {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			return ""
-		}
-		first := strings.IndexAny(p, "*?[")
-		if first < 0 {
-			return filepath.Dir(p)
-		}
-		prefix := p[:first]
-		// Trim incomplete path token before wildcard.
-		if idx := strings.LastIndexAny(prefix, `/\`); idx >= 0 {
-			prefix = prefix[:idx]
-		}
-		prefix = strings.TrimSpace(prefix)
-		if prefix == "" {
-			return ""
-		}
-		return prefix
-	}
-
-	// Discover from configured runtime sources first (dynamic, no fixed paths).
-	if runtime.GOOS != "windows" {
-		addFilesByWalk := func(root string, maxFiles int) {
-			if maxFiles <= 0 {
-				maxFiles = 2000
-			}
-			count := 0
-			_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-				if err != nil {
-					return nil
-				}
-				if d.IsDir() {
-					return nil
-				}
-				add("file", path)
-				count++
-				if count >= maxFiles {
-					return io.EOF
-				}
-				return nil
-			})
-		}
-
-		for _, src := range sources {
-			if strings.ToLower(strings.TrimSpace(src.LogType)) != "file" {
-				continue
-			}
-			p := strings.TrimSpace(src.Path)
-			if p == "" {
-				continue
-			}
-			if strings.ContainsAny(p, "*?[") {
-				// Current matched files for glob pattern.
-				matches, _ := filepath.Glob(p)
-				for _, f := range matches {
-					add("file", f)
-				}
-				if root := expandPatternRoot(p); root != "" {
-					add("dir", root)
-					addFilesByWalk(root, 5000)
-				}
-				continue
-			}
-			if st, err := os.Stat(p); err == nil {
-				if st.IsDir() {
-					add("dir", p)
-					addFilesByWalk(p, 5000)
-				} else {
-					add("file", p)
-					add("dir", filepath.Dir(p))
-				}
-			}
-		}
-
-		// Try systemd units (running)
-		cmd := exec.CommandContext(ctx, "sh", "-c", "systemctl list-units --type=service --state=running --no-pager --no-legend 2>/dev/null | awk '{print $1}'")
-		if b, err := cmd.Output(); err == nil {
-			lines := strings.Split(string(b), "\n")
-			for _, ln := range lines {
-				ln = strings.TrimSpace(ln)
-				if ln == "" {
-					continue
-				}
-				if strings.HasSuffix(ln, ".service") {
-					add("unit", ln)
-				}
-			}
-		}
-	}
-	return out
-}
-
 func reportDiscovery(ctx context.Context, cli pb.AgentRuntimeServiceClient, token string, items []discoveryItem) error {
 	if len(items) == 0 {
 		return nil
@@ -365,12 +262,15 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	var sources []runtimeSource
-	var pID uint
+	var runtimeRoots []string
 	if cfg.EnableRuntimePull {
-		sources, pID, err = fetchRuntimeConfig(ctx, agentClient, token)
+		bundle, cfgErr := fetchRuntimeConfig(ctx, agentClient, token)
+		err = cfgErr
+		sources = bundle.Sources
+		runtimeRoots = bundle.Roots
 		if err == nil && len(sources) > 0 {
-			projectID = pID
-			logInfof("runtime-config loaded project=%d sources=%d", projectID, len(sources))
+			projectID = bundle.ProjectID
+			logInfof("runtime-config loaded project=%d sources=%d discovery_roots=%d", projectID, len(sources), len(runtimeRoots))
 		}
 	}
 	if len(sources) == 0 {
@@ -403,17 +303,10 @@ func Run(ctx context.Context, cfg Config) error {
 	if projectID == 0 {
 		return errors.New("project-id is empty")
 	}
-	// Best-effort discovery report (helps UI bootstrap log sources).
-	// Does not block agent main ingest loop if it fails.
 	if cfg.EnableDiscovery {
-		discoveryItems := scanDiscovery(ctx, sources)
-		if err := reportDiscovery(ctx, agentClient, token, discoveryItems); err != nil {
-			logDebugf(cfg.Debug, "discovery report failed err=%v", err)
-		} else {
-			logDebugf(cfg.Debug, "discovery report sent items=%d", len(discoveryItems))
-		}
+		go runDiscoveryReport(ctx, agentClient, cfg, token, sources, runtimeRoots)
 	}
-	err = runAgentLoop(ctx, agentClient, cfg, projectID, token, sources)
+	err = runAgentSupervisor(ctx, agentClient, cfg, projectID, token, sources, runtimeRoots)
 	if cfg.EnableHealth {
 		_ = reportHealth(context.Background(), cfg.PlatformURL, map[string]any{
 			"token":            token,
@@ -427,29 +320,16 @@ func Run(ctx context.Context, cfg Config) error {
 	return err
 }
 
-func fetchRuntimeConfig(ctx context.Context, cli pb.AgentRuntimeServiceClient, token string) ([]runtimeSource, uint, error) {
-	out, err := cli.GetRuntimeConfig(ctx, &pb.GetRuntimeConfigRequest{Token: token})
-	if err != nil {
-		return nil, 0, err
-	}
-	sources := make([]runtimeSource, 0, len(out.GetSources()))
-	for _, it := range out.GetSources() {
-		sources = append(sources, runtimeSource{
-			LogSourceID: uint(it.GetLogSourceId()),
-			LogType:     it.GetLogType(),
-			Path:        it.GetPath(),
-		})
-	}
-	return sources, uint(out.GetProjectId()), nil
-}
-
-func runAgentLoop(ctx context.Context, client pb.AgentRuntimeServiceClient, cfg Config, projectID uint, token string, sources []runtimeSource) error {
+func runIngestSession(ctx context.Context, client pb.AgentRuntimeServiceClient, cfg Config, projectID uint, token string, sources []runtimeSource) error {
 	logInfof("connecting ingest stream project=%d server=%d", projectID, cfg.ServerID)
-	stream, err := client.IngestLogs(ctx)
+	ingestCtx := metadata.AppendToOutgoingContext(ctx, "x-agent-token", token)
+	stream, err := client.IngestLogs(ingestCtx)
 	if err != nil {
 		return err
 	}
 	logInfof("ingest stream connected")
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
 
 	var writeMu sync.Mutex
 	writeIngest := func(v ingestMessage) error {
@@ -476,6 +356,7 @@ func runAgentLoop(ctx context.Context, client pb.AgentRuntimeServiceClient, cfg 
 		for {
 			ack, err := stream.Recv()
 			if err != nil {
+				streamCancel()
 				return
 			}
 			pendingMu.Lock()
@@ -586,10 +467,10 @@ func runAgentLoop(ctx context.Context, client pb.AgentRuntimeServiceClient, cfg 
 			pendingMu.Unlock()
 			atomic.AddUint64(&sentLines, uint64(len(entries)))
 			logDebugf(cfg.Debug, "sent batch source=%d seq=%d lines=%d", logSourceID, s, len(entries))
+			buffers[logSourceID] = buffers[logSourceID][:0]
 		} else {
-			logDebugf(cfg.Debug, "send batch failed source=%d seq=%d err=%v", logSourceID, s, err)
+			logDebugf(cfg.Debug, "send batch failed source=%d seq=%d err=%v (buffer retained)", logSourceID, s, err)
 		}
-		buffers[logSourceID] = buffers[logSourceID][:0]
 	}
 	flushAll := func() {
 		for id := range buffers {
@@ -599,6 +480,12 @@ func runAgentLoop(ctx context.Context, client pb.AgentRuntimeServiceClient, cfg 
 
 	for {
 		select {
+		case <-streamCtx.Done():
+			flushAll()
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("ingest stream disconnected")
 		case <-ctx.Done():
 			flushAll()
 			return nil
@@ -737,6 +624,9 @@ func startLocalSource(ctx context.Context, sourceType, path string, tailLines in
 		sc := bufio.NewScanner(stderr)
 		for sc.Scan() {
 		}
+	}()
+	go func() {
+		_ = c.Wait()
 	}()
 	return lines, nil
 }

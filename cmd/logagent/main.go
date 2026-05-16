@@ -33,7 +33,12 @@ func main() {
 	flag.BoolVar(&cfg.EnableFallback, "enable-fallback", false, "enable fallback single-source mode when runtime config unavailable")
 	flag.BoolVar(&cfg.EnableDiscovery, "enable-discovery", true, "enable discovery scan and report")
 	flag.BoolVar(&cfg.EnableHealth, "enable-health-report", true, "enable health report to platform")
+	var discoveryRoots string
+	flag.StringVar(&discoveryRoots, "discovery-roots", "", "comma-separated extra discovery roots")
+	flag.DurationVar(&cfg.DiscoveryInterval, "discovery-interval", 0, "periodic discovery rescan interval")
 	flag.Parse()
+	cfg.DiscoveryRoots = agent.ParseDiscoveryRootsFlag(discoveryRoots)
+	cfg.RuntimeReloadInterval = 60 * time.Second
 
 	if err := agent.Run(context.Background(), cfg); err != nil {
 		log.Fatal(err)

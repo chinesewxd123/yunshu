@@ -10,6 +10,7 @@ import (
 	neturl "net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	agentpkg "yunshu/internal/agent"
@@ -35,16 +36,32 @@ func effectiveLogAgentHealth(online bool, reported string) string {
 	return s
 }
 
+// DiscoveryRootLogType 为 runtime-config 中传递引导扫描目录的虚拟日志源类型（不采集）。
+const DiscoveryRootLogType = "_discovery_root"
+
 type LogAgentService struct {
 	repo           *repository.LogAgentRepository
 	serverRepo     *repository.ServerRepository
 	logRepo        *repository.LogSourceRepository
 	registerSecret string
+	discoveryRoots []string
 }
 
 // NewLogAgentService 创建相关逻辑。
-func NewLogAgentService(repo *repository.LogAgentRepository, serverRepo *repository.ServerRepository, logRepo *repository.LogSourceRepository, registerSecret string) *LogAgentService {
-	return &LogAgentService{repo: repo, serverRepo: serverRepo, logRepo: logRepo, registerSecret: strings.TrimSpace(registerSecret)}
+func NewLogAgentService(
+	repo *repository.LogAgentRepository,
+	serverRepo *repository.ServerRepository,
+	logRepo *repository.LogSourceRepository,
+	registerSecret string,
+	discoveryRoots []string,
+) *LogAgentService {
+	return &LogAgentService{
+		repo:           repo,
+		serverRepo:     serverRepo,
+		logRepo:        logRepo,
+		registerSecret: strings.TrimSpace(registerSecret),
+		discoveryRoots: append([]string(nil), discoveryRoots...),
+	}
 }
 
 type LogAgentRegisterRequest struct {
@@ -132,7 +149,7 @@ func (s *LogAgentService) Register(ctx context.Context, req LogAgentRegisterRequ
 		if err := s.repo.Create(ctx, it); err != nil {
 			return nil, err
 		}
-		return &LogAgentRegisterResult{ProjectID: projectID, AgentID: it.ID, Token: token, WSIngest: "/api/v1/agents/ws/ingest?token=<token>"}, nil
+		return &LogAgentRegisterResult{ProjectID: projectID, AgentID: it.ID, Token: token, WSIngest: "grpc:AgentRuntimeService/IngestLogs (metadata x-agent-token)"}, nil
 	}
 	existing.ProjectID = projectID
 	existing.Name = strings.TrimSpace(req.Name)
@@ -144,7 +161,7 @@ func (s *LogAgentService) Register(ctx context.Context, req LogAgentRegisterRequ
 	if err := s.repo.Save(ctx, existing); err != nil {
 		return nil, err
 	}
-	return &LogAgentRegisterResult{ProjectID: projectID, AgentID: existing.ID, Token: token, WSIngest: "/api/v1/agents/ws/ingest?token=<token>"}, nil
+	return &LogAgentRegisterResult{ProjectID: projectID, AgentID: existing.ID, Token: token, WSIngest: "grpc:AgentRuntimeService/IngestLogs (metadata x-agent-token)"}, nil
 }
 
 // PublicRegister 执行对应的业务逻辑。
@@ -176,6 +193,36 @@ func (s *LogAgentService) AuthenticateByToken(ctx context.Context, token string)
 		return nil, err
 	}
 	return it, nil
+}
+
+// AllowedLogSourceIDs 返回 Agent 所属项目/服务器下可上报的日志源 ID 集合。
+func (s *LogAgentService) AllowedLogSourceIDs(ctx context.Context, agent *model.LogAgent) (map[uint]struct{}, error) {
+	if agent == nil {
+		return nil, constants.ErrAgentTokenInvalid
+	}
+	list, err := s.logRepo.ListByProjectAndServer(ctx, agent.ProjectID, agent.ServerID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint]struct{}, len(list))
+	for _, it := range list {
+		out[it.ID] = struct{}{}
+	}
+	return out, nil
+}
+
+// AuthorizeIngestBatch 校验 ingest 批次与 Agent 登记及启动时缓存的日志源白名单一致（无每批 DB 查询）。
+func (s *LogAgentService) AuthorizeIngestBatch(agent *model.LogAgent, projectID, serverID, logSourceID uint, allowed map[uint]struct{}) error {
+	if agent == nil {
+		return constants.ErrAgentTokenInvalid
+	}
+	if agent.ProjectID != projectID || agent.ServerID != serverID {
+		return constants.ErrAgentTokenInvalid
+	}
+	if _, ok := allowed[logSourceID]; !ok {
+		return constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
+	}
+	return nil
 }
 
 // TouchSeen 执行对应的业务逻辑。
@@ -579,6 +626,7 @@ type AgentRuntimeConfigResult struct {
 }
 
 type AgentLogEvent struct {
+	ID       uint64 `json:"id"`
 	Line     string `json:"line"`
 	FilePath string `json:"file_path,omitempty"`
 }
@@ -696,6 +744,17 @@ func (s *LogAgentService) RuntimeConfigByToken(ctx context.Context, token string
 			Path:        it.Path,
 		})
 	}
+	for _, root := range s.discoveryRoots {
+		root = strings.TrimSpace(root)
+		if root == "" {
+			continue
+		}
+		out = append(out, AgentRuntimeSource{
+			LogSourceID: 0,
+			LogType:     DiscoveryRootLogType,
+			Path:        root,
+		})
+	}
 	return &AgentRuntimeConfigResult{
 		ProjectID: agent.ProjectID,
 		ServerID:  agent.ServerID,
@@ -732,6 +791,7 @@ func BuildLogStreamKey(projectID, serverID, logSourceID uint) string {
 
 type logBroker struct {
 	mu          sync.RWMutex
+	seq         uint64
 	subs        map[string]map[chan AgentLogEvent]struct{}
 	lastPublish map[string]time.Time
 	history     map[string][]AgentLogEvent
@@ -753,15 +813,22 @@ func (b *logBroker) Publish(key string, event AgentLogEvent) {
 		return
 	}
 	b.mu.Lock()
+	event.ID = atomic.AddUint64(&b.seq, 1)
 	b.lastPublish[key] = time.Now()
 	h := append(b.history[key], event)
 	if len(h) > maxLogHistoryPerStream {
 		h = append([]AgentLogEvent(nil), h[len(h)-maxLogHistoryPerStream:]...)
 	}
 	b.history[key] = h
-	targets := b.subs[key]
+	var targets []chan AgentLogEvent
+	if m, ok := b.subs[key]; ok && len(m) > 0 {
+		targets = make([]chan AgentLogEvent, 0, len(m))
+		for ch := range m {
+			targets = append(targets, ch)
+		}
+	}
 	b.mu.Unlock()
-	for ch := range targets {
+	for _, ch := range targets {
 		select {
 		case ch <- event:
 		default:
@@ -769,8 +836,8 @@ func (b *logBroker) Publish(key string, event AgentLogEvent) {
 	}
 }
 
-// Subscribe 的功能实现。
-func (b *logBroker) Subscribe(key string, replayLines int) (<-chan AgentLogEvent, func()) {
+// Subscribe 订阅日志流；afterID>0 时仅回放 ID 更大的历史事件（用于 SSE 断线续传）。
+func (b *logBroker) Subscribe(key string, replayLines int, afterID uint64) (<-chan AgentLogEvent, func()) {
 	if replayLines < 0 {
 		replayLines = 0
 	}
@@ -785,11 +852,23 @@ func (b *logBroker) Subscribe(key string, replayLines int) (<-chan AgentLogEvent
 	}
 	b.subs[key][ch] = struct{}{}
 	history := b.history[key]
-	start := 0
-	if replayLines > 0 && len(history) > replayLines {
-		start = len(history) - replayLines
+	var snapshot []AgentLogEvent
+	if afterID > 0 {
+		for _, ev := range history {
+			if ev.ID > afterID {
+				snapshot = append(snapshot, ev)
+			}
+		}
+		if replayLines > 0 && len(snapshot) > replayLines {
+			snapshot = append([]AgentLogEvent(nil), snapshot[len(snapshot)-replayLines:]...)
+		}
+	} else {
+		start := 0
+		if replayLines > 0 && len(history) > replayLines {
+			start = len(history) - replayLines
+		}
+		snapshot = append([]AgentLogEvent(nil), history[start:]...)
 	}
-	snapshot := append([]AgentLogEvent(nil), history[start:]...)
 	b.mu.Unlock()
 	for _, it := range snapshot {
 		select {

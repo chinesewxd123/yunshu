@@ -44,6 +44,8 @@ type AlertEventListQuery struct {
 	MonitorPipeline string `form:"monitorPipeline"`
 	DatasourceID    uint   `form:"datasourceId"`
 	GroupKey        string `form:"groupKey"`
+	// Category 策略分类：delivery|routing|silence|inhibition|timing|resolved|failure|other
+	Category string `form:"category"`
 }
 
 type AlertChannelUpsertRequest struct {
@@ -105,6 +107,8 @@ type AlertService struct {
 	cloudExpiryEvalMu sync.Mutex
 	// 无 Redis 时云到期规则按 synthetic rule id 记录上次「按 Cron 触发评估」时间
 	cloudExpiryNoRedisLastEval map[uint]time.Time
+	// 无 Redis 时内置监控规则 firing 状态（key=monitor_rule_{id}）
+	monitorNoRedisActive map[string]bool
 
 	// 可选依赖：告警抑制、订阅树路由
 	inhibitionSvc      *AlertInhibitionService   // 告警抑制服务
@@ -216,19 +220,44 @@ func (s *AlertService) GetSubscriptionService() *AlertSubscriptionService {
 	return s.subscriptionSvc
 }
 
+func (s *AlertService) GetInhibitionService() *AlertInhibitionService {
+	return s.inhibitionSvc
+}
+
 func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, labels map[string]string) (map[uint]struct{}, string, string, int) {
 	// 彻底弃用旧策略：仅使用订阅树路由（订阅节点 -> 接收组 -> 通道）
 	if s.subscriptionSvc == nil || s.receiverGroupCache == nil {
 		return nil, "", "", 0
 	}
-	projectID := parseLabelUintOrZero(labels["project_id"])
+	projectID := s.resolveProjectIDForAlertRouting(ctx, labels)
 	severity := strings.TrimSpace(labels["severity"])
-	route, ok := s.subscriptionSvc.MatchRouteDetailed(ctx, projectID, labels, severity, status)
-	if !ok || len(route.ReceiverGroupIDs) == 0 {
+	var merged AlertRouteResult
+	var anyMatched bool
+	tryMatch := func(pid uint) {
+		route, ok := s.subscriptionSvc.MatchRouteDetailed(ctx, pid, labels, severity, status)
+		if !ok || len(route.ReceiverGroupIDs) == 0 {
+			return
+		}
+		anyMatched = true
+		merged.ReceiverGroupIDs = append(merged.ReceiverGroupIDs, route.ReceiverGroupIDs...)
+		merged.MatchedNodeIDs = append(merged.MatchedNodeIDs, route.MatchedNodeIDs...)
+		merged.MatchedNodeNames = append(merged.MatchedNodeNames, route.MatchedNodeNames...)
+		if route.SilenceSeconds > merged.SilenceSeconds {
+			merged.SilenceSeconds = route.SilenceSeconds
+		}
+		if merged.MatchedPath == "" && route.MatchedPath != "" {
+			merged.MatchedPath = route.MatchedPath
+		}
+	}
+	if projectID > 0 {
+		tryMatch(projectID)
+	}
+	tryMatch(0)
+	if !anyMatched {
 		return nil, "", "", 0
 	}
 	out := map[uint]struct{}{}
-	for _, gid := range route.ReceiverGroupIDs {
+	for _, gid := range merged.ReceiverGroupIDs {
 		g, err := s.receiverGroupCache.Get(gid)
 		if err != nil || g == nil {
 			continue
@@ -242,11 +271,29 @@ func (s *AlertService) channelIDSetForAlert(ctx context.Context, status string, 
 			}
 		}
 	}
-	ids := make([]string, 0, len(route.MatchedNodeIDs))
-	for _, id := range route.MatchedNodeIDs {
+	ids := make([]string, 0, len(merged.MatchedNodeIDs))
+	for _, id := range merged.MatchedNodeIDs {
 		ids = append(ids, fmt.Sprintf("%d", id))
 	}
-	return out, strings.Join(ids, ","), strings.Join(route.MatchedNodeNames, ","), route.SilenceSeconds
+	return out, strings.Join(ids, ","), strings.Join(merged.MatchedNodeNames, ","), merged.SilenceSeconds
+}
+
+func (s *AlertService) resolveProjectIDForAlertRouting(ctx context.Context, labels map[string]string) uint {
+	if labels == nil {
+		return 0
+	}
+	if pid := parseLabelUintOrZero(labels["project_id"]); pid > 0 {
+		return pid
+	}
+	for _, key := range []string{"datasource_id", "yunshu_datasource_id"} {
+		if dsID, ok := parseLabelUint(labels[key]); ok && dsID > 0 {
+			var ds model.AlertDatasource
+			if err := s.db.WithContext(ctx).Select("project_id").First(&ds, dsID).Error; err == nil && ds.ProjectID > 0 {
+				return ds.ProjectID
+			}
+		}
+	}
+	return 0
 }
 
 func parseLabelUintOrZero(s string) uint {
@@ -608,6 +655,11 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 	}
 	if v := strings.TrimSpace(q.GroupKey); v != "" {
 		tx = tx.Where("group_key = ?", v)
+	}
+	if v := strings.TrimSpace(q.Category); v != "" {
+		if ValidAlertEventCategory(v) {
+			tx = applyAlertEventCategoryFilter(tx, v)
+		}
 	}
 	if err = tx.Count(&total).Error; err != nil {
 		return nil, 0, page, pageSize, err
@@ -1092,8 +1144,9 @@ func (s *AlertService) enrichAssigneeAndDutyEmails(ctx context.Context, outgoing
 	if !ok {
 		return
 	}
+	status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", outgoing["status"])))
 	var emails []string
-	if s.assigneeSvc != nil {
+	if s.assigneeSvc != nil && (status != "resolved" || s.assigneeSvc.NotifyOnResolvedEnabled(ctx, rid)) {
 		e, _ := s.assigneeSvc.ResolveNotifyEmails(ctx, rid)
 		emails = append(emails, e...)
 	}
@@ -1106,7 +1159,7 @@ func (s *AlertService) enrichAssigneeAndDutyEmails(ctx context.Context, outgoing
 		outgoing["assignee_emails"] = emails
 	}
 	var phones []string
-	if s.assigneeSvc != nil {
+	if s.assigneeSvc != nil && (status != "resolved" || s.assigneeSvc.NotifyOnResolvedEnabled(ctx, rid)) {
 		p, _ := s.assigneeSvc.ResolveNotifyPhones(ctx, rid)
 		phones = append(phones, p...)
 	}
@@ -1197,7 +1250,12 @@ func (s *AlertService) logAllChannelsDeliveryFailed(ctx context.Context, title, 
 // 配置启用且 Redis 可用时，Webhook 先入队异步消费；内置评估路径应调用 receiveAlertmanagerPayloadSync 避免二次入队。
 func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertManagerPayload) error {
 	if s.shouldEnqueueAlertmanagerWebhook() {
-		return s.enqueueAlertmanagerWebhook(ctx, payload)
+		if err := s.enqueueAlertmanagerWebhook(ctx, payload); err != nil {
+			s.logWebhook("warn", "alert webhook enqueue failed, processing synchronously",
+				append(webhookPayloadLogAttrs(payload), slog.Any("error", err))...)
+			return s.receiveAlertmanagerPayloadSync(ctx, payload)
+		}
+		return nil
 	}
 	return s.receiveAlertmanagerPayloadSync(ctx, payload)
 }

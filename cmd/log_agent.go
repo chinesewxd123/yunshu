@@ -10,6 +10,7 @@ import (
 
 func init() {
 	rootCmd.AddCommand(logAgentCmd)
+	rootCmd.AddCommand(logAgentDoctorCmd)
 	logAgentCmd.Flags().StringVar(&agentServerURL, "grpc-server", "127.0.0.1:18080", "platform grpc server address")
 	logAgentCmd.Flags().StringVar(&agentPlatformURL, "platform-url", "", "platform http address for health report, e.g. http://10.10.10.10:8080")
 	logAgentCmd.Flags().UintVar(&agentProjectID, "project-id", 0, "project id")
@@ -31,6 +32,8 @@ func init() {
 	logAgentCmd.Flags().BoolVar(&agentEnableFallback, "enable-fallback", false, "enable fallback single-source mode when runtime config unavailable")
 	logAgentCmd.Flags().BoolVar(&agentEnableDiscovery, "enable-discovery", true, "enable discovery scan and report")
 	logAgentCmd.Flags().BoolVar(&agentEnableHealth, "enable-health-report", true, "enable health report to platform")
+	logAgentCmd.Flags().StringVar(&agentDiscoveryRoots, "discovery-roots", "", "comma-separated extra discovery roots, e.g. /var/log,/var/log/pods")
+	logAgentCmd.Flags().DurationVar(&agentDiscoveryInterval, "discovery-interval", 0, "periodic discovery rescan interval (0=only on start/config change)")
 }
 
 var (
@@ -55,11 +58,31 @@ var (
 	agentEnableFallback    bool
 	agentEnableDiscovery   bool
 	agentEnableHealth      bool
+	agentDiscoveryRoots    string
+	agentDiscoveryInterval time.Duration
 )
+
+var logAgentDoctorCmd = &cobra.Command{
+	Use:   "log-agent-doctor",
+	Short: "Check gRPC connectivity and agent token",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return agent.Doctor(agent.Config{
+			GrpcServer:        agentServerURL,
+			ServerID:          agentServerID,
+			Token:             agentToken,
+			RegisterSecret:    agentRegisterSecret,
+			Name:              agentName,
+			Version:           agentVersion,
+			EnableRuntimePull: true,
+		})
+	},
+}
 
 var logAgentCmd = &cobra.Command{
 	Use:   "log-agent",
 	Short: "Run lightweight local log collection agent",
+	Long: `常用参数：--grpc-server --server-id --token；平台 Bootstrap 下发 token 后启用 runtime-pull 即可。
+高级调优：--batch-size --flush-interval --resend-after --debug；离线单源：--enable-fallback --log-source-id --path`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return agent.Run(context.Background(), agent.Config{
 			GrpcServer:        agentServerURL,
@@ -81,8 +104,11 @@ var logAgentCmd = &cobra.Command{
 			ListenPort:        agentListenPort,
 			EnableRuntimePull: agentEnableRuntimePull,
 			EnableFallback:    agentEnableFallback,
-			EnableDiscovery:   agentEnableDiscovery,
-			EnableHealth:      agentEnableHealth,
+			EnableDiscovery:       agentEnableDiscovery,
+			EnableHealth:          agentEnableHealth,
+			RuntimeReloadInterval: 60 * time.Second,
+			DiscoveryRoots:        agent.ParseDiscoveryRootsFlag(agentDiscoveryRoots),
+			DiscoveryInterval:     agentDiscoveryInterval,
 		})
 	},
 }

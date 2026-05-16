@@ -80,6 +80,9 @@ security:
 agent:
   # log-agent 启动后用于自注册的共享密钥（建议生产环境改为强随机字符串）
   register_secret: "YunshuAgentRegisterSecret2026Secure!!"
+  # 引导 Agent 扫描的额外根目录（经 runtime-config 以 _discovery_root 下发）
+  discovery_roots:
+    - /var/log
 
 # 下列键的常见取值可在「系统 → 数据字典」中按类型选用，便于团队统一录入（如 config_yaml_mysql_host、alert_enrich_prometheus_url、k8s_kubeconfig_template 等）。
 alert:

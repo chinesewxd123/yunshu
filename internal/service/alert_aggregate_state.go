@@ -22,45 +22,6 @@ type groupAggregateSpec struct {
 	responsePrefix string
 }
 
-func (s *AlertService) updateGroupAggregateStateBySpec(ctx context.Context, spec groupAggregateSpec, groupKey string, interval time.Duration) (shouldSend bool, count int64, firstSeen string, lastSeen string) {
-	if s.redis == nil || strings.TrimSpace(groupKey) == "" {
-		return true, 1, "", ""
-	}
-	key := spec.keyPrefix + strings.TrimSpace(groupKey)
-	now := time.Now().UTC()
-	nowStr := now.Format(time.RFC3339)
-	pipe := s.redis.TxPipeline()
-	pipe.HSet(ctx, key, "last_seen", nowStr)
-	pipe.HSetNX(ctx, key, "first_seen", nowStr)
-	incr := pipe.HIncrBy(ctx, key, "count", 1)
-	lastSentCmd := pipe.HGet(ctx, key, "last_sent")
-	pipe.Expire(ctx, key, time.Duration(s.cfg.AggregateTTLSeconds)*time.Second)
-	_, _ = pipe.Exec(ctx)
-	c, err := incr.Result()
-	if err != nil || c <= 0 {
-		c = 1
-	}
-	lastSent, _ := lastSentCmd.Result()
-	if c == 1 || strings.TrimSpace(lastSent) == "" {
-		_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-		first, _ := s.redis.HGet(ctx, key, "first_seen").Result()
-		return true, c, first, nowStr
-	}
-	ls, err := time.Parse(time.RFC3339, strings.TrimSpace(lastSent))
-	if err != nil {
-		_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-		first, _ := s.redis.HGet(ctx, key, "first_seen").Result()
-		return true, c, first, nowStr
-	}
-	if now.Sub(ls) >= interval {
-		_ = s.redis.HSet(ctx, key, "last_sent", nowStr).Err()
-		first, _ := s.redis.HGet(ctx, key, "first_seen").Result()
-		return true, c, first, nowStr
-	}
-	first, _ := s.redis.HGet(ctx, key, "first_seen").Result()
-	return false, c, first, nowStr
-}
-
 func (s *AlertService) clearGroupAggregateStateBySpec(ctx context.Context, spec groupAggregateSpec, groupKey string) error {
 	if s.redis == nil || strings.TrimSpace(groupKey) == "" {
 		return nil
@@ -110,11 +71,6 @@ func (s *AlertService) firingGroupAggregateSpec() groupAggregateSpec {
 	}
 }
 
-func (s *AlertService) updateGroupResolvedState(ctx context.Context, groupKey string) (shouldSend bool, count int64, firstSeen string, lastSeen string) {
-	// resolved 已改为“同 fingerprint 仅发送一次”，此处仅保留接口形态（不会参与抑制判断）。
-	return s.updateGroupAggregateStateBySpec(ctx, s.resolvedGroupAggregateSpec(), groupKey, 0)
-}
-
 func (s *AlertService) clearGroupResolvedState(ctx context.Context, groupKey string) error {
 	return s.clearGroupAggregateStateBySpec(ctx, s.resolvedGroupAggregateSpec(), groupKey)
 }
@@ -123,17 +79,8 @@ func (s *AlertService) logSuppressedResolvedAggregate(ctx context.Context, title
 	s.logSuppressedGroupAggregateBySpec(ctx, s.resolvedGroupAggregateSpec(), title, severity, status, groupKey, payload)
 }
 
-func (s *AlertService) updateGroupAggregateState(ctx context.Context, groupKey string) (shouldSend bool, count int64, firstSeen string, lastSeen string) {
-	// 保留旧接口：等价于 repeat_interval_seconds 的简单节流（不含 group_wait/group_interval）。
-	return s.updateGroupAggregateStateBySpec(ctx, s.firingGroupAggregateSpec(), groupKey, time.Duration(s.cfg.RepeatIntervalSeconds)*time.Second)
-}
-
 func (s *AlertService) clearGroupAggregateState(ctx context.Context, groupKey string) error {
 	return s.clearGroupAggregateStateBySpec(ctx, s.firingGroupAggregateSpec(), groupKey)
-}
-
-func (s *AlertService) logSuppressedAggregate(ctx context.Context, title, severity, status, groupKey string, payload map[string]interface{}) {
-	s.logSuppressedGroupAggregateBySpec(ctx, s.firingGroupAggregateSpec(), title, severity, status, groupKey, payload)
 }
 
 func (s *AlertService) updateFingerprintState(ctx context.Context, fingerprint, status string) (count int64, deduped bool, err error) {
@@ -188,28 +135,6 @@ func (s *AlertService) clearResolvedNotificationSent(ctx context.Context, finger
 		return nil
 	}
 	return s.redis.Del(ctx, "alert:resolved:sent:"+strings.TrimSpace(fingerprint)).Err()
-}
-
-func (s *AlertService) logSuppressedDedup(ctx context.Context, title, severity, status, fingerprint string, payload map[string]interface{}) {
-	reqBytes, _ := json.Marshal(payload)
-	event := model.AlertEvent{
-		Source:          alertEventSourceFromPayload(payload),
-		Title:           title + " (dedup suppressed)",
-		Severity:        severity,
-		Status:          status,
-		Cluster:         strings.TrimSpace(fmt.Sprintf("%v", payload["cluster"])),
-		MonitorPipeline: strings.TrimSpace(fmt.Sprintf("%v", payload["monitorPipeline"])),
-		GroupKey:        strings.TrimSpace(fmt.Sprintf("%v", payload["groupKey"])),
-		LabelsDigest:    strings.TrimSpace(fmt.Sprintf("%v", payload["labelsDigest"])),
-		ChannelName:     "（未外发·指纹去重抑制）",
-		Success:         true,
-		HTTPStatusCode:  200,
-		ErrorMessage:    "dedup_suppressed",
-		RequestPayload:  truncateText(string(reqBytes), s.cfg.MaxPayloadChars),
-		ResponsePayload: truncateText("suppressed by fingerprint dedup: "+fingerprint, s.cfg.MaxPayloadChars),
-	}
-	fillAlertEventDatasourceFromPayload(&event, payload)
-	_ = s.db.WithContext(ctx).Create(&event).Error
 }
 
 // decideFiringGroupTiming 对齐 Alertmanager/N9E 的 group_wait/group_interval/repeat_interval 语义（基于 groupKey + labelsDigest）。
@@ -329,7 +254,7 @@ func (s *AlertService) markAlertFiringDelivered(ctx context.Context, fingerprint
 func (s *AlertService) alertFiringWasDelivered(ctx context.Context, fingerprint string) bool {
 	fp := strings.TrimSpace(fingerprint)
 	if fp == "" {
-		return true
+		return false
 	}
 	if s.redis != nil {
 		v, err := s.redis.Get(ctx, firingDeliveredRedisKey(fp)).Result()

@@ -73,7 +73,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	configService := service.NewK8sConfigService(k8sRuntimeService)
 	storageService := service.NewK8sStorageService(k8sRuntimeService)
 	serviceResourceService := service.NewK8sServiceResourceService(k8sRuntimeService)
-	ingressService := service.NewK8sIngressService(k8sRuntimeService)
+	ingressService := service.NewK8sIngressService(k8sRuntimeService, k8sClusterAccessRepo)
 	networkPolicyService := service.NewK8sNetworkPolicyService(k8sRuntimeService)
 	k8sDiscoveryService := service.NewK8sDiscoveryService(k8sRuntimeService)
 	k8sHPAService := service.NewK8sHPAService(k8sRuntimeService)
@@ -82,7 +82,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	crService := service.NewK8sCRService(k8sRuntimeService)
 	rbacService := service.NewK8sRBACService(k8sRuntimeService)
 	serviceAccountService := service.NewK8sServiceAccountService(k8sRuntimeService)
-	overviewService := service.NewOverviewService(app.DB, k8sRuntimeService, app.Redis)
+	overviewService := service.NewOverviewService(app.DB, k8sRuntimeService, app.Redis, projectMemberRepo, k8sClusterAccessRepo)
 
 	serverRepo := repository.NewServerRepository(app.DB)
 	serverGroupRepo := repository.NewServerGroupRepository(app.DB)
@@ -95,8 +95,8 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	if err != nil {
 		panic(err)
 	}
-	logAgentService := service.NewLogAgentService(logAgentRepo, serverRepo, logRepo, app.Config.Agent.RegisterSecret)
-	agentDiscoveryService := service.NewAgentDiscoveryService(agentDiscoveryRepo, logAgentRepo, serverRepo)
+	logAgentService := service.NewLogAgentService(logAgentRepo, serverRepo, logRepo, app.Config.Agent.RegisterSecret, app.Config.Agent.DiscoveryRoots)
+	agentDiscoveryService := service.NewAgentDiscoveryService(agentDiscoveryRepo, logAgentRepo, serverRepo, logRepo)
 
 	authHandler := handler.NewAuthHandler(authService, loginLogSvc)
 	loginLogHandler := handler.NewLoginLogHandler(loginLogSvc)
@@ -115,6 +115,10 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	alertPlatformHandler := handler.NewAlertPlatformHandler(alertDatasourceSvc, alertSilenceSvc, alertMonitorRuleSvc, alertAssigneeSvc, alertDutySvc)
 	alertSubscriptionSvc := alertService.GetSubscriptionService()
 	alertSubscriptionHandler := handler.NewAlertSubscriptionHandler(alertSubscriptionSvc)
+	var alertInhibitionHandler *handler.AlertInhibitionHandler
+	if inh := alertService.GetInhibitionService(); inh != nil {
+		alertInhibitionHandler = handler.NewAlertInhibitionHandler(inh)
+	}
 	alertReceiverGroupSvc := service.NewAlertReceiverGroupService(app.DB, service.NewReceiverGroupCache(app.DB))
 	alertReceiverGroupHandler := handler.NewAlertReceiverGroupHandler(alertReceiverGroupSvc)
 	adminHandler := handler.NewAdminHandler(app.Redis)
@@ -328,6 +332,14 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	alerts.POST("/subscriptions/:id/move", alertSubscriptionHandler.MoveNode)
 	alerts.POST("/subscriptions/migrate-from-policies", alertSubscriptionHandler.MigrateFromPolicies)
 
+	if alertInhibitionHandler != nil {
+		alerts.GET("/inhibition-rules", alertInhibitionHandler.List)
+		alerts.POST("/inhibition-rules", alertInhibitionHandler.Create)
+		alerts.PUT("/inhibition-rules/:id", alertInhibitionHandler.Update)
+		alerts.DELETE("/inhibition-rules/:id", alertInhibitionHandler.Delete)
+		alerts.POST("/inhibition-rules/refresh-cache", alertInhibitionHandler.RefreshCache)
+	}
+
 	// 接收组（订阅节点引用）
 	alerts.GET("/receiver-groups", alertReceiverGroupHandler.List)
 	alerts.POST("/receiver-groups", alertReceiverGroupHandler.Create)
@@ -401,7 +413,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	namespaces.DELETE("", namespaceHandler.Delete)
 
 	nodes := api.Group("/nodes")
-	nodes.Use(authMiddleware, authorize, opAudit)
+	nodes.Use(authMiddleware, authorize, k8sScopeAuthorize, opAudit)
 	nodes.GET("", nodeHandler.List)
 	nodes.GET("/detail", nodeHandler.Detail)
 	nodes.POST("/schedulability", nodeHandler.SetSchedulability)

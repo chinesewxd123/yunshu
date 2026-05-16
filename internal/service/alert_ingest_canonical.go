@@ -79,6 +79,14 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 		if strings.TrimSpace(dsType) != "" {
 			labels["datasource_type"] = strings.TrimSpace(dsType)
 		}
+		fp := strings.TrimSpace(alert.Fingerprint)
+		if fp == "" {
+			fp = stableLabelsFingerprint(labels)
+		}
+		if fp != "" {
+			labels["fingerprint"] = fp
+			alert.Fingerprint = fp
+		}
 		monitorPipeline := pipelineSlug
 		annotations := mergeStringMap(ca.CommonAnnotations, alert.Annotations)
 		status := strings.TrimSpace(alert.Status)

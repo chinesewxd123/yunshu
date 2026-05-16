@@ -7,6 +7,7 @@ import (
 	"yunshu/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type AgentDiscoveryRepository struct {
@@ -31,8 +32,33 @@ func (r *AgentDiscoveryRepository) UpsertMany(ctx context.Context, projectID, se
 		items[i].LastSeenAt = now
 	}
 
-	// MySQL-compatible "upsert": query then update/insert per row.
-	// Keeping it simple to avoid DB-specific ON DUPLICATE KEY dependencies.
+	if r.db.Dialector.Name() == "mysql" {
+		const chunk = 200
+		for i := 0; i < len(items); i += chunk {
+			end := i + chunk
+			if end > len(items) {
+				end = len(items)
+			}
+			batch := items[i:end]
+			err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+				Columns: []clause.Column{
+					{Name: "project_id"},
+					{Name: "server_id"},
+					{Name: "kind"},
+					{Name: "value"},
+				},
+				DoUpdates: clause.AssignmentColumns([]string{"last_seen_at", "extra", "updated_at"}),
+			}).Create(&batch).Error
+			if err != nil {
+				return r.upsertManyFallback(ctx, projectID, serverID, batch)
+			}
+		}
+		return nil
+	}
+	return r.upsertManyFallback(ctx, projectID, serverID, items)
+}
+
+func (r *AgentDiscoveryRepository) upsertManyFallback(ctx context.Context, projectID, serverID uint, items []model.AgentDiscovery) error {
 	for _, it := range items {
 		var existing model.AgentDiscovery
 		err := r.db.WithContext(ctx).
@@ -58,20 +84,43 @@ func (r *AgentDiscoveryRepository) UpsertMany(ctx context.Context, projectID, se
 	return nil
 }
 
-func (r *AgentDiscoveryRepository) List(ctx context.Context, projectID, serverID uint, kind *string, limit int) ([]model.AgentDiscovery, error) {
-	if limit <= 0 || limit > 1000 {
+type AgentDiscoveryListFilter struct {
+	ProjectID  uint
+	ServerID   uint
+	Kind       *string
+	Limit      int
+	Prefix     string
+	FreshSince *time.Time
+}
+
+func (r *AgentDiscoveryRepository) List(ctx context.Context, f AgentDiscoveryListFilter) ([]model.AgentDiscovery, error) {
+	limit := f.Limit
+	if limit <= 0 || limit > 2000 {
 		limit = 300
 	}
 	q := r.db.WithContext(ctx).Model(&model.AgentDiscovery{}).
-		Where("project_id=? AND server_id=?", projectID, serverID).
+		Where("project_id=? AND server_id=?", f.ProjectID, f.ServerID).
 		Order("last_seen_at DESC").
 		Limit(limit)
-	if kind != nil && *kind != "" {
-		q = q.Where("kind=?", *kind)
+	if f.Kind != nil && *f.Kind != "" {
+		q = q.Where("kind=?", *f.Kind)
+	}
+	if f.Prefix != "" {
+		q = q.Where("value LIKE ?", f.Prefix+"%")
+	}
+	if f.FreshSince != nil {
+		q = q.Where("last_seen_at >= ?", *f.FreshSince)
 	}
 	var out []model.AgentDiscovery
 	if err := q.Find(&out).Error; err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// PruneStale removes discovery rows not seen since cutoff for a server.
+func (r *AgentDiscoveryRepository) PruneStale(ctx context.Context, projectID, serverID uint, cutoff time.Time) error {
+	return r.db.WithContext(ctx).
+		Where("project_id=? AND server_id=? AND last_seen_at < ?", projectID, serverID, cutoff).
+		Delete(&model.AgentDiscovery{}).Error
 }

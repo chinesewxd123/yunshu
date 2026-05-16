@@ -59,15 +59,16 @@ type K8sClusterSetStatusRequest struct {
 }
 
 type K8sClusterItem struct {
-	ID                uint          `json:"id"`
-	Name              string        `json:"name"`
-	OwningProjectID   *uint         `json:"owning_project_id,omitempty"`
-	ConnectionMode    string        `json:"connection_mode,omitempty"`
-	Kubeconfig     string        `json:"kubeconfig,omitempty"`
-	DirectConfig   *DirectConfig `json:"direct_config,omitempty"`
-	Status         int           `json:"status"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	ID                   uint          `json:"id"`
+	Name                 string        `json:"name"`
+	OwningProjectID      *uint         `json:"owning_project_id,omitempty"`
+	ConnectionMode       string        `json:"connection_mode,omitempty"`
+	Kubeconfig           string        `json:"kubeconfig,omitempty"`
+	KubeconfigConfigured bool          `json:"kubeconfig_configured,omitempty"`
+	DirectConfig         *DirectConfig `json:"direct_config,omitempty"`
+	Status               int           `json:"status"`
+	CreatedAt            time.Time     `json:"created_at"`
+	UpdatedAt            time.Time     `json:"updated_at"`
 }
 
 type K8sClusterListResponse struct {
@@ -198,7 +199,7 @@ func (s *K8sClusterService) List(ctx context.Context, query K8sClusterListQuery)
 	}
 	items := make([]K8sClusterItem, 0, len(clusters))
 	for _, c := range clusters {
-		items = append(items, buildClusterItem(c))
+		items = append(items, buildClusterItem(c, false))
 	}
 	return &K8sClusterListResponse{
 		List:     items,
@@ -214,6 +215,16 @@ func (s *K8sClusterService) Create(ctx context.Context, req K8sClusterCreateRequ
 	connectionMode := req.ConnectionMode
 	if connectionMode == "" {
 		connectionMode = "kubeconfig"
+	}
+	if connectionMode == "kubeconfig" && strings.TrimSpace(req.Kubeconfig) == "" {
+		return nil, constants.ErrBadRequestWithMsg("kubeconfig 模式必须提供 kubeconfig 内容")
+	}
+	if connectionMode == "direct" {
+		if req.DirectConfig == nil || strings.TrimSpace(req.DirectConfig.Server) == "" {
+			if req.DirectConfig == nil || strings.TrimSpace(req.DirectConfig.DictConfigKey) == "" {
+				return nil, constants.ErrBadRequestWithMsg("直连模式必须提供 API Server 或数据字典配置键")
+			}
+		}
 	}
 
 	c := &model.K8sCluster{
@@ -281,8 +292,7 @@ func (s *K8sClusterService) Detail(ctx context.Context, id uint) (*K8sClusterIte
 	if err := s.ensureClusterOwningProjectAccess(ctx, cluster); err != nil {
 		return nil, err
 	}
-	item := buildClusterItem(*cluster)
-	item.Kubeconfig = cluster.Kubeconfig
+	item := buildClusterItem(*cluster, true)
 	return &item, nil
 }
 
@@ -351,7 +361,7 @@ func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterU
 	if err := s.repo.Update(ctx, cluster); err != nil {
 		return nil, err
 	}
-	out := buildClusterItem(*cluster)
+	out := buildClusterItem(*cluster, true)
 	return &out, nil
 }
 
@@ -390,25 +400,32 @@ func (s *K8sClusterService) SetStatus(ctx context.Context, id uint, status int) 
 			return nil, err
 		}
 	}
-	out := buildClusterItem(*cluster)
+	out := buildClusterItem(*cluster, true)
 	return &out, nil
 }
 
-func buildClusterItem(c model.K8sCluster) K8sClusterItem {
+func buildClusterItem(c model.K8sCluster, forDetail bool) K8sClusterItem {
 	item := K8sClusterItem{
-		ID:                c.ID,
-		Name:              c.Name,
-		OwningProjectID:   c.OwningProjectID,
-		ConnectionMode:    c.ConnectionMode,
-		Status:            c.Status,
-		CreatedAt:         c.CreatedAt,
-		UpdatedAt:         c.UpdatedAt,
+		ID:              c.ID,
+		Name:            c.Name,
+		OwningProjectID: c.OwningProjectID,
+		ConnectionMode:  c.ConnectionMode,
+		Status:          c.Status,
+		CreatedAt:       c.CreatedAt,
+		UpdatedAt:       c.UpdatedAt,
+	}
+	if strings.TrimSpace(c.Kubeconfig) != "" {
+		item.KubeconfigConfigured = true
 	}
 	if c.ConnectionMode == "direct" && strings.TrimSpace(c.DirectConfig) != "" {
 		var dc DirectConfig
 		if err := json.Unmarshal([]byte(c.DirectConfig), &dc); err == nil {
-			item.DirectConfig = &dc
+			item.DirectConfig = maskDirectConfigForAPI(&dc)
 		}
+	}
+	if forDetail && item.KubeconfigConfigured {
+		// 不回传完整 kubeconfig，避免凭证经 API 泄露；更新时重新粘贴即可。
+		item.Kubeconfig = ""
 	}
 	return item
 }

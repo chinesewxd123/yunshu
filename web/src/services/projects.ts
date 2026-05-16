@@ -422,7 +422,15 @@ export interface AgentDiscoveryItem {
 
 export async function getProjectAgentDiscovery(
   projectId: number,
-  params: { server_id: number; kind?: "file" | "dir" | "unit"; limit?: number },
+  params: {
+    server_id: number;
+    kind?: "file" | "dir" | "unit";
+    limit?: number;
+    log_source_id?: number;
+    unmatched_only?: boolean;
+    prefix?: string;
+    fresh_hours?: number;
+  },
 ) {
   return await getData(http.get<any, ApiResponse<{ list: AgentDiscoveryItem[] }>>(`/projects/${projectId}/agents/discovery`, { params }));
 }

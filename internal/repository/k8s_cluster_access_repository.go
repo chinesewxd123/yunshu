@@ -115,6 +115,59 @@ func (r *K8sClusterAccessRepository) EffectiveTier(ctx context.Context, pack k8s
 	return maxV
 }
 
+// EffectiveTierIndex 主体在各集群上的档位（cluster_id=0 表示全局档位）。
+type EffectiveTierIndex struct {
+	GlobalRank int
+	PerCluster map[uint]int
+}
+
+// BuildEffectiveTierIndex 一次加载主体相关的全部档位授权，供批量过滤使用。
+func (r *K8sClusterAccessRepository) BuildEffectiveTierIndex(ctx context.Context, pack k8sauth.PrincipalPack) (EffectiveTierIndex, error) {
+	idx := EffectiveTierIndex{PerCluster: map[uint]int{}}
+	if r == nil || r.db == nil {
+		return idx, nil
+	}
+	rows := pack.PrincipalRows()
+	if len(rows) == 0 {
+		return idx, nil
+	}
+	q := r.db.WithContext(ctx).Model(&model.K8sClusterAccessGrant{})
+	var parts []string
+	var args []any
+	for _, row := range rows {
+		parts = append(parts, "(principal_kind = ? AND principal_ref = ?)")
+		args = append(args, row.Kind, row.Ref)
+	}
+	var grants []model.K8sClusterAccessGrant
+	if err := q.Where(strings.Join(parts, " OR "), args...).Find(&grants).Error; err != nil {
+		return idx, err
+	}
+	for _, g := range grants {
+		rank := k8sPresetRank(g.Preset)
+		if g.ClusterID == 0 {
+			if rank > idx.GlobalRank {
+				idx.GlobalRank = rank
+			}
+			continue
+		}
+		if rank > idx.PerCluster[g.ClusterID] {
+			idx.PerCluster[g.ClusterID] = rank
+		}
+	}
+	return idx, nil
+}
+
+// ClusterAccessible 判断主体在指定集群上是否达到 minRank（含全局 cluster_id=0 授权）。
+func (idx EffectiveTierIndex) ClusterAccessible(clusterID uint, minRank int) bool {
+	if minRank <= 0 {
+		return true
+	}
+	if idx.GlobalRank >= minRank {
+		return true
+	}
+	return idx.PerCluster[clusterID] >= minRank
+}
+
 // HasAnyK8sGrant 是否存在任意集群档位。
 func (r *K8sClusterAccessRepository) HasAnyK8sGrant(ctx context.Context, pack k8sauth.PrincipalPack) bool {
 	if r == nil || r.db == nil {

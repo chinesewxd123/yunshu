@@ -79,8 +79,8 @@ var serverCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		agentSvc := service.NewLogAgentService(logAgentRepo, serverRepo, logRepo, app.Config.Agent.RegisterSecret)
-		discoverySvc := service.NewAgentDiscoveryService(agentDiscoveryRepo, logAgentRepo, serverRepo)
+		agentSvc := service.NewLogAgentService(logAgentRepo, serverRepo, logRepo, app.Config.Agent.RegisterSecret, app.Config.Agent.DiscoveryRoots)
+		discoverySvc := service.NewAgentDiscoveryService(agentDiscoveryRepo, logAgentRepo, serverRepo, logRepo)
 
 		grpcImpl := grpcserver.NewLogPlatformServer(projectSvc, agentSvc, discoverySvc)
 		grpcRuntime, err := grpcserver.Start(
@@ -93,11 +93,16 @@ var serverCmd = &cobra.Command{
 			return fmt.Errorf("start grpc server: %w", err)
 		}
 
+		grpcCallTimeout := time.Duration(app.Config.GRPC.CallTimeoutSeconds) * time.Second
+		if grpcCallTimeout <= 0 {
+			grpcCallTimeout = 30 * time.Second
+		}
 		runtimeClient, err := grpcclient.Dial(
 			app.Config.GRPC.TargetAddr,
 			5*time.Second,
 			app.Config.GRPC.MaxRecvMsgBytes,
 			app.Config.GRPC.MaxSendMsgBytes,
+			grpcCallTimeout,
 		)
 		if err != nil {
 			return fmt.Errorf("dial grpc runtime: %w", err)
@@ -153,10 +158,22 @@ var serverCmd = &cobra.Command{
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		grpcRuntime.Stop(ctx)
-		return server.Shutdown(ctx)
+		grpcShutdown := time.Duration(app.Config.GRPC.ShutdownTimeoutSeconds) * time.Second
+		if grpcShutdown <= 0 {
+			grpcShutdown = 5 * time.Second
+		}
+		httpShutdown := time.Duration(app.Config.HTTP.ShutdownTimeoutSeconds) * time.Second
+		if httpShutdown <= 0 {
+			httpShutdown = 10 * time.Second
+		}
+
+		ctxGRPC, cancelGRPC := context.WithTimeout(context.Background(), grpcShutdown)
+		defer cancelGRPC()
+		grpcRuntime.Stop(ctxGRPC)
+
+		ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), httpShutdown)
+		defer cancelHTTP()
+		return server.Shutdown(ctxHTTP)
 	},
 }
 

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/constants"
-
+	"yunshu/internal/pkg/k8sauth"
 	"yunshu/internal/pkg/k8sutil"
+	"yunshu/internal/repository"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -30,6 +32,8 @@ type IngressNginxRestartRequest struct {
 	ClusterID uint   `json:"cluster_id" binding:"required"`
 	Namespace string `json:"namespace"`
 	Selector  string `json:"selector"`
+	// Confirm 须为 true，防止误触批量删除 controller Pod。
+	Confirm bool `json:"confirm"`
 }
 
 type IngressNginxRestartResult struct {
@@ -73,13 +77,14 @@ type IngressDetail struct {
 }
 
 type K8sIngressService struct {
-	runtime *K8sRuntimeService
-	dyn     *DynamicResourceService
+	runtime    *K8sRuntimeService
+	dyn        *DynamicResourceService
+	accessRepo *repository.K8sClusterAccessRepository
 }
 
 // NewK8sIngressService 创建相关逻辑。
-func NewK8sIngressService(runtime *K8sRuntimeService) *K8sIngressService {
-	return &K8sIngressService{runtime: runtime, dyn: NewDynamicResourceService(runtime)}
+func NewK8sIngressService(runtime *K8sRuntimeService, accessRepo *repository.K8sClusterAccessRepository) *K8sIngressService {
+	return &K8sIngressService{runtime: runtime, dyn: NewDynamicResourceService(runtime), accessRepo: accessRepo}
 }
 
 var ingressGVK = schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}
@@ -303,6 +308,12 @@ func (s *K8sIngressService) DeleteClass(ctx context.Context, req IngressClassDel
 // RestartIngressNginxPods 删除 ingress-nginx controller Pods，使其自动重建，从而刷新默认证书等运行态资源。
 // 说明：不同安装方式 label 可能不同，这里支持自定义 selector，并提供默认 selector。
 func (s *K8sIngressService) RestartIngressNginxPods(ctx context.Context, req IngressNginxRestartRequest) (*IngressNginxRestartResult, error) {
+	if !req.Confirm {
+		return nil, constants.ErrBadRequestWithMsg("请设置 confirm=true 以确认重启 Ingress-Nginx 控制器")
+	}
+	if err := s.ensureIngressNginxRestartAccess(ctx, req.ClusterID); err != nil {
+		return nil, err
+	}
 	_, k, err := s.runtime.GetClusterKubectl(ctx, req.ClusterID)
 	if err != nil {
 		return nil, err
@@ -345,6 +356,27 @@ func (s *K8sIngressService) RestartIngressNginxPods(ctx context.Context, req Ing
 	}
 	sort.Strings(deleted)
 	return &IngressNginxRestartResult{DeletedCount: len(deleted), DeletedNames: deleted}, nil
+}
+
+func (s *K8sIngressService) ensureIngressNginxRestartAccess(ctx context.Context, clusterID uint) error {
+	if clusterID == 0 {
+		return constants.ErrBadRequestWithMsg(constants.ErrMsgba2a155d1253)
+	}
+	u, ok := auth.RequestUserFromContext(ctx)
+	if !ok || u == nil {
+		return constants.ErrUnauthorized
+	}
+	if auth.IsSuperAdminRole(u.RoleCodes) {
+		return nil
+	}
+	if s.accessRepo == nil {
+		return constants.ErrInternal
+	}
+	pack := k8sauth.PackFromCurrentUser(u)
+	if s.accessRepo.EffectiveTier(ctx, pack, clusterID) < K8sAccessRankAdmin {
+		return constants.ErrForbiddenWithMsg("重启 Ingress-Nginx 需要集群 admin 档位授权")
+	}
+	return nil
 }
 
 type ingressRef struct {

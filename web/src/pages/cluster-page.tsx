@@ -200,6 +200,7 @@ export function ClusterPage() {
         connection_mode: current.connection_mode || "kubeconfig",
         kubeconfig: current.kubeconfig || "",
         kubeconfig_dict_label: undefined,
+        // 已配置时 kubeconfig 不回传，留空表示不修改
         direct_config: {
           server: current.direct_config?.server || "",
           dict_config_key: current.direct_config?.dict_config_key || undefined,
@@ -746,7 +747,13 @@ export function ClusterPage() {
                     ? []
                     : [{ required: true, message: "请填写 kubeconfig" }]
                 }
-                extra={current ? "已预填当前 kubeconfig，可直接修改后保存" : "用于 Kom SDK 注册并访问集群"}
+                extra={
+                  current?.kubeconfig_configured && !(current.kubeconfig || "").trim()
+                    ? "已配置 kubeconfig（出于安全不回显）；留空表示不修改，重新粘贴可更新"
+                    : current
+                      ? "已预填当前 kubeconfig，可直接修改后保存"
+                      : "用于 Kom SDK 注册并访问集群"
+                }
               >
                 <Input.TextArea
                   rows={8}

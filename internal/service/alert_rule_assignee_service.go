@@ -159,6 +159,20 @@ func (s *AlertRuleAssigneeService) leaderUserIDsFromDepartmentRoots(ctx context.
 	return out, nil
 }
 
+// NotifyOnResolvedEnabled 规则是否配置「恢复时通知处理人」。
+func (s *AlertRuleAssigneeService) NotifyOnResolvedEnabled(ctx context.Context, ruleID uint) bool {
+	list, err := s.ListByRule(ctx, ruleID)
+	if err != nil {
+		return false
+	}
+	for _, row := range list {
+		if row.NotifyOnResolved {
+			return true
+		}
+	}
+	return false
+}
+
 // ResolveNotifyEmails 合并规则处理人邮箱：显式用户 + 所选部门在「规则所属项目」内的成员 + 所选根部门的负责人 + 额外邮箱。
 func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, ruleID uint) ([]string, error) {
 	list, err := s.ListByRule(ctx, ruleID)

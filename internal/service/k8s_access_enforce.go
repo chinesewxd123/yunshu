@@ -14,8 +14,17 @@ const (
 	K8sAccessRankAdmin        = 3
 )
 
+// IsK8sNginxRestartRoute 重启 ingress-nginx 控制器属于高危运维，仅 admin 档位。
+func IsK8sNginxRestartRoute(routePath, httpMethod string) bool {
+	return strings.ToUpper(strings.TrimSpace(httpMethod)) == "POST" &&
+		strings.HasSuffix(strings.TrimSpace(routePath), "/ingresses/nginx/restart")
+}
+
 // RequiredK8sAccessRank 根据权限目录展开结果，计算访问某路由所需的最低档位序。
 func RequiredK8sAccessRank(perms []model.Permission, routePath, httpMethod, actionCode string) int {
+	if IsK8sNginxRestartRoute(routePath, httpMethod) {
+		return K8sAccessRankAdmin
+	}
 	path := strings.TrimSpace(routePath)
 	method := strings.ToUpper(strings.TrimSpace(httpMethod))
 	code := strings.TrimSpace(actionCode)

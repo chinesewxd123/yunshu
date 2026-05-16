@@ -87,10 +87,12 @@ import type { UserUpdatePayload } from "../types/api";
 import { getUser, updateUser } from "../services/users";
 import { formatDateTime } from "../utils/format";
 import { AlertConfigCenterPanel, type AlertConfigTab } from "./alert-config-center-panel";
+import { AlertInhibitionPanel } from "./alert-inhibition-panel";
+import type { AlertEventCategory } from "../utils/alert-event-reasons";
 
 dayjs.locale("zh-cn");
 
-type TabKey = "datasources" | "policies" | "silences" | "rules" | "history" | "cloud-expiry" | "promql";
+type TabKey = "datasources" | "policies" | "silences" | "inhibition" | "rules" | "history" | "cloud-expiry" | "promql";
 
 type SilenceMatcherForm = { name: string; value: string; is_regex: boolean };
 
@@ -371,12 +373,29 @@ export function AlertMonitorPlatformPage() {
     if (!Number.isFinite(n) || n <= 0) return undefined;
     return n;
   }, [searchParams]);
+  const historyEventCategory = useMemo((): AlertEventCategory | undefined => {
+    const raw = String(searchParams.get("event_category") || "").trim().toLowerCase();
+    const allowed: AlertEventCategory[] = [
+      "delivery",
+      "routing",
+      "silence",
+      "inhibition",
+      "timing",
+      "resolved",
+      "failure",
+      "other",
+    ];
+    return (allowed as string[]).includes(raw) ? (raw as AlertEventCategory) : undefined;
+  }, [searchParams]);
+
   const tab: TabKey = useMemo(() => {
     const t = searchParams.get("tab");
     if (t === "config") {
       return searchParams.get("cfg") === "history" ? "history" : "policies";
     }
-    if (t === "policies" || t === "silences" || t === "rules" || t === "history" || t === "cloud-expiry" || t === "promql") return t;
+    if (t === "policies" || t === "silences" || t === "inhibition" || t === "rules" || t === "history" || t === "cloud-expiry" || t === "promql") {
+      return t;
+    }
     return "datasources";
   }, [searchParams]);
 
@@ -2222,7 +2241,10 @@ export function AlertMonitorPlatformPage() {
                               <strong>监控规则与值班</strong>：平台定时向已登记数据源执行 PromQL，命中后走同一套通知链路。
                             </li>
                             <li>
-                              <strong>历史记录</strong>：统一查看命中、抑制、发送成功/失败的结果证据。
+                              <strong>告警抑制</strong>：源告警触发时抑制目标告警（类似 Alertmanager inhibit_rules），见「告警抑制」Tab。
+                            </li>
+                            <li>
+                              <strong>历史记录</strong>：统一查看命中、抑制原因码、发送成功/失败的结果证据。
                             </li>
                           </ul>
                         </Typography.Paragraph>
@@ -2243,11 +2265,22 @@ export function AlertMonitorPlatformPage() {
                   type="info"
                   showIcon
                   message="历史记录是统一观测出口"
-                  description="无论告警来自 Prometheus + Alertmanager，还是来自平台监控规则，最终都会在这里查看命中策略、抑制原因、通道结果与错误信息。"
+                  description="无论告警来自 Prometheus + Alertmanager，还是来自平台监控规则，最终都会在这里查看命中订阅、抑制原因码（error_message）、通道结果与错误信息。success=留痕 表示策略拦截未外发。"
                 />
-                <AlertConfigCenterPanel embedded hideTabs activeTab="history" onTabChange={() => undefined} />
+                <AlertConfigCenterPanel
+                  embedded
+                  hideTabs
+                  activeTab="history"
+                  onTabChange={() => undefined}
+                  initialEventCategory={historyEventCategory}
+                />
               </Space>
             ),
+          },
+          {
+            key: "inhibition",
+            label: "告警抑制",
+            children: <AlertInhibitionPanel />,
           },
           {
             key: "silences",

@@ -376,17 +376,30 @@ func (s *AlertInhibitionService) ClearSourceAlert(ctx context.Context, ruleID ui
 // getActiveSources 获取规则下所有活跃的源告警指纹
 func (s *AlertInhibitionService) getActiveSources(ctx context.Context, ruleID uint) ([]string, error) {
 	pattern := inhibitionSourcePattern(ruleID)
-	keys, err := s.redis.Keys(ctx, pattern).Result()
-	if err != nil {
-		return nil, err
-	}
-
-	fingerprints := make([]string, 0, len(keys))
-	for _, key := range keys {
-		// key格式: alert:inhibition:source:{ruleID}:{fingerprint}
-		parts := strings.Split(key, ":")
-		if len(parts) >= 5 {
-			fingerprints = append(fingerprints, parts[4])
+	seen := map[string]struct{}{}
+	var fingerprints []string
+	var cursor uint64
+	for {
+		keys, next, err := s.redis.Scan(ctx, cursor, pattern, 128).Result()
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range keys {
+			// key格式: alert:inhibition:source:{ruleID}:{fingerprint}
+			parts := strings.Split(key, ":")
+			if len(parts) < 5 {
+				continue
+			}
+			fp := parts[4]
+			if _, ok := seen[fp]; ok {
+				continue
+			}
+			seen[fp] = struct{}{}
+			fingerprints = append(fingerprints, fp)
+		}
+		cursor = next
+		if cursor == 0 {
+			break
 		}
 	}
 	return fingerprints, nil
@@ -476,19 +489,7 @@ func checkEqualLabels(target, source map[string]string, equalLabels []string) bo
 }
 
 func extractFingerprint(labels map[string]string) string {
-	fp := labels["fingerprint"]
-	if fp == "" {
-		// 根据labels计算简易指纹
-		var sb strings.Builder
-		for k, v := range labels {
-			sb.WriteString(k)
-			sb.WriteString("=")
-			sb.WriteString(v)
-			sb.WriteString(";")
-		}
-		return fmt.Sprintf("%x", sb.String())[:32]
-	}
-	return fp
+	return stableLabelsFingerprint(labels)
 }
 
 func inhibitionSourceKey(ruleID uint, fingerprint string) string {

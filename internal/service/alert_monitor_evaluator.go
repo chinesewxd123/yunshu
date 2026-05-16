@@ -82,7 +82,12 @@ func (s *AlertService) tickMonitorRules(ctx context.Context) error {
 				defer s.monitorEvalLockRelease(ctx, r.ID)
 				s.evaluateOneMonitorRule(ctx, &r.AlertMonitorRule, r.ProjectID)
 			}(rule)
+			continue
 		}
+		if !s.shouldEvalRuleNoRedis(rule.ID, rule.EvalIntervalSeconds, now) {
+			continue
+		}
+		s.evaluateOneMonitorRule(ctx, &rule.AlertMonitorRule, rule.ProjectID)
 	}
 	return nil
 }
@@ -244,5 +249,9 @@ func (s *AlertService) evaluateOneMonitorRule(ctx context.Context, rule *model.A
 	fp := fmt.Sprintf("monitor_rule_%d", rule.ID)
 	now := time.Now()
 
+	if s.redis == nil {
+		s.evaluateMonitorRuleNoRedis(ctx, rule, firing, labels, annotations, fp, now)
+		return
+	}
 	s.evaluateMonitorRuleWithRedis(ctx, rule, firing, labels, annotations, fp, now)
 }

@@ -12,10 +12,22 @@
 ## 目录
 
 - [项目简介](#项目简介)
+- [架构与权限模型](#架构与权限模型)
 - [快速开始](#快速开始)
+  - [环境要求](#环境要求)
   - [本地源码启动](#本地源码启动)
   - [Docker Compose 部署](#docker-compose-部署)
   - [分支切换（git checkout）](#分支切换git-checkout)
+- [配置说明](#配置说明)
+- [运维操作手册](#运维操作手册)
+  - [首次登录与初始化](#首次登录与初始化)
+  - [权限配置（Casbin + 集群档位）](#权限配置casbin--集群档位)
+  - [纳管 Kubernetes 集群](#纳管-kubernetes-集群)
+  - [日志平台与 Agent](#日志平台与-agent)
+  - [告警平台要点](#告警平台要点)
+- [前端路由索引](#前端路由索引)
+- [常用 CLI 命令](#常用-cli-命令)
+- [排障指南](#排障指南)
 - [功能状态标记说明](#功能状态标记说明)
 - [页面功能与截图](#页面功能与截图)
   - [1. 登录与概览](#1-登录与概览)
@@ -36,10 +48,55 @@
 Yunshu 主要能力：
 
 - 多模块后台管理（用户、角色、菜单、组织、字典、审计）
-- Casbin 权限体系与 K8s 三元策略限制
-- 项目维度的服务器、服务、日志源、Agent、日志平台
-- 告警数据源、告警规则、值班、静默、策略与告警记录
-- Kubernetes 常见资源可视化管理（工作负载、网络、存储、RBAC、CRD）
+- **双层 K8s 鉴权**：Casbin API 权限 + 集群档位（`readonly` / `readonly_exec` / `admin`）+ 命名空间黑/白名单
+- 项目维度的服务器、服务、日志源、Agent、**SSE 实时日志**与 Agent 发现
+- 告警数据源、规则、值班、静默、策略、多渠道通知（钉钉/邮件等）
+- Kubernetes 资源可视化管理（工作负载、网络、存储、RBAC、CRD、Ingress-Nginx 运维）
+
+默认管理员（`go run . seed` 后）：
+
+| 项 | 值 |
+|----|-----|
+| 用户名 | `admin` |
+| 密码 | `Admin@123` |
+| 邮箱 | `admin@example.com` |
+
+---
+
+## 架构与权限模型
+
+### 分层架构
+
+```mermaid
+flowchart LR
+  FE[React 控制台] --> API[Gin HTTP :8080]
+  API --> MW[Auth / Casbin / K8sScope / 审计]
+  MW --> SVC[Service]
+  SVC --> DB[(MySQL)]
+  SVC --> RD[(Redis)]
+  SVC --> GRPC[gRPC :18080]
+  GRPC --> AGENT[log-agent]
+  SVC --> KOM[Kom SDK]
+  KOM --> K8S[(Kubernetes API)]
+```
+
+### 三道权限闸门（K8s 相关请求）
+
+| 顺序 | 控制台入口 | 作用 |
+|------|------------|------|
+| 1 | **授权管理**（角色勾选 API） | 能否调用该 HTTP 接口（Casbin） |
+| 2 | **API 管理 → K8s 范围校验** | 该路由是否进入集群档位中间件 |
+| 3 | **K8s 集群访问档位** + **命名空间黑/白名单** | 在指定 `cluster_id` / `namespace` 上是否具备足够档位 |
+
+档位说明：
+
+| 档位 | 典型能力 |
+|------|----------|
+| `readonly` | 列表/详情类 GET（资源只读 API） |
+| `readonly_exec` | 只读 + Pod 日志/终端 Exec |
+| `admin` | 变更类操作（apply/delete/scale、Ingress-Nginx 重启等） |
+
+详细设计见：[docs/handbook/permissions/casbin-and-k8s-triple-policy.md](docs/handbook/permissions/casbin-and-k8s-triple-policy.md)
 
 ---
 
@@ -74,6 +131,17 @@ go run . server
 cd web
 npm run dev
 ```
+
+访问地址（本地开发）：
+
+| 服务 | 地址 |
+|------|------|
+| 前端 | http://localhost:5173 |
+| 后端 API | http://localhost:8080 |
+| Swagger | http://localhost:8080/swagger/index.html |
+| gRPC（Agent） | localhost:18080 |
+
+> 后端二进制入口为 Cobra 子命令，根命令名为 `permission-system`（`go run . server` 即可）。
 
 ### Docker Compose 部署
 
@@ -141,6 +209,180 @@ git checkout main
 
 ---
 
+## 配置说明
+
+主配置文件：`configs/config.yaml`（可通过 `--config` 指定路径）。
+
+| 配置块 | 说明 |
+|--------|------|
+| `app` / `http` | 服务端口、超时；**日志 SSE 长连接**建议 `read_timeout_seconds` / `write_timeout_seconds` 为 `0` |
+| `mysql` / `redis` | 业务库与缓存 |
+| `grpc` | 平台 gRPC（Agent Ingest、runtime-config）；默认 `18080` |
+| `auth` | JWT 密钥、Token 有效期、邮箱验证码 TTL |
+| `agent` | `register_secret`（Agent 自注册）、`discovery_roots`（引导扫描目录） |
+| `security.encryption_key` | 服务器 SSH 等敏感字段加密 |
+| `alert` | Webhook、Prometheus 富化、聚合窗口等（部分项可在**数据字典**覆盖） |
+
+生产环境务必修改：MySQL/Redis 密码、`auth.jwt_secret`、`security.encryption_key`、`agent.register_secret`。
+
+---
+
+## 运维操作手册
+
+### 首次登录与初始化
+
+1. 执行 `go run . migrate` 与 `go run . seed`（Docker 镜像内通常在启动脚本中已包含，以实际 Dockerfile 为准）。
+2. 使用 `admin` / `Admin@123` 登录控制台。
+3. **系统管理 → 菜单管理**：确认菜单树完整；若缺失可再次执行 `seed`。
+4. **系统管理 → 授权管理**：为业务角色勾选所需 API（或复制 `super-admin` 策略模板）。
+
+### 权限配置（Casbin + 集群档位）
+
+**场景：让角色 `dev` 只读访问集群 1 的 `default` 命名空间**
+
+1. **API 管理**：确认 Pod/Deployment 等列表接口已勾选「K8s 范围校验」。
+2. **授权管理**：为角色 `dev` 勾选对应 GET 接口（如 `/api/v1/pods` GET）。
+3. **K8s 集群访问档位**（菜单路径以 seed 为准，一般为「K8s 范围策略」或「集群档位」）：
+   - 主体：角色 `dev`
+   - 集群：`1`
+   - 档位：`readonly`
+4. （可选）**命名空间白名单**：仅允许 `default`。
+5. 使用 `dev` 用户登录验证：列表可读；`apply` / `delete` / `exec` 应返回 403。
+
+**高危操作额外要求**
+
+| 操作 | 要求 |
+|------|------|
+| Pod Exec（HTTP/WS） | `readonly_exec` 及以上 + Casbin 授权 |
+| Ingress-Nginx 重启 `POST /api/v1/ingresses/nginx/restart` | **admin 档位** + 请求体 `confirm: true` + Casbin 授权 |
+| Node 调度/污点 | 已纳入 K8s 范围校验，需 **admin** 档位 |
+
+### 纳管 Kubernetes 集群
+
+1. **集群管理 → 新建集群**
+   - 连接方式：`kubeconfig`（粘贴 YAML）或 `direct`（API Server + Token/证书）。
+   - 可选 **归属项目**：非 super-admin 仅能看到有项目成员关系的集群。
+2. 保存后查看 **连接状态**；失败时检查 kubeconfig、网络与 API Server 可达性。
+3. **安全说明**：详情接口**不回显**完整 kubeconfig/密钥，仅显示 `kubeconfig_configured` 与脱敏后的直连字段；更新凭证需重新粘贴。
+4. **组件状态 / 命名空间**：在集群详情或对应菜单查看。
+
+### 日志平台与 Agent
+
+#### 1. 平台侧准备
+
+1. 在 **项目管理** 中创建项目，添加 **服务器**、**服务**、**日志源**（file 类型 path 支持 glob，如 `/var/log/pods/*/*.log`）。
+2. **Agent 列表**：注册 Agent 或使用 Bootstrap 命令（见集群/服务器页说明）。
+3. `configs/config.yaml` 中配置 `agent.register_secret` 与可选 `agent.discovery_roots`（如 `/var/log`）。
+
+#### 2. 部署 log-agent（目标机器）
+
+```bash
+# 编译
+go build -o log-agent ./cmd/logagent
+
+# 常用参数（需先在平台拿到 server_id、token）
+./log-agent \
+  --grpc-server=<平台IP>:18080 \
+  --server-id=<服务器ID> \
+  --token=<Agent Token> \
+  --enable-runtime-pull=true \
+  --enable-discovery=true \
+  --discovery-interval=30m \
+  --discovery-roots=/var/log,/var/log/pods
+```
+
+或使用主程序子命令：
+
+```bash
+go run . log-agent --grpc-server=127.0.0.1:18080 --server-id=1 --token=<token>
+```
+
+诊断连通性与 Token：
+
+```bash
+go run . log-agent-doctor --grpc-server=127.0.0.1:18080 --server-id=1 --token=<token>
+```
+
+#### 3. 控制台查看日志
+
+1. 打开 **项目 → 日志平台**。
+2. 选择项目、服务器、服务、日志源；可选具体日志文件（来自 Agent **发现**）。
+3. 点击 **开始**：SSE 拉流；URL 会同步 `project_id` / `server_id` / `log_source_id`，支持刷新后 `autostart=1` 恢复。
+4. 离开页面后底部 **日志流 Dock** 可后台继续；返回日志页可暂停/停止。
+5. **发现未配置日志源**：面板展示 Agent 上报且未匹配现有源的路径，可 **一键创建日志源**。
+
+API 细节见：[docs/log-platform-api.md](docs/log-platform-api.md)
+
+### 告警平台要点
+
+1. **告警数据源**：绑定项目与 Prometheus（等）地址。
+2. **告警规则 / 值班**：规则归属由数据源推导；配置值班块与通知对象。
+3. **告警策略**：匹配标签、路由到渠道（钉钉/邮件/Webhook）。
+4. **告警静默**：维护窗口内抑制通知。
+5. **Alertmanager Webhook**：配置 `alert.webhook_token`（或数据字典），指向 `POST /api/v1/alerts/webhook`。
+
+说明见：[docs/alert-notify-guide.md](docs/alert-notify-guide.md)、[docs/alert-routing-and-delivery-guide.md](docs/alert-routing-and-delivery-guide.md)
+
+---
+
+## 前端路由索引
+
+| 模块 | 路径示例 |
+|------|----------|
+| 总览 | `/` |
+| 用户/角色/授权/API/菜单 | `/users`、`/roles`、`/policies`、`/permissions`、`/menus` |
+| K8s 档位/NS 策略 | `/k8s-scoped-policies` |
+| 项目与日志 | `/projects`、`/project-logs`、`/project-log-sources` |
+| 集群与资源 | `/clusters`、`/pods`、`/deployments`、… |
+| 告警 | `/alert-config-center`、`/alert-events` 等 |
+
+完整菜单由 `seed` 写入 `menus` 表，前端按权限动态加载。
+
+---
+
+## 常用 CLI 命令
+
+```bash
+# 数据库迁移与种子数据
+go run . migrate
+go run . seed
+
+# 启动 HTTP + gRPC 服务
+go run . server
+
+# 日志 Agent（见上文）
+go run . log-agent --help
+go run . log-agent-doctor --help
+
+# 测试与格式化
+go test ./...
+gofmt -w ./...
+
+# 前端
+cd web && npm run dev      # 开发
+cd web && npm run build    # 生产静态资源
+```
+
+OpenAPI / Swagger：启动后访问 `/swagger/index.html`。部分接口说明见 `docs/apipost/`。
+
+---
+
+## 排障指南
+
+| 现象 | 排查建议 |
+|------|----------|
+| 登录后菜单为空 | 执行 `seed`；检查角色是否分配；检查菜单 `status` |
+| K8s 操作 403 | 依次检查：授权管理 API → 集群档位 → NS 黑/白名单；请求是否带 `cluster_id` |
+| Pod Exec 403 | 需 `readonly_exec`；WS 需 Casbin + 档位；检查 Origin 与 token |
+| 日志 SSE 中断 | 网关/反向代理禁用缓冲；后端 `write_timeout_seconds=0`；见 `config.yaml` 注释 |
+| Agent 不上报 | `log-agent-doctor`；gRPC 18080 是否可达；`register_secret` / token |
+| 发现列表为空 | Agent 需 `--enable-discovery`；先配置至少一条日志源或 `discovery_roots`；等待扫描/重启 Agent |
+| 集群详情无 kubeconfig | 预期行为（安全脱敏）；更新时重新粘贴 YAML |
+| 首页 Pod 统计与预期不符 | 非 super-admin 仅聚合**有项目成员关系且具备 readonly+ 档位**的集群 |
+| Docker 后端连不上库 | 检查 `MYSQL_*` / `REDIS_*` 环境变量与服务名 `yunshu-mysql` |
+
+---
+
 ## 功能状态标记说明
 
 - ![done](https://img.shields.io/badge/状态-已实现-22c55e?style=flat-square) 已实现：`- [x]`
@@ -173,6 +415,7 @@ git checkout main
 ![done](https://img.shields.io/badge/状态-已实现-22c55e?style=flat-square)
 - [x] 系统总览数据展示
 - [x] 关键指标可视化
+- [x] Pod/事件按**项目成员 + 集群档位**过滤聚合（非 super-admin）
 - [ ] 指标自定义看板
 
 ---
@@ -313,9 +556,12 @@ git checkout main
 #### 项目管理-日志平台页面
 ![项目管理-日志平台页面](./images/项目管理-日志平台页面.png)
 ![done](https://img.shields.io/badge/状态-已实现-22c55e?style=flat-square)
-- [x] SSE 实时日志流
+- [x] SSE 实时日志流（`after_id` 断点续传、自动重连）
 - [x] include/exclude/highlight 过滤
-- [x] 文件级别筛选
+- [x] 文件级别筛选（Agent 发现匹配）
+- [x] URL / session 持久化、`autostart` 恢复
+- [x] 后台日志 Dock（离开页面仍推流）
+- [x] 发现项一键创建日志源
 - [ ] 日志收藏与分享
 
 ---
@@ -406,6 +652,8 @@ git checkout main
 ![done](https://img.shields.io/badge/状态-已实现-22c55e?style=flat-square)
 - [x] 集群、组件状态、命名空间、节点、Pod 基础管理
 - [x] Pod 详情改为只读，编辑收口到表单
+- [x] 集群凭证 API 脱敏；kubeconfig 不回显
+- [x] Node / Ingress-Nginx 重启纳入集群档位校验
 - [ ] 多集群统一搜索
 
 #### 工作负载
@@ -458,8 +706,9 @@ git checkout main
 
 ![done](https://img.shields.io/badge/状态-已实现-22c55e?style=flat-square)
 - [x] K8s RBAC 资源可视化管理
-- [x] 三元策略限制（cluster + namespace + action）
-- [ ] 三元策略模拟器（预检查）
+- [x] 集群访问档位（`k8s_cluster_access_grants`）+ 命名空间黑/白名单
+- [x] API 管理「K8s 范围校验」开关
+- [ ] 权限变更模拟器（预检查）
 
 ---
 
@@ -511,25 +760,52 @@ erDiagram
 
 ```text
 yunshu/
-├── cmd/          # 命令入口（server/migrate/seed/logagent）
-├── configs/      # 配置文件
-├── docs/         # 产品手册与部署文档
-├── images/       # 页面截图与 README 展示图
-├── internal/     # 后端核心代码
-└── web/          # 前端 React 应用
+├── cmd/                    # Cobra：server / migrate / seed / log-agent / log-agent-doctor
+├── cmd/logagent/           # 独立 log-agent 二进制入口
+├── configs/                # config.yaml、casbin_model.conf
+├── docs/                   # 产品手册、API、部署、告警说明
+├── images/                 # README 截图
+├── internal/
+│   ├── agent/              # 日志 Agent 运行时
+│   ├── bootstrap/          # 应用启动、迁移
+│   ├── grpc/               # gRPC 服务（日志 Ingest 等）
+│   ├── handler/            # HTTP 处理器
+│   ├── middleware/         # Auth、Casbin、K8sScope、审计
+│   ├── model/ / repository/ / service/
+│   └── router/
+├── web/                    # React + Vite 前端
+├── docker-compose.yml
+├── Dockerfile.backend / Dockerfile.frontend
+└── README.md               # 本文档
 ```
 
 ---
 
 ## 文档链接
 
-- 产品手册：`docs/handbook/README.md`
-- 部署文档：`docs/deployment/KYLIN_V10_X86_64.md`
-- 告警通知说明：`docs/alert-notify-guide.md`
+| 文档 | 路径 |
+|------|------|
+| 产品手册总览 | [docs/handbook/README.md](docs/handbook/README.md) |
+| 权限设计（必读） | [docs/handbook/permissions/casbin-and-k8s-triple-policy.md](docs/handbook/permissions/casbin-and-k8s-triple-policy.md) |
+| 日志平台 API | [docs/log-platform-api.md](docs/log-platform-api.md) |
+| K8s 控制台需求 | [docs/handbook/requirements/R-04-kubernetes-console.md](docs/handbook/requirements/R-04-kubernetes-console.md) |
+| 日志与 Agent 需求 | [docs/handbook/requirements/R-06-log-platform-and-agent.md](docs/handbook/requirements/R-06-log-platform-and-agent.md) |
+| 告警通知 | [docs/alert-notify-guide.md](docs/alert-notify-guide.md) |
+| 告警路由投递 | [docs/alert-routing-and-delivery-guide.md](docs/alert-routing-and-delivery-guide.md) |
+| 数据库 ER（细分） | [docs/handbook/database/er-diagrams.md](docs/handbook/database/er-diagrams.md) |
+| 麒麟部署示例 | [docs/deployment/KYLIN_V10_X86_64.md](docs/deployment/KYLIN_V10_X86_64.md) |
+| OpenAPI 集合 | [docs/apipost/README.md](docs/apipost/README.md) |
 
 ---
 
 ## 参考项目
 
+- [weibaohui/k8m](https://github.com/weibaohui/k8m) — 多集群权限模型参考
 - [dnsjia/luban](https://github.com/dnsjia/luban)
+
+---
+
+## License
+
+MIT
 

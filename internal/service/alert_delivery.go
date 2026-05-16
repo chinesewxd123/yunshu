@@ -387,7 +387,7 @@ func (s *AlertService) notifyWeComApp(ctx context.Context, channel *model.AlertC
 		"msgtype": "markdown",
 		"agentid": agentID,
 		"markdown": map[string]string{
-			"content": alertnotify.RenderMarkdownCard(title, payload),
+			"content": s.renderChannelMessage(ctx, title, severity, status, payload, settings),
 		},
 		"safe": 0,
 	}

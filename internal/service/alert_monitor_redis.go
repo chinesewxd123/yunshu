@@ -138,6 +138,10 @@ func (s *AlertService) emitMonitorPlatformFiring(ctx context.Context, rule *mode
 }
 
 func (s *AlertService) evaluateMonitorRuleWithRedis(ctx context.Context, rule *model.AlertMonitorRule, firing bool, labels map[string]string, annotations map[string]string, fp string, now time.Time) {
+	if s.redis == nil {
+		s.evaluateMonitorRuleNoRedis(ctx, rule, firing, labels, annotations, fp, now)
+		return
+	}
 	defer s.redisTouchLastEval(ctx, rule.ID, now)
 
 	key := monitorEvalStateKey(rule.ID)
