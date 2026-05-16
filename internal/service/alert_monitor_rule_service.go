@@ -18,6 +18,7 @@ type AlertMonitorRuleListQuery struct {
 	DatasourceID *uint  `form:"datasource_id"`
 	ProjectID    *uint  `form:"project_id"`
 	Keyword      string `form:"keyword"`
+	Enabled      *bool  `form:"enabled"`
 	Page         int    `form:"page"`
 	PageSize     int    `form:"page_size"`
 }
@@ -69,6 +70,9 @@ func (s *AlertMonitorRuleService) List(ctx context.Context, q AlertMonitorRuleLi
 	if kw := strings.TrimSpace(q.Keyword); kw != "" {
 		like := "%" + kw + "%"
 		tx = tx.Where("name LIKE ? OR expr LIKE ?", like, like)
+	}
+	if q.Enabled != nil {
+		tx = tx.Where("enabled = ?", *q.Enabled)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {

@@ -431,6 +431,8 @@ export function AlertMonitorPlatformPage() {
   const [dsList, setDsList] = useState<AlertDatasourceItem[]>([]);
   const [silenceList, setSilenceList] = useState<AlertSilenceItem[]>([]);
   const [ruleList, setRuleList] = useState<AlertMonitorRuleItem[]>([]);
+  /** 监控规则列表：全部 / 仅启用 / 仅停用 */
+  const [ruleEnabledFilter, setRuleEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [cloudExpiryList, setCloudExpiryList] = useState<CloudExpiryRuleItem[]>([]);
   const [blockList, setBlockList] = useState<AlertDutyBlockItem[]>([]);
   const [dutyRuleId, setDutyRuleId] = useState<number | null>(null);
@@ -841,9 +843,25 @@ export function AlertMonitorPlatformPage() {
   }, [silenceDatasourceId, projectContextId]);
 
   const loadRules = useCallback(async (projectID?: number) => {
-    const r = await listAlertMonitorRules({ project_id: projectID, page: 1, page_size: 200 });
+    const r = await listAlertMonitorRules({ project_id: projectID, page: 1, page_size: 500 });
     setRuleList(r.list ?? []);
   }, []);
+
+  const ruleEnabledStats = useMemo(() => {
+    let enabled = 0;
+    let disabled = 0;
+    for (const r of ruleList) {
+      if (r.enabled === false) disabled++;
+      else enabled++;
+    }
+    return { total: ruleList.length, enabled, disabled };
+  }, [ruleList]);
+
+  const ruleDisplayList = useMemo(() => {
+    if (ruleEnabledFilter === "enabled") return ruleList.filter((r) => r.enabled !== false);
+    if (ruleEnabledFilter === "disabled") return ruleList.filter((r) => r.enabled === false);
+    return ruleList;
+  }, [ruleList, ruleEnabledFilter]);
   const loadCloudExpiryRules = useCallback(async (projectID?: number, provider?: string, keyword?: string) => {
     const r = await listCloudExpiryRules({
       project_id: projectID,
@@ -2402,13 +2420,27 @@ export function AlertMonitorPlatformPage() {
             label: "监控规则与值班",
             children: (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
-                <Space>
+                <Space wrap align="center">
                   <Button type="primary" icon={<PlusOutlined />} onClick={openRuleCreate}>
                     新建规则
                   </Button>
                   <Button icon={<ReloadOutlined />} onClick={() => void Promise.all([loadRules(projectContextId), loadDatasources(projectContextId)])}>
                     刷新
                   </Button>
+                  <Segmented
+                    value={ruleEnabledFilter}
+                    options={[
+                      { label: `全部 (${ruleEnabledStats.total})`, value: "all" },
+                      { label: `启用 (${ruleEnabledStats.enabled})`, value: "enabled" },
+                      { label: `停用 (${ruleEnabledStats.disabled})`, value: "disabled" },
+                    ]}
+                    onChange={(v) => setRuleEnabledFilter(v as "all" | "enabled" | "disabled")}
+                  />
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    当前显示 {ruleDisplayList.length} 条
+                    {ruleEnabledFilter !== "all" ? `（共 ${ruleEnabledStats.total} 条）` : ""}
+                    · 停用规则不会参与平台 PromQL 评估
+                  </Typography.Text>
                 </Space>
                 <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                   这里配置的是平台内监控规则：平台会定时对数据源执行 PromQL，命中后走与 Webhook 入站相同的通知与历史记录链路。规则级「处理人」与所选「值班表」当前班次通知邮箱会在告警 outgoing 中合并去重；部门选择为根部门子树全员。
@@ -2435,7 +2467,7 @@ export function AlertMonitorPlatformPage() {
                     </Space>
                   }
                 />
-                <Table rowKey="id" columns={ruleColumns} dataSource={ruleList} pagination={false} scroll={{ x: 1100 }} />
+                <Table rowKey="id" columns={ruleColumns} dataSource={ruleDisplayList} pagination={false} scroll={{ x: 1100 }} />
               </Space>
             ),
           },

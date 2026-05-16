@@ -191,13 +191,31 @@ sequenceDiagram
 
 ---
 
-## 5. 平台规则里配置了「值班」时，告警如何实现
+## 5. 平台规则：处理人、值班与通知标题
 
-1. 监控规则触发 firing 且通过订阅匹配后，在投递前会调用 **`enrichAssigneeAndDutyEmails`**：根据 `monitor_rule_id` 合并 **处理人邮箱** 与 **当前时刻值班班次邮箱**，写入 payload 的 **`assignee_emails`**。
-2. **仅邮件通道**读取 `assignee_emails`：若非空，则 **只向这些地址发信**，并忽略邮件通道里配置的固定收件人（见 `mergeAssigneeEmails` 注释）。
-3. **钉钉 / 企微等 Webhook**：仍发到机器人或应用；**@谁** 由通道配置里的 **`atMobiles` / `atUserIds`** 决定，**不会**自动用值班邮箱替换钉钉收件人。
+### 5.1 处理人（`alert_rule_assignees`）
 
-因此：值班主要增强 **邮件侧收件人**；要钉钉 @ 到人，需在钉钉通道里配置手机号等。
+| 配置项 | 邮件 | 钉钉 / 企微 @ |
+|--------|------|----------------|
+| 勾选用户 | ✓ 用户资料邮箱 | ✓ 手机号（资料内） |
+| 部门（子树，**手动选择**） | ✗ 不展开 | ✓ **项目成员 ∩ 部门子树** + 各部门负责人 |
+| 额外邮箱字段 | ✓ | — |
+| 恢复时通知 | 受开关控制 | 同左 |
+
+- 部门**不会**随勾选用户自动回填；清空部门后保存即生效。  
+- 项目与组织架构：**无强绑定**；成员来自 `project_members`，用户部门来自 `users.department_id`。
+
+### 5.2 值班班次（`alert_duty_blocks`）
+
+1. 监控规则触发且通过订阅匹配后，**`enrichAssigneeAndDutyEmails`** 按 `monitor_rule_id` 合并：**处理人直发邮箱** + **当前时刻命中班次**的用户/部门/额外邮箱 → `assignee_emails` / `assignee_phones`。  
+2. **邮件**：`assignee_emails` 非空时，**仅**发往这些地址（忽略通道固定收件人）；若处理人已配置邮箱，**不再**合并接收组静态抄送。  
+3. **钉钉 / 企微**：机器人仍按通道 URL 发送；@ 名单来自处理人/值班手机号；企业内查不到 userid 时可 **补发邮件**（见 `alert_delivery_assignee_expand.go`）。  
+4. **标题**：`sendToChannel` 内 `buildUnifiedNotifyTitle` 在 **当前时刻存在覆盖该规则的值班班次** 时，在统一标题前加前缀 **`值班`**，例如 `值班[告警通知][CRITICAL][项目名][alertname]`（恢复同理为 `值班[告警恢复]...`）。仅在实际值班时段生效，非「配过班次就一直加」。
+
+### 5.3 监控规则启用与列表筛选
+
+- `alert_monitor_rules.enabled=false`：**不参与**平台 PromQL 评估（`tickMonitorRules` 仅拉 `enabled=true`）。  
+- 控制台「监控规则与值班」Tab 提供 **全部 / 启用 / 停用** 分段及数量统计，便于巡检规则状态。
 
 ---
 
@@ -246,4 +264,6 @@ sequenceDiagram
 | firing 分组节流 | `internal/service/alert_aggregate_state.go`：`decideFiringGroupTiming` |
 | firing 成功投递标记 / resolved 拦截 | 同上：`markAlertFiringDelivered`、`alertFiringWasDelivered`、`logResolvedSuppressedNoPriorFiringDelivery`；`ReceiveAlertmanager` 内发送循环 |
 | 平台规则 for | `internal/service/alert_monitor_redis.go`：`evaluateMonitorRuleWithRedis` |
-| 值班邮箱合并 | `internal/service/alert_service.go`：`enrichAssigneeAndDutyEmails`；`internal/service/alert_delivery.go`：`mergeAssigneeEmails` |
+| 处理人/值班邮箱与 IM 补邮件 | `alert_service.go`：`enrichAssigneeAndDutyEmails`；`alert_rule_assignee_service.go`：`ResolveNotifyEmailsDirectUsers`；`alert_delivery_assignee_expand.go` |
+| 值班标题前缀 | `alert_delivery.go`：`buildUnifiedNotifyTitle`、`shouldPrefixDutyOnNotifyTitle`；`alert_duty_service.go`：`HasActiveBlockAtRule` |
+| 邮件收件人合并 | `alert_delivery.go`：`mergeAssigneeEmails`（有 `assignee_emails` 时不合并接收组静态邮箱） |

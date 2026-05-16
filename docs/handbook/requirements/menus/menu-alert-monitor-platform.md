@@ -11,16 +11,18 @@
 |-----|----------|-----------------------------------|
 | 数据源 | CRUD、连通、即时/范围查询 | `/datasources`、`/datasources/:id/query(_range)`、`prometheus-alerts` |
 | 静默 | 单条创建/编辑、从活跃告警批量静默 | `/silences`、`/silences/batch` |
-| 监控规则 | PromQL、for、间隔、级别、绑定项目 | `/monitor-rules`、处理人 `/monitor-rules/:id/assignees`、值班 `/duty-blocks` |
+| 监控规则 | PromQL、for、间隔、级别、绑定项目；**启用/停用筛选**（分段 + 统计） | `/monitor-rules?enabled=`、处理人 `/monitor-rules/:id/assignees`、值班 `/duty-blocks` |
 | 策略与历史 | 嵌入 `AlertConfigCenterPanel` | `/policies`、`/events`、`/history/stats` |
 | PromQL 查询 | 调试 PromQL | 同数据源 query 接口 |
 
 ## 3. 业务规则（必读）
 
-- **项目绑定**：监控规则所属项目由所选数据源派生；告警通知邮箱 = **处理人解析结果 ∪ 项目启用成员邮箱**（去重）。  
+- **项目绑定**：监控规则所属项目由所选数据源派生。  
+- **启用状态**：`enabled=false` 的规则**不参与**平台 PromQL 定时评估；列表 Tab 提供 **全部 / 启用 / 停用** 分段筛选及数量统计。  
+- **处理人**：显式勾选用户 + 额外邮箱；**邮件**仅发往用户资料邮箱（不展开部门子树）。**部门（子树）** 需手动选择，保存后按库加载（不随用户自动回填）；用于钉钉/企微 @（项目成员 ∩ 子树 + 部门负责人）。  
 - **静默**：匹配器语义对齐 Prometheus/Alertmanager；批量静默对多条告警分别创建静默记录。  
-- **值班**：`alert_duty_blocks` 按 `monitor_rule_id` 挂接；可复制其他规则下班次到当前规则（新建独立记录）。  
-- **UI**：新建/编辑类表单已统一为**右侧 Drawer**，便于对照列表与说明文案。
+- **值班**：`alert_duty_blocks` 按 `monitor_rule_id` 挂接；可复制其他规则下班次到当前规则（新建独立记录）。**当前时刻**命中班次时，外发标题前缀 **`值班`**（如 `值班[告警通知][CRITICAL]...`），与 firing/resolved 均适用。  
+- **UI**：新建/编辑类表单已统一为**右侧 Drawer**；规则值班抽屉与「值班总览」页操作列 **固定在右侧**，避免横向滚动后看不到编辑/删除。
 
 ## 4. 数据表
 

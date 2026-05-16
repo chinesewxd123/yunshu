@@ -213,7 +213,14 @@ export function deleteAlertSilence(id: number) {
   return getData<void>(http.delete(`/alerts/silences/${id}`));
 }
 
-export function listAlertMonitorRules(params?: { datasource_id?: number; project_id?: number; keyword?: string; page?: number; page_size?: number }) {
+export function listAlertMonitorRules(params?: {
+  datasource_id?: number;
+  project_id?: number;
+  keyword?: string;
+  enabled?: boolean;
+  page?: number;
+  page_size?: number;
+}) {
   return getData<{ list?: AlertMonitorRuleItem[]; items?: AlertMonitorRuleItem[]; total: number; page: number; page_size: number }>(
     http.get("/alerts/monitor-rules", { params }),
   ).then((payload) => normalizePagedPayload(payload, mapMonitorRule));
