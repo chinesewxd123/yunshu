@@ -2,14 +2,54 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"yunshu/internal/alertdispatch"
 	"yunshu/internal/model"
 )
 
-// expandChannelSetForAssigneeNotification 规则处理人/值班有邮箱且命中接收组时，补启邮件通道投递至 assignee_emails。
-// 场景：接收组仅绑钉钉、处理人不在群内时，仍向监控规则「处理人」邮箱发信（不依赖接收组 email_recipients）。
+func isCriticalAlertSeverity(payload map[string]interface{}) bool {
+	if payload == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fmt.Sprintf("%v", payload["severity"])), "critical")
+}
+
+func monitorRuleIDFromPayload(payload map[string]interface{}) (uint, bool) {
+	if payload == nil {
+		return 0, false
+	}
+	if raw, ok := payload["labels"].(map[string]string); ok && raw != nil {
+		if id, ok2 := parseLabelUint(raw["monitor_rule_id"]); ok2 {
+			return id, true
+		}
+	}
+	if raw, ok := payload["labels"].(map[string]interface{}); ok && raw != nil {
+		if id, ok2 := parseLabelUint(fmt.Sprintf("%v", raw["monitor_rule_id"])); ok2 {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// resolveCriticalMailFallbackEmails 仅规则处理人显式用户/额外邮箱 + 当前值班邮箱，不含部门子树展开，也不含项目全员。
+func (s *AlertService) resolveCriticalMailFallbackEmails(ctx context.Context, ruleID uint, status string) []string {
+	var emails []string
+	if s.assigneeSvc != nil && (status != "resolved" || s.assigneeSvc.NotifyOnResolvedEnabled(ctx, ruleID)) {
+		e, _ := s.assigneeSvc.ResolveNotifyEmailsDirectUsers(ctx, ruleID)
+		emails = append(emails, e...)
+	}
+	if s.dutySvc != nil {
+		e, _ := s.dutySvc.ResolveNotifyEmailsAtRule(ctx, ruleID, time.Now())
+		emails = append(emails, e...)
+	}
+	return mergeNotifyEmailsUnique(emails)
+}
+
+// expandChannelSetForAssigneeNotification critical 且接收组仅 IM 通道时，补启邮件通道并仅向规则处理人（显式用户）邮箱发信。
+// 钉钉侧仍用 payload 内 assignee_phones 做 @；与是否在群内无关。
 func (s *AlertService) expandChannelSetForAssigneeNotification(
 	ctx context.Context,
 	channelSet map[uint]struct{},
@@ -19,16 +59,19 @@ func (s *AlertService) expandChannelSetForAssigneeNotification(
 	if s == nil || len(channelSet) == 0 || len(receiverGroupIDs) == 0 || payload == nil {
 		return
 	}
-	assignee := collectEmailsFromPayload(payload, "assignee_emails")
-	if len(assignee) == 0 {
+	if !isCriticalAlertSeverity(payload) {
 		return
+	}
+	status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", payload["status"])))
+	if status == "" {
+		status = "firing"
 	}
 	if s.receiverGroupCache == nil {
 		return
 	}
 
-	var rgEmails []string
 	hasEmailChannelInGroups := false
+	var rgEmails []string
 	for _, gid := range receiverGroupIDs {
 		g, err := s.receiverGroupCache.Get(gid)
 		if err != nil || g == nil || !g.IsActiveNow() {
@@ -45,10 +88,27 @@ func (s *AlertService) expandChannelSetForAssigneeNotification(
 			}
 		}
 	}
-	merged := mergeNotifyEmailsUnique(append(assignee, rgEmails...))
-	if len(merged) > 0 {
-		payload["assignee_emails"] = merged
+
+	// 接收组已配置邮件通道：沿用 enrich 后的 assignee_emails，可合并接收组静态抄送
+	if hasEmailChannelInGroups {
+		assignee := collectEmailsFromPayload(payload, "assignee_emails")
+		if len(rgEmails) > 0 && len(assignee) > 0 {
+			payload["assignee_emails"] = mergeNotifyEmailsUnique(append(assignee, rgEmails...))
+		}
+		return
 	}
+
+	// 仅钉钉/企微等：补邮件通道，收件人仅限规则处理人显式邮箱（非项目全员、不展开处理人部门子树）
+	ruleID, ok := monitorRuleIDFromPayload(payload)
+	if !ok || ruleID == 0 {
+		return
+	}
+	fallback := s.resolveCriticalMailFallbackEmails(ctx, ruleID, status)
+	if len(fallback) == 0 {
+		return
+	}
+	payload["assignee_emails"] = fallback
+	payload["assignee_mail_fallback_critical"] = true
 
 	hasEmailInSet := false
 	for cid := range channelSet {
@@ -62,7 +122,6 @@ func (s *AlertService) expandChannelSetForAssigneeNotification(
 			channelSet[id] = struct{}{}
 		}
 	}
-	_ = hasEmailChannelInGroups // 接收组是否含邮件通道仅影响是否已选入 channelSet，不阻断处理人邮件兜底
 }
 
 func collectEmailsFromPayload(payload map[string]interface{}, key string) []string {

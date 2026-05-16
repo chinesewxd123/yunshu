@@ -1342,7 +1342,7 @@ export function AlertConfigCenterPanel({
             name="channel_ids"
             label="绑定告警通道"
             rules={[{ required: true, message: "请至少绑定一个告警通道" }]}
-            extra="通道在「告警通道」菜单维护。处理人邮件兜底请在「告警监控平台 → 监控规则 → 处理人」配置，无需在本组填写邮箱。"
+            extra="通道在「告警通道」菜单维护。critical 且本组仅绑钉钉/企微时，系统会向规则「处理人」中显式用户的邮箱自动补发邮件（非项目全员）。"
           >
             <Select
               mode="multiple"
