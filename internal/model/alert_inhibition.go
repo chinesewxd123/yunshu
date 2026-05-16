@@ -13,6 +13,7 @@ type AlertInhibitionRule struct {
 
 	Name        string `json:"name" gorm:"size:128;not null;index;comment:规则名称"`
 	Description string `json:"description" gorm:"type:text;comment:规则描述"`
+	ProjectID   uint   `json:"project_id" gorm:"not null;default:0;index;comment:所属项目，0 表示历史全局规则"`
 	Enabled     bool   `json:"enabled" gorm:"not null;default:true;index;comment:是否启用"`
 	Priority    int    `json:"priority" gorm:"not null;default:100;comment:优先级，越小越高"`
 

@@ -62,7 +62,12 @@ function formToPayload(v: FormValues): AlertInhibitionRulePayload {
   };
 }
 
-export function AlertInhibitionPanel() {
+export type AlertInhibitionPanelProps = {
+  /** 告警监控平台顶栏项目筛选 */
+  projectId?: number;
+};
+
+export function AlertInhibitionPanel({ projectId }: AlertInhibitionPanelProps = {}) {
   const [loading, setLoading] = useState(false);
   const [list, setList] = useState<AlertInhibitionRule[]>([]);
   const [total, setTotal] = useState(0);
@@ -76,7 +81,12 @@ export function AlertInhibitionPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listInhibitionRules({ page, page_size: pageSize, keyword: keyword || undefined });
+      const res = await listInhibitionRules({
+        page,
+        page_size: pageSize,
+        keyword: keyword || undefined,
+        project_id: projectId && projectId > 0 ? projectId : undefined,
+      });
       setList(res.list || []);
       setTotal(res.total || 0);
     } catch (e) {
@@ -84,7 +94,7 @@ export function AlertInhibitionPanel() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, keyword]);
+  }, [page, pageSize, keyword, projectId]);
 
   useEffect(() => {
     void load();
@@ -116,6 +126,9 @@ export function AlertInhibitionPanel() {
   const submit = async () => {
     const v = await form.validateFields();
     const payload = formToPayload(v);
+    if (projectId && projectId > 0) {
+      payload.project_id = projectId;
+    }
     try {
       if (editing) {
         await updateInhibitionRule(editing.id, payload);
@@ -195,6 +208,11 @@ export function AlertInhibitionPanel() {
 
   return (
     <Space direction="vertical" style={{ width: "100%" }} size="middle">
+      {projectId && projectId > 0 ? (
+        <Alert type="info" showIcon message={`已按顶栏项目 #${projectId} 筛选抑制规则；新建规则将归属该项目`} />
+      ) : (
+        <Alert type="warning" showIcon message="未选择顶栏项目时显示全部抑制规则（含历史全局规则 project_id=0）" />
+      )}
       <Alert
         type="info"
         showIcon

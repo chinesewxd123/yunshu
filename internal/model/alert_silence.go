@@ -16,6 +16,7 @@ type AlertSilence struct {
 	EndsAt       time.Time `json:"ends_at" gorm:"index;comment:生效结束时间"`
 	Comment      string    `json:"comment" gorm:"size:512;comment:说明"`
 	CreatedBy    uint      `json:"created_by" gorm:"index;comment:创建人用户ID"`
+	ProjectID    uint      `json:"project_id" gorm:"not null;default:0;index;comment:所属项目，0 表示历史全局静默"`
 	Enabled      bool      `json:"enabled" gorm:"not null;default:true;index;comment:是否启用"`
 
 	CreatedAt time.Time      `json:"created_at"`

@@ -777,12 +777,50 @@ func mergeAssigneeEmails(recipients []string, payload map[string]interface{}) []
 	return out
 }
 
+// mergeAssigneeEmailsWithReceiverGroup 合并接收组额外邮箱（email_recipients_json）与处理人/值班邮箱。
+func mergeAssigneeEmailsWithReceiverGroup(recipients []string, payload map[string]interface{}) []string {
+	if payload == nil {
+		return recipients
+	}
+	raw, ok := payload["receiver_group_emails"]
+	if !ok || raw == nil {
+		return recipients
+	}
+	var extra []string
+	for _, e := range normalizeRecipientList(raw) {
+		s := strings.TrimSpace(strings.ToLower(e))
+		if s != "" {
+			extra = append(extra, s)
+		}
+	}
+	if len(extra) == 0 {
+		return recipients
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(e string) {
+		if _, ok := seen[e]; ok {
+			return
+		}
+		seen[e] = struct{}{}
+		out = append(out, e)
+	}
+	for _, r := range recipients {
+		add(r)
+	}
+	for _, e := range extra {
+		add(e)
+	}
+	return out
+}
+
 func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}) (int, string, error) {
 	recipients, err := parseEmailRecipients(channel.HeadersJSON)
 	if err != nil {
 		return 0, "", err
 	}
 	recipients = mergeAssigneeEmails(recipients, payload)
+	recipients = mergeAssigneeEmailsWithReceiverGroup(recipients, payload)
 	if len(recipients) == 0 {
 		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsgc47e8ed41463)
 	}

@@ -134,6 +134,8 @@ export function listAlertEvents(params: {
   groupKey?: string;
   /** 策略分类，与后端 category 一致：inhibition|silence|timing|… */
   category?: string;
+  /** 告警监控平台顶栏项目筛选 */
+  projectId?: number;
 }) {
   return getData<{ list?: AlertEventItem[]; items?: AlertEventItem[]; total: number; page: number; page_size: number }>(
     http.get("/alerts/events", { params }),

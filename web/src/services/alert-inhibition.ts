@@ -22,6 +22,7 @@ export interface AlertInhibitionRule {
 }
 
 export type AlertInhibitionRulePayload = {
+  project_id?: number;
   name: string;
   description?: string;
   enabled?: boolean;
@@ -34,7 +35,13 @@ export type AlertInhibitionRulePayload = {
   duration_seconds?: number;
 };
 
-export function listInhibitionRules(params?: { page?: number; page_size?: number; keyword?: string; enabled?: boolean }) {
+export function listInhibitionRules(params?: {
+  page?: number;
+  page_size?: number;
+  keyword?: string;
+  enabled?: boolean;
+  project_id?: number;
+}) {
   return getData<{ list: AlertInhibitionRule[]; total: number; page: number; page_size: number }>(
     http.get("/alerts/inhibition-rules", { params }),
   );

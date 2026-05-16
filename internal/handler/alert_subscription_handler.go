@@ -209,3 +209,8 @@ func (h *AlertSubscriptionHandler) MigrateFromPolicies(c *gin.Context) {
 		})
 	})
 }
+
+// CloneProjectRouting 从源项目复制订阅树与接收组到目标项目。
+func (h *AlertSubscriptionHandler) CloneProjectRouting(c *gin.Context) {
+	ServeJSON(c, h.svc.CloneProjectRouting)
+}

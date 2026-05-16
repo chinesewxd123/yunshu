@@ -52,6 +52,7 @@ func NewAlertInhibitionService(db *gorm.DB, redisClient *redis.Client) *AlertInh
 
 // AlertInhibitionRuleUpsertRequest 创建/更新请求
 type AlertInhibitionRuleUpsertRequest struct {
+	ProjectID   uint   `json:"project_id"`
 	Name        string `json:"name" binding:"required,max=128"`
 	Description string `json:"description"`
 	Enabled     *bool  `json:"enabled"`
@@ -68,17 +69,20 @@ type AlertInhibitionRuleUpsertRequest struct {
 
 // AlertInhibitionRuleListQuery 列表查询
 type AlertInhibitionRuleListQuery struct {
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
-	Keyword  string `form:"keyword"`
-	Enabled  *bool  `form:"enabled"`
+	ProjectID uint   `form:"project_id"`
+	Page      int    `form:"page"`
+	PageSize  int    `form:"page_size"`
+	Keyword   string `form:"keyword"`
+	Enabled   *bool  `form:"enabled"`
 }
 
 // List 查询抑制规则列表
 func (s *AlertInhibitionService) List(ctx context.Context, q AlertInhibitionRuleListQuery) ([]model.AlertInhibitionRule, int64, int, int, error) {
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
 	tx := s.db.WithContext(ctx).Model(&model.AlertInhibitionRule{})
-
+	if q.ProjectID > 0 {
+		tx = tx.Where("project_id = ?", q.ProjectID)
+	}
 	if kw := strings.TrimSpace(q.Keyword); kw != "" {
 		like := "%" + kw + "%"
 		tx = tx.Where("name LIKE ? OR description LIKE ?", like, like)
@@ -112,6 +116,7 @@ func (s *AlertInhibitionService) Create(ctx context.Context, req AlertInhibition
 	}
 
 	rule := &model.AlertInhibitionRule{
+		ProjectID:             req.ProjectID,
 		Name:                  strings.TrimSpace(req.Name),
 		Description:           strings.TrimSpace(req.Description),
 		SourceMatchLabelsJSON: strings.TrimSpace(req.SourceMatchLabelsJSON),

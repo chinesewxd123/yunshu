@@ -1,5 +1,5 @@
-import { DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, InputNumber, Popconfirm, Popover, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tree, Typography, message } from "antd";
+import { CopyOutlined, DeleteOutlined, EditOutlined, MinusCircleOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Alert, AutoComplete, Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Popover, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tree, Typography, message } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getAlertHistoryStats,
@@ -18,12 +18,18 @@ import {
   summarizeAlertEventHint,
   type AlertEventCategory,
 } from "../utils/alert-event-reasons";
+import { ALERT_ROUTING_TERMS, formatReceiverGroupLabel, formatRouteNodeTreeTitle } from "../constants/alert-routing-terms";
+import { listAlertDatasources, type AlertDatasourceItem } from "../services/alert-platform";
 import { getProjects } from "../services/projects";
 import {
+  cloneSubscriptionFromProject,
+  createReceiverGroup,
   createSubscriptionNode,
+  deleteReceiverGroup,
   deleteSubscriptionNode,
   getSubscriptionTree,
   listReceiverGroups,
+  updateReceiverGroup,
   updateSubscriptionNode,
   type AlertReceiverGroup,
   type AlertSubscriptionNode,
@@ -41,6 +47,8 @@ export type AlertConfigCenterPanelProps = {
   hideTabs?: boolean;
   /** 历史 Tab 初始策略分类（如从抑制页跳转 ?event_category=inhibition） */
   initialEventCategory?: AlertEventCategory;
+  /** 告警监控平台顶栏「全局项目上下文」；有值时同步订阅/历史筛选 */
+  projectContextId?: number;
 };
 
 const webhookPayloadTemplates: Record<string, Record<string, unknown>> = {
@@ -141,6 +149,36 @@ function parseLabelsFromAlertEventRequestPayload(raw?: string): Record<string, s
   return {};
 }
 
+function parseReceiverGroupChannelIds(g: AlertReceiverGroup): number[] {
+  if (Array.isArray(g.channel_ids) && g.channel_ids.length) {
+    return g.channel_ids.map((id) => Number(id)).filter((id) => id > 0);
+  }
+  try {
+    const parsed = JSON.parse(String(g.channel_ids_json || "[]")) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.map((id) => Number(id)).filter((id) => id > 0);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+function parseReceiverGroupEmails(g: AlertReceiverGroup): string[] {
+  if (Array.isArray(g.email_recipients) && g.email_recipients.length) {
+    return g.email_recipients.map((e) => String(e).trim()).filter(Boolean);
+  }
+  try {
+    const parsed = JSON.parse(String(g.email_recipients_json || "[]")) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.map((e) => String(e).trim()).filter(Boolean);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
 function prettifyAlertRequestPayload(raw?: string): string {
   const s = String(raw || "").trim();
   if (!s) return "";
@@ -157,6 +195,7 @@ export function AlertConfigCenterPanel({
   embedded,
   hideTabs,
   initialEventCategory,
+  projectContextId,
 }: AlertConfigCenterPanelProps) {
   const [stats, setStats] = useState<{
     total: number;
@@ -179,7 +218,29 @@ export function AlertConfigCenterPanel({
   const [subSelectedID, setSubSelectedID] = useState<number>(0);
   const [subLoading, setSubLoading] = useState(false);
   const [receiverGroups, setReceiverGroups] = useState<AlertReceiverGroup[]>([]);
+  const [projectDatasources, setProjectDatasources] = useState<AlertDatasourceItem[]>([]);
   const [subForm] = Form.useForm();
+  const [cloneModalOpen, setCloneModalOpen] = useState(false);
+  const [cloneSubmitting, setCloneSubmitting] = useState(false);
+  const [cloneForm] = Form.useForm<{
+    source_project_id: number;
+    target_project_id: number;
+    replace_cluster?: string;
+    replace_route?: string;
+    include_disabled?: boolean;
+    skip_if_target_has_nodes?: boolean;
+  }>();
+  const [rgDrawerOpen, setRgDrawerOpen] = useState(false);
+  const [rgModalOpen, setRgModalOpen] = useState(false);
+  const [rgEditingId, setRgEditingId] = useState<number | null>(null);
+  const [rgSaving, setRgSaving] = useState(false);
+  const [rgForm] = Form.useForm<{
+    name: string;
+    description?: string;
+    channel_ids?: number[];
+    email_recipients?: string[];
+    enabled?: boolean;
+  }>();
 
   const [eventsLoading, setEventsLoading] = useState(false);
   const [events, setEvents] = useState<AlertEventItem[]>([]);
@@ -235,36 +296,29 @@ export function AlertConfigCenterPanel({
   const sourceFilterOptions = useMemo(() => {
     const opts: { label: string; value: string }[] = [];
     const seen = new Set<string>();
-    for (const row of stats?.datasource_filter_options ?? []) {
-      const id = Number(row?.id);
-      if (!Number.isFinite(id) || id <= 0) continue;
-      const name = String(row?.name ?? "").trim();
-      const value = `ds:${id}`;
-      if (seen.has(value)) continue;
+    const push = (label: string, value: string) => {
+      if (!value || seen.has(value)) return;
       seen.add(value);
-      opts.push({
-        label: name ? `${name}（数据源 #${id}）` : `数据源 #${id}`,
-        value,
-      });
-    }
-    const slugLabels: Record<string, string> = {
-      alertmanager: "Alertmanager（未绑定数据源）",
-      platform_monitor: "平台监控规则（无数据源记录）",
-      cloud_expiry: "云资源到期",
-      prometheus: "历史：Prometheus + Alertmanager",
-      platform: "历史：平台监控链路",
+      opts.push({ label, value });
     };
-    const slugFromPage = (events ?? []).map((it) => String(it.monitorPipeline ?? "").trim()).filter(Boolean);
-    const fromStats = (stats?.monitor_pipeline_values ?? []).map((v) => String(v).trim()).filter(Boolean);
-    for (const slug of Array.from(new Set([...fromStats, ...slugFromPage])).sort((a, b) => a.localeCompare(b, "zh-CN"))) {
-      if (!slug || slug.startsWith("ds:")) continue;
-      const value = `mp:${slug}`;
-      if (seen.has(value)) continue;
-      seen.add(value);
-      opts.push({ label: slugLabels[slug] ?? `来源：${slug}`, value });
+    push("Alertmanager", "mp:alertmanager");
+    push("云资源到期", "mp:cloud_expiry");
+    for (const ds of projectDatasources) {
+      const id = Number(ds.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const name = String(ds.name ?? "").trim() || `数据源 ${id}`;
+      push(name, `ds:${id}`);
     }
-    return opts.sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
-  }, [stats?.datasource_filter_options, stats?.monitor_pipeline_values, events]);
+    if (opts.length <= 2) {
+      for (const row of stats?.datasource_filter_options ?? []) {
+        const id = Number(row?.id);
+        if (!Number.isFinite(id) || id <= 0) continue;
+        const name = String(row?.name ?? "").trim() || `数据源 ${id}`;
+        push(name, `ds:${id}`);
+      }
+    }
+    return opts;
+  }, [projectDatasources, stats?.datasource_filter_options]);
   const webhookTemplateOptions = useMemo(
     () => [
       { label: "warning（prod）", value: "warning_prod" },
@@ -299,7 +353,7 @@ export function AlertConfigCenterPanel({
     for (const g of receiverGroups) {
       const id = Number(g.id);
       if (!Number.isFinite(id) || id <= 0) continue;
-      const label = String(g.name ?? "").trim() || `#${id}`;
+      const label = formatReceiverGroupLabel(String(g.name ?? ""), id);
       const key = label.toLowerCase();
       const prev = byNameKey.get(key);
       if (!prev || id > prev.value) {
@@ -326,7 +380,7 @@ export function AlertConfigCenterPanel({
         const ch = toTree(n.children ?? []);
         const row: SubscriptionAntTreeNode = {
           key: String(n.id),
-          title: `${n.name}${n.enabled ? "" : "（停用）"}`,
+          title: formatRouteNodeTreeTitle(n.name, n.enabled),
         };
         if (ch.length > 0) row.children = ch;
         return row;
@@ -347,7 +401,7 @@ export function AlertConfigCenterPanel({
   }, [subTree, subSelectedID]);
 
   const loadSubscriptions = useCallback(async (overrideProjectId?: number) => {
-    const pid = overrideProjectId ?? subProjectID;
+    const pid = overrideProjectId ?? (projectContextId && projectContextId > 0 ? projectContextId : subProjectID);
     if (!pid) return;
     setSubLoading(true);
     try {
@@ -360,7 +414,62 @@ export function AlertConfigCenterPanel({
     } finally {
       setSubLoading(false);
     }
-  }, [subProjectID]);
+  }, [subProjectID, projectContextId]);
+
+  function openReceiverGroupCreate() {
+    setRgEditingId(null);
+    rgForm.resetFields();
+    rgForm.setFieldsValue({ enabled: true, channel_ids: [], email_recipients: [] });
+    setRgModalOpen(true);
+  }
+
+  function openReceiverGroupEdit(g: AlertReceiverGroup) {
+    setRgEditingId(g.id);
+    rgForm.setFieldsValue({
+      name: g.name,
+      description: g.description ?? "",
+      channel_ids: parseReceiverGroupChannelIds(g),
+      email_recipients: parseReceiverGroupEmails(g),
+      enabled: g.enabled,
+    });
+    setRgModalOpen(true);
+  }
+
+  async function saveReceiverGroup() {
+    const pid = effectiveProjectId;
+    if (!pid) {
+      message.warning("请先选择项目");
+      return;
+    }
+    const values = await rgForm.validateFields();
+    const payload = {
+      project_id: pid,
+      name: String(values.name ?? "").trim(),
+      description: String(values.description ?? "").trim(),
+      channel_ids_json: JSON.stringify(values.channel_ids ?? []),
+      email_recipients_json: JSON.stringify(values.email_recipients ?? []),
+      enabled: values.enabled !== false,
+    };
+    setRgSaving(true);
+    try {
+      if (rgEditingId) {
+        await updateReceiverGroup(rgEditingId, payload);
+      } else {
+        await createReceiverGroup(payload);
+      }
+      message.success("接收组已保存");
+      setRgModalOpen(false);
+      await loadSubscriptions();
+    } finally {
+      setRgSaving(false);
+    }
+  }
+
+  async function removeReceiverGroup(id: number) {
+    await deleteReceiverGroup(id);
+    message.success("已删除");
+    await loadSubscriptions();
+  }
 
   async function onSelectSubscriptionNode(id: number) {
     setSubSelectedID(id);
@@ -399,11 +508,11 @@ export function AlertConfigCenterPanel({
   }
 
   async function createSubscription(parentID?: number | null) {
-    if (!subProjectID) return;
+    if (!effectiveProjectId) return;
     const payload: any = {
-      project_id: subProjectID,
+      project_id: effectiveProjectId,
       parent_id: parentID ?? null,
-      name: "新节点",
+      name: !parentID ? ALERT_ROUTING_TERMS.rootPolicyName : "新路由节点",
       code: "",
       enabled: true,
       continue: false,
@@ -424,7 +533,7 @@ export function AlertConfigCenterPanel({
     const v = await subForm.validateFields();
     const id = Number(v.id || 0);
     const payload: any = {
-      project_id: subProjectID,
+      project_id: effectiveProjectId,
       parent_id: v.parent_id ?? null,
       name: String(v.name || "").trim(),
       code: String(v.code || "").trim(),
@@ -465,6 +574,8 @@ export function AlertConfigCenterPanel({
     await loadSubscriptions();
   }
 
+  const effectiveProjectId = projectContextId && projectContextId > 0 ? projectContextId : subProjectID;
+
   const loadEvents = useCallback(
     async (page: number, pageSize: number) => {
       setEventsLoading(true);
@@ -489,6 +600,7 @@ export function AlertConfigCenterPanel({
           datasourceId,
           groupKey: eventGroupKey.trim() || undefined,
           category: eventCategory || undefined,
+          projectId: effectiveProjectId > 0 ? effectiveProjectId : undefined,
         });
         setEvents(res.list ?? []);
         setEventsTotal(res.total ?? 0);
@@ -498,7 +610,7 @@ export function AlertConfigCenterPanel({
         setEventsLoading(false);
       }
     },
-    [eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey, eventCategory],
+    [eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey, eventCategory, effectiveProjectId],
   );
 
   useEffect(() => {
@@ -513,6 +625,12 @@ export function AlertConfigCenterPanel({
   }, []);
 
   useEffect(() => {
+    if (projectContextId && projectContextId > 0) {
+      setSubProjectID(projectContextId);
+    }
+  }, [projectContextId]);
+
+  useEffect(() => {
     if (tab !== "history") {
       return;
     }
@@ -522,7 +640,17 @@ export function AlertConfigCenterPanel({
       void loadEvents(1, eventsPageSizeRef.current);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [tab, eventKeyword, eventAlertIP, eventStatus, eventSourceFilter, eventGroupKey, eventCategory, loadEvents]);
+  }, [
+    tab,
+    eventKeyword,
+    eventAlertIP,
+    eventStatus,
+    eventSourceFilter,
+    eventGroupKey,
+    eventCategory,
+    effectiveProjectId,
+    loadEvents,
+  ]);
 
   useEffect(() => {
     if (tab !== "subscriptions") {
@@ -530,6 +658,14 @@ export function AlertConfigCenterPanel({
     }
     void loadSubscriptions();
   }, [tab, loadSubscriptions]);
+
+  useEffect(() => {
+    if (tab !== "history") return;
+    const pid = effectiveProjectId > 0 ? effectiveProjectId : undefined;
+    void listAlertDatasources({ project_id: pid, page: 1, page_size: 200 }).then((r) => {
+      setProjectDatasources(r.list ?? r.items ?? []);
+    });
+  }, [tab, effectiveProjectId]);
 
   async function sendWebhookDemo() {
     let payloadObj: Record<string, unknown>;
@@ -553,21 +689,47 @@ export function AlertConfigCenterPanel({
   const tabItems = [
     {
       key: "subscriptions",
-      label: "订阅树（新策略）",
+      label: ALERT_ROUTING_TERMS.tabRouting,
       children: (
         <>
           <Space style={{ width: "100%", marginBottom: 12 }} wrap>
-            <Select
-              style={{ width: 260 }}
-              placeholder="选择项目"
-              value={subProjectID || undefined}
-              options={projects.map((p) => ({ label: p.name, value: p.id }))}
-              onChange={(v) => setSubProjectID(Number(v) || 0)}
-              showSearch
-              filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
-            />
+            {projectContextId ? (
+              <Typography.Text type="secondary">
+                当前项目：{projects.find((p) => p.id === projectContextId)?.name ?? `项目 ${projectContextId}`}（跟随顶栏「全局项目上下文」）
+              </Typography.Text>
+            ) : (
+              <Select
+                style={{ width: 260 }}
+                placeholder="选择项目"
+                value={subProjectID || undefined}
+                options={projects.map((p) => ({ label: p.name, value: p.id }))}
+                onChange={(v) => setSubProjectID(Number(v) || 0)}
+                showSearch
+                filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+              />
+            )}
             <Button icon={<ReloadOutlined />} loading={subLoading} onClick={() => void loadSubscriptions()}>
               刷新
+            </Button>
+            <Button disabled={!effectiveProjectId} onClick={() => setRgDrawerOpen(true)}>
+              {ALERT_ROUTING_TERMS.receiverGroupManage}
+            </Button>
+            <Button
+              icon={<CopyOutlined />}
+              disabled={projects.length < 2}
+              onClick={() => {
+                cloneForm.setFieldsValue({
+                  source_project_id: effectiveProjectId || projects[0]?.id,
+                  target_project_id: undefined,
+                  replace_cluster: "",
+                  replace_route: "",
+                  include_disabled: false,
+                  skip_if_target_has_nodes: true,
+                });
+                setCloneModalOpen(true);
+              }}
+            >
+              {ALERT_ROUTING_TERMS.copyTemplate}
             </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => void createSubscription(null)}>
               新增根节点
@@ -580,12 +742,12 @@ export function AlertConfigCenterPanel({
                 删除
               </Button>
             </Popconfirm>
-            <Button type="primary" disabled={!subProjectID} onClick={() => void saveSubscription()}>
+            <Button type="primary" disabled={!effectiveProjectId} onClick={() => void saveSubscription()}>
               保存
             </Button>
           </Space>
           <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 12, alignItems: "start" }}>
-            <Card size="small" title="订阅树" loading={subLoading} styles={{ body: { padding: 8 } }}>
+            <Card size="small" title={ALERT_ROUTING_TERMS.treeTitle} loading={subLoading} styles={{ body: { padding: 8 } }}>
               <Tree
                 treeData={subscriptionTreeData}
                 selectedKeys={subSelectedID ? [String(subSelectedID)] : []}
@@ -596,7 +758,14 @@ export function AlertConfigCenterPanel({
                 defaultExpandAll
               />
             </Card>
-            <Card size="small" title={selectedSubscriptionNode ? `编辑节点：${selectedSubscriptionNode.name}` : "选择节点进行编辑"}>
+            <Card
+              size="small"
+              title={
+                selectedSubscriptionNode
+                  ? `编辑路由节点：${formatRouteNodeTreeTitle(selectedSubscriptionNode.name, true)}`
+                  : ALERT_ROUTING_TERMS.selectNodeHint
+              }
+            >
               <Form form={subForm} layout="vertical">
                 <Form.Item name="id" hidden>
                   <Input />
@@ -604,17 +773,17 @@ export function AlertConfigCenterPanel({
                 <Form.Item name="parent_id" hidden>
                   <Input />
                 </Form.Item>
-                <Form.Item name="name" label="节点名称" rules={[{ required: true }]}>
+                <Form.Item name="name" label={ALERT_ROUTING_TERMS.nodeName} rules={[{ required: true }]}>
                   <Input />
                 </Form.Item>
-                <Form.Item name="code" label="节点编码">
+                <Form.Item name="code" label={ALERT_ROUTING_TERMS.nodeCode}>
                   <Input />
                 </Form.Item>
                 <Space wrap style={{ width: "100%" }}>
                   <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ marginBottom: 0 }}>
                     <Switch />
                   </Form.Item>
-                  <Form.Item name="continue" label="继续匹配子节点" valuePropName="checked" style={{ marginBottom: 0 }}>
+                  <Form.Item name="continue" label={ALERT_ROUTING_TERMS.continueMatchChildren} valuePropName="checked" style={{ marginBottom: 0 }}>
                     <Switch />
                   </Form.Item>
                   <Form.Item name="notify_resolved" label="恢复通知" valuePropName="checked" style={{ marginBottom: 0 }}>
@@ -624,7 +793,11 @@ export function AlertConfigCenterPanel({
                     <InputNumber min={0} />
                   </Form.Item>
                 </Space>
-                <Form.Item name="match_severity" label="匹配级别（可选，多选）" extra="告警 labels.severity 命中任一即通过；不选表示不按级别过滤。">
+                <Form.Item
+                  name="match_severity"
+                  label={`${ALERT_ROUTING_TERMS.matchSeverity}（可选，多选）`}
+                  extra="告警 labels.severity 命中任一即通过；不选表示不按级别过滤。"
+                >
                   <Select
                     mode="multiple"
                     allowClear
@@ -634,7 +807,7 @@ export function AlertConfigCenterPanel({
                 </Form.Item>
                 <Form.Item
                   name="receiver_group_ids"
-                  label="接收组"
+                  label={ALERT_ROUTING_TERMS.receiverGroup}
                   dependencies={["parent_id"]}
                   rules={[
                     {
@@ -649,9 +822,14 @@ export function AlertConfigCenterPanel({
                       },
                     },
                   ]}
-                  extra="根节点可留空：仅作路由分流，通知由子节点上的接收组发出。"
+                  extra={
+                    <>
+                      根节点可留空：仅作路由分流，通知由子节点上的接收组发出。请先点击上方「
+                      {ALERT_ROUTING_TERMS.receiverGroupManage}」创建接收组并绑定告警通道。
+                    </>
+                  }
                 >
-                  <Select mode="multiple" options={receiverGroupOptions} placeholder="选择接收组（先在接收组里配置通道）" allowClear />
+                  <Select mode="multiple" options={receiverGroupOptions} placeholder="选择通知接收组" allowClear />
                 </Form.Item>
                 <Form.Item name="match_labels_json" label="match_labels_json（精确匹配 JSON）">
                   <Input.TextArea rows={4} />
@@ -696,6 +874,14 @@ export function AlertConfigCenterPanel({
               </>
             }
           />
+          {embedded && projectContextId ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message={`已按顶栏项目筛选历史记录（项目 #${projectContextId}）`}
+            />
+          ) : null}
           <Space style={{ width: "100%", marginBottom: 12 }} wrap>
             <Input
               style={{ width: 260 }}
@@ -717,7 +903,7 @@ export function AlertConfigCenterPanel({
             />
             <Select
               style={{ width: 280 }}
-              placeholder="数据源 / 来源（WatchAlert 式）"
+              placeholder={ALERT_ROUTING_TERMS.historySourceFilter}
               value={eventSourceFilter || undefined}
               options={sourceFilterOptions}
               showSearch
@@ -1073,6 +1259,176 @@ export function AlertConfigCenterPanel({
       ) : (
         <Tabs activeKey={tab} onChange={(k) => setTab(k as AlertConfigTab)} items={tabItems as never} />
       )}
+
+      <Drawer
+        title={ALERT_ROUTING_TERMS.receiverGroupManage}
+        width={720}
+        open={rgDrawerOpen}
+        onClose={() => setRgDrawerOpen(false)}
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} disabled={!effectiveProjectId} onClick={openReceiverGroupCreate}>
+            新建接收组
+          </Button>
+        }
+      >
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={ALERT_ROUTING_TERMS.receiverGroupManageHint} />
+        <Table
+          rowKey="id"
+          size="small"
+          loading={subLoading}
+          dataSource={receiverGroups}
+          pagination={false}
+          columns={[
+            { title: "名称", dataIndex: "name", width: 160, render: (n: string, r: AlertReceiverGroup) => formatReceiverGroupLabel(n, r.id) },
+            {
+              title: "告警通道",
+              render: (_: unknown, r: AlertReceiverGroup) => {
+                const ids = parseReceiverGroupChannelIds(r);
+                if (!ids.length) return <Typography.Text type="secondary">未绑定</Typography.Text>;
+                return ids
+                  .map((id) => channels.find((c) => c.id === id)?.name ?? `#${id}`)
+                  .join("、");
+              },
+            },
+            {
+              title: "额外邮箱",
+              render: (_: unknown, r: AlertReceiverGroup) => {
+                const emails = parseReceiverGroupEmails(r);
+                return emails.length ? emails.join("、") : "—";
+              },
+            },
+            {
+              title: "状态",
+              dataIndex: "enabled",
+              width: 72,
+              render: (v: boolean) => (v ? <Tag color="green">启用</Tag> : <Tag>停用</Tag>),
+            },
+            {
+              title: "操作",
+              width: 120,
+              render: (_: unknown, r: AlertReceiverGroup) => (
+                <Space>
+                  <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openReceiverGroupEdit(r)}>
+                    编辑
+                  </Button>
+                  <Popconfirm title="确认删除该接收组？" onConfirm={() => void removeReceiverGroup(r.id)}>
+                    <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      </Drawer>
+
+      <Modal
+        title={rgEditingId ? "编辑通知接收组" : "新建通知接收组"}
+        open={rgModalOpen}
+        confirmLoading={rgSaving}
+        onCancel={() => setRgModalOpen(false)}
+        onOk={() => void saveReceiverGroup()}
+        destroyOnClose
+      >
+        <Form form={rgForm} layout="vertical">
+          <Form.Item name="name" label="接收组名称" rules={[{ required: true, message: "请输入名称" }]}>
+            <Input placeholder="例如 prod-critical-dingding" />
+          </Form.Item>
+          <Form.Item name="description" label="说明">
+            <Input.TextArea rows={2} placeholder="可选" />
+          </Form.Item>
+          <Form.Item
+            name="channel_ids"
+            label="绑定告警通道"
+            rules={[
+              {
+                validator: async (_, value) => {
+                  const ids = Array.isArray(value) ? value : [];
+                  const emails = rgForm.getFieldValue("email_recipients") as string[] | undefined;
+                  if (ids.length === 0 && (!emails || emails.length === 0)) {
+                    throw new Error("请至少绑定一个告警通道或填写额外邮箱");
+                  }
+                },
+              },
+            ]}
+            extra="通道在「告警通道」菜单维护；此处选择后，命中该接收组的路由节点将按通道类型投递。"
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="选择钉钉 / 邮件 / 企微等通道"
+              options={channels.map((c) => ({ label: c.name, value: c.id }))}
+            />
+          </Form.Item>
+          <Form.Item name="email_recipients" label="额外邮箱（邮件兜底）">
+            <Select mode="tags" tokenSeparators={[",", " ", ";"]} placeholder="输入邮箱后回车，可与通道并存" />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={ALERT_ROUTING_TERMS.copyTemplate}
+        open={cloneModalOpen}
+        confirmLoading={cloneSubmitting}
+        onCancel={() => setCloneModalOpen(false)}
+        onOk={async () => {
+          const v = await cloneForm.validateFields();
+          setCloneSubmitting(true);
+          try {
+            const rep = await cloneSubscriptionFromProject({
+              source_project_id: v.source_project_id,
+              target_project_id: v.target_project_id,
+              replace_cluster: v.replace_cluster?.trim() || undefined,
+              replace_route: v.replace_route?.trim() || undefined,
+              include_disabled: !!v.include_disabled,
+              skip_if_target_has_nodes: v.skip_if_target_has_nodes !== false,
+            });
+            if (rep.skipped) {
+              message.warning(rep.message || "目标项目已有节点，已跳过");
+            } else {
+              message.success(
+                `已复制：接收组 ${rep.receiver_groups_created} 个，订阅节点 ${rep.nodes_created} 个${rep.message ? `（${rep.message}）` : ""}`,
+              );
+            }
+            setCloneModalOpen(false);
+            if (v.target_project_id === effectiveProjectId) {
+              await loadSubscriptions(v.target_project_id);
+            }
+          } finally {
+            setCloneSubmitting(false);
+          }
+        }}
+      >
+        <Form form={cloneForm} layout="vertical">
+          <Form.Item name="source_project_id" label="源项目（已调配好的模板）" rules={[{ required: true }]}>
+            <Select options={projects.map((p) => ({ label: p.name, value: p.id }))} showSearch />
+          </Form.Item>
+          <Form.Item name="target_project_id" label="目标项目" rules={[{ required: true }]}>
+            <Select options={projects.map((p) => ({ label: p.name, value: p.id }))} showSearch />
+          </Form.Item>
+          <Form.Item name="replace_cluster" label="覆盖 cluster（可选，写入 match_labels）">
+            <Input placeholder="例如 腾讯云告警链路" />
+          </Form.Item>
+          <Form.Item name="replace_route" label="覆盖 route（可选）">
+            <Input placeholder="例如 prod-critical-dingding" />
+          </Form.Item>
+          <Form.Item name="include_disabled" label="包含已停用节点/接收组" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="skip_if_target_has_nodes"
+            label="目标已有订阅树时跳过（推荐）"
+            valuePropName="checked"
+            extra="关闭后将清空目标项目已有订阅节点与接收组再复制（慎用）"
+          >
+            <Switch defaultChecked />
+          </Form.Item>
+        </Form>
+      </Modal>
 
     </>
   );

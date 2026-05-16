@@ -100,7 +100,7 @@ services:
       - REDIS_ADDR=yunshu-redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-YunshuRedis@2026Secure!}
       - JWT_SECRET=${JWT_SECRET:-YunshuJWTSecretKey2026ChangeInProduction}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-32-byte-base64-encoded-key-here}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-me-32bytes-base64}
     volumes:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs

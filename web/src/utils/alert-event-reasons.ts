@@ -56,7 +56,7 @@ const EXACT: Record<string, AlertEventReasonMeta> = {
     category: "timing",
     hint: "同组变化间隔",
     detail:
-      "labelsDigest 相对上次成功发送有变化，但距上次发送未满 alert.group_interval_seconds，本轮不推送。",
+      "通知合并 digest 仅基于 alert.group_by + alert.digest_by 维度（非全量 Prometheus labels）。摘要相对上次成功通知有变化，但未满 alert.group_interval_seconds（默认 60s）则不推送；摘要不变则按 repeat_interval_seconds（默认 300s）重复提醒。",
   },
   repeat_suppressed: {
     category: "timing",

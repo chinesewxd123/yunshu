@@ -331,6 +331,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) {
 	alerts.DELETE("/subscriptions/:id", alertSubscriptionHandler.DeleteNode)
 	alerts.POST("/subscriptions/:id/move", alertSubscriptionHandler.MoveNode)
 	alerts.POST("/subscriptions/migrate-from-policies", alertSubscriptionHandler.MigrateFromPolicies)
+	alerts.POST("/subscriptions/clone-from-project", alertSubscriptionHandler.CloneProjectRouting)
 
 	if alertInhibitionHandler != nil {
 		alerts.GET("/inhibition-rules", alertInhibitionHandler.List)
