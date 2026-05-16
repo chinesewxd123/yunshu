@@ -731,18 +731,13 @@ export function AlertMonitorPlatformPage() {
   const fillAssignFromUserIds = useCallback(
     async (ids: number[] | undefined) => {
       if (!ids?.length) {
-        assignForm.setFieldsValue({ department_ids: [], profile_email: undefined });
+        assignForm.setFieldsValue({ profile_email: undefined });
         setAssignProfileOriginal(null);
         setAssignUsersHint("");
         return;
       }
       try {
         const details = await Promise.all(ids.map((id) => getUser(id)));
-        const deptSet = new Set<number>();
-        details.forEach((u) => {
-          if (u.department_id) deptSet.add(u.department_id);
-        });
-        assignForm.setFieldsValue({ department_ids: [...deptSet] });
         setAssignUsersHint(details.map((u) => `${u.nickname || u.username}：${u.email || "（无邮箱）"}`).join("；"));
         if (ids.length === 1) {
           const u = details[0];
@@ -774,18 +769,13 @@ export function AlertMonitorPlatformPage() {
   const fillDutyFromUserIds = useCallback(
     async (ids: number[] | undefined) => {
       if (!ids?.length) {
-        blkForm.setFieldsValue({ department_ids: [], profile_email: undefined });
+        blkForm.setFieldsValue({ profile_email: undefined });
         setDutyProfileOriginal(null);
         setDutyUsersHint("");
         return;
       }
       try {
         const details = await Promise.all(ids.map((id) => getUser(id)));
-        const deptSet = new Set<number>();
-        details.forEach((u) => {
-          if (u.department_id) deptSet.add(u.department_id);
-        });
-        blkForm.setFieldsValue({ department_ids: [...deptSet] });
         setDutyUsersHint(details.map((u) => `${u.nickname || u.username}：${u.email || "（无邮箱）"}`).join("；"));
         if (ids.length === 1) {
           const u = details[0];
@@ -1919,14 +1909,15 @@ export function AlertMonitorPlatformPage() {
   }
 
   async function openAssign(ruleId: number) {
-    assignSyncedKeyRef.current = "";
     setAssignRuleId(ruleId);
     assignForm.resetFields();
+    let userIds: number[] = [];
     try {
       const { list } = await getMonitorRuleAssignees(ruleId);
       const row = list?.[0];
+      userIds = row?.user_ids ?? [];
       assignForm.setFieldsValue({
-        user_ids: row?.user_ids ?? [],
+        user_ids: userIds,
         department_ids: row?.department_ids ?? [],
         notify_on_resolved: row?.notify_on_resolved ?? false,
         remark: row?.remark ?? "",
@@ -1934,7 +1925,9 @@ export function AlertMonitorPlatformPage() {
     } catch {
       assignForm.setFieldsValue({ user_ids: [], department_ids: [], notify_on_resolved: false, remark: "" });
     }
+    assignSyncedKeyRef.current = userIds.join(",");
     setAssignOpen(true);
+    void fillAssignFromUserIds(userIds);
   }
 
   async function submitAssign() {
@@ -1969,7 +1962,7 @@ export function AlertMonitorPlatformPage() {
         notify_on_resolved: v.notify_on_resolved,
         remark: v.remark ?? "",
       });
-      message.success("处理人已保存（部门按子树展开到启用用户）");
+      message.success("处理人已保存");
       setAssignOpen(false);
     } finally {
       setAssignSubmitting(false);
@@ -2080,18 +2073,20 @@ export function AlertMonitorPlatformPage() {
   }
 
   function openBlkEdit(r: AlertDutyBlockItem) {
-    dutySyncedKeyRef.current = "";
     setBlkCurrent(r);
+    const userIds = r.user_ids ?? [];
     blkForm.setFieldsValue({
       monitor_rule_id: r.monitor_rule_id,
       range: [dayjs(r.starts_at), dayjs(r.ends_at)],
       title: r.title,
-      user_ids: r.user_ids ?? [],
+      user_ids: userIds,
       department_ids: r.department_ids ?? [],
       profile_email: undefined,
       remark: r.remark,
     });
+    dutySyncedKeyRef.current = userIds.join(",");
     setBlkModalOpen(true);
+    void fillDutyFromUserIds(userIds);
   }
 
   async function submitBlk() {
@@ -3228,10 +3223,10 @@ export function AlertMonitorPlatformPage() {
         }
       >
         <Typography.Paragraph type="secondary">
-          邮件：已配置处理人时，邮件通道仅发往处理人邮箱。钉钉/企微群消息会 @ 处理人手机号；若手机号无法在企业内解析（通常不在群内），自动补发邮件。wechat 等 IM 通道也会补发邮件给处理人。
+          邮件仅发往「用户」中勾选的人员与下方「邮箱」字段（不含部门子树展开）。部门用于钉钉/企微 @（含子树 ∩ 项目成员）。钉钉/企微手机号无法在企业内解析时会补发邮件；wechat 等也会补发邮件。
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12 }}>
-          部门解析（与后端一致）：在<strong>规则所属项目</strong>下，将所选部门根展开为子树，取「项目成员 ∩ 部门用户」的邮箱/手机；每个部门根另含其<strong>部门负责人</strong>的邮箱/手机；再与上方显式选择的用户合并去重。
+          部门需<strong>手动选择</strong>，保存后按库中配置加载，不会随「用户」自动回填。部门仅用于钉钉/企微 @（项目成员 ∩ 子树 + 部门负责人）；邮件只发上方勾选用户。
         </Typography.Paragraph>
         <Form form={assignForm} layout="vertical">
           <Form.Item name="user_ids" label="用户">
@@ -3245,9 +3240,9 @@ export function AlertMonitorPlatformPage() {
           <Form.Item
             name="department_ids"
             label="部门（子树）"
-            extra="在规则所属项目内解析：子树用户 ∩ 项目成员，并包含各根部门的负责人；与「用户」显式选择合并。"
+            extra="可选。用于 IM @，不参与邮件收件人。清空后保存即可生效。"
           >
-            <TreeSelect treeData={deptTree} treeCheckable showSearch allowClear treeDefaultExpandAll style={{ width: "100%" }} placeholder="随用户带出，可改" />
+            <TreeSelect treeData={deptTree} treeCheckable showSearch allowClear treeDefaultExpandAll style={{ width: "100%" }} placeholder="可选，用于钉钉/企微 @" />
           </Form.Item>
           {assignUserIds?.length === 1 ? (
             <Form.Item name="profile_email" label="邮箱（可改，保存时写回该用户资料）">
@@ -3255,7 +3250,7 @@ export function AlertMonitorPlatformPage() {
             </Form.Item>
           ) : (
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              多人时通知按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。部门按规则项目解析为「项目成员∩子树」并含部门负责人，与显式用户合并去重。
+              多人时邮件按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。
             </Typography.Paragraph>
           )}
           <Form.Item name="notify_on_resolved" label="恢复时通知" valuePropName="checked">

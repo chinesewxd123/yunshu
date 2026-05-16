@@ -147,11 +147,11 @@ func (s *AlertService) assigneeShouldReceiveSupplementalEmail(ctx context.Contex
 	return true
 }
 
-// resolveAssigneeMailRecipients 规则处理人邮箱 + 值班邮箱；不含项目全员。
+// resolveAssigneeMailRecipients 规则处理人邮件：显式用户/额外邮箱 + 值班；不展开部门子树。
 func (s *AlertService) resolveAssigneeMailRecipients(ctx context.Context, ruleID uint, status string) []string {
 	var emails []string
 	if s.assigneeSvc != nil && (status != "resolved" || s.assigneeSvc.NotifyOnResolvedEnabled(ctx, ruleID)) {
-		e, _ := s.assigneeSvc.ResolveNotifyEmails(ctx, ruleID)
+		e, _ := s.assigneeSvc.ResolveNotifyEmailsDirectUsers(ctx, ruleID)
 		emails = append(emails, e...)
 	}
 	if s.dutySvc != nil {
@@ -189,13 +189,11 @@ func (s *AlertService) expandChannelSetForAssigneeNotification(
 	}
 	payload["assignee_emails"] = mailTo
 
-	var rgEmails []string
 	for _, gid := range receiverGroupIDs {
 		g, err := s.receiverGroupCache.Get(gid)
 		if err != nil || g == nil || !g.IsActiveNow() {
 			continue
 		}
-		rgEmails = append(rgEmails, g.EmailRecipients...)
 		for _, cid := range g.ChannelIDs {
 			if cid == 0 {
 				continue
@@ -204,9 +202,6 @@ func (s *AlertService) expandChannelSetForAssigneeNotification(
 				channelSet[cid] = struct{}{}
 			}
 		}
-	}
-	if len(rgEmails) > 0 {
-		payload["receiver_group_emails"] = mergeNotifyEmailsUnique(rgEmails)
 	}
 
 	needSupplement := s.assigneeShouldReceiveSupplementalEmail(ctx, channelSet, payload)
