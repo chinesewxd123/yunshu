@@ -172,6 +172,9 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 	if len(cfg.GroupBy) == 0 {
 		cfg.GroupBy = []string{"alertname", "cluster", "namespace", "severity", "receiver"}
 	}
+	if len(cfg.DigestBy) == 0 {
+		cfg.DigestBy = []string{"instance", "pod", "node", "host", "mountpoint", "device", "fqdn", "job"}
+	}
 	if cfg.PlatformLimits.DingdingMaxChars <= 0 {
 		cfg.PlatformLimits.DingdingMaxChars = 4500
 	}
@@ -1035,30 +1038,9 @@ func (s *AlertService) computeGroupKey(receiver, status, severity, alertname str
 	if len(fields) == 0 {
 		fields = []string{"alertname", "cluster", "namespace", "severity", "receiver"}
 	}
-	get := func(k string) string {
-		switch strings.ToLower(strings.TrimSpace(k)) {
-		case "alertname":
-			return strings.TrimSpace(alertname)
-		case "cluster":
-			return strings.TrimSpace(dims.Cluster)
-		case "namespace":
-			return strings.TrimSpace(dims.Namespace)
-		case "severity":
-			return strings.TrimSpace(severity)
-		case "receiver":
-			return strings.TrimSpace(receiver)
-		case "status":
-			return strings.TrimSpace(status)
-		default:
-			if labels != nil {
-				return strings.TrimSpace(labels[k])
-			}
-			return ""
-		}
-	}
 	parts := make([]string, 0, len(fields))
 	for _, f := range fields {
-		parts = append(parts, strings.ToLower(strings.TrimSpace(f))+"="+get(f))
+		parts = append(parts, strings.ToLower(strings.TrimSpace(f))+"="+s.resolveGroupByLabelValue(f, receiver, status, severity, alertname, labels, dims))
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
 	return "gk_" + hex.EncodeToString(sum[:8])

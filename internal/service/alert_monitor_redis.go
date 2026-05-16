@@ -115,7 +115,7 @@ func (s *AlertService) monitorShouldReingressFiring(ctx context.Context, fp stri
 	enriched := s.enrichCanonicalIngressLabels(ctx, labels, "platform-monitor", fp)
 	dims := alertnotify.ExtractDims(enriched)
 	groupKey := s.computeGroupKey("platform-monitor", "firing", severity, alertname, enriched, dims)
-	labelsDigest := alertnotify.DigestLabels(enriched)
+	labelsDigest := s.labelsDigestForGroupTiming("platform-monitor", "firing", severity, alertname, enriched)
 	shouldSend, _, _, _, _ := s.peekFiringGroupTiming(ctx, groupKey, labelsDigest)
 	return shouldSend
 }

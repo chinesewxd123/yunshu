@@ -144,7 +144,7 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 
 		dims := alertnotify.ExtractDims(labels)
 		groupKey := s.computeGroupKey(ca.PayloadReceiver, status, severity, eventName, labels, dims)
-		labelsDigest := alertnotify.DigestLabels(labels)
+		labelsDigest := s.labelsDigestForGroupTiming(ca.PayloadReceiver, status, severity, eventName, labels)
 		envLabel := s.resolveAlertEnvironmentLabel(labels, ca.PayloadReceiver, dims, alert.Labels)
 		if s.silenceSvc != nil {
 			if sid, muted, err := s.silenceSvc.FirstMatchingSilenceID(ctx, labels, time.Now()); err == nil && muted {

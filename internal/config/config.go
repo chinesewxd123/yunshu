@@ -132,6 +132,8 @@ type AlertConfig struct {
 	// GroupBy 决定 group_key 计算维度，用于服务端聚合/收敛。
 	// 建议包含：alertname, cluster, namespace, severity, receiver
 	GroupBy []string `mapstructure:"group_by"`
+	// DigestBy 在 group_by 之外纳入「通知内容变化」判定的对象维度（如 instance/pod）；空则使用内置默认集。
+	DigestBy []string `mapstructure:"digest_by"`
 	// GroupWaitSeconds: group 第一次发送前的等待窗口（秒），用于“先收集后发送”（类似 Alertmanager group_wait）。
 	GroupWaitSeconds int `mapstructure:"group_wait_seconds"`
 	// GroupIntervalSeconds: group 已发送后，若有“新变化”（labelsDigest 变化）再次发送的最小间隔（秒）（类似 Alertmanager group_interval）。
@@ -228,6 +230,9 @@ func Load(path string) (*Config, error) {
 	if len(cfg.Alert.GroupBy) == 0 {
 		cfg.Alert.GroupBy = []string{"alertname", "cluster", "namespace", "severity", "receiver"}
 	}
+	if len(cfg.Alert.DigestBy) == 0 {
+		cfg.Alert.DigestBy = []string{"instance", "pod", "node", "host", "mountpoint", "device", "fqdn", "job"}
+	}
 	// 平台长度限制：预留空间给 @ 和格式控制，默认值偏保守。
 	if cfg.Alert.PlatformLimits.DingdingMaxChars <= 0 {
 		cfg.Alert.PlatformLimits.DingdingMaxChars = 4500
@@ -311,6 +316,7 @@ func bindEnv(v *viper.Viper) error {
 		"alert.prometheus_enrich_queue_size":       nil,
 		"alert.prometheus_enrich_workers":          nil,
 		"alert.group_by":                           nil,
+		"alert.digest_by":                          nil,
 		"alert.group_wait_seconds":                 nil,
 		"alert.group_interval_seconds":             nil,
 		"alert.repeat_interval_seconds":            nil,

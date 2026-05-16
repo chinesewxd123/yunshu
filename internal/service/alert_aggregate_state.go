@@ -324,7 +324,7 @@ func humanReadableGroupTimingSuppression(reason string, cfg config.AlertConfig) 
 	case "repeat_suppressed":
 		return fmt.Sprintf("告警仍处于触发状态。为避免短时间内重复打扰，平台按「重复提醒间隔」（当前 %d 秒）控制：距上次成功通知未满该间隔时，本轮不向各渠道再次推送；本条为留痕记录。", ri)
 	case "group_interval_suppressed":
-		return fmt.Sprintf("本次告警的标签摘要与上次已发送的不同（例如实例或采样标签变化）。平台按「同组变化间隔」（当前 %d 秒）控制：未满间隔时本轮不推送；达到间隔后会再评估是否发送。", gi)
+		return fmt.Sprintf("本次告警在 group_by/digest_by 维度上的摘要与上次成功通知不同（例如实例或告警对象变化）。平台按「同组变化间隔」（当前 %d 秒）控制：未满间隔时本轮不推送；达到间隔后会再评估是否发送。", gi)
 	case "group_wait_suppressed":
 		return fmt.Sprintf("平台按「首次同组等待」（当前 %d 秒）聚合同组告警，等待窗口结束前本轮不推送。", gw)
 	default:
