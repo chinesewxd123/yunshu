@@ -157,7 +157,7 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 
 	listU, err := s.dyn.ListByGVK(ctx, k, namespaceGVK, "")
 	if err != nil {
-		return nil, svcerr.Internal("k8s.namespace", "api", err, constants.ErrFmt8d60c2040f20)
+		return nil, k8sFail("k8s.namespace", "List", err, "cluster_id", query.ClusterID)
 	}
 	list := make([]corev1.Namespace, 0, len(listU))
 	for _, item := range listU {

@@ -50,7 +50,7 @@ func k8sMapAPIError(err error) error {
 	case apierrors.IsConflict(err):
 		return constants.ErrConflict
 	case apierrors.IsUnauthorized(err):
-		return constants.ErrUnauthorized
+		return constants.ErrUnauthorizedWithMsg(constants.ErrMsgK8sAPIUnauthorized)
 	case apierrors.IsInvalid(err), apierrors.IsBadRequest(err):
 		msg := string(apierrors.ReasonForError(err))
 		if msg == "" {

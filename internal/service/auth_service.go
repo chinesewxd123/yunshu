@@ -100,7 +100,7 @@ func (s *AuthService) SendEmailCode(ctx context.Context, req SendEmailCodeReques
 	subject, body := s.buildVerificationEmail(scene, code, codeTTL)
 	if err = s.mailer.Send(ctx, email, subject, body); err != nil {
 		_ = s.redis.Del(ctx, codeKey, cooldownKey).Err()
-		return nil, svcerr.InternalMsg("auth", "api", constants.ErrMsg52c1dc6bb947)
+		return nil, svcerr.Internal("auth", "SendEmailCode", err, constants.ErrMsg52c1dc6bb947)
 	}
 
 	return &SendEmailCodeResponse{

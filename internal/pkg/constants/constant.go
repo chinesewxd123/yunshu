@@ -205,6 +205,8 @@ const (
 	ErrMsgc674e8a0802b = "K8s 客户端不存在"
 	// K8s 集群实例不存在
 	ErrMsg5248c9e19a3f = "K8s 集群实例不存在"
+	// Kubernetes API 认证失败（集群 Token/证书无效或 kubeconfig 未含凭证）
+	ErrMsgK8sAPIUnauthorized = "Kubernetes 集群认证失败：请检查集群 Token/证书是否有效，或在集群管理中重新保存直连配置"
 	// K8s 集群重连失败
 	ErrMsgb9cf6d1a2c2e = "K8s 集群重连失败"
 	// NetworkPolicy 资源不存在

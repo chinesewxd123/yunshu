@@ -40,25 +40,16 @@ redis:
   db: 0
   pool_size: 10              # 降低以节省内存
 
-  # mail:
-  # 以下 mail.* 已收敛为“数据字典优先，YAML 兜底”：
-  # - mail_host
-  # - mail_port
-  # - mail_username
-  # - mail_password
-  # - mail_from_email
-  # - mail_from_name
-  # - mail_use_tls
-  #
-  # 若你已在数据字典中启用并配置，可继续保持注释状态；
-  # 若需临时回退 YAML，可取消注释并填写。
-  # host: smtp.163.com
-  # port: 465
-  # username: "rootwxd@163.com"
-  # password: "UNJUQFVIMEDYSUSH"
-  # from_email: rootwxd@163.com
-  # from_name: YunShu CMDB
-  # use_tls: true
+# mail：数据字典 mail_* 优先，下列 YAML 仅作兜底（发信时每次从字典读取，改字典无需重启）
+# 字典项：mail_host / mail_port / mail_username / mail_password / mail_from_email / mail_from_name / mail_use_tls
+# mail:
+#   host: smtp.163.com
+#   port: 465
+#   username: "rootwxd@163.com"
+#   password: "YOUR_163_AUTH_CODE"
+#   from_email: rootwxd@163.com
+#   from_name: YunShu CMDB
+#   use_tls: true
 
 auth:
   jwt_secret: "YunshuJWTSecretKey2026MustBeAtLeast32BytesLong!!"  # 生产环境务必修改，至少32字节

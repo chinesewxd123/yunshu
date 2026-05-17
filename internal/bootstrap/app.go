@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"yunshu/internal/config"
+	"yunshu/internal/dictconfig"
 	"yunshu/internal/middleware"
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/casbinadapter"
@@ -33,8 +34,9 @@ type App struct {
 }
 
 type Builder struct {
-	app *App
-	err error
+	app         *App
+	err         error
+	yamlMailBase config.MailConfig // config.yaml 中的 mail 底稿（字典覆盖前）
 }
 
 func NewBuilder() *Builder {
@@ -52,6 +54,7 @@ func (b *Builder) WithConfig(path string) *Builder {
 		return b
 	}
 	b.app.Config = cfg
+	b.yamlMailBase = cfg.Mail
 	return b
 }
 
@@ -218,7 +221,26 @@ func (b *Builder) WithMailer() *Builder {
 		return b
 	}
 
-	b.app.Mailer = mailer.NewSMTPSender(b.app.Config.Mail)
+	resolved := b.app.Config.Mail
+	if b.app.DB != nil {
+		resolved = dictconfig.ResolveMailConfig(context.Background(), b.app.DB, b.yamlMailBase, dictconfig.DefaultMailDictTypes())
+		b.app.Config.Mail = resolved
+		b.app.Mailer = mailer.NewDynamicSender(&mailer.DictMailResolver{
+			DB:       b.app.DB,
+			YAMLBase: b.yamlMailBase,
+		})
+		if b.app.Logger != nil {
+			enabled := b.app.Mailer.Enabled()
+			b.app.Logger.Info.Info("mailer initialized (dict-first, reload on send)",
+				"enabled", enabled,
+				"host", resolved.Host,
+				"port", resolved.Port,
+				"from", resolved.FromEmail,
+			)
+		}
+	} else {
+		b.app.Mailer = mailer.NewSMTPSender(resolved)
+	}
 	return b
 }
 

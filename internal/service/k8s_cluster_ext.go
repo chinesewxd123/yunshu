@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 
+	"yunshu/internal/model"
 	"yunshu/internal/repository"
 
 	"gorm.io/gorm"
@@ -98,6 +99,26 @@ func shouldPreserveSecret(incoming, stored string) bool {
 
 func isMaskedSecretValue(s string) bool {
 	return strings.Contains(s, "***")
+}
+
+// resolveClusterKubeconfig 解析集群连接配置：直连模式从 direct_config 实时生成（保证 Token 与库内 JSON 一致）。
+func resolveClusterKubeconfig(cluster *model.K8sCluster) (string, error) {
+	if cluster == nil {
+		return "", fmt.Errorf("cluster is nil")
+	}
+	mode := strings.TrimSpace(cluster.ConnectionMode)
+	if mode == "direct" && strings.TrimSpace(cluster.DirectConfig) != "" {
+		var dc DirectConfig
+		if err := json.Unmarshal([]byte(cluster.DirectConfig), &dc); err != nil {
+			return "", fmt.Errorf("解析直连配置失败: %w", err)
+		}
+		return buildKubeconfigFromDirectConfig(&dc)
+	}
+	kc := strings.TrimSpace(cluster.Kubeconfig)
+	if kc == "" {
+		return "", fmt.Errorf("集群 kubeconfig 为空")
+	}
+	return kc, nil
 }
 
 func maskDirectConfigForAPI(dc *DirectConfig) *DirectConfig {

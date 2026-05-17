@@ -164,7 +164,12 @@ func (s *K8sRuntimeService) GetClusterKubectl(ctx context.Context, id uint) (*mo
 		return nil, nil, constants.ErrForbiddenWithMsg(constants.ErrMsgb0e556f1ccc5)
 	}
 	clusterID := strconv.FormatUint(uint64(id), 10)
-	if err := s.registerClusterIfNeeded(clusterID, cluster.Kubeconfig, false); err != nil {
+	kubeconfig, kerr := resolveClusterKubeconfig(cluster)
+	if kerr != nil {
+		return nil, nil, constants.ErrBadRequestWithMsg(kerr.Error())
+	}
+	force := kubeconfig != strings.TrimSpace(cluster.Kubeconfig)
+	if err := s.registerClusterIfNeeded(clusterID, kubeconfig, force); err != nil {
 		return nil, nil, svcerr.Internal("k8s.runtime", "GetClusterKubectl", err, constants.ErrFmtac130d1176b3, "cluster_id", id)
 	}
 	k := kom.Cluster(clusterID)
@@ -212,23 +217,28 @@ func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) 
 		return "", s.GetClusterConnState(id), nil
 	}
 	clusterID := strconv.FormatUint(uint64(id), 10)
-	if err := s.registerClusterIfNeeded(clusterID, cluster.Kubeconfig, false); err != nil {
+	kubeconfig, kerr := resolveClusterKubeconfig(cluster)
+	if kerr != nil {
+		return "", s.GetClusterConnState(id), constants.ErrBadRequestWithMsg(kerr.Error())
+	}
+	force := kubeconfig != strings.TrimSpace(cluster.Kubeconfig)
+	if err := s.registerClusterIfNeeded(clusterID, kubeconfig, force); err != nil {
 		return "", s.GetClusterConnState(id), err
 	}
 	k := kom.Cluster(clusterID)
 	if k == nil {
 		return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(constants.ErrMsg5248c9e19a3f)
 	}
-	gitVer, verr := serverGitVersionFromKubeconfig(cluster.Kubeconfig)
+	gitVer, verr := serverGitVersionFromKubeconfig(kubeconfig)
 	if verr != nil || gitVer == "" {
 		s.DeleteRegisterCache(id)
-		if e := s.registerClusterIfNeeded(clusterID, cluster.Kubeconfig, true); e != nil {
+		if e := s.registerClusterIfNeeded(clusterID, kubeconfig, true); e != nil {
 			return "", s.GetClusterConnState(id), svcerr.Internal("k8s.runtime", "heartbeat_reregister", e, constants.ErrFmt8648d0eaa652)
 		}
 		if kom.Cluster(clusterID) == nil {
 			return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(constants.ErrMsgb9cf6d1a2c2e)
 		}
-		gitVer, verr = serverGitVersionFromKubeconfig(cluster.Kubeconfig)
+		gitVer, verr = serverGitVersionFromKubeconfig(kubeconfig)
 		if verr != nil || gitVer == "" {
 			errMsg := "server version empty"
 			if verr != nil {
@@ -278,7 +288,11 @@ func (s *K8sRuntimeService) GetClusterRestConfig(ctx context.Context, id uint) (
 	if cluster.Status != 1 {
 		return nil, nil, constants.ErrForbiddenWithMsg(constants.ErrMsgb0e556f1ccc5)
 	}
-	cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(cluster.Kubeconfig))
+	kubeconfig, kerr := resolveClusterKubeconfig(cluster)
+	if kerr != nil {
+		return nil, nil, constants.ErrBadRequestWithMsg(kerr.Error())
+	}
+	cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
 	if err != nil {
 		return nil, nil, svcerr.Internal("k8s.runtime", "api", err, constants.ErrFmtd7f0c3fe8497)
 	}
