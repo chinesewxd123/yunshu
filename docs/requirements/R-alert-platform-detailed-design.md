@@ -159,11 +159,15 @@
 
 ---
 
-## 10. 值班与邮件特殊逻辑
+## 10. 处理人、值班与通知标题
 
-- `enrichAssigneeAndDutyEmails`：合并处理人与值班邮箱 → `assignee_emails`。  
-- `mergeAssigneeEmails`（`alert_delivery.go`）：**邮件通道**若 `assignee_emails` 非空，**仅**发往这些地址，忽略通道固定收件人。  
-- 钉钉等 Webhook：**不**将值班邮箱自动转为 `@`，依赖通道 `atMobiles` 等配置。
+- **处理人邮件**：`ResolveNotifyEmailsDirectUsers` — 仅显式用户 + `extra_emails`；部门子树不参与邮件。  
+- **处理人 IM**：`ResolveNotifyPhones` — 用户 + 部门（项目成员 ∩ 子树 + 负责人）；部门需 UI 手动配置，保存后按库加载。  
+- `enrichAssigneeAndDutyEmails`：合并处理人直发邮箱与**当前时刻**值班班次邮箱/手机 → `assignee_emails` / `assignee_phones`。  
+- `mergeAssigneeEmails`：**邮件通道**若 `assignee_emails` 非空，仅发往这些地址；且不合并接收组静态抄送。  
+- **值班标题**：`HasActiveBlockAtRule` 为真时，`buildUnifiedNotifyTitle` 前缀 `值班`。  
+- 钉钉/企微：手机号解析失败等场景可补邮件（`alert_delivery_assignee_expand.go`）。  
+- **规则列表**：`GET /alerts/monitor-rules?enabled=true|false`；`enabled=false` 不参与 `tickMonitorRules`。
 
 ---
 

@@ -107,7 +107,11 @@ groups:
 
 **订阅树与标签链路**（`match_labels_json`、匹配级别、Prometheus / 平台规则 labels 如何对齐）：见 [告警订阅标签链路约定](./alert-subscription-labels-chain.md)。
 
-**路由、值班、单节点、resolved 行为等运维说明**：见 [告警路由与投递指南](./alert-routing-and-delivery-guide.md)。
+**路由、处理人、值班、标题前缀、单节点、resolved 行为等运维说明**：见 [告警路由与投递指南](./alert-routing-and-delivery-guide.md)（第 5 节处理人/值班，第 5.3 节规则启用筛选）。
+
+### 3.1 平台监控规则列表筛选
+
+在「告警监控平台 → 监控规则与值班」Tab，可用分段 **全部 / 启用 / 停用** 查看规则状态；**停用**规则不会执行平台 PromQL 评估。列表 API 支持 `GET /api/v1/alerts/monitor-rules?enabled=true|false`。
 
 ---
 

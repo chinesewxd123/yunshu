@@ -195,7 +195,7 @@ export function ProjectMembersPanel({ projectId }: Props) {
         项目内角色（owner/admin/member/readonly）与网关中间件一致：只读成员仅允许 GET/HEAD；修改项目、成员 CRUD 需 owner/admin。全局 RBAC 与 K8s 集群档位仍各自生效。
       </div>
       <div style={{ color: "rgba(0,0,0,0.45)", fontSize: 12 }}>
-        绑定项目的监控规则触发告警时，除「规则处理人」外，会将<strong>本项目启用成员</strong>的邮箱一并纳入邮件通知收件人（去重）。
+        项目成员用于权限与资源隔离；告警邮件收件人由「告警监控平台 → 监控规则 → 处理人」配置，<strong>不会</strong>自动发给本项目全部成员。
       </div>
     </Space>
   );

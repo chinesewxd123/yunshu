@@ -22,6 +22,9 @@
 
 ## 相关文档
 
-- 告警通知：`docs/alert-notify-guide.md`
+- 告警通知（配置与聚合）：`docs/alert-notify-guide.md`
+- 告警路由、处理人、值班与标题：`docs/alert-routing-and-delivery-guide.md`（**推荐运维阅读**）
+- 订阅标签链路：`docs/alert-subscription-labels-chain.md`
+- 告警平台详细设计：`docs/requirements/R-alert-platform-detailed-design.md`
 - 日志平台 gRPC：`docs/log-platform-api.md`
 - **麒麟 V10 部署**：`docs/deployment/KYLIN_V10_X86_64.md`

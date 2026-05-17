@@ -173,6 +173,63 @@ func (s *AlertRuleAssigneeService) NotifyOnResolvedEnabled(ctx context.Context, 
 	return false
 }
 
+// ResolveNotifyEmailsDirectUsers 仅解析规则处理人中的「显式用户」与「额外邮箱」，不展开部门子树（用于 critical 邮件兜底，避免误发项目内非处理人）。
+func (s *AlertRuleAssigneeService) ResolveNotifyEmailsDirectUsers(ctx context.Context, ruleID uint) ([]string, error) {
+	list, err := s.ListByRule(ctx, ruleID)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(e string) {
+		e = strings.TrimSpace(strings.ToLower(e))
+		if e == "" {
+			return
+		}
+		if _, ok := seen[e]; ok {
+			return
+		}
+		seen[e] = struct{}{}
+		out = append(out, e)
+	}
+	if len(list) == 0 || s.userRepo == nil {
+		return nil, nil
+	}
+	uidSet := map[uint]struct{}{}
+	for _, row := range list {
+		for _, id := range parseUintSliceJSON(row.UserIDsJSON) {
+			if id > 0 {
+				uidSet[id] = struct{}{}
+			}
+		}
+	}
+	var allUIDs []uint
+	for id := range uidSet {
+		allUIDs = append(allUIDs, id)
+	}
+	if len(allUIDs) > 0 {
+		users, err := s.userRepo.ListByIDs(ctx, allUIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range users {
+			if users[i].Email != nil {
+				add(*users[i].Email)
+			}
+		}
+	}
+	for _, row := range list {
+		extras, _ := assigneeParseStringSliceJSON(row.ExtraEmailsJSON)
+		for _, e := range extras {
+			add(e)
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
 // ResolveNotifyEmails 合并规则处理人邮箱：显式用户 + 所选部门在「规则所属项目」内的成员 + 所选根部门的负责人 + 额外邮箱。
 func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, ruleID uint) ([]string, error) {
 	list, err := s.ListByRule(ctx, ruleID)

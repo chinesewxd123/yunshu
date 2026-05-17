@@ -26,7 +26,7 @@
 
 ### 2.2 告警通知邮箱合并
 
-`AlertRuleAssigneeService.ResolveNotifyEmails`：处理人（用户/部门 JSON）→ 用户邮箱；规则所属项目由数据源派生，再合并 **项目成员** 中启用且有邮箱的用户（去重）。与 `project_members` 表对齐。
+`AlertRuleAssigneeService.ResolveNotifyEmailsDirectUsers`：处理人邮件仅显式用户 + extra_emails；`ResolveNotifyPhones` 含部门子树（项目成员 ∩ 子树）。值班班次经 `AlertDutyService.ResolveNotifyEmailsAtRule` 按时刻合并。规则 `enabled=false` 不参与 `tickMonitorRules`。
 
 ### 2.3 gRPC（日志/Agent）
 

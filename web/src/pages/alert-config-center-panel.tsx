@@ -824,8 +824,8 @@ export function AlertConfigCenterPanel({
                   ]}
                   extra={
                     <>
-                      根节点可留空：仅作路由分流，通知由子节点上的接收组发出。请先点击上方「
-                      {ALERT_ROUTING_TERMS.receiverGroupManage}」创建接收组并绑定告警通道。
+                      根节点可留空：仅作路由分流，通知由子节点上的接收组发出。处理人邮件：wechat 等补发；钉钉/企微在无法 @ 时补发。请先点击上方「
+                      {ALERT_ROUTING_TERMS.receiverGroupManage}」创建接收组并绑定通道。
                     </>
                   }
                 >
@@ -1291,7 +1291,7 @@ export function AlertConfigCenterPanel({
               },
             },
             {
-              title: "额外邮箱",
+              title: ALERT_ROUTING_TERMS.receiverGroupStaticCC,
               render: (_: unknown, r: AlertReceiverGroup) => {
                 const emails = parseReceiverGroupEmails(r);
                 return emails.length ? emails.join("、") : "—";
@@ -1341,18 +1341,8 @@ export function AlertConfigCenterPanel({
           <Form.Item
             name="channel_ids"
             label="绑定告警通道"
-            rules={[
-              {
-                validator: async (_, value) => {
-                  const ids = Array.isArray(value) ? value : [];
-                  const emails = rgForm.getFieldValue("email_recipients") as string[] | undefined;
-                  if (ids.length === 0 && (!emails || emails.length === 0)) {
-                    throw new Error("请至少绑定一个告警通道或填写额外邮箱");
-                  }
-                },
-              },
-            ]}
-            extra="通道在「告警通道」菜单维护；此处选择后，命中该接收组的路由节点将按通道类型投递。"
+            rules={[{ required: true, message: "请至少绑定一个告警通道" }]}
+            extra="钉钉/企微：处理人手机号不在企业通讯录或无法 @ 时自动补邮件；wechat 等会补邮件。已在钉钉/企微群内可 @ 的处理人不重复发邮件。"
           >
             <Select
               mode="multiple"
@@ -1361,8 +1351,12 @@ export function AlertConfigCenterPanel({
               options={channels.map((c) => ({ label: c.name, value: c.id }))}
             />
           </Form.Item>
-          <Form.Item name="email_recipients" label="额外邮箱（邮件兜底）">
-            <Select mode="tags" tokenSeparators={[",", " ", ";"]} placeholder="输入邮箱后回车，可与通道并存" />
+          <Form.Item
+            name="email_recipients"
+            label={ALERT_ROUTING_TERMS.receiverGroupStaticCC}
+            extra="可选：除规则处理人外，额外抄送固定邮箱；不填则仅按处理人与通道投递。"
+          >
+            <Select mode="tags" tokenSeparators={[",", " ", ";"]} placeholder="可选，输入后回车" />
           </Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />

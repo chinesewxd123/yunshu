@@ -431,6 +431,8 @@ export function AlertMonitorPlatformPage() {
   const [dsList, setDsList] = useState<AlertDatasourceItem[]>([]);
   const [silenceList, setSilenceList] = useState<AlertSilenceItem[]>([]);
   const [ruleList, setRuleList] = useState<AlertMonitorRuleItem[]>([]);
+  /** 监控规则列表：全部 / 仅启用 / 仅停用 */
+  const [ruleEnabledFilter, setRuleEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [cloudExpiryList, setCloudExpiryList] = useState<CloudExpiryRuleItem[]>([]);
   const [blockList, setBlockList] = useState<AlertDutyBlockItem[]>([]);
   const [dutyRuleId, setDutyRuleId] = useState<number | null>(null);
@@ -731,18 +733,13 @@ export function AlertMonitorPlatformPage() {
   const fillAssignFromUserIds = useCallback(
     async (ids: number[] | undefined) => {
       if (!ids?.length) {
-        assignForm.setFieldsValue({ department_ids: [], profile_email: undefined });
+        assignForm.setFieldsValue({ profile_email: undefined });
         setAssignProfileOriginal(null);
         setAssignUsersHint("");
         return;
       }
       try {
         const details = await Promise.all(ids.map((id) => getUser(id)));
-        const deptSet = new Set<number>();
-        details.forEach((u) => {
-          if (u.department_id) deptSet.add(u.department_id);
-        });
-        assignForm.setFieldsValue({ department_ids: [...deptSet] });
         setAssignUsersHint(details.map((u) => `${u.nickname || u.username}：${u.email || "（无邮箱）"}`).join("；"));
         if (ids.length === 1) {
           const u = details[0];
@@ -774,18 +771,13 @@ export function AlertMonitorPlatformPage() {
   const fillDutyFromUserIds = useCallback(
     async (ids: number[] | undefined) => {
       if (!ids?.length) {
-        blkForm.setFieldsValue({ department_ids: [], profile_email: undefined });
+        blkForm.setFieldsValue({ profile_email: undefined });
         setDutyProfileOriginal(null);
         setDutyUsersHint("");
         return;
       }
       try {
         const details = await Promise.all(ids.map((id) => getUser(id)));
-        const deptSet = new Set<number>();
-        details.forEach((u) => {
-          if (u.department_id) deptSet.add(u.department_id);
-        });
-        blkForm.setFieldsValue({ department_ids: [...deptSet] });
         setDutyUsersHint(details.map((u) => `${u.nickname || u.username}：${u.email || "（无邮箱）"}`).join("；"));
         if (ids.length === 1) {
           const u = details[0];
@@ -851,9 +843,25 @@ export function AlertMonitorPlatformPage() {
   }, [silenceDatasourceId, projectContextId]);
 
   const loadRules = useCallback(async (projectID?: number) => {
-    const r = await listAlertMonitorRules({ project_id: projectID, page: 1, page_size: 200 });
+    const r = await listAlertMonitorRules({ project_id: projectID, page: 1, page_size: 500 });
     setRuleList(r.list ?? []);
   }, []);
+
+  const ruleEnabledStats = useMemo(() => {
+    let enabled = 0;
+    let disabled = 0;
+    for (const r of ruleList) {
+      if (r.enabled === false) disabled++;
+      else enabled++;
+    }
+    return { total: ruleList.length, enabled, disabled };
+  }, [ruleList]);
+
+  const ruleDisplayList = useMemo(() => {
+    if (ruleEnabledFilter === "enabled") return ruleList.filter((r) => r.enabled !== false);
+    if (ruleEnabledFilter === "disabled") return ruleList.filter((r) => r.enabled === false);
+    return ruleList;
+  }, [ruleList, ruleEnabledFilter]);
   const loadCloudExpiryRules = useCallback(async (projectID?: number, provider?: string, keyword?: string) => {
     const r = await listCloudExpiryRules({
       project_id: projectID,
@@ -1919,14 +1927,15 @@ export function AlertMonitorPlatformPage() {
   }
 
   async function openAssign(ruleId: number) {
-    assignSyncedKeyRef.current = "";
     setAssignRuleId(ruleId);
     assignForm.resetFields();
+    let userIds: number[] = [];
     try {
       const { list } = await getMonitorRuleAssignees(ruleId);
       const row = list?.[0];
+      userIds = row?.user_ids ?? [];
       assignForm.setFieldsValue({
-        user_ids: row?.user_ids ?? [],
+        user_ids: userIds,
         department_ids: row?.department_ids ?? [],
         notify_on_resolved: row?.notify_on_resolved ?? false,
         remark: row?.remark ?? "",
@@ -1934,7 +1943,9 @@ export function AlertMonitorPlatformPage() {
     } catch {
       assignForm.setFieldsValue({ user_ids: [], department_ids: [], notify_on_resolved: false, remark: "" });
     }
+    assignSyncedKeyRef.current = userIds.join(",");
     setAssignOpen(true);
+    void fillAssignFromUserIds(userIds);
   }
 
   async function submitAssign() {
@@ -1969,7 +1980,7 @@ export function AlertMonitorPlatformPage() {
         notify_on_resolved: v.notify_on_resolved,
         remark: v.remark ?? "",
       });
-      message.success("处理人已保存（部门按子树展开到启用用户）");
+      message.success("处理人已保存");
       setAssignOpen(false);
     } finally {
       setAssignSubmitting(false);
@@ -2043,7 +2054,9 @@ export function AlertMonitorPlatformPage() {
     { title: "结束", dataIndex: "ends_at", width: 160, render: (t: string) => formatDateTime(t) },
     {
       title: "操作",
+      key: "actions",
       width: 120,
+      fixed: "right" as const,
       render: (_: unknown, r: AlertDutyBlockItem) => (
         <Space>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openBlkEdit(r)}>
@@ -2080,18 +2093,20 @@ export function AlertMonitorPlatformPage() {
   }
 
   function openBlkEdit(r: AlertDutyBlockItem) {
-    dutySyncedKeyRef.current = "";
     setBlkCurrent(r);
+    const userIds = r.user_ids ?? [];
     blkForm.setFieldsValue({
       monitor_rule_id: r.monitor_rule_id,
       range: [dayjs(r.starts_at), dayjs(r.ends_at)],
       title: r.title,
-      user_ids: r.user_ids ?? [],
+      user_ids: userIds,
       department_ids: r.department_ids ?? [],
       profile_email: undefined,
       remark: r.remark,
     });
+    dutySyncedKeyRef.current = userIds.join(",");
     setBlkModalOpen(true);
+    void fillDutyFromUserIds(userIds);
   }
 
   async function submitBlk() {
@@ -2405,13 +2420,27 @@ export function AlertMonitorPlatformPage() {
             label: "监控规则与值班",
             children: (
               <Space direction="vertical" style={{ width: "100%" }} size="middle">
-                <Space>
+                <Space wrap align="center">
                   <Button type="primary" icon={<PlusOutlined />} onClick={openRuleCreate}>
                     新建规则
                   </Button>
                   <Button icon={<ReloadOutlined />} onClick={() => void Promise.all([loadRules(projectContextId), loadDatasources(projectContextId)])}>
                     刷新
                   </Button>
+                  <Segmented
+                    value={ruleEnabledFilter}
+                    options={[
+                      { label: `全部 (${ruleEnabledStats.total})`, value: "all" },
+                      { label: `启用 (${ruleEnabledStats.enabled})`, value: "enabled" },
+                      { label: `停用 (${ruleEnabledStats.disabled})`, value: "disabled" },
+                    ]}
+                    onChange={(v) => setRuleEnabledFilter(v as "all" | "enabled" | "disabled")}
+                  />
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    当前显示 {ruleDisplayList.length} 条
+                    {ruleEnabledFilter !== "all" ? `（共 ${ruleEnabledStats.total} 条）` : ""}
+                    · 停用规则不会参与平台 PromQL 评估
+                  </Typography.Text>
                 </Space>
                 <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
                   这里配置的是平台内监控规则：平台会定时对数据源执行 PromQL，命中后走与 Webhook 入站相同的通知与历史记录链路。规则级「处理人」与所选「值班表」当前班次通知邮箱会在告警 outgoing 中合并去重；部门选择为根部门子树全员。
@@ -2438,7 +2467,7 @@ export function AlertMonitorPlatformPage() {
                     </Space>
                   }
                 />
-                <Table rowKey="id" columns={ruleColumns} dataSource={ruleList} pagination={false} scroll={{ x: 1100 }} />
+                <Table rowKey="id" columns={ruleColumns} dataSource={ruleDisplayList} pagination={false} scroll={{ x: 1100 }} />
               </Space>
             ),
           },
@@ -3228,10 +3257,10 @@ export function AlertMonitorPlatformPage() {
         }
       >
         <Typography.Paragraph type="secondary">
-          通知优先级：已配置处理人邮箱时，仅发送处理人；未配置处理人时，才回退到邮件通道收件人。
+          邮件仅发往「用户」中勾选的人员与下方「邮箱」字段（不含部门子树展开）。部门用于钉钉/企微 @（含子树 ∩ 项目成员）。钉钉/企微手机号无法在企业内解析时会补发邮件；wechat 等也会补发邮件。
         </Typography.Paragraph>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12 }}>
-          部门解析（与后端一致）：在<strong>规则所属项目</strong>下，将所选部门根展开为子树，取「项目成员 ∩ 部门用户」的邮箱/手机；每个部门根另含其<strong>部门负责人</strong>的邮箱/手机；再与上方显式选择的用户合并去重。
+          部门需<strong>手动选择</strong>，保存后按库中配置加载，不会随「用户」自动回填。部门仅用于钉钉/企微 @（项目成员 ∩ 子树 + 部门负责人）；邮件只发上方勾选用户。
         </Typography.Paragraph>
         <Form form={assignForm} layout="vertical">
           <Form.Item name="user_ids" label="用户">
@@ -3245,9 +3274,9 @@ export function AlertMonitorPlatformPage() {
           <Form.Item
             name="department_ids"
             label="部门（子树）"
-            extra="在规则所属项目内解析：子树用户 ∩ 项目成员，并包含各根部门的负责人；与「用户」显式选择合并。"
+            extra="可选。用于 IM @，不参与邮件收件人。清空后保存即可生效。"
           >
-            <TreeSelect treeData={deptTree} treeCheckable showSearch allowClear treeDefaultExpandAll style={{ width: "100%" }} placeholder="随用户带出，可改" />
+            <TreeSelect treeData={deptTree} treeCheckable showSearch allowClear treeDefaultExpandAll style={{ width: "100%" }} placeholder="可选，用于钉钉/企微 @" />
           </Form.Item>
           {assignUserIds?.length === 1 ? (
             <Form.Item name="profile_email" label="邮箱（可改，保存时写回该用户资料）">
@@ -3255,7 +3284,7 @@ export function AlertMonitorPlatformPage() {
             </Form.Item>
           ) : (
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              多人时通知按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。部门按规则项目解析为「项目成员∩子树」并含部门负责人，与显式用户合并去重。
+              多人时邮件按各用户资料邮箱合并；仅选择一名用户时可在此编辑邮箱并写回用户资料。
             </Typography.Paragraph>
           )}
           <Form.Item name="notify_on_resolved" label="恢复时通知" valuePropName="checked">
@@ -3311,7 +3340,7 @@ export function AlertMonitorPlatformPage() {
           <Button type="primary" icon={<PlusOutlined />} disabled={!dutyRuleId} onClick={openBlkCreate}>
             新建班次
           </Button>
-          <Table rowKey="id" columns={blkColumns} dataSource={blockList} pagination={false} size="small" scroll={{ x: 720 }} />
+          <Table rowKey="id" columns={blkColumns} dataSource={blockList} pagination={false} size="small" scroll={{ x: 800 }} />
         </Space>
       </Drawer>
 

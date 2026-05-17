@@ -114,7 +114,20 @@ func (s *AlertService) buildUnifiedNotifyTitle(ctx context.Context, rawTitle, se
 	}
 	alertName := resolveNotifyAlertName(rawTitle, payload)
 	projectName := s.resolveNotifyProjectName(ctx, payload)
-	return fmt.Sprintf("[%s][%s][%s][%s]", prefix, level, projectName, alertName)
+	title := fmt.Sprintf("[%s][%s][%s][%s]", prefix, level, projectName, alertName)
+	if s.shouldPrefixDutyOnNotifyTitle(ctx, payload) {
+		title = "值班" + title
+	}
+	return title
+}
+
+func (s *AlertService) shouldPrefixDutyOnNotifyTitle(ctx context.Context, payload map[string]interface{}) bool {
+	rid, ok := monitorRuleIDFromPayload(payload)
+	if !ok || rid == 0 || s.dutySvc == nil {
+		return false
+	}
+	active, err := s.dutySvc.HasActiveBlockAtRule(ctx, rid, time.Now())
+	return err == nil && active
 }
 
 func resolveNotifyAlertName(rawTitle string, payload map[string]interface{}) string {
@@ -777,9 +790,25 @@ func mergeAssigneeEmails(recipients []string, payload map[string]interface{}) []
 	return out
 }
 
-// mergeAssigneeEmailsWithReceiverGroup 合并接收组额外邮箱（email_recipients_json）与处理人/值班邮箱。
-func mergeAssigneeEmailsWithReceiverGroup(recipients []string, payload map[string]interface{}) []string {
+func payloadHasAssigneeEmails(payload map[string]interface{}) bool {
 	if payload == nil {
+		return false
+	}
+	raw, ok := payload["assignee_emails"]
+	if !ok || raw == nil {
+		return false
+	}
+	for _, e := range normalizeRecipientList(raw) {
+		if strings.TrimSpace(e) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeAssigneeEmailsWithReceiverGroup 合并接收组静态抄送；已有规则处理人邮箱时不合并（避免多人收件）。
+func mergeAssigneeEmailsWithReceiverGroup(recipients []string, payload map[string]interface{}) []string {
+	if payload == nil || payloadHasAssigneeEmails(payload) {
 		return recipients
 	}
 	raw, ok := payload["receiver_group_emails"]

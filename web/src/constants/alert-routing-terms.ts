@@ -13,7 +13,8 @@ export const ALERT_ROUTING_TERMS = {
   historySourceFilter: "告警来源",
   receiverGroupManage: "通知接收组管理",
   receiverGroupManageHint:
-    "接收组绑定告警通道（钉钉/邮件/企微等）。路由节点上选择接收组后，告警命中该节点即按组内通道投递；可在组内配置额外邮箱作邮件兜底。",
+    "接收组绑定告警通道（钉钉/邮件/企微/wechat 等）。规则配置「处理人」且命中接收组后：wechat 等会补发邮件；钉钉/企微在群内 @ 不到处理人（手机号未入企或无法解析）时补发邮件；已在群内可被 @ 时仅走 IM。不含项目全员。",
+  receiverGroupStaticCC: "静态抄送（可选）",
 } as const;
 
 /** 历史节点名 → 产品展示名 */
