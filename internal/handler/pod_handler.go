@@ -99,6 +99,11 @@ func (h *PodHandler) Detail(c *gin.Context) {
 	ServeQuery(c, h.svc.Detail)
 }
 
+// Diagnose 聚合 Pod 排障信息。
+func (h *PodHandler) Diagnose(c *gin.Context) {
+	ServeQuery(c, h.svc.Diagnose)
+}
+
 // Events 处理对应的 HTTP 请求并返回统一响应。
 func (h *PodHandler) Events(c *gin.Context) {
 	ServeQuery(c, func(ctx context.Context, query service.PodEventQuery) (gin.H, error) {

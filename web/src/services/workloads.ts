@@ -128,6 +128,29 @@ export function listDeploymentPods(clusterId: number, namespace: string, name: s
   return deploymentsSvc.get<RelatedPodItem[]>("/pods", k8sParams(clusterId, { namespace, name }));
 }
 
+export interface DeploymentRolloutStatus {
+  namespace: string;
+  name: string;
+  observed_generation: number;
+  replicas: number;
+  updated_replicas: number;
+  ready_replicas: number;
+  available_replicas: number;
+  unavailable_replicas: number;
+  strategy_type: string;
+  max_surge?: string;
+  max_unavailable?: string;
+  min_ready_seconds: number;
+  progress_deadline_seconds: number;
+  complete: boolean;
+  progressing: boolean;
+  conditions: Array<{ type: string; status: string; reason?: string; message?: string }>;
+}
+
+export function getDeploymentRolloutStatus(clusterId: number, namespace: string, name: string) {
+  return deploymentsSvc.get<DeploymentRolloutStatus>("/rollout-status", k8sParams(clusterId, { namespace, name }));
+}
+
 export function listStatefulSets(clusterId: number, namespace: string, keyword?: string) {
   return statefulsetsSvc.list(k8sParams(clusterId, { namespace, keyword }));
 }

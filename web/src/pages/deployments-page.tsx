@@ -9,7 +9,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Card, Dropdown, Form, Input, InputNumber, Modal, Progress, Space, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useKeyValueViewer } from "../components/k8s/key-value-viewer";
 import { useRelatedPodsDrawer } from "../components/k8s/related-pods-drawer";
 import { RealtimeUsageText, WorkloadCpuUsageBars, WorkloadMemUsageBars } from "../components/k8s/k8s-resource-usage-cells";
@@ -23,10 +23,12 @@ import {
   deleteDeployment,
   getDeploymentDetail,
   listDeployments,
+  getDeploymentRolloutStatus,
   listDeploymentPods,
   patchDeploymentContainerResources,
   restartDeployment,
   scaleDeployment,
+  type DeploymentRolloutStatus,
   type WorkloadDetail,
   type WorkloadItem,
 } from "../services/workloads";
@@ -151,6 +153,9 @@ export function DeploymentsPage() {
   const [scaleTarget, setScaleTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
   const [verticalOpen, setVerticalOpen] = useState(false);
   const [verticalTarget, setVerticalTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
+  const [rolloutOpen, setRolloutOpen] = useState(false);
+  const [rolloutTarget, setRolloutTarget] = useState<{ clusterId: number; namespace: string; name: string } | null>(null);
+  const [rolloutStatus, setRolloutStatus] = useState<DeploymentRolloutStatus | null>(null);
   const [verticalForm] = Form.useForm<{
     container_name?: string;
     requests_cpu?: string;
@@ -159,6 +164,25 @@ export function DeploymentsPage() {
     limits_memory?: string;
   }>();
   const { openPods, viewer: podsViewer } = useRelatedPodsDrawer(async ({ clusterId, namespace, name }) => await listDeploymentPods(clusterId, namespace, name));
+
+  useEffect(() => {
+    if (!rolloutOpen || !rolloutTarget) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const st = await getDeploymentRolloutStatus(rolloutTarget.clusterId, rolloutTarget.namespace, rolloutTarget.name);
+        if (!cancelled) setRolloutStatus(st);
+      } catch {
+        // ignore transient errors while rolling
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [rolloutOpen, rolloutTarget]);
   const { renderKVIcon, viewer } = useKeyValueViewer({
     width: 760,
     compact: true,
@@ -248,6 +272,11 @@ export function DeploymentsPage() {
               name: "",
               container_name: "",
               image: "nginx:latest",
+              strategy_type: "RollingUpdate",
+              rolling_update_max_surge: "1",
+              rolling_update_max_unavailable: "0",
+              min_ready_seconds: 5,
+              progress_deadline_seconds: 600,
             } as Partial<DeploymentFormValues>,
           );
         }}
@@ -306,6 +335,12 @@ metadata:
   namespace: ${namespace ?? "default"}
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  minReadySeconds: 5
   selector:
     matchLabels:
       app: demo
@@ -352,6 +387,16 @@ spec:
                     },
                   },
                   {
+                    key: "rollout",
+                    label: "发布进度",
+                    icon: <EyeOutlined />,
+                    onClick: () => {
+                      setRolloutTarget({ clusterId: ctx.clusterId, namespace: ctx.namespace ?? "default", name: record.name });
+                      setRolloutStatus(null);
+                      setRolloutOpen(true);
+                    },
+                  },
+                  {
                     key: "restart",
                     label: "重启工作负载",
                     icon: <ReloadOutlined />,
@@ -373,6 +418,44 @@ spec:
           </Space>
         )}
       />
+
+      <Modal
+        title={`发布进度${rolloutTarget ? `：${rolloutTarget.name}` : ""}`}
+        open={rolloutOpen}
+        onCancel={() => setRolloutOpen(false)}
+        footer={null}
+        width={560}
+      >
+        {rolloutStatus ? (
+          <Space direction="vertical" style={{ width: "100%" }}>
+            <Typography.Text>
+              策略 {rolloutStatus.strategy_type}
+              {rolloutStatus.max_surge != null ? ` · maxSurge ${rolloutStatus.max_surge}` : ""}
+              {rolloutStatus.max_unavailable != null ? ` · maxUnavailable ${rolloutStatus.max_unavailable}` : ""}
+            </Typography.Text>
+            <Progress
+              percent={
+                rolloutStatus.replicas > 0
+                  ? Math.round((rolloutStatus.ready_replicas / rolloutStatus.replicas) * 100)
+                  : 0
+              }
+              status={rolloutStatus.complete ? "success" : "active"}
+              format={() => `就绪 ${rolloutStatus.ready_replicas}/${rolloutStatus.replicas}`}
+            />
+            <Typography.Text type="secondary">
+              已更新 {rolloutStatus.updated_replicas} · 可用 {rolloutStatus.available_replicas} · 不可用 {rolloutStatus.unavailable_replicas}
+              {rolloutStatus.complete ? " · 发布完成" : rolloutStatus.progressing ? " · 滚动中" : ""}
+            </Typography.Text>
+            {rolloutStatus.conditions?.length ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {rolloutStatus.conditions.map((c) => `${c.type}=${c.status}`).join(" · ")}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">加载中…</Typography.Text>
+        )}
+      </Modal>
 
       <Modal
         title={`Deployment 水平扩缩（HPA / scale 子资源类）${scaleTarget ? `：${scaleTarget.name}` : ""}`}

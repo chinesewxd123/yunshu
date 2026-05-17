@@ -25,15 +25,47 @@ import (
 type PodListQuery = ClusterNamespaceOptionalKeywordQuery
 
 type PodLogsQuery struct {
-	ClusterID uint   `form:"cluster_id" binding:"required"`
-	Namespace string `form:"namespace" binding:"required"`
-	Name      string `form:"name" binding:"required"`
-	Container string `form:"container"`
-	TailLines int64  `form:"tail_lines"`
-	Follow    bool   `form:"follow"`
-	Keyword   string `form:"keyword"`
-	StartTime string `form:"start_time"`
-	EndTime   string `form:"end_time"`
+	ClusterID    uint   `form:"cluster_id" binding:"required"`
+	Namespace    string `form:"namespace" binding:"required"`
+	Name         string `form:"name" binding:"required"`
+	Container    string `form:"container"`
+	TailLines    int64  `form:"tail_lines"`
+	Follow       bool   `form:"follow"`
+	Previous     bool   `form:"previous"`
+	SinceSeconds int64  `form:"since_seconds"`
+	SinceTime    string `form:"since_time"`
+	Timestamps   bool   `form:"timestamps"`
+	Keyword      string `form:"keyword"`
+	StartTime    string `form:"start_time"`
+	EndTime      string `form:"end_time"`
+}
+
+type PodDiagnoseQuery = PodDetailQuery
+
+type PodDiagnoseHint struct {
+	Level   string `json:"level"`
+	Title   string `json:"title"`
+	Detail  string `json:"detail"`
+	Action  string `json:"action,omitempty"`
+}
+
+type PodDiagnoseContainerIssue struct {
+	Name         string `json:"name"`
+	State        string `json:"state"`
+	Reason       string `json:"reason,omitempty"`
+	Message      string `json:"message,omitempty"`
+	RestartCount int32  `json:"restart_count"`
+	LogSnippet   string `json:"log_snippet,omitempty"`
+}
+
+type PodDiagnoseResult struct {
+	Summary    string                      `json:"summary"`
+	Phase      string                      `json:"phase"`
+	Ready      bool                        `json:"ready"`
+	NodeName   string                      `json:"node_name"`
+	Hints      []PodDiagnoseHint           `json:"hints"`
+	Events     []PodEventItem              `json:"events"`
+	Containers []PodDiagnoseContainerIssue `json:"containers"`
 }
 
 type PodFileQuery struct {
@@ -471,13 +503,9 @@ func (s *K8sPodService) GetLogs(ctx context.Context, query PodLogsQuery) (string
 	if err != nil {
 		return "", err
 	}
-	tail := query.TailLines
-	if tail <= 0 {
-		tail = 300
-	}
-	opts := &corev1.PodLogOptions{
-		Container: strings.TrimSpace(query.Container),
-		TailLines: &tail,
+	opts, err := buildPodLogOptions(query, false)
+	if err != nil {
+		return "", err
 	}
 	var stream io.ReadCloser
 	err = k.WithContext(ctx).
@@ -507,14 +535,9 @@ func (s *K8sPodService) StreamLogs(ctx context.Context, query PodLogsQuery, onLi
 	if err != nil {
 		return err
 	}
-	tail := query.TailLines
-	if tail <= 0 {
-		tail = 100
-	}
-	opts := &corev1.PodLogOptions{
-		Container: strings.TrimSpace(query.Container),
-		TailLines: &tail,
-		Follow:    true,
+	opts, err := buildPodLogOptions(query, true)
+	if err != nil {
+		return err
 	}
 	var stream io.ReadCloser
 	err = k.WithContext(ctx).

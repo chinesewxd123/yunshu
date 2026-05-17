@@ -40,9 +40,39 @@ export interface PodLogsQuery {
   container?: string;
   tail_lines?: number;
   follow?: boolean;
+  previous?: boolean;
+  since_seconds?: number;
+  since_time?: string;
+  timestamps?: boolean;
   keyword?: string;
   start_time?: string;
   end_time?: string;
+}
+
+export interface PodDiagnoseHint {
+  level: string;
+  title: string;
+  detail: string;
+  action?: string;
+}
+
+export interface PodDiagnoseContainerIssue {
+  name: string;
+  state: string;
+  reason?: string;
+  message?: string;
+  restart_count: number;
+  log_snippet?: string;
+}
+
+export interface PodDiagnoseResult {
+  summary: string;
+  phase: string;
+  ready: boolean;
+  node_name: string;
+  hints: PodDiagnoseHint[];
+  events: PodEventItem[];
+  containers: PodDiagnoseContainerIssue[];
 }
 
 export interface PodDeletePayload {
@@ -183,6 +213,10 @@ export function getPodDetail(query: { cluster_id: number; namespace: string; nam
 
 export function getPodEvents(query: { cluster_id: number; namespace: string; name: string }) {
   return getData<{ list: PodEventItem[] }>(http.get("/pods/events", { params: query }));
+}
+
+export function getPodDiagnose(query: { cluster_id: number; namespace: string; name: string }) {
+  return getData<PodDiagnoseResult>(http.get("/pods/diagnose", { params: query }));
 }
 
 export function listPodFiles(query: PodFileQuery) {

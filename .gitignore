@@ -10,6 +10,7 @@
 *.dylib
 *.test
 *.out
+*.tar
 
 # Project-specific binaries
 log-agent-linux-amd64
@@ -21,3 +22,4 @@ logs/*.log
 web/dist/
 web/node_modules/
 web/tsconfig.*.tsbuildinfo
+.cursor/

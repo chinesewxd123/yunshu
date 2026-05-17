@@ -1,0 +1,221 @@
+# 云枢 log-agent：以 DaemonSet 方式部署到 K8s 各节点，采集宿主机 /var/log 与容器日志目录。
+#
+# 前置条件：
+#   1. 在「项目管理」中为该 K8s 集群创建「服务器」记录，记下 server_id（所有节点共用同一 server_id，以 agent 名称区分节点）。
+#   2. 平台 configs/config.yaml 中配置 agent.register_secret，与本清单 Secret 一致。
+#   3. 构建并推送与 backend 相同的镜像（内含 `yunshu log-agent` 子命令）：
+#        docker build -f Dockerfile.backend -t <你的仓库>/yunshu:<tag> .
+#   4. 节点能访问平台 gRPC（默认 18080）与 HTTP（默认 8080，健康上报可选）。
+#
+# 部署：
+#   kubectl apply -f deploy/k8s/log-agent-daemonset.yaml
+#   kubectl -n yunshu-log logs -l app=yunshu-log-agent -f
+#
+# 若平台在集群外，请将 ConfigMap 中 YUNSHU_GRPC_SERVER / YUNSHU_PLATFORM_URL 改为节点可达地址
+# （如 NodePort、LoadBalancer 或宿主机 IP:18080 / :8080）。
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: yunshu-log
+  labels:
+    app.kubernetes.io/name: yunshu-log-agent
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: yunshu-log-agent
+  namespace: yunshu-log
+  labels:
+    app.kubernetes.io/name: yunshu-log-agent
+data:
+  # 平台 gRPC 地址（Agent 出站连接，无需在 Pod 内监听端口）
+  YUNSHU_GRPC_SERVER: "yunshu-platform.example.com:18080"
+  # 健康上报 HTTP 根地址（与 grpc 同机时可只改主机名）
+  YUNSHU_PLATFORM_URL: "http://yunshu-platform.example.com:8080"
+  # 项目管理中该 K8s 集群对应的服务器 ID（必填，所有节点相同）
+  YUNSHU_SERVER_ID: "1"
+  # 可选：已有长期 token 时可填，留空则使用 register-secret 自注册
+  YUNSHU_TOKEN: ""
+  # 扫描根目录：节点系统日志 + K8s 容器日志（与平台 discovery_roots 一致）
+  YUNSHU_DISCOVERY_ROOTS: "/var/log,/var/log/pods"
+  YUNSHU_DISCOVERY_INTERVAL: "30m"
+  YUNSHU_BATCH_SIZE: "50"
+  YUNSHU_TAIL_LINES: "200"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: yunshu-log-agent
+  namespace: yunshu-log
+  labels:
+    app.kubernetes.io/name: yunshu-log-agent
+type: Opaque
+stringData:
+  # 与平台 configs/config.yaml → agent.register_secret 一致
+  REGISTER_SECRET: "YunshuAgentRegisterSecret2026Secure!!"
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: yunshu-log-agent
+  namespace: yunshu-log
+  labels:
+    app.kubernetes.io/name: yunshu-log-agent
+    app.kubernetes.io/component: log-agent
+spec:
+  selector:
+    matchLabels:
+      app: yunshu-log-agent
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: yunshu-log-agent
+        app.kubernetes.io/name: yunshu-log-agent
+    spec:
+      serviceAccountName: yunshu-log-agent
+      # 日志采集需读宿主机目录；多数集群需 root 读 /var/log/pods
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: log-agent
+          # 替换为实际仓库地址（与 Dockerfile.backend 构建产物相同）
+          image: registry.example.com/yunshu:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: YUNSHU_GRPC_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: yunshu-log-agent
+                  key: YUNSHU_GRPC_SERVER
+            - name: YUNSHU_PLATFORM_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: yunshu-log-agent
+                  key: YUNSHU_PLATFORM_URL
+            - name: YUNSHU_SERVER_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: yunshu-log-agent
+                  key: YUNSHU_SERVER_ID
+            - name: YUNSHU_TOKEN
+              valueFrom:
+                configMapKeyRef:
+                  name: yunshu-log-agent
+                  key: YUNSHU_TOKEN
+            - name: YUNSHU_DISCOVERY_ROOTS
+              valueFrom:
+                configMapKeyRef:
+                  name: yunshu-log-agent
+                  key: YUNSHU_DISCOVERY_ROOTS
+            - name: YUNSHU_DISCOVERY_INTERVAL
+              valueFrom:
+                configMapKeyRef:
+                  name: yunshu-log-agent
+                  key: YUNSHU_DISCOVERY_INTERVAL
+            - name: YUNSHU_BATCH_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: yunshu-log-agent
+                  key: YUNSHU_BATCH_SIZE
+            - name: YUNSHU_TAIL_LINES
+              valueFrom:
+                configMapKeyRef:
+                  name: yunshu-log-agent
+                  key: YUNSHU_TAIL_LINES
+            - name: REGISTER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: yunshu-log-agent
+                  key: REGISTER_SECRET
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              TOKEN_ARG=""
+              if [ -n "${YUNSHU_TOKEN:-}" ]; then
+                TOKEN_ARG="--token=${YUNSHU_TOKEN}"
+              fi
+              SECRET_ARG=""
+              if [ -z "${YUNSHU_TOKEN:-}" ] && [ -n "${REGISTER_SECRET:-}" ]; then
+                SECRET_ARG="--register-secret=${REGISTER_SECRET}"
+              fi
+              exec /app/yunshu log-agent \
+                --grpc-server="${YUNSHU_GRPC_SERVER}" \
+                --platform-url="${YUNSHU_PLATFORM_URL}" \
+                --server-id="${YUNSHU_SERVER_ID}" \
+                --name="log-agent-${NODE_NAME}" \
+                --version="${YUNSHU_AGENT_VERSION:-1.0.0}" \
+                ${TOKEN_ARG} \
+                ${SECRET_ARG} \
+                --enable-runtime-pull=true \
+                --enable-discovery=true \
+                --discovery-roots="${YUNSHU_DISCOVERY_ROOTS}" \
+                --discovery-interval="${YUNSHU_DISCOVERY_INTERVAL}" \
+                --batch-size="${YUNSHU_BATCH_SIZE}" \
+                --tail-lines="${YUNSHU_TAIL_LINES}" \
+                --listen-port=0
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "kill -0 1"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+            type: Directory
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods
+            type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: yunshu-log-agent
+  namespace: yunshu-log
+  labels:
+    app.kubernetes.io/name: yunshu-log-agent

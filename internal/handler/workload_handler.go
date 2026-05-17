@@ -27,6 +27,11 @@ func (h *WorkloadHandler) DeploymentDetail(c *gin.Context) {
 	ServeQuery(c, h.svc.DeploymentDetail)
 }
 
+// DeploymentRolloutStatus 查询 Deployment 滚动发布进度。
+func (h *WorkloadHandler) DeploymentRolloutStatus(c *gin.Context) {
+	ServeQuery(c, h.svc.DeploymentRolloutStatus)
+}
+
 // DeploymentScale 处理对应的 HTTP 请求并返回统一响应。
 func (h *WorkloadHandler) DeploymentScale(c *gin.Context) {
 	ServeJSONOK(c, true, h.svc.DeploymentScale)

@@ -1,6 +1,6 @@
-import { CodeOutlined, DeleteOutlined, DownOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined, FolderOpenOutlined, PlusOutlined, ReloadOutlined, UndoOutlined, UploadOutlined } from "@ant-design/icons";
+import { CodeOutlined, DeleteOutlined, DownOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileSearchOutlined, FileTextOutlined, FolderOpenOutlined, MedicineBoxOutlined, PlusOutlined, ReloadOutlined, UndoOutlined, UploadOutlined } from "@ant-design/icons";
 import type { MenuProps } from "antd";
-import { Button, Card, Divider, Drawer, Dropdown, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tabs, Tooltip, Typography, message } from "antd";
+import { Alert, Button, Card, Checkbox, Divider, Drawer, Dropdown, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tabs, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
@@ -8,7 +8,7 @@ import "xterm/css/xterm.css";
 import { formatDateTime } from "../utils/format";
 import { getClusters, listNamespaces, type ClusterItem, type NamespaceItem } from "../services/clusters";
 import { PodCpuUsageBars, PodMemUsageBars, RealtimeUsageText } from "../components/k8s/k8s-resource-usage-cells";
-import { createPodByYAML, createPodSimple, deletePod, deletePodFile, downloadPodFile, downloadPodLogs, getPodDetail, getPodEvents, getPodLogs, getPods, listPodFiles, readPodFile, restartPod, updatePodSimple, uploadPodFile, type PodDetail, type PodEventItem, type PodFileItem, type PodItem } from "../services/pods";
+import { createPodByYAML, createPodSimple, deletePod, deletePodFile, downloadPodFile, downloadPodLogs, getPodDetail, getPodDiagnose, getPodEvents, getPodLogs, getPods, listPodFiles, readPodFile, restartPod, updatePodSimple, uploadPodFile, type PodDetail, type PodDiagnoseResult, type PodEventItem, type PodFileItem, type PodItem, type PodLogsQuery } from "../services/pods";
 import { getToken } from "../services/storage";
 
 function phaseColor(phase: string): string {
@@ -42,6 +42,15 @@ export function PodPage() {
   const [logsKeyword, setLogsKeyword] = useState("");
   const [logsStartTime, setLogsStartTime] = useState("");
   const [logsEndTime, setLogsEndTime] = useState("");
+  const [logsPrevious, setLogsPrevious] = useState(false);
+  const [logsTimestamps, setLogsTimestamps] = useState(false);
+  const [logsSinceSeconds, setLogsSinceSeconds] = useState<number | undefined>();
+  const [logsSinceTime, setLogsSinceTime] = useState("");
+  const [logsContainer, setLogsContainer] = useState<string>();
+  const [logContainerOptions, setLogContainerOptions] = useState<string[]>([]);
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [diagnoseLoading, setDiagnoseLoading] = useState(false);
+  const [diagnoseResult, setDiagnoseResult] = useState<PodDiagnoseResult | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [execOpen, setExecOpen] = useState(false);
@@ -194,8 +203,27 @@ export function PodPage() {
     await loadPods();
   }
 
+  function buildPodLogsQuery(record: PodItem, tailLines?: number): PodLogsQuery {
+    const q: PodLogsQuery = {
+      cluster_id: clusterId!,
+      namespace: record.namespace,
+      name: record.name,
+      container: logsContainer || undefined,
+      previous: logsPrevious || undefined,
+      timestamps: logsTimestamps || undefined,
+      since_seconds: logsSinceSeconds,
+      since_time: logsSinceTime || undefined,
+      keyword: logsKeyword || undefined,
+      start_time: logsStartTime || undefined,
+      end_time: logsEndTime || undefined,
+    };
+    if (tailLines != null) q.tail_lines = tailLines;
+    return q;
+  }
+
   async function handleViewLogs(record: PodItem) {
     if (!clusterId) return;
+    setSelected(record);
     setLogsOpen(true);
     setLogsLoading(true);
     setLogsText("");
@@ -203,11 +231,33 @@ export function PodPage() {
     setLogsKeyword("");
     setLogsStartTime("");
     setLogsEndTime("");
+    setLogsPrevious(false);
+    setLogsTimestamps(false);
+    setLogsSinceSeconds(undefined);
+    setLogsSinceTime("");
     try {
-      const res = await getPodLogs({ cluster_id: clusterId, namespace: record.namespace, name: record.name, tail_lines: 500 });
+      const detailRes = await getPodDetail({ cluster_id: clusterId, namespace: record.namespace, name: record.name });
+      const names = (detailRes.containers ?? []).map((c) => c.name).filter(Boolean);
+      setLogContainerOptions(names);
+      setLogsContainer(names[0]);
+      const res = await getPodLogs({ ...buildPodLogsQuery(record, 500), container: names[0] });
       setLogsText(res.logs || "");
     } finally {
       setLogsLoading(false);
+    }
+  }
+
+  async function handleDiagnose(record: PodItem) {
+    if (!clusterId) return;
+    setSelected(record);
+    setDiagnoseOpen(true);
+    setDiagnoseLoading(true);
+    setDiagnoseResult(null);
+    try {
+      const res = await getPodDiagnose({ cluster_id: clusterId, namespace: record.namespace, name: record.name });
+      setDiagnoseResult(res);
+    } finally {
+      setDiagnoseLoading(false);
     }
   }
 
@@ -215,15 +265,7 @@ export function PodPage() {
     if (!clusterId || !selected) return;
     setLogsLoading(true);
     try {
-      const res = await getPodLogs({
-        cluster_id: clusterId,
-        namespace: selected.namespace,
-        name: selected.name,
-        tail_lines: 1000,
-        keyword: logsKeyword || undefined,
-        start_time: logsStartTime || undefined,
-        end_time: logsEndTime || undefined,
-      });
+      const res = await getPodLogs(buildPodLogsQuery(selected, 1000));
       setLogsText(res.logs || "");
     } finally {
       setLogsLoading(false);
@@ -232,15 +274,7 @@ export function PodPage() {
 
   async function handleDownloadLogs() {
     if (!clusterId || !selected) return;
-    const blob = await downloadPodLogs({
-      cluster_id: clusterId,
-      namespace: selected.namespace,
-      name: selected.name,
-      tail_lines: 2000,
-      keyword: logsKeyword || undefined,
-      start_time: logsStartTime || undefined,
-      end_time: logsEndTime || undefined,
-    });
+    const blob = await downloadPodLogs(buildPodLogsQuery(selected, 2000));
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -258,12 +292,18 @@ export function PodPage() {
     streamAbortRef.current = aborter;
     setStreaming(true);
     const token = getToken();
+    const q = buildPodLogsQuery(selected, 50);
     const params = new URLSearchParams({
       cluster_id: String(clusterId),
-      namespace: selected.namespace,
-      name: selected.name,
+      namespace: q.namespace,
+      name: q.name,
       tail_lines: "50",
     });
+    if (q.container) params.set("container", q.container);
+    if (q.previous) params.set("previous", "true");
+    if (q.timestamps) params.set("timestamps", "true");
+    if (q.since_seconds) params.set("since_seconds", String(q.since_seconds));
+    if (q.since_time) params.set("since_time", q.since_time);
     try {
       const resp = await fetch(`/api/v1/pods/logs/stream?${params.toString()}`, {
         headers: { Authorization: token ? `Bearer ${token}` : "" },
@@ -840,6 +880,12 @@ export function PodPage() {
                       onClick: () => void openEditPod(record),
                     },
                     {
+                      key: "diagnose",
+                      icon: <MedicineBoxOutlined />,
+                      label: "排障诊断",
+                      onClick: () => void handleDiagnose(record),
+                    },
+                    {
                       key: "files",
                       icon: <FolderOpenOutlined />,
                       label: "文件",
@@ -912,10 +958,36 @@ export function PodPage() {
         width={980}
       >
         <Space wrap style={{ marginBottom: 12 }}>
+          {logContainerOptions.length > 1 ? (
+            <Select
+              allowClear
+              placeholder="容器"
+              style={{ width: 140 }}
+              value={logsContainer}
+              options={logContainerOptions.map((n) => ({ label: n, value: n }))}
+              onChange={(v) => setLogsContainer(v)}
+            />
+          ) : null}
+          <Select
+            allowClear
+            placeholder="最近时间"
+            style={{ width: 130 }}
+            value={logsSinceSeconds}
+            options={[
+              { label: "5 分钟", value: 300 },
+              { label: "1 小时", value: 3600 },
+              { label: "6 小时", value: 21600 },
+              { label: "24 小时", value: 86400 },
+            ]}
+            onChange={(v) => setLogsSinceSeconds(v)}
+          />
+          <Input placeholder="since-time RFC3339" value={logsSinceTime} onChange={(e) => setLogsSinceTime(e.target.value)} style={{ width: 200 }} />
+          <Checkbox checked={logsPrevious} onChange={(e) => setLogsPrevious(e.target.checked)}>上一实例</Checkbox>
+          <Switch size="small" checked={logsTimestamps} onChange={setLogsTimestamps} checkedChildren="时间戳" unCheckedChildren="时间戳" />
           <Input placeholder="关键字过滤" value={logsKeyword} onChange={(e) => setLogsKeyword(e.target.value)} style={{ width: 160 }} />
           <Input placeholder="开始时间 2026-01-02 15:04:05" value={logsStartTime} onChange={(e) => setLogsStartTime(e.target.value)} style={{ width: 210 }} />
           <Input placeholder="结束时间 2026-01-02 15:04:05" value={logsEndTime} onChange={(e) => setLogsEndTime(e.target.value)} style={{ width: 210 }} />
-          <Button icon={<FileSearchOutlined />} onClick={() => void handleFilterLogs()}>过滤</Button>
+          <Button icon={<FileSearchOutlined />} onClick={() => void handleFilterLogs()}>拉取/过滤</Button>
           <Button icon={<DownloadOutlined />} onClick={() => void handleDownloadLogs()}>下载</Button>
           <Button type={streaming ? "default" : "primary"} onClick={() => void startLogStream()} disabled={streaming}>开始实时流</Button>
           <Button danger={streaming} onClick={stopLogStream} disabled={!streaming}>停止流</Button>
@@ -941,6 +1013,78 @@ export function PodPage() {
           </pre>
         )}
       </Modal>
+      <Drawer
+        title={selected ? `Pod 排障 - ${selected.namespace}/${selected.name}` : "Pod 排障"}
+        open={diagnoseOpen}
+        onClose={() => setDiagnoseOpen(false)}
+        width={920}
+      >
+        {diagnoseLoading ? (
+          <Typography.Text>诊断中...</Typography.Text>
+        ) : diagnoseResult ? (
+          <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            <Alert
+              type={diagnoseResult.ready ? "success" : "warning"}
+              showIcon
+              message={diagnoseResult.summary}
+              description={`阶段 ${diagnoseResult.phase} · 节点 ${diagnoseResult.node_name || "-"} · ${diagnoseResult.ready ? "已就绪" : "未就绪"}`}
+            />
+            {diagnoseResult.hints.map((h, i) => (
+              <Alert
+                key={`${h.title}-${i}`}
+                type={h.level === "error" ? "error" : h.level === "warning" ? "warning" : "info"}
+                showIcon
+                message={h.title}
+                description={
+                  <>
+                    <div>{h.detail}</div>
+                    {h.action ? <Typography.Text type="secondary">建议：{h.action}</Typography.Text> : null}
+                  </>
+                }
+              />
+            ))}
+            <Typography.Text strong>容器状态</Typography.Text>
+            <Table
+              size="small"
+              rowKey="name"
+              pagination={false}
+              dataSource={diagnoseResult.containers}
+              columns={[
+                { title: "容器", dataIndex: "name", width: 120 },
+                { title: "状态", dataIndex: "state", width: 90 },
+                { title: "原因", dataIndex: "reason", width: 140 },
+                { title: "重启", dataIndex: "restart_count", width: 70 },
+                {
+                  title: "日志片段",
+                  dataIndex: "log_snippet",
+                  render: (v: string) =>
+                    v ? (
+                      <pre style={{ margin: 0, maxHeight: 120, overflow: "auto", fontSize: 11, background: "#0f172a", color: "#e2e8f0", padding: 8, borderRadius: 4 }}>
+                        {v}
+                      </pre>
+                    ) : (
+                      "-"
+                    ),
+                },
+              ]}
+            />
+            <Typography.Text strong>相关事件</Typography.Text>
+            <Table
+              size="small"
+              rowKey={(r) => `${r.reason}-${r.last_timestamp}`}
+              pagination={{ pageSize: 5 }}
+              dataSource={diagnoseResult.events}
+              columns={[
+                { title: "类型", dataIndex: "type", width: 70 },
+                { title: "原因", dataIndex: "reason", width: 120 },
+                { title: "消息", dataIndex: "message", ellipsis: true },
+              ]}
+            />
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">暂无诊断数据</Typography.Text>
+        )}
+      </Drawer>
       <Drawer
         title={selected ? `Pod 文件管理 - ${selected.namespace}/${selected.name}` : "Pod 文件管理"}
         open={fileOpen}
