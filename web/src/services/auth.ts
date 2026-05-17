@@ -16,7 +16,7 @@ import type {
 import { getData, http } from "./http";
 
 export function sendEmailCode(payload: SendEmailCodePayload) {
-  return getData<SendEmailCodeResult>(http.post("/auth/verification-code", payload));
+  return getData<SendEmailCodeResult>(http.post("/auth/verification-code", payload, { silentErrorToast: true }));
 }
 
 export function sendLoginCodeByUsername(username: string) {
@@ -24,15 +24,15 @@ export function sendLoginCodeByUsername(username: string) {
 }
 
 export function sendPasswordLoginCode(payload: SendPasswordLoginCodePayload) {
-  return getData<SendPasswordLoginCodeResult>(http.post("/auth/password-login-code", payload));
+  return getData<SendPasswordLoginCodeResult>(http.post("/auth/password-login-code", payload, { silentErrorToast: true }));
 }
 
 export function passwordLogin(payload: PasswordLoginPayload) {
-  return getData<LoginResult>(http.post("/auth/login", payload));
+  return getData<LoginResult>(http.post("/auth/login", payload, { silentErrorToast: true }));
 }
 
 export function emailLogin(payload: EmailLoginPayload) {
-  return getData<LoginResult>(http.post("/auth/email-login", payload));
+  return getData<LoginResult>(http.post("/auth/email-login", payload, { silentErrorToast: true }));
 }
 
 export function registerByEmail(payload: RegisterPayload) {

@@ -668,6 +668,10 @@ export function AlertConfigCenterPanel({
   }, [tab, effectiveProjectId]);
 
   async function sendWebhookDemo() {
+    if (!String(webhookToken || "").trim()) {
+      message.warning("请先选择或填写 Webhook Token（与后端 alert.webhook_token 一致，空 Token 将被拒绝）");
+      return;
+    }
     let payloadObj: Record<string, unknown>;
     try {
       payloadObj = JSON.parse(webhookPayload || "{}") as Record<string, unknown>;

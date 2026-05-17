@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/repository"
 
@@ -30,11 +31,11 @@ func NewPolicyService(roleRepo *repository.RoleRepository, permissionRepo *repos
 func (s *PolicyService) List(ctx context.Context) ([]PolicyItemResponse, error) {
 	roles, err := s.roleRepo.ListAll(ctx)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("policy", "List", err)
 	}
 	permissions, err := s.permissionRepo.ListAll(ctx)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("policy", "List", err)
 	}
 
 	roleMap := make(map[string]RoleItem, len(roles))
@@ -78,7 +79,7 @@ func (s *PolicyService) Grant(ctx context.Context, req PolicyGrantRequest) error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrRoleNotFound
 		}
-		return err
+		return svcerr.Pass("policy", "Grant", err)
 	}
 
 	permission, err := s.permissionRepo.GetByID(ctx, req.PermissionID)
@@ -86,11 +87,11 @@ func (s *PolicyService) Grant(ctx context.Context, req PolicyGrantRequest) error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrPermissionNotFound
 		}
-		return err
+		return svcerr.Pass("policy", "Grant", err)
 	}
 
 	_, err = s.enforcer.AddPolicy(role.Code, permission.Resource, permission.Action)
-	return err
+	return svcerr.Pass("policy", "Grant", err)
 }
 
 // Revoke 执行对应的业务逻辑。
@@ -100,7 +101,7 @@ func (s *PolicyService) Revoke(ctx context.Context, req PolicyGrantRequest) erro
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrRoleNotFound
 		}
-		return err
+		return svcerr.Pass("policy", "Revoke", err)
 	}
 
 	permission, err := s.permissionRepo.GetByID(ctx, req.PermissionID)
@@ -108,9 +109,9 @@ func (s *PolicyService) Revoke(ctx context.Context, req PolicyGrantRequest) erro
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrPermissionNotFound
 		}
-		return err
+		return svcerr.Pass("policy", "Revoke", err)
 	}
 
 	_, err = s.enforcer.RemovePolicy(role.Code, permission.Resource, permission.Action)
-	return err
+	return svcerr.Pass("policy", "Revoke", err)
 }

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"yunshu/internal/service/svcerr"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -57,7 +58,7 @@ func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, opts
 	}
 	var policies []legacyPolicy
 	if err := s.db.WithContext(ctx).Table("alert_policies").Find(&policies).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.subscription", "MigrateFromPolicies", err)
 	}
 	rep.PoliciesTotal = len(policies)
 
@@ -118,7 +119,7 @@ func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, opts
 
 		root, err := getOrCreateRoot(projectID)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.subscription", "MigrateFromPolicies", err)
 		}
 
 		rg := &model.AlertReceiverGroup{
@@ -134,7 +135,7 @@ func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, opts
 			rg.ChannelIDsJSON = "[]"
 		}
 		if err := s.db.WithContext(ctx).Create(rg).Error; err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.subscription", "MigrateFromPolicies", err)
 		}
 		rep.ReceiverGroupsCreated++
 
@@ -155,7 +156,7 @@ func (s *AlertSubscriptionService) MigrateFromPolicies(ctx context.Context, opts
 			NotifyResolved:       p.NotifyResolved,
 		}
 		if err := s.db.WithContext(ctx).Create(node).Error; err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.subscription", "MigrateFromPolicies", err)
 		}
 		rep.NodesCreated++
 		rep.PoliciesMigrated++
@@ -217,7 +218,7 @@ func (s *AlertSubscriptionService) firstEnabledProjectID(ctx context.Context) (u
 	var p model.Project
 	err := s.db.WithContext(ctx).Where("status = ?", 1).Order("id ASC").First(&p).Error
 	if err != nil {
-		return 0, err
+		return 0, svcerr.Pass("alert.subscription", "firstEnabledProjectID", err)
 	}
 	if p.ID == 0 {
 		return 0, fmt.Errorf("no project")

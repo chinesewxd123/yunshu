@@ -13,6 +13,7 @@ import { Button, Form, Input, Modal, message } from "antd";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { sendEmailCode, sendPasswordLoginCode, registerByEmail } from "../services/auth";
+import { extractApiErrorMessage } from "../services/http";
 import type {
   EmailLoginPayload,
   PasswordLoginPayload,
@@ -28,17 +29,6 @@ type ButtonFxState = "idle" | "loading" | "success";
 
 interface LocationState {
   from?: string;
-}
-
-function getErrorMessage(error: unknown, fallback: string) {
-  const responseMessage = (error as any)?.response?.data?.message;
-  if (typeof responseMessage === "string" && responseMessage.trim()) {
-    return responseMessage;
-  }
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  return fallback;
 }
 
 function useCountdown(seconds: number, onTick: (next: number) => void) {
@@ -118,8 +108,8 @@ export function LoginPage() {
       passwordForm.setFieldValue("captcha_key", result.captcha_key);
       message.success("验证码已生成");
       setPasswordCodeCountdown(60);
-    } catch {
-      message.error("生成验证码失败");
+    } catch (e) {
+      message.error(extractApiErrorMessage(e, "生成验证码失败"));
     } finally {
       setSendingCode(false);
     }
@@ -138,6 +128,8 @@ export function LoginPage() {
       await sendEmailCode(payload);
       message.success("验证码已发送到您的邮箱，请查收");
       setEmailCodeCountdown(60);
+    } catch (e) {
+      message.error(extractApiErrorMessage(e, "发送验证码失败"));
     } finally {
       setSendingCode(false);
     }
@@ -156,6 +148,8 @@ export function LoginPage() {
       await sendEmailCode(payload);
       message.success("验证码已发送到您的邮箱，请查收");
       setRegisterCodeCountdown(60);
+    } catch (e) {
+      message.error(extractApiErrorMessage(e, "发送验证码失败"));
     } finally {
       setSendingCode(false);
     }
@@ -175,7 +169,7 @@ export function LoginPage() {
       window.setTimeout(() => navigate(fromPath, { replace: true }), 520);
     } catch (e) {
       setButtonFx("idle");
-      message.error(e instanceof Error ? e.message : "登录失败");
+      message.error(extractApiErrorMessage(e, "登录失败"));
     } finally {
       window.setTimeout(() => setButtonFx("idle"), 1200);
       setSubmitting(false);
@@ -206,7 +200,7 @@ export function LoginPage() {
       setRegisterOpen(false);
       registerForm.resetFields();
     } catch (e) {
-      message.error(getErrorMessage(e, "注册失败"));
+      message.error(extractApiErrorMessage(e, "注册失败"));
     } finally {
       setSubmitting(false);
     }

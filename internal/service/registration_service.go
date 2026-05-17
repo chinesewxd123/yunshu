@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/config"
 	"yunshu/internal/model"
@@ -65,15 +66,15 @@ func (s *RegistrationService) Apply(ctx context.Context, req ApplyRegisterReques
 	nickname := strings.TrimSpace(req.Nickname)
 
 	if err := s.ensureRegistrationDoesNotExist(ctx, username, email); err != nil {
-		return err
+		return svcerr.Pass("registration", "Apply", err)
 	}
 	if err := s.validateEmailCode(ctx, emailCodeSceneRegister, email, req.Code); err != nil {
-		return err
+		return svcerr.Pass("registration", "Apply", err)
 	}
 
 	hashedPassword, err := password.Hash(req.Password)
 	if err != nil {
-		return err
+		return svcerr.Pass("registration", "Apply", err)
 	}
 
 	regReq := model.RegistrationRequest{
@@ -85,7 +86,7 @@ func (s *RegistrationService) Apply(ctx context.Context, req ApplyRegisterReques
 	}
 
 	if err = s.regRepo.Create(ctx, &regReq); err != nil {
-		return err
+		return svcerr.Pass("registration", "Apply", err)
 	}
 
 	s.clearEmailCode(ctx, emailCodeSceneRegister, email)
@@ -94,12 +95,16 @@ func (s *RegistrationService) Apply(ctx context.Context, req ApplyRegisterReques
 
 // List 查询列表相关的业务逻辑。
 func (s *RegistrationService) List(ctx context.Context, keyword string, status *int, page, pageSize int) ([]model.RegistrationRequest, int64, error) {
-	return s.regRepo.List(ctx, repository.RegistrationRequestListParams{
+	list, total, err := s.regRepo.List(ctx, repository.RegistrationRequestListParams{
 		Keyword:  keyword,
 		Status:   status,
 		Page:     page,
 		PageSize: pageSize,
 	})
+	if err != nil {
+		return nil, 0, svcerr.Pass("registration", "List", err)
+	}
+	return list, total, nil
 }
 
 // Review 执行对应的业务逻辑。
@@ -115,7 +120,7 @@ func (s *RegistrationService) Review(ctx context.Context, id uint, reviewerID ui
 	newStatus := model.RegistrationRequestStatus(req.Status)
 	err = s.regRepo.UpdateStatus(ctx, id, newStatus, reviewerID, req.Comment)
 	if err != nil {
-		return err
+		return svcerr.Pass("registration", "Review", err)
 	}
 
 	if newStatus == model.RegistrationApproved {
@@ -128,7 +133,7 @@ func (s *RegistrationService) Review(ctx context.Context, id uint, reviewerID ui
 			Roles:    []model.Role{},
 		}
 		if err := s.userRepo.Create(ctx, &user); err != nil {
-			return err
+			return svcerr.Pass("registration", "Review", err)
 		}
 	}
 
@@ -138,7 +143,7 @@ func (s *RegistrationService) Review(ctx context.Context, id uint, reviewerID ui
 func (s *RegistrationService) ensureRegistrationDoesNotExist(ctx context.Context, username, email string) error {
 	count, err := s.regRepo.CountPending(ctx, username, email)
 	if err != nil {
-		return err
+		return svcerr.Pass("registration", "ensureRegistrationDoesNotExist", err)
 	}
 	if count > 0 {
 		return constants.ErrRegistrationDuplicatePending
@@ -147,13 +152,13 @@ func (s *RegistrationService) ensureRegistrationDoesNotExist(ctx context.Context
 	if _, err := s.userRepo.GetByUsername(ctx, username); err == nil {
 		return constants.ErrUsernameTaken
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+		return svcerr.Pass("registration", "ensureRegistrationDoesNotExist", err)
 	}
 
 	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
 		return constants.ErrEmailAlreadyRegistered
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+		return svcerr.Pass("registration", "ensureRegistrationDoesNotExist", err)
 	}
 
 	return nil
@@ -169,7 +174,7 @@ func (s *RegistrationService) validateEmailCode(ctx context.Context, scene, emai
 		if errors.Is(err, redis.Nil) {
 			return constants.ErrCaptchaExpired
 		}
-		return err
+		return svcerr.Pass("registration", "validateEmailCode", err)
 	}
 	if val != code {
 		return constants.ErrCaptchaIncorrect

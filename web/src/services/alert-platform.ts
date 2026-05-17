@@ -205,6 +205,19 @@ export function createAlertSilence(payload: Record<string, unknown>) {
   return getData<AlertSilenceItem>(http.post("/alerts/silences", payload));
 }
 
+export interface AlertSilenceBatchItem {
+  name: string;
+  matchers_json: string;
+  starts_at: string;
+  ends_at: string;
+  comment?: string;
+  enabled?: boolean;
+}
+
+export function createAlertSilencesBatch(items: AlertSilenceBatchItem[]) {
+  return getData<{ created: number }>(http.post("/alerts/silences/batch", { items }));
+}
+
 export function updateAlertSilence(id: number, payload: Record<string, unknown>) {
   return getData<AlertSilenceItem>(http.put(`/alerts/silences/${id}`, payload));
 }

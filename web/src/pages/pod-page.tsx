@@ -10,6 +10,7 @@ import { getClusters, listNamespaces, type ClusterItem, type NamespaceItem } fro
 import { PodCpuUsageBars, PodMemUsageBars, RealtimeUsageText } from "../components/k8s/k8s-resource-usage-cells";
 import { createPodByYAML, createPodSimple, deletePod, deletePodFile, downloadPodFile, downloadPodLogs, getPodDetail, getPodDiagnose, getPodEvents, getPodLogs, getPods, listPodFiles, readPodFile, restartPod, updatePodSimple, uploadPodFile, type PodDetail, type PodDiagnoseResult, type PodEventItem, type PodFileItem, type PodItem, type PodLogsQuery } from "../services/pods";
 import { getToken } from "../services/storage";
+import { extractApiErrorMessage } from "../services/http";
 
 function phaseColor(phase: string): string {
   const p = (phase || "").toLowerCase();
@@ -256,6 +257,9 @@ export function PodPage() {
     try {
       const res = await getPodDiagnose({ cluster_id: clusterId, namespace: record.namespace, name: record.name });
       setDiagnoseResult(res);
+    } catch (e) {
+      message.error(extractApiErrorMessage(e, "排障诊断失败"));
+      setDiagnoseOpen(false);
     } finally {
       setDiagnoseLoading(false);
     }

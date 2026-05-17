@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 	"yunshu/internal/pkg/k8sauth"
 	"yunshu/internal/pkg/k8sutil"
 	"yunshu/internal/repository"
@@ -156,7 +157,7 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 
 	listU, err := s.dyn.ListByGVK(ctx, k, namespaceGVK, "")
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt8d60c2040f20, err))
+		return nil, svcerr.Internal("k8s.namespace", "api", err, constants.ErrFmt8d60c2040f20)
 	}
 	list := make([]corev1.Namespace, 0, len(listU))
 	for _, item := range listU {
@@ -381,7 +382,7 @@ func (s *K8sNamespaceService) Detail(ctx context.Context, query NamespaceDetailQ
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg52d9e6e7f573)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt059d07c698fe, err))
+		return nil, svcerr.Internal("k8s.namespace", "api", err, constants.ErrFmt059d07c698fe)
 	}
 	var ns corev1.Namespace
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &ns)
@@ -524,7 +525,7 @@ func (s *K8sNamespaceService) Apply(ctx context.Context, req NamespaceApplyReque
 		return true
 	})
 	if err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
+		return k8sFail("k8s.namespace", "api", err)
 	}
 	return nil
 }
@@ -568,7 +569,7 @@ func (s *K8sNamespaceService) Delete(ctx context.Context, req NamespaceDeleteReq
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmte323e75e3bb3, err))
+		return k8sFail("k8s.namespace", "api", err)
 	}
 	return nil
 }

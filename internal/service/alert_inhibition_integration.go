@@ -1,6 +1,7 @@
 package service
 
 import (
+	"yunshu/internal/service/svcerr"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,7 +19,7 @@ func (s *AlertService) RecordSourceInhibition(ctx context.Context, labels map[st
 	// 检查是否匹配任何源告警规则
 	ruleIDs, err := s.inhibitionSvc.CheckSourceMatch(ctx, labels)
 	if err != nil || len(ruleIDs) == 0 {
-		return err
+		return svcerr.Pass("alert.inhibition", "RecordSourceInhibition", err)
 	}
 
 	// 提取指纹
@@ -59,7 +60,7 @@ func (s *AlertService) ClearSourceInhibition(ctx context.Context, labels map[str
 
 	ruleIDs, err := s.inhibitionSvc.CheckSourceMatch(ctx, labels)
 	if err != nil {
-		return err
+		return svcerr.Pass("alert.inhibition", "ClearSourceInhibition", err)
 	}
 
 	fp := stableLabelsFingerprint(labels)

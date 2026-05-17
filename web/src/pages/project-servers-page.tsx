@@ -14,8 +14,10 @@ import type { ColumnsType } from "antd/es/table";
 import type { DataNode } from "antd/es/tree";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { extractApiErrorMessage } from "../services/http";
 import {
   batchTestProjectServers,
+  syncProjectServers,
   deleteProjectServer,
   deleteProjectServerGroup,
   downloadProjectServersImportTemplate,
@@ -189,6 +191,7 @@ export function ProjectServersPage() {
   const [total, setTotal] = useState(0);
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
   const [batchTesting, setBatchTesting] = useState(false);
+  const [batchSyncing, setBatchSyncing] = useState(false);
   const [batchModal, setBatchModal] = useState<{ total: number; success: number; failed: number; results: { server_id: number; ok: boolean; message: string }[] } | null>(null);
 
   const [groups, setGroups] = useState<ServerGroupItem[]>([]);
@@ -603,6 +606,21 @@ export function ProjectServersPage() {
       void loadServers();
     } finally {
       setBatchTesting(false);
+    }
+  }
+
+  async function onBatchSync() {
+    if (!projectId) return;
+    const ids = selectedRowKeys.length > 0 ? selectedRowKeys : undefined;
+    setBatchSyncing(true);
+    try {
+      const res = await syncProjectServers(projectId, ids, 8);
+      message.success(`连通性同步完成：共 ${res.total} 台，在线 ${res.online}，离线 ${res.offline}`);
+      void loadServers();
+    } catch (e) {
+      message.error(extractApiErrorMessage(e, "同步失败"));
+    } finally {
+      setBatchSyncing(false);
     }
   }
 
@@ -1102,6 +1120,9 @@ export function ProjectServersPage() {
                   <Input.Search allowClear placeholder="搜索 name/host/tags" onSearch={(keyword) => setQuery((q) => ({ ...q, keyword, page: 1 }))} style={{ width: 220 }} />
                   <Button icon={<ReloadOutlined />} onClick={() => void loadServers()} loading={loading}>刷新</Button>
                   <Button icon={<ApiOutlined />} onClick={() => void onBatchTest()} disabled={selectedRowKeys.length === 0} loading={batchTesting}>批量测试</Button>
+                  <Button icon={<SyncOutlined />} onClick={() => void onBatchSync()} loading={batchSyncing} title={selectedRowKeys.length === 0 ? "未勾选时同步项目下全部服务器" : "同步所选服务器连通状态"}>
+                    同步连通
+                  </Button>
                   {!isCloudCategory ? (
                     <>
                       <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>导入</Button>

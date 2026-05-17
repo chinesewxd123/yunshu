@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -35,7 +36,7 @@ func (s *AlertService) shouldEnqueueAlertmanagerWebhook() bool {
 func (s *AlertService) enqueueAlertmanagerWebhook(ctx context.Context, payload AlertManagerPayload) error {
 	bs, err := json.Marshal(payload)
 	if err != nil {
-		return constants.ErrInternalWithMsg(constants.ErrMsg39d72e4b8516)
+		return svcerr.InternalMsg("alert.webhook", "api", constants.ErrMsg39d72e4b8516)
 	}
 	maxLen := s.cfg.WebhookQueueMaxLen
 	if maxLen <= 0 {
@@ -43,10 +44,10 @@ func (s *AlertService) enqueueAlertmanagerWebhook(ctx context.Context, payload A
 	}
 	ok, err := luaEnqueueAlertWebhook.Run(ctx, s.redis, []string{redisKeyAlertWebhookQueue}, maxLen, string(bs)).Int()
 	if err != nil {
-		return err
+		return svcerr.Pass("alert.webhook", "enqueueAlertmanagerWebhook", err)
 	}
 	if ok == 0 {
-		return constants.ErrInternalWithMsg(constants.ErrMsgfd7c760c8d45)
+		return svcerr.InternalMsg("alert.webhook", "api", constants.ErrMsgfd7c760c8d45)
 	}
 	return nil
 }

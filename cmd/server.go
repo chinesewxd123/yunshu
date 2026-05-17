@@ -14,7 +14,9 @@ import (
 	"yunshu/internal/bootstrap"
 	grpcclient "yunshu/internal/grpc/client"
 	grpcserver "yunshu/internal/grpc/server"
+	"yunshu/internal/handler"
 	"yunshu/internal/model"
+	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/password"
 	"yunshu/internal/repository"
 	"yunshu/internal/router"
@@ -47,6 +49,9 @@ var serverCmd = &cobra.Command{
 			return err
 		}
 		defer app.Close()
+
+		logx.SetDefault(app.Logger)
+		handler.SetLogger(app.Logger)
 
 		if err := bootstrap.AutoMigrateModels(app.DB); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)

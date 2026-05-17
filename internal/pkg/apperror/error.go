@@ -1,6 +1,9 @@
 package apperror
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+)
 
 type AppError struct {
 	StatusCode int
@@ -25,8 +28,11 @@ func New(statusCode int, message string, code ...string) error {
 }
 
 func IsAppError(err error) (*AppError, bool) {
-	appErr, ok := err.(*AppError)
-	return appErr, ok
+	var appErr *AppError
+	if errors.As(err, &appErr) {
+		return appErr, true
+	}
+	return nil, false
 }
 
 func BadRequest(message string) error {

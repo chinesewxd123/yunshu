@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/pkg/k8sutil"
 
@@ -68,7 +69,7 @@ func (s *K8sConfigService) ListConfigMaps(ctx context.Context, q ConfigListQuery
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, configMapGVK, q.Namespace)
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtf8a8a793f3c6, err))
+		return nil, svcerr.Internal("k8s.config", "api", err, constants.ErrFmtf8a8a793f3c6)
 	}
 	list := make([]corev1.ConfigMap, 0, len(listU))
 	for _, item := range listU {
@@ -106,7 +107,7 @@ func (s *K8sConfigService) ConfigMapDetail(ctx context.Context, q ConfigDetailQu
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgd42231f0a030)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtbfbd3990363e, err))
+		return nil, svcerr.Internal("k8s.config", "api", err, constants.ErrFmtbfbd3990363e)
 	}
 	var obj corev1.ConfigMap
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -128,7 +129,7 @@ func (s *K8sConfigService) DeleteConfigMap(ctx context.Context, req ConfigDelete
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt90788f2314d8, err))
+		return k8sFail("k8s.config", "api", err)
 	}
 	return nil
 }
@@ -141,7 +142,7 @@ func (s *K8sConfigService) ListSecrets(ctx context.Context, q ConfigListQuery) (
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, secretGVK, q.Namespace)
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta2182ce2ddcd, err))
+		return nil, svcerr.Internal("k8s.config", "api", err, constants.ErrFmta2182ce2ddcd)
 	}
 	list := make([]corev1.Secret, 0, len(listU))
 	for _, item := range listU {
@@ -180,7 +181,7 @@ func (s *K8sConfigService) SecretDetail(ctx context.Context, q ConfigDetailQuery
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg2859a961fa4c)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtb450a71bd00f, err))
+		return nil, svcerr.Internal("k8s.config", "api", err, constants.ErrFmtb450a71bd00f)
 	}
 	var obj corev1.Secret
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -222,7 +223,7 @@ func (s *K8sConfigService) DeleteSecret(ctx context.Context, req ConfigDeleteReq
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt931c82f11039, err))
+		return k8sFail("k8s.config", "api", err)
 	}
 	return nil
 }
@@ -253,7 +254,7 @@ func (s *K8sConfigService) Apply(ctx context.Context, req ConfigApplyRequest) er
 		return configRefsAllExist(c, s.dyn, k, cfgRefs)
 	})
 	if err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
+		return k8sFail("k8s.config", "api", err)
 	}
 	return nil
 }

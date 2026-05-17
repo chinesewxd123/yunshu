@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/pkg/k8sutil"
 
@@ -65,7 +66,7 @@ func (s *K8sServiceAccountService) List(ctx context.Context, q ServiceAccountLis
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, serviceAccountGVK, q.Namespace)
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtf425dc675e3d, err))
+		return nil, svcerr.Internal("k8s.serviceaccount", "api", err, constants.ErrFmtf425dc675e3d)
 	}
 
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
@@ -106,7 +107,7 @@ func (s *K8sServiceAccountService) Detail(ctx context.Context, q ServiceAccountD
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg510ffa989afc)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtc9a14a0f8fc2, err))
+		return nil, svcerr.Internal("k8s.serviceaccount", "api", err, constants.ErrFmtc9a14a0f8fc2)
 	}
 	var obj corev1.ServiceAccount
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -159,7 +160,7 @@ func (s *K8sServiceAccountService) Apply(ctx context.Context, req ServiceAccount
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, func(c context.Context) bool {
 		return serviceAccountRefsAllExist(c, s.dyn, k, refs)
 	}); err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
+		return k8sFail("k8s.serviceaccount", "api", err)
 	}
 	return nil
 }
@@ -173,7 +174,7 @@ func (s *K8sServiceAccountService) Delete(ctx context.Context, req ServiceAccoun
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtc85e19e5cfec, err))
+		return k8sFail("k8s.serviceaccount", "api", err)
 	}
 	return nil
 }
@@ -184,7 +185,7 @@ func (s *K8sServiceAccountService) collectBindings(ctx context.Context, k *kom.K
 
 	rbList, err := s.dyn.ListByGVK(ctx, k, roleBindingGVK, namespace)
 	if err != nil {
-		return nil, nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt3489b1e268aa, err))
+		return nil, nil, svcerr.Internal("k8s.serviceaccount", "api", err, constants.ErrFmt3489b1e268aa)
 	}
 	for _, u := range rbList {
 		var rb rbacv1.RoleBinding
@@ -209,7 +210,7 @@ func (s *K8sServiceAccountService) collectBindings(ctx context.Context, k *kom.K
 
 	crbList, err := s.dyn.ListByGVK(ctx, k, clusterRoleBindingGVK, "")
 	if err != nil {
-		return nil, nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt05b921e3a64d, err))
+		return nil, nil, svcerr.Internal("k8s.serviceaccount", "api", err, constants.ErrFmt05b921e3a64d)
 	}
 	for _, u := range crbList {
 		var crb rbacv1.ClusterRoleBinding

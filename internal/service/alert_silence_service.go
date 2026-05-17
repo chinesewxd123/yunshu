@@ -11,6 +11,7 @@ import (
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 	"yunshu/internal/pkg/pagination"
 
 	"gorm.io/gorm"
@@ -81,7 +82,7 @@ func ParseSilenceMatchersJSON(raw string) ([]SilenceMatcher, error) {
 	}
 	var ms []SilenceMatcher
 	if err := json.Unmarshal([]byte(raw), &ms); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.silence", "ParseSilenceMatchersJSON", err)
 	}
 	for _, m := range ms {
 		if strings.TrimSpace(m.Name) == "" {
@@ -109,10 +110,10 @@ func normalizeSilenceMatchersKey(ms []SilenceMatcher) string {
 	return strings.Join(parts, ";")
 }
 
-func (s *AlertSilenceService) hasEnabledUnexpiredDuplicate(ctx context.Context, matchersJSON string, now time.Time) (bool, error) {
+func (s *AlertSilenceService) hasEnabledUnexpiredDuplicate(ctx context.Context, projectID uint, matchersJSON string, now time.Time) (bool, error) {
 	targetMatchers, err := ParseSilenceMatchersJSON(matchersJSON)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass("alert.silence", "hasEnabledUnexpiredDuplicate", err)
 	}
 	targetKey := normalizeSilenceMatchersKey(targetMatchers)
 	if targetKey == "" {
@@ -120,9 +121,9 @@ func (s *AlertSilenceService) hasEnabledUnexpiredDuplicate(ctx context.Context, 
 	}
 	var list []model.AlertSilence
 	if err := s.db.WithContext(ctx).
-		Where("enabled = ? AND ends_at > ?", true, now).
+		Where("enabled = ? AND ends_at > ? AND project_id = ?", true, now, projectID).
 		Find(&list).Error; err != nil {
-		return false, err
+		return false, svcerr.Pass("alert.silence", "hasEnabledUnexpiredDuplicate", err)
 	}
 	for _, row := range list {
 		ms, err := ParseSilenceMatchersJSON(row.MatchersJSON)
@@ -178,11 +179,11 @@ func (s *AlertSilenceService) List(ctx context.Context, q AlertSilenceListQuery)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
-		return nil, 0, page, pageSize, err
+		return nil, 0, page, pageSize, svcerr.Pass("alert.silence", "List", err)
 	}
 	var list []model.AlertSilence
 	if err := tx.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
-		return nil, 0, page, pageSize, err
+		return nil, 0, page, pageSize, svcerr.Pass("alert.silence", "List", err)
 	}
 	return list, total, page, pageSize, nil
 }
@@ -195,13 +196,13 @@ func (s *AlertSilenceService) ListActiveAt(ctx context.Context, t time.Time) ([]
 		Where("enabled = ? AND starts_at <= ? AND ends_at >= ?", true, t, t).
 		Order("id ASC").
 		Find(&list).Error
-	return list, err
+	return list, svcerr.Pass("alert.silence", "ListActiveAt", err)
 }
 
 func (s *AlertSilenceService) FirstMatchingSilenceID(ctx context.Context, labels map[string]string, t time.Time) (uint, bool, error) {
 	list, err := s.ListActiveAt(ctx, t)
 	if err != nil {
-		return 0, false, err
+		return 0, false, svcerr.Pass("alert.silence", "FirstMatchingSilenceID", err)
 	}
 	for _, sil := range list {
 		ms, err := ParseSilenceMatchersJSON(sil.MatchersJSON)
@@ -217,14 +218,14 @@ func (s *AlertSilenceService) FirstMatchingSilenceID(ctx context.Context, labels
 
 func (s *AlertSilenceService) Create(ctx context.Context, userID uint, req AlertSilenceUpsertRequest) (*model.AlertSilence, error) {
 	if _, err := ParseSilenceMatchersJSON(req.MatchersJSON); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.silence", "Create", err)
 	}
 	if !req.EndsAt.After(req.StartsAt) {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc1f741f96c03)
 	}
-	dup, err := s.hasEnabledUnexpiredDuplicate(ctx, req.MatchersJSON, time.Now())
+	dup, err := s.hasEnabledUnexpiredDuplicate(ctx, req.ProjectID, req.MatchersJSON, time.Now())
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.silence", "Create", err)
 	}
 	if dup {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg612f94e277ef)
@@ -240,7 +241,7 @@ func (s *AlertSilenceService) Create(ctx context.Context, userID uint, req Alert
 		Enabled:      req.Enabled == nil || *req.Enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.silence", "Create", err)
 	}
 	return &row, nil
 }
@@ -251,11 +252,11 @@ func (s *AlertSilenceService) Update(ctx context.Context, id uint, req AlertSile
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrAlertSilenceNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass("alert.silence", "Update", err)
 	}
 	if strings.TrimSpace(req.MatchersJSON) != "" {
 		if _, err := ParseSilenceMatchersJSON(req.MatchersJSON); err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.silence", "Update", err)
 		}
 		row.MatchersJSON = strings.TrimSpace(req.MatchersJSON)
 	}
@@ -276,7 +277,7 @@ func (s *AlertSilenceService) Update(ctx context.Context, id uint, req AlertSile
 		row.Enabled = *req.Enabled
 	}
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.silence", "Update", err)
 	}
 	return &row, nil
 }
@@ -284,7 +285,7 @@ func (s *AlertSilenceService) Update(ctx context.Context, id uint, req AlertSile
 func (s *AlertSilenceService) Delete(ctx context.Context, id uint) error {
 	res := s.db.WithContext(ctx).Delete(&model.AlertSilence{}, id)
 	if res.Error != nil {
-		return res.Error
+		return svcerr.Pass("alert.silence", "Delete", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return constants.ErrAlertSilenceNotFound
@@ -297,14 +298,14 @@ func (s *AlertSilenceService) CreateBatch(ctx context.Context, userID uint, req 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, it := range req.Items {
 			if _, err := ParseSilenceMatchersJSON(it.MatchersJSON); err != nil {
-				return err
+				return svcerr.Pass("alert.silence", "CreateBatch", err)
 			}
 			if !it.EndsAt.After(it.StartsAt) {
 				return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmtAlertSilenceBatchEndsAt, it.Name))
 			}
-			dup, err := s.hasEnabledUnexpiredDuplicate(ctx, it.MatchersJSON, time.Now())
+			dup, err := s.hasEnabledUnexpiredDuplicate(ctx, 0, it.MatchersJSON, time.Now())
 			if err != nil {
-				return err
+				return svcerr.Pass("alert.silence", "CreateBatch", err)
 			}
 			if dup {
 				return constants.ErrBadRequestWithMsg(constants.ErrMsg76b99177ec58)
@@ -319,11 +320,11 @@ func (s *AlertSilenceService) CreateBatch(ctx context.Context, userID uint, req 
 				Enabled:      it.Enabled == nil || *it.Enabled,
 			}
 			if err := tx.Create(&row).Error; err != nil {
-				return err
+				return svcerr.Pass("alert.silence", "CreateBatch", err)
 			}
 			n++
 		}
 		return nil
 	})
-	return n, err
+	return n, svcerr.Pass("alert.silence", "CreateBatch", err)
 }

@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"k8s.io/client-go/kubernetes"
 )
@@ -36,13 +36,13 @@ func (s *K8sDiscoveryService) ListAPIResources(ctx context.Context, clusterID ui
 	}
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
+		return nil, svcerr.Internal("k8s.discovery", "api", err, constants.ErrFmt6d3ec85d0a18)
 	}
 
 	_, lists, err := cs.Discovery().ServerGroupsAndResources()
 	if err != nil {
 		if lists == nil || len(lists) == 0 {
-			return nil, constants.ErrInternalWithMsg(fmt.Sprintf("discovery: %v", err))
+			return nil, svcerr.Internal("k8s.discovery", "server_groups", err, "discovery: %v")
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/dictmask"
@@ -259,7 +260,7 @@ func (s *DictEntryService) List(ctx context.Context, query DictEntryListQuery) (
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
 	list, total, err := s.repo.List(ctx, query.DictType, query.Keyword, query.Status, page, pageSize)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("dict", "List", err)
 	}
 	return &pagination.Result[model.DictEntry]{
 		List:     list,
@@ -273,7 +274,7 @@ func (s *DictEntryService) Create(ctx context.Context, req DictEntryCreateReques
 	s.ensureBuiltins(ctx)
 	rawVal := req.Value
 	if err := validateDictEntryValueBytes(rawVal); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("dict", "Create", err)
 	}
 	item := model.DictEntry{
 		DictType: canonicalDictType(req.DictType),
@@ -293,7 +294,7 @@ func (s *DictEntryService) Create(ctx context.Context, req DictEntryCreateReques
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg9ea86777037d)
 	}
 	if err := s.repo.Create(ctx, &item); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("dict", "Create", err)
 	}
 	return &item, nil
 }
@@ -304,11 +305,11 @@ func (s *DictEntryService) Update(ctx context.Context, id uint, req DictEntryUpd
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg094b285159a4)
 		}
-		return nil, err
+		return nil, svcerr.Pass("dict", "Update", err)
 	}
 	rawVal := req.Value
 	if err := validateDictEntryValueBytes(rawVal); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("dict", "Update", err)
 	}
 	item.DictType = strings.TrimSpace(req.DictType)
 	item.DictType = canonicalDictType(item.DictType)
@@ -327,7 +328,7 @@ func (s *DictEntryService) Update(ctx context.Context, id uint, req DictEntryUpd
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg1ffcbfd43034)
 	}
 	if err = s.repo.Update(ctx, item); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("dict", "Update", err)
 	}
 	return item, nil
 }
@@ -338,7 +339,7 @@ func (s *DictEntryService) Delete(ctx context.Context, id uint) error {
 		if err == gorm.ErrRecordNotFound {
 			return constants.ErrNotFoundWithMsg(constants.ErrMsg094b285159a4)
 		}
-		return err
+		return svcerr.Pass("dict", "Delete", err)
 	}
 	return s.repo.Delete(ctx, id)
 }
@@ -348,7 +349,7 @@ func (s *DictEntryService) Options(ctx context.Context, dictType string) ([]Dict
 	canon := canonicalDictType(dictType)
 	list, err := s.repo.ListByTypeEnabled(ctx, canon)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("dict", "Options", err)
 	}
 	sensitiveType := dictmask.SensitiveDictType(canon)
 	options := make([]DictEntryOption, 0, len(list))
@@ -375,7 +376,7 @@ func (s *DictEntryService) RevealValue(ctx context.Context, id uint) (string, er
 		if err == gorm.ErrRecordNotFound {
 			return "", constants.ErrNotFoundWithMsg(constants.ErrMsg094b285159a4)
 		}
-		return "", err
+		return "", svcerr.Pass("dict", "RevealValue", err)
 	}
 	dt := canonicalDictType(item.DictType)
 	if !dictmask.SensitiveDictType(dt) {

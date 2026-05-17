@@ -32,6 +32,7 @@ func Created(c *gin.Context, data any) {
 }
 
 func Error(c *gin.Context, err error) {
+	logHTTPError(c, err)
 	if appErr, ok := apperror.IsAppError(err); ok {
 		c.Set("error_code", appErr.ErrorCode)
 		c.Set("error_message", appErr.Message)

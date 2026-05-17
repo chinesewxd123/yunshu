@@ -2,12 +2,10 @@ package service
 
 import (
 	"context"
-	"crypto/cipher"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,8 +13,8 @@ import (
 	"time"
 
 	"yunshu/internal/model"
-	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 	cryptox "yunshu/internal/pkg/crypto"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/pkg/sshclient"
@@ -25,419 +23,6 @@ import (
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
-
-type ProjectMgmtService struct {
-	projectRepo      *repository.ProjectRepository
-	serverRepo       *repository.ServerRepository
-	serverGroupRepo  *repository.ServerGroupRepository
-	cloudAccountRepo *repository.CloudAccountRepository
-	serviceRepo      *repository.ServiceRepository
-	logRepo          *repository.LogSourceRepository
-	memberRepo       *repository.ProjectMemberRepository
-	userRepo         *repository.UserRepository
-	departmentRepo   *repository.DepartmentRepository
-	aead             cipher.AEAD
-	ensureMu         sync.Mutex
-	ensuredProjectAt map[uint]time.Time
-}
-
-// NewProjectMgmtService 创建相关逻辑。
-func NewProjectMgmtService(
-	projectRepo *repository.ProjectRepository,
-	serverRepo *repository.ServerRepository,
-	serverGroupRepo *repository.ServerGroupRepository,
-	cloudAccountRepo *repository.CloudAccountRepository,
-	serviceRepo *repository.ServiceRepository,
-	logRepo *repository.LogSourceRepository,
-	memberRepo *repository.ProjectMemberRepository,
-	userRepo *repository.UserRepository,
-	departmentRepo *repository.DepartmentRepository,
-	encryptionKey string,
-) (*ProjectMgmtService, error) {
-	aead, err := cryptox.NewAESGCMFromKeyString(encryptionKey)
-	if err != nil {
-		return nil, err
-	}
-	return &ProjectMgmtService{
-		projectRepo:      projectRepo,
-		serverRepo:       serverRepo,
-		serverGroupRepo:  serverGroupRepo,
-		cloudAccountRepo: cloudAccountRepo,
-		serviceRepo:      serviceRepo,
-		logRepo:          logRepo,
-		memberRepo:       memberRepo,
-		userRepo:         userRepo,
-		departmentRepo:   departmentRepo,
-		aead:             aead,
-		ensuredProjectAt: make(map[uint]time.Time),
-	}, nil
-}
-
-type ProjectItem struct {
-	ID                  uint    `json:"id"`
-	Name                string  `json:"name"`
-	Code                string  `json:"code"`
-	Description         *string `json:"description"`
-	Status              int     `json:"status"`
-	OwnerDepartmentID   *uint   `json:"owner_department_id,omitempty"`
-	// MyProjectRole 当前登录用户在该项目中的成员角色（owner/admin/member/readonly）；列表与更新接口在非超管时填充；超管可省略。
-	MyProjectRole       string  `json:"my_project_role,omitempty"`
-	CreatedAt           string  `json:"created_at"`
-}
-
-func toProjectItem(p model.Project) ProjectItem {
-	return ProjectItem{
-		ID:                p.ID,
-		Name:              p.Name,
-		Code:              p.Code,
-		Description:       p.Description,
-		Status:            p.Status,
-		OwnerDepartmentID: p.OwnerDepartmentID,
-		CreatedAt:         p.CreatedAt.Format(time.RFC3339),
-	}
-}
-
-func (s *ProjectMgmtService) enrichMyProjectRole(ctx context.Context, item *ProjectItem) {
-	if item == nil || s.memberRepo == nil {
-		return
-	}
-	u, ok := auth.RequestUserFromContext(ctx)
-	if !ok || u == nil || auth.IsSuperAdminRole(u.RoleCodes) {
-		return
-	}
-	m, err := s.memberRepo.GetByProjectAndUser(ctx, item.ID, u.ID)
-	if err != nil || m == nil {
-		return
-	}
-	item.MyProjectRole = m.Role
-}
-
-func (s *ProjectMgmtService) enrichMyProjectRolesBatch(ctx context.Context, items []ProjectItem) {
-	u, ok := auth.RequestUserFromContext(ctx)
-	if !ok || u == nil || auth.IsSuperAdminRole(u.RoleCodes) || s.memberRepo == nil || len(items) == 0 {
-		return
-	}
-	ids := make([]uint, 0, len(items))
-	for i := range items {
-		ids = append(ids, items[i].ID)
-	}
-	roles, err := s.memberRepo.ListRolesByUserAndProjectIDs(ctx, u.ID, ids)
-	if err != nil {
-		return
-	}
-	for i := range items {
-		if r, ok := roles[items[i].ID]; ok {
-			items[i].MyProjectRole = r
-		}
-	}
-}
-
-type ProjectListQuery struct {
-	Keyword  string `form:"keyword"`
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
-}
-
-// ListProjects 查询列表相关的业务逻辑。非超级管理员仅能看到自己作为成员的项目。
-func (s *ProjectMgmtService) ListProjects(ctx context.Context, q ProjectListQuery) (*pagination.Result[ProjectItem], error) {
-	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
-	params := repository.ProjectListParams{Keyword: strings.TrimSpace(q.Keyword), Page: page, PageSize: pageSize}
-	var list []model.Project
-	var total int64
-	var err error
-	if u, ok := auth.RequestUserFromContext(ctx); ok && u != nil && !auth.IsSuperAdminRole(u.RoleCodes) {
-		list, total, err = s.projectRepo.ListVisibleToUser(ctx, u.ID, params)
-	} else {
-		list, total, err = s.projectRepo.List(ctx, params)
-	}
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ProjectItem, 0, len(list))
-	for _, it := range list {
-		out = append(out, toProjectItem(it))
-	}
-	s.enrichMyProjectRolesBatch(ctx, out)
-	return &pagination.Result[ProjectItem]{List: out, Total: total, Page: page, PageSize: pageSize}, nil
-}
-
-type ProjectCreateRequest struct {
-	Name                string  `json:"name" binding:"required,max=128"`
-	Code                string  `json:"code" binding:"required,max=64"`
-	Description         *string `json:"description"`
-	Status              int     `json:"status"`
-	OwnerDepartmentID   *uint   `json:"owner_department_id"`
-}
-
-// CreateProject 创建项目；creatorUserID>0 时自动将创建人写入 project_members 为 owner。
-func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID uint, req ProjectCreateRequest) (*ProjectItem, error) {
-	status := req.Status
-	if status != model.StatusDisabled {
-		status = model.StatusEnabled
-	}
-	if req.OwnerDepartmentID != nil && *req.OwnerDepartmentID > 0 && s.departmentRepo != nil {
-		if _, err := s.departmentRepo.GetByID(ctx, *req.OwnerDepartmentID); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, constants.ErrDepartmentNotFound
-			}
-			return nil, err
-		}
-	}
-	var ownerDept *uint
-	if req.OwnerDepartmentID != nil && *req.OwnerDepartmentID > 0 {
-		v := *req.OwnerDepartmentID
-		ownerDept = &v
-	}
-	p := model.Project{Name: strings.TrimSpace(req.Name), Code: strings.TrimSpace(req.Code), Description: req.Description, Status: status, OwnerDepartmentID: ownerDept}
-	if err := s.projectRepo.Create(ctx, &p); err != nil {
-		return nil, err
-	}
-	if s.memberRepo != nil && creatorUserID > 0 {
-		m := model.ProjectMember{ProjectID: p.ID, UserID: creatorUserID, Role: "owner"}
-		if err := s.memberRepo.Create(ctx, &m); err != nil {
-			_ = s.projectRepo.DeleteByID(ctx, p.ID)
-			return nil, fmt.Errorf("项目已创建但写入负责人失败，请重试或联系管理员: %w", err)
-		}
-	}
-	item := toProjectItem(p)
-	if creatorUserID > 0 {
-		item.MyProjectRole = "owner"
-	}
-	return &item, nil
-}
-
-type ProjectUpdateRequest struct {
-	Name                *string `json:"name"`
-	Code                *string `json:"code"`
-	Description         *string `json:"description"`
-	Status              *int    `json:"status"`
-	OwnerDepartmentID   *uint   `json:"owner_department_id"`
-}
-
-// UpdateProject 更新相关的业务逻辑。
-func (s *ProjectMgmtService) UpdateProject(ctx context.Context, id uint, req ProjectUpdateRequest) (*ProjectItem, error) {
-	p, err := s.projectRepo.GetByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, constants.ErrProjectNotFound
-		}
-		return nil, err
-	}
-	if req.Name != nil {
-		p.Name = strings.TrimSpace(*req.Name)
-	}
-	if req.Code != nil {
-		p.Code = strings.TrimSpace(*req.Code)
-	}
-	if req.Description != nil {
-		p.Description = req.Description
-	}
-	if req.Status != nil {
-		p.Status = *req.Status
-	}
-	if req.OwnerDepartmentID != nil {
-		if *req.OwnerDepartmentID == 0 {
-			p.OwnerDepartmentID = nil
-		} else {
-			if s.departmentRepo != nil {
-				if _, err := s.departmentRepo.GetByID(ctx, *req.OwnerDepartmentID); err != nil {
-					if errors.Is(err, gorm.ErrRecordNotFound) {
-						return nil, constants.ErrDepartmentNotFound
-					}
-					return nil, err
-				}
-			}
-			v := *req.OwnerDepartmentID
-			p.OwnerDepartmentID = &v
-		}
-	}
-	if err := s.projectRepo.Save(ctx, p); err != nil {
-		return nil, err
-	}
-	item := toProjectItem(*p)
-	s.enrichMyProjectRole(ctx, &item)
-	return &item, nil
-}
-
-// DeleteProject 删除相关的业务逻辑。
-func (s *ProjectMgmtService) DeleteProject(ctx context.Context, id uint) error {
-	if s.memberRepo != nil {
-		_ = s.memberRepo.DeleteByProject(ctx, id)
-	}
-	if err := s.projectRepo.DeleteByID(ctx, id); err != nil {
-		return err
-	}
-	return nil
-}
-
-// --- 项目成员（project_members）：与项目资源、监控规则 project_id 形成租户闭环；成员邮箱并入规则通知（见 AlertRuleAssigneeService）。---
-
-var allowedProjectMemberRoles = map[string]struct{}{
-	"owner": {}, "admin": {}, "member": {}, "readonly": {},
-}
-
-func normalizeProjectMemberRole(role string) string {
-	r := strings.ToLower(strings.TrimSpace(role))
-	if r == "" {
-		return "member"
-	}
-	if _, ok := allowedProjectMemberRoles[r]; ok {
-		return r
-	}
-	return "member"
-}
-
-// ProjectMemberItem 项目成员 API 展示。
-type ProjectMemberItem struct {
-	ID        uint    `json:"id"`
-	UserID    uint    `json:"user_id"`
-	Username  string  `json:"username"`
-	Nickname  string  `json:"nickname"`
-	Email     *string `json:"email"`
-	Role      string  `json:"role"`
-	CreatedAt string  `json:"created_at"`
-}
-
-func toProjectMemberItems(rows []repository.ProjectMemberListRow) []ProjectMemberItem {
-	out := make([]ProjectMemberItem, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, ProjectMemberItem{
-			ID:        r.ID,
-			UserID:    r.UserID,
-			Username:  r.Username,
-			Nickname:  r.Nickname,
-			Email:     r.Email,
-			Role:      r.Role,
-			CreatedAt: r.CreatedAt.Format(time.RFC3339),
-		})
-	}
-	return out
-}
-
-// ListProjectMembers 列出项目成员（含用户基本信息）。
-func (s *ProjectMgmtService) ListProjectMembers(ctx context.Context, projectID uint) ([]ProjectMemberItem, error) {
-	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, constants.ErrProjectNotFound
-		}
-		return nil, err
-	}
-	rows, err := s.memberRepo.ListDisplayByProject(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	return toProjectMemberItems(rows), nil
-}
-
-// ProjectMemberAddRequest 添加成员。
-type ProjectMemberAddRequest struct {
-	UserID uint   `json:"user_id" binding:"required"`
-	Role   string `json:"role" binding:"omitempty,max=32"`
-}
-
-// AddProjectMember 将用户加入项目。
-func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uint, req ProjectMemberAddRequest) (*ProjectMemberItem, error) {
-	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, constants.ErrProjectNotFound
-		}
-		return nil, err
-	}
-	if s.userRepo == nil {
-		return nil, constants.ErrInternalWithMsg(constants.ErrMsgcc60c2c3c788)
-	}
-	if _, err := s.userRepo.GetByID(ctx, req.UserID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, constants.ErrUserNotFound
-		}
-		return nil, err
-	}
-	if _, err := s.memberRepo.GetByProjectAndUser(ctx, projectID, req.UserID); err == nil {
-		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsga802e1b5e9e2)
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-	row := model.ProjectMember{
-		ProjectID: projectID,
-		UserID:    req.UserID,
-		Role:      normalizeProjectMemberRole(req.Role),
-	}
-	if err := s.memberRepo.Create(ctx, &row); err != nil {
-		return nil, err
-	}
-	drows, err := s.memberRepo.ListDisplayByProject(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range drows {
-		if r.ID == row.ID {
-			it := toProjectMemberItems([]repository.ProjectMemberListRow{r})
-			return &it[0], nil
-		}
-	}
-	return nil, constants.ErrInternalWithMsg(constants.ErrMsg1fe0209f952f)
-}
-
-// ProjectMemberUpdateRequest 更新成员角色。
-type ProjectMemberUpdateRequest struct {
-	Role string `json:"role" binding:"required,max=32"`
-}
-
-// UpdateProjectMember 更新项目内角色。
-func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID, memberID uint, req ProjectMemberUpdateRequest) (*ProjectMemberItem, error) {
-	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, constants.ErrProjectNotFound
-		}
-		return nil, err
-	}
-	m, err := s.memberRepo.GetByID(ctx, memberID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsge7773625bf8b)
-		}
-		return nil, err
-	}
-	if m.ProjectID != projectID {
-		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg461337ef3f89)
-	}
-	m.Role = normalizeProjectMemberRole(req.Role)
-	if err := s.memberRepo.Save(ctx, m); err != nil {
-		return nil, err
-	}
-	drows, err := s.memberRepo.ListDisplayByProject(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range drows {
-		if r.ID == memberID {
-			it := toProjectMemberItems([]repository.ProjectMemberListRow{r})
-			return &it[0], nil
-		}
-	}
-	return nil, constants.ErrInternalWithMsg(constants.ErrMsg2940a3d4007c)
-}
-
-// RemoveProjectMember 移除项目成员。
-func (s *ProjectMgmtService) RemoveProjectMember(ctx context.Context, projectID, memberID uint) error {
-	if _, err := s.projectRepo.GetByID(ctx, projectID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return constants.ErrProjectNotFound
-		}
-		return err
-	}
-	m, err := s.memberRepo.GetByID(ctx, memberID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return constants.ErrNotFoundWithMsg(constants.ErrMsge7773625bf8b)
-		}
-		return err
-	}
-	if m.ProjectID != projectID {
-		return constants.ErrBadRequestWithMsg(constants.ErrMsg461337ef3f89)
-	}
-	return s.memberRepo.DeleteByID(ctx, memberID)
-}
 
 type ServerItem struct {
 	ID                     uint    `json:"id"`
@@ -553,7 +138,7 @@ type ServerListQuery struct {
 // ListServers 查询列表相关的业务逻辑。
 func (s *ProjectMgmtService) ListServers(ctx context.Context, q ServerListQuery) (*pagination.Result[ServerItem], error) {
 	if err := s.ensureDefaultServerGroups(ctx, q.ProjectID); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "ListServers", err)
 	}
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
 	// If cloud_account_id provided, resolve to its group_id for server filtering.
@@ -561,7 +146,7 @@ func (s *ProjectMgmtService) ListServers(ctx context.Context, q ServerListQuery)
 	if q.CloudAccountID != nil {
 		acc, err := s.cloudAccountRepo.GetByID(ctx, *q.CloudAccountID)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("project", "ListServers", err)
 		}
 		if acc.ProjectID != q.ProjectID {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg053a6a395b16)
@@ -580,7 +165,7 @@ func (s *ProjectMgmtService) ListServers(ctx context.Context, q ServerListQuery)
 		PageSize:   pageSize,
 	})
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "ListServers", err)
 	}
 	out := make([]ServerItem, 0, len(list))
 	for _, it := range list {
@@ -617,7 +202,7 @@ type ServerUpsertRequest struct {
 // UpsertServer 执行对应的业务逻辑。
 func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertRequest) (*ServerItem, error) {
 	if err := s.ensureDefaultServerGroups(ctx, req.ProjectID); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "UpsertServer", err)
 	}
 	if req.Port <= 0 {
 		req.Port = 22
@@ -639,7 +224,7 @@ func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertR
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrLogSourceServerNotFound
 			}
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertServer", err)
 		}
 	} else {
 		sv = &model.Server{}
@@ -664,11 +249,11 @@ func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertR
 
 	if sv.ID == 0 {
 		if err := s.serverRepo.Create(ctx, sv); err != nil {
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertServer", err)
 		}
 	} else {
 		if err := s.serverRepo.Save(ctx, sv); err != nil {
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertServer", err)
 		}
 	}
 
@@ -679,7 +264,7 @@ func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertR
 			c, err := s.serverRepo.GetCredentialByServerID(ctx, sv.ID)
 			if err != nil {
 				if !errors.Is(err, gorm.ErrRecordNotFound) {
-					return nil, err
+					return nil, svcerr.Pass("project", "UpsertServer", err)
 				}
 			} else {
 				existingCred = c
@@ -687,10 +272,10 @@ func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertR
 		}
 		cred, err := s.buildCredentialForSave(*sv, req, existingCred)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertServer", err)
 		}
 		if err := s.serverRepo.UpsertCredential(ctx, cred); err != nil {
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertServer", err)
 		}
 	}
 
@@ -715,7 +300,7 @@ func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req Ser
 		if req.Password != nil && strings.TrimSpace(*req.Password) != "" {
 			enc, err := cryptox.EncryptString(s.aead, *req.Password)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass("project", "buildCredentialForSave", err)
 			}
 			cred.EncPassword = &enc
 		} else if existing != nil && existing.EncPassword != nil && strings.TrimSpace(*existing.EncPassword) != "" {
@@ -727,7 +312,7 @@ func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req Ser
 		if req.PrivateKey != nil && strings.TrimSpace(*req.PrivateKey) != "" {
 			encKey, err := cryptox.EncryptString(s.aead, *req.PrivateKey)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass("project", "buildCredentialForSave", err)
 			}
 			cred.EncPrivateKey = &encKey
 		} else if existing != nil && existing.EncPrivateKey != nil && strings.TrimSpace(*existing.EncPrivateKey) != "" {
@@ -738,7 +323,7 @@ func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req Ser
 		if req.Passphrase != nil && strings.TrimSpace(*req.Passphrase) != "" {
 			encPP, err := cryptox.EncryptString(s.aead, *req.Passphrase)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass("project", "buildCredentialForSave", err)
 			}
 			cred.EncPassphrase = &encPP
 		} else if existing != nil {
@@ -762,7 +347,7 @@ func (s *ProjectMgmtService) GetServer(ctx context.Context, id uint) (*ServerDet
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrLogSourceServerNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass("project", "GetServer", err)
 	}
 	base := toServerItem(*sv)
 	out := &ServerDetailItem{ServerItem: base}
@@ -771,7 +356,7 @@ func (s *ProjectMgmtService) GetServer(ctx context.Context, id uint) (*ServerDet
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return out, nil
 		}
-		return nil, err
+		return nil, svcerr.Pass("project", "GetServer", err)
 	}
 	out.AuthType = cred.AuthType
 	out.Username = cred.Username
@@ -818,7 +403,7 @@ func (s *ProjectMgmtService) ExecServerCommand(ctx context.Context, req ServerEx
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrLogSourceServerNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass("project", "ExecServerCommand", err)
 	}
 	if sv.ProjectID != req.ProjectID {
 		return nil, constants.ErrServerNotInCurrentProject
@@ -828,12 +413,12 @@ func (s *ProjectMgmtService) ExecServerCommand(ctx context.Context, req ServerEx
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgfeb33ee7c48c)
 		}
-		return nil, err
+		return nil, svcerr.Pass("project", "ExecServerCommand", err)
 	}
 
 	sshCfg, err := s.decryptCredentialToSSHConfig(*sv, *cred)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "ExecServerCommand", err)
 	}
 
 	timeoutSec := req.TimeoutSec
@@ -875,7 +460,7 @@ func (s *ProjectMgmtService) StreamServerTerminal(ctx context.Context, projectID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrLogSourceServerNotFound
 		}
-		return err
+		return svcerr.Pass("project", "StreamServerTerminal", err)
 	}
 	if sv.ProjectID != projectID {
 		return constants.ErrServerNotInCurrentProject
@@ -885,11 +470,11 @@ func (s *ProjectMgmtService) StreamServerTerminal(ctx context.Context, projectID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsgfeb33ee7c48c)
 		}
-		return err
+		return svcerr.Pass("project", "StreamServerTerminal", err)
 	}
 	sshCfg, err := s.decryptCredentialToSSHConfig(*sv, *cred)
 	if err != nil {
-		return err
+		return svcerr.Pass("project", "StreamServerTerminal", err)
 	}
 	cli, err := sshclient.Dial(ctx, sshCfg)
 	if err != nil {
@@ -929,11 +514,11 @@ type ServerGroupTreeQuery struct {
 // ListServerGroupTree 查询列表相关的业务逻辑。
 func (s *ProjectMgmtService) ListServerGroupTree(ctx context.Context, q ServerGroupTreeQuery) ([]ServerGroupItem, error) {
 	if err := s.ensureDefaultServerGroups(ctx, q.ProjectID); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "ListServerGroupTree", err)
 	}
 	list, err := s.serverGroupRepo.ListByProject(ctx, q.ProjectID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "ListServerGroupTree", err)
 	}
 	items := make([]ServerGroupItem, 0, len(list))
 	for _, it := range list {
@@ -969,7 +554,7 @@ func (s *ProjectMgmtService) ListServerGroupTree(ctx context.Context, q ServerGr
 // UpsertServerGroup 执行对应的业务逻辑。
 func (s *ProjectMgmtService) UpsertServerGroup(ctx context.Context, req ServerGroupUpsertRequest) (*ServerGroupItem, error) {
 	if err := s.ensureDefaultServerGroups(ctx, req.ProjectID); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "UpsertServerGroup", err)
 	}
 	category := strings.TrimSpace(req.Category)
 	if category == "" {
@@ -989,7 +574,7 @@ func (s *ProjectMgmtService) UpsertServerGroup(ctx context.Context, req ServerGr
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg97c4c24a4cdf)
 			}
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertServerGroup", err)
 		}
 	} else {
 		item = &model.ServerGroup{}
@@ -1007,7 +592,7 @@ func (s *ProjectMgmtService) UpsertServerGroup(ctx context.Context, req ServerGr
 		err = s.serverGroupRepo.Save(ctx, item)
 	}
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "UpsertServerGroup", err)
 	}
 	return &ServerGroupItem{
 		ID: item.ID, ProjectID: item.ProjectID, ParentID: item.ParentID, Name: item.Name,
@@ -1022,7 +607,7 @@ func (s *ProjectMgmtService) DeleteServerGroup(ctx context.Context, projectID, g
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrNotFoundWithMsg(constants.ErrMsg97c4c24a4cdf)
 		}
-		return err
+		return svcerr.Pass("project", "DeleteServerGroup", err)
 	}
 	if group.ProjectID != projectID {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg757ed9cbc3d5)
@@ -1077,7 +662,7 @@ func toCloudAccountItem(it model.CloudAccount) CloudAccountItem {
 func (s *ProjectMgmtService) ListCloudAccounts(ctx context.Context, q CloudAccountListQuery) ([]CloudAccountItem, error) {
 	list, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, q.ProjectID, q.GroupID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "ListCloudAccounts", err)
 	}
 	out := make([]CloudAccountItem, 0, len(list))
 	for _, it := range list {
@@ -1096,7 +681,7 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgd19fc495559f)
 			}
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
 		}
 	} else {
 		item = &model.CloudAccount{}
@@ -1117,7 +702,7 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 	if strings.TrimSpace(req.AK) != "" {
 		accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, req.ProjectID, nil)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
 		}
 		for _, ex := range accounts {
 			if req.ID != nil && ex.ID == *req.ID {
@@ -1139,14 +724,14 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 	if strings.TrimSpace(req.AK) != "" {
 		encAK, err := cryptox.EncryptString(s.aead, req.AK)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
 		}
 		item.EncAK = &encAK
 	}
 	if strings.TrimSpace(req.SK) != "" {
 		encSK, err := cryptox.EncryptString(s.aead, req.SK)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
 		}
 		item.EncSK = &encSK
 	}
@@ -1156,7 +741,7 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 		err = s.cloudAccountRepo.Save(ctx, item)
 	}
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
 	}
 	out := toCloudAccountItem(*item)
 	return &out, nil
@@ -1225,7 +810,7 @@ func (s *ProjectMgmtService) SyncCloudAccount(ctx context.Context, req CloudSync
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgd19fc495559f)
 		}
-		return nil, err
+		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
 	}
 	if acc.ProjectID != req.ProjectID {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg053a6a395b16)
@@ -1235,15 +820,15 @@ func (s *ProjectMgmtService) SyncCloudAccount(ctx context.Context, req CloudSync
 	}
 	ak, err := cryptox.DecryptString(s.aead, *acc.EncAK)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
 	}
 	sk, err := cryptox.DecryptString(s.aead, *acc.EncSK)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
 	}
 	provider, err := s.providerFor(acc.Provider)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
 	}
 	instances, err := provider.ListInstances(ctx, ak, sk, acc.RegionScope)
 	now := time.Now()
@@ -1252,7 +837,7 @@ func (s *ProjectMgmtService) SyncCloudAccount(ctx context.Context, req CloudSync
 		msg := err.Error()
 		acc.LastSyncError = &msg
 		_ = s.cloudAccountRepo.Save(ctx, acc)
-		return nil, err
+		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
 	}
 	acc.LastSyncError = nil
 	_ = s.cloudAccountRepo.Save(ctx, acc)
@@ -1342,7 +927,7 @@ func (s *ProjectMgmtService) DeleteCloudAccount(ctx context.Context, projectID, 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrNotFoundWithMsg(constants.ErrMsgd19fc495559f)
 		}
-		return err
+		return svcerr.Pass("project", "DeleteCloudAccount", err)
 	}
 	if acc.ProjectID != projectID {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg053a6a395b16)
@@ -1361,7 +946,7 @@ func (s *ProjectMgmtService) ensureDefaultServerGroups(ctx context.Context, proj
 
 	list, err := s.serverGroupRepo.ListByProject(ctx, projectID)
 	if err != nil {
-		return err
+		return svcerr.Pass("project", "ensureDefaultServerGroups", err)
 	}
 	if len(list) == 0 {
 		selfHosted := model.ServerGroup{
@@ -1381,10 +966,10 @@ func (s *ProjectMgmtService) ensureDefaultServerGroups(ctx context.Context, proj
 			Status:    model.StatusEnabled,
 		}
 		if err := s.serverGroupRepo.Create(ctx, &selfHosted); err != nil {
-			return err
+			return svcerr.Pass("project", "ensureDefaultServerGroups", err)
 		}
 		if err := s.serverGroupRepo.Create(ctx, &cloudRoot); err != nil {
-			return err
+			return svcerr.Pass("project", "ensureDefaultServerGroups", err)
 		}
 		alibaba := model.ServerGroup{
 			ProjectID: projectID,
@@ -1424,7 +1009,7 @@ func (s *ProjectMgmtService) ensureDefaultServerGroups(ctx context.Context, proj
 	// later without group_id while default groups already exist.
 	list, err = s.serverGroupRepo.ListByProject(ctx, projectID)
 	if err != nil {
-		return err
+		return svcerr.Pass("project", "ensureDefaultServerGroups", err)
 	}
 	var selfHostedID uint
 	for _, g := range list {
@@ -1448,7 +1033,7 @@ func (s *ProjectMgmtService) ensureDefaultServerGroups(ctx context.Context, proj
 			Status:    model.StatusEnabled,
 		}
 		if err := s.serverGroupRepo.Create(ctx, &selfHosted); err != nil {
-			return err
+			return svcerr.Pass("project", "ensureDefaultServerGroups", err)
 		}
 		selfHostedID = selfHosted.ID
 	}
@@ -1483,7 +1068,7 @@ type ServerTestResult struct {
 func (s *ProjectMgmtService) TestServerConnectivity(ctx context.Context, req ServerTestRequest) (*ServerTestResult, error) {
 	sv, err := s.serverRepo.GetByID(ctx, req.ServerID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "TestServerConnectivity", err)
 	}
 	if strings.TrimSpace(sv.SourceType) == model.ServerGroupCategoryCloud {
 		return s.testCloudServerConnectivityBySDK(ctx, sv)
@@ -1522,7 +1107,7 @@ type ServerSyncResult struct {
 func (s *ProjectMgmtService) BatchTestServerConnectivity(ctx context.Context, req BatchServerTestRequest) (*BatchServerTestResult, error) {
 	serverIDs, err := s.resolveProjectServerIDs(ctx, req.ProjectID, req.ServerIDs)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "BatchTestServerConnectivity", err)
 	}
 	if len(serverIDs) == 0 {
 		return &BatchServerTestResult{Total: 0, Results: []ServerTestResult{}}, nil
@@ -1550,7 +1135,7 @@ func (s *ProjectMgmtService) BatchTestServerConnectivity(ctx context.Context, re
 func (s *ProjectMgmtService) SyncProjectServers(ctx context.Context, req ServerSyncRequest) (*ServerSyncResult, error) {
 	serverIDs, err := s.resolveProjectServerIDs(ctx, req.ProjectID, req.ServerIDs)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "SyncProjectServers", err)
 	}
 	if len(serverIDs) == 0 {
 		return &ServerSyncResult{UpdatedAt: time.Now().Format(time.RFC3339), TestResults: []ServerTestResult{}}, nil
@@ -1585,7 +1170,7 @@ func (s *ProjectMgmtService) resolveProjectServerIDs(ctx context.Context, projec
 		PageSize:  10000,
 	})
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "resolveProjectServerIDs", err)
 	}
 	if len(serverIDs) == 0 {
 		out := make([]uint, 0, len(list))
@@ -1688,7 +1273,7 @@ func (s *ProjectMgmtService) testCloudServerConnectivityBySDK(ctx context.Contex
 	groupID := *sv.GroupID
 	accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, sv.ProjectID, &groupID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "testCloudServerConnectivityBySDK", err)
 	}
 	providerName := strings.TrimSpace(sv.Provider)
 	var account *model.CloudAccount
@@ -1717,11 +1302,11 @@ func (s *ProjectMgmtService) testCloudServerConnectivityBySDK(ctx context.Contex
 
 	ak, err := cryptox.DecryptString(s.aead, *account.EncAK)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "testCloudServerConnectivityBySDK", err)
 	}
 	sk, err := cryptox.DecryptString(s.aead, *account.EncSK)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "testCloudServerConnectivityBySDK", err)
 	}
 	provider, err := s.providerFor(account.Provider)
 	if err != nil {
@@ -1813,7 +1398,7 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrLogSourceServerNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
 	}
 	if sv.ProjectID != projectID {
 		return nil, constants.ErrServerNotInCurrentProject
@@ -1827,7 +1412,7 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 	groupID := *sv.GroupID
 	accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, sv.ProjectID, &groupID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
 	}
 	providerName := strings.TrimSpace(sv.Provider)
 	var account *model.CloudAccount
@@ -1849,15 +1434,15 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 	}
 	ak, err := cryptox.DecryptString(s.aead, *account.EncAK)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
 	}
 	sk, err := cryptox.DecryptString(s.aead, *account.EncSK)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
 	}
 	provider, err := s.providerFor(account.Provider)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
 	}
 
 	instances, err := provider.ListInstances(ctx, ak, sk, account.RegionScope)
@@ -1978,7 +1563,7 @@ func (s *ProjectMgmtService) decryptCredentialToSSHConfig(sv model.Server, cred 
 		}
 		pw, err := cryptox.DecryptString(s.aead, *cred.EncPassword)
 		if err != nil {
-			return sshclient.Config{}, err
+			return sshclient.Config{}, svcerr.Pass("project", "decryptCredentialToSSHConfig", err)
 		}
 		cfg.AuthType = sshclient.AuthPassword
 		cfg.Password = pw
@@ -1988,14 +1573,14 @@ func (s *ProjectMgmtService) decryptCredentialToSSHConfig(sv model.Server, cred 
 		}
 		pk, err := cryptox.DecryptString(s.aead, *cred.EncPrivateKey)
 		if err != nil {
-			return sshclient.Config{}, err
+			return sshclient.Config{}, svcerr.Pass("project", "decryptCredentialToSSHConfig", err)
 		}
 		cfg.AuthType = sshclient.AuthKey
 		cfg.PrivateKey = pk
 		if cred.EncPassphrase != nil {
 			pp, err := cryptox.DecryptString(s.aead, *cred.EncPassphrase)
 			if err != nil {
-				return sshclient.Config{}, err
+				return sshclient.Config{}, svcerr.Pass("project", "decryptCredentialToSSHConfig", err)
 			}
 			cfg.Passphrase = pp
 		}
@@ -2015,7 +1600,7 @@ func (s *ProjectMgmtService) ImportServersFromExcel(ctx context.Context, project
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return 0, err
+		return 0, svcerr.Pass("project", "ImportServersFromExcel", err)
 	}
 	if len(rows) <= 1 {
 		return 0, nil
@@ -2073,7 +1658,7 @@ func (s *ProjectMgmtService) ImportServersFromExcel(ctx context.Context, project
 func (s *ProjectMgmtService) ExportServersToExcel(ctx context.Context, projectID uint, keyword string) (*excelize.File, error) {
 	list, _, err := s.serverRepo.List(ctx, repository.ServerListParams{ProjectID: projectID, Keyword: strings.TrimSpace(keyword), Page: 1, PageSize: 10000})
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project", "ExportServersToExcel", err)
 	}
 	f := excelize.NewFile()
 	sheet := f.GetSheetName(0)
@@ -2214,320 +1799,3 @@ type ServiceListQuery struct {
 }
 
 // ListServices 查询列表相关的业务逻辑。
-func (s *ProjectMgmtService) ListServices(ctx context.Context, q ServiceListQuery) (*pagination.Result[ServiceItem], error) {
-	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
-	list, total, err := s.serviceRepo.List(ctx, repository.ServiceListParams{
-		ProjectID: q.ProjectID,
-		ServerID:  q.ServerID,
-		Keyword:   strings.TrimSpace(q.Keyword),
-		Page:      page,
-		PageSize:  pageSize,
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ServiceItem, 0, len(list))
-	for _, it := range list {
-		out = append(out, toServiceItem(it))
-	}
-	return &pagination.Result[ServiceItem]{List: out, Total: total, Page: page, PageSize: pageSize}, nil
-}
-
-type ServiceUpsertRequest struct {
-	ID       *uint   `json:"id"`
-	ServerID uint    `json:"server_id" binding:"required"`
-	Name     string  `json:"name" binding:"required"`
-	Env      *string `json:"env"`
-	Labels   *string `json:"labels"`
-	Remark   *string `json:"remark"`
-	Status   int     `json:"status"`
-}
-
-// UpsertService 执行对应的业务逻辑。
-func (s *ProjectMgmtService) UpsertService(ctx context.Context, req ServiceUpsertRequest) (*ServiceItem, error) {
-	status := req.Status
-	if status != model.StatusDisabled {
-		status = model.StatusEnabled
-	}
-	var it *model.Service
-	var err error
-	if req.ID != nil && *req.ID > 0 {
-		it, err = s.serviceRepo.GetByID(ctx, *req.ID)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgac7e51a53391)
-			}
-			return nil, err
-		}
-	} else {
-		it = &model.Service{}
-	}
-	it.ServerID = req.ServerID
-	it.Name = strings.TrimSpace(req.Name)
-	it.Env = req.Env
-	it.Labels = req.Labels
-	it.Remark = req.Remark
-	it.Status = status
-	if it.ID == 0 {
-		if err := s.serviceRepo.Create(ctx, it); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := s.serviceRepo.Save(ctx, it); err != nil {
-			return nil, err
-		}
-	}
-	out := toServiceItem(*it)
-	return &out, nil
-}
-
-// DeleteService 删除相关的业务逻辑。
-func (s *ProjectMgmtService) DeleteService(ctx context.Context, id uint) error {
-	return s.serviceRepo.DeleteByID(ctx, id)
-}
-
-type LogSourceItem struct {
-	ID            uint    `json:"id"`
-	ServiceID     uint    `json:"service_id"`
-	LogType       string  `json:"log_type"`
-	Path          string  `json:"path"`
-	Encoding      *string `json:"encoding"`
-	Timezone      *string `json:"timezone"`
-	MultilineRule *string `json:"multiline_rule"`
-	IncludeRegex  *string `json:"include_regex"`
-	ExcludeRegex  *string `json:"exclude_regex"`
-	Status        int     `json:"status"`
-	CreatedAt     string  `json:"created_at"`
-}
-
-func toLogSourceItem(it model.ServiceLogSource) LogSourceItem {
-	return LogSourceItem{
-		ID:            it.ID,
-		ServiceID:     it.ServiceID,
-		LogType:       it.LogType,
-		Path:          it.Path,
-		Encoding:      it.Encoding,
-		Timezone:      it.Timezone,
-		MultilineRule: it.MultilineRule,
-		IncludeRegex:  it.IncludeRegex,
-		ExcludeRegex:  it.ExcludeRegex,
-		Status:        it.Status,
-		CreatedAt:     it.CreatedAt.Format(time.RFC3339),
-	}
-}
-
-type LogSourceListQuery struct {
-	ProjectID uint  `form:"project_id" binding:"required"`
-	ServiceID *uint `form:"service_id"`
-	Page      int   `form:"page"`
-	PageSize  int   `form:"page_size"`
-}
-
-// ListLogSources 查询列表相关的业务逻辑。
-func (s *ProjectMgmtService) ListLogSources(ctx context.Context, q LogSourceListQuery) (*pagination.Result[LogSourceItem], error) {
-	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
-	list, total, err := s.logRepo.List(ctx, repository.LogSourceListParams{ProjectID: q.ProjectID, ServiceID: q.ServiceID, Page: page, PageSize: pageSize})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]LogSourceItem, 0, len(list))
-	for _, it := range list {
-		out = append(out, toLogSourceItem(it))
-	}
-	return &pagination.Result[LogSourceItem]{List: out, Total: total, Page: page, PageSize: pageSize}, nil
-}
-
-type LogSourceUpsertRequest struct {
-	ID            *uint   `json:"id"`
-	ServiceID     uint    `json:"service_id" binding:"required"`
-	LogType       string  `json:"log_type"`
-	Path          string  `json:"path" binding:"required"`
-	Encoding      *string `json:"encoding"`
-	Timezone      *string `json:"timezone"`
-	MultilineRule *string `json:"multiline_rule"`
-	IncludeRegex  *string `json:"include_regex"`
-	ExcludeRegex  *string `json:"exclude_regex"`
-	Status        int     `json:"status"`
-}
-
-// UpsertLogSource 执行对应的业务逻辑。
-func (s *ProjectMgmtService) UpsertLogSource(ctx context.Context, req LogSourceUpsertRequest) (*LogSourceItem, error) {
-	status := req.Status
-	if status != model.StatusDisabled {
-		status = model.StatusEnabled
-	}
-	logType := strings.TrimSpace(req.LogType)
-	if logType == "" {
-		logType = "file"
-	}
-	var it *model.ServiceLogSource
-	var err error
-	if req.ID != nil && *req.ID > 0 {
-		it, err = s.logRepo.GetByID(ctx, *req.ID)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
-			}
-			return nil, err
-		}
-	} else {
-		it = &model.ServiceLogSource{}
-	}
-	it.ServiceID = req.ServiceID
-	it.LogType = logType
-	it.Path = strings.TrimSpace(req.Path)
-	it.Encoding = req.Encoding
-	it.Timezone = req.Timezone
-	it.MultilineRule = req.MultilineRule
-	it.IncludeRegex = req.IncludeRegex
-	it.ExcludeRegex = req.ExcludeRegex
-	it.Status = status
-	if it.ID == 0 {
-		if err := s.logRepo.Create(ctx, it); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := s.logRepo.Save(ctx, it); err != nil {
-			return nil, err
-		}
-	}
-	out := toLogSourceItem(*it)
-	return &out, nil
-}
-
-// DeleteLogSource 删除相关的业务逻辑。
-func (s *ProjectMgmtService) DeleteLogSource(ctx context.Context, id uint) error {
-	return s.logRepo.DeleteByID(ctx, id)
-}
-
-type LogStreamQuery struct {
-	ProjectID   uint    `form:"project_id" binding:"required"`
-	ServerID    uint    `form:"server_id" binding:"required"`
-	LogSourceID uint    `form:"log_source_id" binding:"required"`
-	TailLines   int     `form:"tail_lines"`
-	AfterID     uint64  `form:"after_id"`
-	Include     *string `form:"include"`
-	Exclude     *string `form:"exclude"`
-	Highlight   *string `form:"highlight"`
-	FilePath    *string `form:"file_path"`
-}
-
-type logStreamPlan struct{}
-
-// BuildLogStreamPlan 构建相关的业务逻辑。
-func (s *ProjectMgmtService) BuildLogStreamPlan(ctx context.Context, q LogStreamQuery) (*logStreamPlan, error) {
-	return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgb399afd1b3b2)
-}
-
-type LogExportQuery struct {
-	ProjectID   uint    `form:"project_id"`
-	ServerID    uint    `form:"server_id" binding:"required"`
-	LogSourceID uint    `form:"log_source_id" binding:"required"`
-	MaxLines    int     `form:"max_lines"`
-	Include     *string `form:"include"`
-	Exclude     *string `form:"exclude"`
-}
-
-type RemoteLogFileQuery struct {
-	ProjectID uint   `form:"project_id"`
-	ServerID  uint   `form:"server_id" binding:"required"`
-	Dir       string `form:"dir" binding:"required"`
-}
-
-type RemoteLogUnitQuery struct {
-	ProjectID uint `form:"project_id"`
-	ServerID  uint `form:"server_id" binding:"required"`
-}
-
-// ListRemoteLogFiles 查询列表相关的业务逻辑。
-func (s *ProjectMgmtService) ListRemoteLogFiles(ctx context.Context, q RemoteLogFileQuery) ([]string, error) {
-	return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg36453c419629)
-}
-
-// ListRemoteLogUnits 查询列表相关的业务逻辑。
-func (s *ProjectMgmtService) ListRemoteLogUnits(ctx context.Context, q RemoteLogUnitQuery) ([]string, error) {
-	return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg255ca1122356)
-}
-
-// ValidateLogSourceAccess 校验日志源属于项目下指定服务器（SSE/导出/审计共用）。
-func (s *ProjectMgmtService) ValidateLogSourceAccess(ctx context.Context, projectID, serverID, logSourceID uint) error {
-	if projectID == 0 {
-		return constants.ErrProjectIDRequired
-	}
-	sv, err := s.serverRepo.GetByID(ctx, serverID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return constants.ErrLogSourceServerNotFound
-		}
-		return err
-	}
-	if sv.ProjectID != projectID {
-		return constants.ErrServerNotInCurrentProject
-	}
-	ok, err := s.logRepo.BelongsToProjectServer(ctx, projectID, serverID, logSourceID)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
-	}
-	return nil
-}
-
-// ExportLogs 导出相关的业务逻辑。
-func (s *ProjectMgmtService) ExportLogs(ctx context.Context, q LogExportQuery) ([]byte, string, error) {
-	if err := s.ValidateLogSourceAccess(ctx, q.ProjectID, q.ServerID, q.LogSourceID); err != nil {
-		return nil, "", err
-	}
-
-	var includeRe *regexp.Regexp
-	var err error
-	if q.Include != nil && strings.TrimSpace(*q.Include) != "" {
-		includeRe, err = regexp.Compile(strings.TrimSpace(*q.Include))
-		if err != nil {
-			return nil, "", constants.ErrBadRequestWithMsg(constants.ErrMsg1e7f0cdb6585)
-		}
-	}
-	var excludeRe *regexp.Regexp
-	if q.Exclude != nil && strings.TrimSpace(*q.Exclude) != "" {
-		excludeRe, err = regexp.Compile(strings.TrimSpace(*q.Exclude))
-		if err != nil {
-			return nil, "", constants.ErrBadRequestWithMsg(constants.ErrMsg9bbaf0815790)
-		}
-	}
-
-	maxLines := q.MaxLines
-	if maxLines <= 0 {
-		maxLines = 2000
-	}
-	if maxLines > maxLogHistoryPerStream {
-		maxLines = maxLogHistoryPerStream
-	}
-	key := BuildLogStreamKey(q.ProjectID, q.ServerID, q.LogSourceID)
-	events := AgentLogBroker.Snapshot(key, maxLines)
-	lines := make([]string, 0, len(events))
-	for _, ev := range events {
-		line := strings.TrimSpace(ev.Line)
-		if line == "" {
-			continue
-		}
-		if includeRe != nil && !includeRe.MatchString(line) {
-			continue
-		}
-		if excludeRe != nil && excludeRe.MatchString(line) {
-			continue
-		}
-		if fp := strings.TrimSpace(ev.FilePath); fp != "" {
-			lines = append(lines, fmt.Sprintf("[%s] %s", fp, line))
-		} else {
-			lines = append(lines, line)
-		}
-	}
-	content := strings.Join(lines, "\n")
-	if content != "" {
-		content += "\n"
-	}
-	filename := fmt.Sprintf("project-%d-server-%d-source-%d-logs-%s.txt",
-		q.ProjectID, q.ServerID, q.LogSourceID, time.Now().Format("20060102-150405"))
-	return []byte(content), filename, nil
-}

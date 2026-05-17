@@ -1,6 +1,7 @@
 package service
 
 import (
+	"yunshu/internal/service/svcerr"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,7 +22,7 @@ type JdCloudProvider struct{}
 
 func (p *JdCloudProvider) ListInstances(ctx context.Context, ak, sk, regionScope string) ([]CloudInstance, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project.cloud", "ListInstances", err)
 	}
 	regions := make([]string, 0)
 	for _, it := range strings.Split(regionScope, ",") {
@@ -38,7 +39,7 @@ func (p *JdCloudProvider) ListInstances(ctx context.Context, ak, sk, regionScope
 	out := make([]CloudInstance, 0)
 	for _, region := range regions {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, svcerr.Pass("project.cloud", "ListInstances", err)
 		}
 		credential := jdcore.NewCredentials(strings.TrimSpace(ak), strings.TrimSpace(sk))
 		client := jdvmclient.NewVmClient(credential)
@@ -46,14 +47,14 @@ func (p *JdCloudProvider) ListInstances(ctx context.Context, ak, sk, regionScope
 		pageSize := 100
 		for {
 			if err := ctx.Err(); err != nil {
-				return nil, err
+				return nil, svcerr.Pass("project.cloud", "ListInstances", err)
 			}
 			req := jdvmapi.NewDescribeInstancesRequest(region)
 			req.SetPageNumber(pageNumber)
 			req.SetPageSize(pageSize)
 			resp, err := client.DescribeInstances(req)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass("project.cloud", "ListInstances", err)
 			}
 			for _, ins := range resp.Result.Instances {
 				publicIP := strings.TrimSpace(ins.ElasticIpAddress)
@@ -141,47 +142,47 @@ func marshalJdTags(tags []jddiskmodels.Tag) string {
 
 func (p *JdCloudProvider) ResetInstancePassword(ctx context.Context, ak, sk, region, instanceID, newPassword string) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return svcerr.Pass("project.cloud", "ResetInstancePassword", err)
 	}
 	credential := jdcore.NewCredentials(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	client := jdvmclient.NewVmClient(credential)
 	req := jdvmapi.NewModifyInstancePasswordRequest(strings.TrimSpace(region), strings.TrimSpace(instanceID), newPassword)
 	_, err := client.ModifyInstancePassword(req)
-	return err
+	return svcerr.Pass("project.cloud", "ResetInstancePassword", err)
 }
 
 func (p *JdCloudProvider) RebootInstance(ctx context.Context, ak, sk, region, instanceID string) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return svcerr.Pass("project.cloud", "RebootInstance", err)
 	}
 	credential := jdcore.NewCredentials(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	client := jdvmclient.NewVmClient(credential)
 	req := jdvmapi.NewRebootInstanceRequest(strings.TrimSpace(region), strings.TrimSpace(instanceID))
 	_, err := client.RebootInstance(req)
-	return err
+	return svcerr.Pass("project.cloud", "RebootInstance", err)
 }
 
 func (p *JdCloudProvider) ShutdownInstance(ctx context.Context, ak, sk, region, instanceID string) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return svcerr.Pass("project.cloud", "ShutdownInstance", err)
 	}
 	credential := jdcore.NewCredentials(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	client := jdvmclient.NewVmClient(credential)
 	req := jdvmapi.NewStopInstanceRequest(strings.TrimSpace(region), strings.TrimSpace(instanceID))
 	_, err := client.StopInstance(req)
-	return err
+	return svcerr.Pass("project.cloud", "ShutdownInstance", err)
 }
 
 func (p *JdCloudProvider) QueryInstanceExpireAt(ctx context.Context, ak, sk, region, instanceID string) (*time.Time, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project.cloud", "QueryInstanceExpireAt", err)
 	}
 	credential := jdcore.NewCredentials(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	client := jdvmclient.NewVmClient(credential)
 	req := jdvmapi.NewDescribeInstanceRequest(strings.TrimSpace(region), strings.TrimSpace(instanceID))
 	resp, err := client.DescribeInstance(req)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("project.cloud", "QueryInstanceExpireAt", err)
 	}
 	raw := strings.TrimSpace(resp.Result.Instance.Charge.ChargeExpiredTime)
 	if raw == "" {
@@ -195,7 +196,7 @@ func (p *JdCloudProvider) QueryInstanceExpireAt(ctx context.Context, ak, sk, reg
 
 func (p *JdCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, region, instanceID string, oldTags, newTags map[string]string) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return svcerr.Pass("project.cloud", "SyncInstanceTags", err)
 	}
 	credential := jdcore.NewCredentials(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	client := jdtagclient.NewResourcetagClient(credential)
@@ -224,7 +225,7 @@ func (p *JdCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, region, 
 			Tags:      toUnbind,
 		})
 		if _, err := client.UnTagResources(req); err != nil {
-			return err
+			return svcerr.Pass("project.cloud", "SyncInstanceTags", err)
 		}
 	}
 	toBind := make([]jdtagmodels.Tag, 0)
@@ -245,7 +246,7 @@ func (p *JdCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, region, 
 			Tags:      toBind,
 		})
 		if _, err := client.TagResources(req); err != nil {
-			return err
+			return svcerr.Pass("project.cloud", "SyncInstanceTags", err)
 		}
 	}
 	return nil

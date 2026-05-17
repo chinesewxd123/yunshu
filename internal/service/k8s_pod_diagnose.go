@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 	"yunshu/internal/pkg/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
@@ -19,7 +20,7 @@ func (s *K8sPodService) Diagnose(ctx context.Context, query PodDiagnoseQuery) (*
 	}
 	var pod corev1.Pod
 	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(query.Namespace).Name(query.Name).Get(&pod).Error; err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtc52b9130d74c, err))
+		return nil, svcerr.Internal("k8s.pod.diagnose", "api", err, constants.ErrFmtc52b9130d74c)
 	}
 
 	events, _ := s.Events(ctx, PodEventQuery(query))

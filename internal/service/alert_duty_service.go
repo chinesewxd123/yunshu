@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/pagination"
@@ -54,11 +55,11 @@ func (s *AlertDutyService) ListBlocks(ctx context.Context, q AlertDutyBlockListQ
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
-		return nil, 0, page, pageSize, err
+		return nil, 0, page, pageSize, svcerr.Pass("alert.duty", "ListBlocks", err)
 	}
 	var list []model.AlertDutyBlock
 	if err := tx.Order("starts_at ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
-		return nil, 0, page, pageSize, err
+		return nil, 0, page, pageSize, svcerr.Pass("alert.duty", "ListBlocks", err)
 	}
 	return list, total, page, pageSize, nil
 }
@@ -72,7 +73,7 @@ func (s *AlertDutyService) CreateBlock(ctx context.Context, req AlertDutyBlockUp
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgdfcd891c9a94)
 		}
-		return nil, err
+		return nil, svcerr.Pass("alert.duty", "CreateBlock", err)
 	}
 	row := model.AlertDutyBlock{
 		MonitorRuleID:     req.MonitorRuleID,
@@ -85,7 +86,7 @@ func (s *AlertDutyService) CreateBlock(ctx context.Context, req AlertDutyBlockUp
 		Remark:            strings.TrimSpace(req.Remark),
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.duty", "CreateBlock", err)
 	}
 	return &row, nil
 }
@@ -96,7 +97,7 @@ func (s *AlertDutyService) UpdateBlock(ctx context.Context, id uint, req AlertDu
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgde63e900b907)
 		}
-		return nil, err
+		return nil, svcerr.Pass("alert.duty", "UpdateBlock", err)
 	}
 	if req.MonitorRuleID > 0 && req.MonitorRuleID != row.MonitorRuleID {
 		var rule model.AlertMonitorRule
@@ -120,7 +121,7 @@ func (s *AlertDutyService) UpdateBlock(ctx context.Context, id uint, req AlertDu
 	row.ExtraEmailsJSON = strings.TrimSpace(req.ExtraEmailsJSON)
 	row.Remark = strings.TrimSpace(req.Remark)
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.duty", "UpdateBlock", err)
 	}
 	return &row, nil
 }
@@ -128,7 +129,7 @@ func (s *AlertDutyService) UpdateBlock(ctx context.Context, id uint, req AlertDu
 func (s *AlertDutyService) DeleteBlock(ctx context.Context, id uint) error {
 	res := s.db.WithContext(ctx).Delete(&model.AlertDutyBlock{}, id)
 	if res.Error != nil {
-		return res.Error
+		return svcerr.Pass("alert.duty", "DeleteBlock", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return constants.ErrNotFoundWithMsg(constants.ErrMsgde63e900b907)
@@ -163,7 +164,7 @@ func (s *AlertDutyService) HasActiveBlockAtRule(ctx context.Context, monitorRule
 		Where("monitor_rule_id = ? AND starts_at <= ? AND ends_at >= ?", monitorRuleID, t, t).
 		Limit(1).
 		Count(&n).Error
-	return n > 0, err
+	return n > 0, svcerr.Pass("alert.duty", "HasActiveBlockAtRule", err)
 }
 
 // ResolveNotifyEmailsAtRule 合并当前时刻命中的班次块内的用户/部门子树/额外邮箱（直接绑定到监控规则）。
@@ -173,7 +174,7 @@ func (s *AlertDutyService) ResolveNotifyEmailsAtRule(ctx context.Context, monito
 		Where("monitor_rule_id = ? AND starts_at <= ? AND ends_at >= ?", monitorRuleID, t, t).
 		Order("id ASC").
 		Find(&blocks).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.duty", "ResolveNotifyEmailsAtRule", err)
 	}
 	var emails []string
 	for _, b := range blocks {
@@ -184,7 +185,7 @@ func (s *AlertDutyService) ResolveNotifyEmailsAtRule(ctx context.Context, monito
 		deptRoots := parseUintSliceJSON(b.DepartmentIDsJSON)
 		more, err := s.userRepo.ListActiveIDsByDepartmentSubtree(ctx, deptRoots)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.duty", "ResolveNotifyEmailsAtRule", err)
 		}
 		for _, id := range more {
 			uidSet[id] = struct{}{}
@@ -196,7 +197,7 @@ func (s *AlertDutyService) ResolveNotifyEmailsAtRule(ctx context.Context, monito
 		if len(all) > 0 {
 			users, err := s.userRepo.ListByIDs(ctx, all)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass("alert.duty", "ResolveNotifyEmailsAtRule", err)
 			}
 			for i := range users {
 				if users[i].Email != nil {
@@ -217,7 +218,7 @@ func (s *AlertDutyService) ResolveNotifyPhonesAtRule(ctx context.Context, monito
 		Where("monitor_rule_id = ? AND starts_at <= ? AND ends_at >= ?", monitorRuleID, t, t).
 		Order("id ASC").
 		Find(&blocks).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.duty", "ResolveNotifyPhonesAtRule", err)
 	}
 	seen := map[string]struct{}{}
 	var out []string
@@ -240,7 +241,7 @@ func (s *AlertDutyService) ResolveNotifyPhonesAtRule(ctx context.Context, monito
 		deptRoots := parseUintSliceJSON(b.DepartmentIDsJSON)
 		more, err := s.userRepo.ListActiveIDsByDepartmentSubtree(ctx, deptRoots)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.duty", "ResolveNotifyPhonesAtRule", err)
 		}
 		for _, id := range more {
 			uidSet[id] = struct{}{}
@@ -252,7 +253,7 @@ func (s *AlertDutyService) ResolveNotifyPhonesAtRule(ctx context.Context, monito
 		if len(all) > 0 {
 			users, err := s.userRepo.ListByIDs(ctx, all)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass("alert.duty", "ResolveNotifyPhonesAtRule", err)
 			}
 			for i := range users {
 				add(users[i].Phone)

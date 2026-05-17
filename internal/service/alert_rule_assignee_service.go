@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/repository"
@@ -38,7 +39,7 @@ func assigneeParseStringSliceJSON(raw string) ([]string, error) {
 	}
 	var ss []string
 	if err := json.Unmarshal([]byte(raw), &ss); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.assignee", "assigneeParseStringSliceJSON", err)
 	}
 	out := make([]string, 0, len(ss))
 	for _, s := range ss {
@@ -53,7 +54,7 @@ func assigneeParseStringSliceJSON(raw string) ([]string, error) {
 func (s *AlertRuleAssigneeService) ListByRule(ctx context.Context, ruleID uint) ([]model.AlertRuleAssignee, error) {
 	var list []model.AlertRuleAssignee
 	err := s.db.WithContext(ctx).Where("monitor_rule_id = ?", ruleID).Order("id ASC").Find(&list).Error
-	return list, err
+	return list, svcerr.Pass("alert.assignee", "ListByRule", err)
 }
 
 func (s *AlertRuleAssigneeService) UpsertPrimary(ctx context.Context, ruleID uint, req AlertRuleAssigneeUpsertRequest) (*model.AlertRuleAssignee, error) {
@@ -62,13 +63,13 @@ func (s *AlertRuleAssigneeService) UpsertPrimary(ctx context.Context, ruleID uin
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgdfcd891c9a94)
 		}
-		return nil, err
+		return nil, svcerr.Pass("alert.assignee", "UpsertPrimary", err)
 	}
 	var row model.AlertRuleAssignee
 	err := s.db.WithContext(ctx).Where("monitor_rule_id = ?", ruleID).First(&row).Error
 	isNew := err == gorm.ErrRecordNotFound
 	if err != nil && !isNew {
-		return nil, err
+		return nil, svcerr.Pass("alert.assignee", "UpsertPrimary", err)
 	}
 	row.MonitorRuleID = ruleID
 	row.UserIDsJSON = strings.TrimSpace(req.UserIDsJSON)
@@ -80,12 +81,12 @@ func (s *AlertRuleAssigneeService) UpsertPrimary(ctx context.Context, ruleID uin
 	}
 	if isNew {
 		if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.assignee", "UpsertPrimary", err)
 		}
 		return &row, nil
 	}
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.assignee", "UpsertPrimary", err)
 	}
 	return &row, nil
 }
@@ -93,11 +94,11 @@ func (s *AlertRuleAssigneeService) UpsertPrimary(ctx context.Context, ruleID uin
 func (s *AlertRuleAssigneeService) resolveRuleProjectID(ctx context.Context, ruleID uint) (uint, error) {
 	var rule model.AlertMonitorRule
 	if err := s.db.WithContext(ctx).First(&rule, ruleID).Error; err != nil {
-		return 0, err
+		return 0, svcerr.Pass("alert.assignee", "resolveRuleProjectID", err)
 	}
 	var ds model.AlertDatasource
 	if err := s.db.WithContext(ctx).First(&ds, rule.DatasourceID).Error; err != nil {
-		return 0, err
+		return 0, svcerr.Pass("alert.assignee", "resolveRuleProjectID", err)
 	}
 	return ds.ProjectID, nil
 }
@@ -114,7 +115,7 @@ func (s *AlertRuleAssigneeService) expandDepartmentProjectMemberUserIDs(ctx cont
 		}
 		sub, err := s.departmentRepo.ListDescendantIDsAndSelf(ctx, root)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.assignee", "expandDepartmentProjectMemberUserIDs", err)
 		}
 		for _, id := range sub {
 			if _, ok := seen[id]; ok {
@@ -133,7 +134,7 @@ func (s *AlertRuleAssigneeService) expandDepartmentProjectMemberUserIDs(ctx cont
 		Joins("INNER JOIN users u ON u.id = pm.user_id AND u.deleted_at IS NULL").
 		Where("pm.project_id = ? AND pm.deleted_at IS NULL AND u.department_id IN ?", projectID, deptIDs).
 		Pluck("pm.user_id", &uids).Error
-	return uids, err
+	return uids, svcerr.Pass("alert.assignee", "expandDepartmentProjectMemberUserIDs", err)
 }
 
 func (s *AlertRuleAssigneeService) leaderUserIDsFromDepartmentRoots(ctx context.Context, deptRootIDs []uint) ([]uint, error) {
@@ -177,7 +178,7 @@ func (s *AlertRuleAssigneeService) NotifyOnResolvedEnabled(ctx context.Context, 
 func (s *AlertRuleAssigneeService) ResolveNotifyEmailsDirectUsers(ctx context.Context, ruleID uint) ([]string, error) {
 	list, err := s.ListByRule(ctx, ruleID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.assignee", "ResolveNotifyEmailsDirectUsers", err)
 	}
 	seen := map[string]struct{}{}
 	var out []string
@@ -210,7 +211,7 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmailsDirectUsers(ctx context.Co
 	if len(allUIDs) > 0 {
 		users, err := s.userRepo.ListByIDs(ctx, allUIDs)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.assignee", "ResolveNotifyEmailsDirectUsers", err)
 		}
 		for i := range users {
 			if users[i].Email != nil {
@@ -234,11 +235,11 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmailsDirectUsers(ctx context.Co
 func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, ruleID uint) ([]string, error) {
 	list, err := s.ListByRule(ctx, ruleID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.assignee", "ResolveNotifyEmails", err)
 	}
 	projectID, err := s.resolveRuleProjectID(ctx, ruleID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.assignee", "ResolveNotifyEmails", err)
 	}
 	seen := map[string]struct{}{}
 	var out []string
@@ -286,7 +287,7 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, rule
 	if len(allUIDs) > 0 {
 		users, err := s.userRepo.ListByIDs(ctx, allUIDs)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.assignee", "ResolveNotifyEmails", err)
 		}
 		for i := range users {
 			if users[i].Email != nil {
@@ -310,11 +311,11 @@ func (s *AlertRuleAssigneeService) ResolveNotifyEmails(ctx context.Context, rule
 func (s *AlertRuleAssigneeService) ResolveNotifyPhones(ctx context.Context, ruleID uint) ([]string, error) {
 	list, err := s.ListByRule(ctx, ruleID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.assignee", "ResolveNotifyPhones", err)
 	}
 	projectID, err := s.resolveRuleProjectID(ctx, ruleID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("alert.assignee", "ResolveNotifyPhones", err)
 	}
 	seen := map[string]struct{}{}
 	var out []string
@@ -362,7 +363,7 @@ func (s *AlertRuleAssigneeService) ResolveNotifyPhones(ctx context.Context, rule
 	if len(allUIDs) > 0 {
 		users, err := s.userRepo.ListByIDs(ctx, allUIDs)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("alert.assignee", "ResolveNotifyPhones", err)
 		}
 		for i := range users {
 			add(users[i].Phone)
@@ -400,7 +401,7 @@ func (s *AlertRuleAssigneeService) PruneUserFromAllAssignees(ctx context.Context
 	}
 	var rows []model.AlertRuleAssignee
 	if err := s.db.WithContext(ctx).Find(&rows).Error; err != nil {
-		return err
+		return svcerr.Pass("alert.assignee", "PruneUserFromAllAssignees", err)
 	}
 	for i := range rows {
 		ids := parseUintSliceJSON(rows[i].UserIDsJSON)
@@ -418,7 +419,7 @@ func (s *AlertRuleAssigneeService) PruneUserFromAllAssignees(ctx context.Context
 		}
 		if err := s.db.WithContext(ctx).Model(&model.AlertRuleAssignee{}).Where("id = ?", rows[i].ID).
 			Update("user_ids_json", marshalUintSliceJSON(filtered)).Error; err != nil {
-			return err
+			return svcerr.Pass("alert.assignee", "PruneUserFromAllAssignees", err)
 		}
 	}
 	return nil
@@ -431,7 +432,7 @@ func (s *AlertRuleAssigneeService) PruneDepartmentFromAllAssignees(ctx context.C
 	}
 	var rows []model.AlertRuleAssignee
 	if err := s.db.WithContext(ctx).Find(&rows).Error; err != nil {
-		return err
+		return svcerr.Pass("alert.assignee", "PruneDepartmentFromAllAssignees", err)
 	}
 	for i := range rows {
 		ids := parseUintSliceJSON(rows[i].DepartmentIDsJSON)
@@ -449,7 +450,7 @@ func (s *AlertRuleAssigneeService) PruneDepartmentFromAllAssignees(ctx context.C
 		}
 		if err := s.db.WithContext(ctx).Model(&model.AlertRuleAssignee{}).Where("id = ?", rows[i].ID).
 			Update("department_ids_json", marshalUintSliceJSON(filtered)).Error; err != nil {
-			return err
+			return svcerr.Pass("alert.assignee", "PruneDepartmentFromAllAssignees", err)
 		}
 	}
 	return nil

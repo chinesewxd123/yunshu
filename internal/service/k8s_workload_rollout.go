@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,7 +50,7 @@ func (s *K8sWorkloadService) DeploymentRolloutStatus(ctx context.Context, q Depl
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgf6d026c4bc20)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta3018a66177e, err))
+		return nil, svcerr.Internal("k8s.workload.rollout", "api", err, constants.ErrFmta3018a66177e)
 	}
 	st := dep.Status
 	spec := dep.Spec

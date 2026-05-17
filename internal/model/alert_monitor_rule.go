@@ -10,7 +10,7 @@ import (
 type AlertMonitorRule struct {
 	ID uint `json:"id" gorm:"primaryKey;comment:主键ID"`
 
-	DatasourceID uint   `json:"datasource_id" gorm:"not null;index;comment:告警数据源ID"`
+	DatasourceID uint   `json:"datasource_id" gorm:"not null;index;index:idx_alert_rule_eval,priority:1;comment:告警数据源ID"`
 	Name         string `json:"name" gorm:"size:128;not null;index;comment:规则名称"`
 	Expr         string `json:"expr" gorm:"type:text;not null;comment:PromQL 表达式"`
 
@@ -21,7 +21,7 @@ type AlertMonitorRule struct {
 	ThresholdUnit   string `json:"threshold_unit" gorm:"size:32;not null;default:raw;comment:阈值单位，如 percent/bytes/ms/count/raw"`
 	LabelsJSON      string `json:"labels_json" gorm:"type:text;comment:附加 labels JSON"`
 	AnnotationsJSON string `json:"annotations_json" gorm:"type:text;comment:附加 annotations JSON"`
-	Enabled         bool   `json:"enabled" gorm:"not null;default:true;index;comment:是否启用"`
+	Enabled         bool   `json:"enabled" gorm:"not null;default:true;index;index:idx_alert_rule_eval,priority:2;comment:是否启用"`
 
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

@@ -17,6 +17,7 @@ import (
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
 	"yunshu/internal/repository"
+	"yunshu/internal/service/svcerr"
 
 	"gorm.io/gorm"
 )
@@ -102,7 +103,7 @@ func hashToken(t string) string {
 func randomToken() (string, error) {
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
-		return "", err
+		return "", svcerr.Pass("log-agent", "randomToken", err)
 	}
 	return hex.EncodeToString(buf), nil
 }
@@ -117,7 +118,7 @@ func (s *LogAgentService) Register(ctx context.Context, req LogAgentRegisterRequ
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrLogSourceServerNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "Register", err)
 	}
 	if req.ProjectID > 0 && req.ProjectID != sv.ProjectID {
 		return nil, constants.ErrServerProjectMismatch
@@ -129,13 +130,13 @@ func (s *LogAgentService) Register(ctx context.Context, req LogAgentRegisterRequ
 
 	token, err := randomToken()
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "Register", err)
 	}
 	tokenHash := hashToken(token)
 
 	existing, err := s.repo.GetByServerID(ctx, req.ServerID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "Register", err)
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		it := &model.LogAgent{
@@ -147,7 +148,7 @@ func (s *LogAgentService) Register(ctx context.Context, req LogAgentRegisterRequ
 			Status:    model.StatusEnabled,
 		}
 		if err := s.repo.Create(ctx, it); err != nil {
-			return nil, err
+			return nil, svcerr.Pass("log-agent", "create", err, "server_id", req.ServerID)
 		}
 		return &LogAgentRegisterResult{ProjectID: projectID, AgentID: it.ID, Token: token, WSIngest: "grpc:AgentRuntimeService/IngestLogs (metadata x-agent-token)"}, nil
 	}
@@ -159,7 +160,7 @@ func (s *LogAgentService) Register(ctx context.Context, req LogAgentRegisterRequ
 	existing.TokenHash = tokenHash
 	existing.Status = model.StatusEnabled
 	if err := s.repo.Save(ctx, existing); err != nil {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "save", err, "server_id", req.ServerID)
 	}
 	return &LogAgentRegisterResult{ProjectID: projectID, AgentID: existing.ID, Token: token, WSIngest: "grpc:AgentRuntimeService/IngestLogs (metadata x-agent-token)"}, nil
 }
@@ -170,6 +171,7 @@ func (s *LogAgentService) PublicRegister(ctx context.Context, req LogAgentPublic
 		return nil, constants.ErrAgentRegisterClosed
 	}
 	if strings.TrimSpace(req.RegisterSecret) != s.registerSecret {
+		svcerr.Warn("log-agent", "PublicRegister", "public register rejected", "reason", "invalid_secret", "server_id", req.ServerID)
 		return nil, constants.ErrAgentRegisterSecretInvalid
 	}
 	return s.Register(ctx, LogAgentRegisterRequest{
@@ -190,7 +192,7 @@ func (s *LogAgentService) AuthenticateByToken(ctx context.Context, token string)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrAgentTokenInvalid
 		}
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "AuthenticateByToken", err)
 	}
 	return it, nil
 }
@@ -202,7 +204,7 @@ func (s *LogAgentService) AllowedLogSourceIDs(ctx context.Context, agent *model.
 	}
 	list, err := s.logRepo.ListByProjectAndServer(ctx, agent.ProjectID, agent.ServerID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "AllowedLogSourceIDs", err)
 	}
 	out := make(map[uint]struct{}, len(list))
 	for _, it := range list {
@@ -244,7 +246,7 @@ func (s *LogAgentService) TouchSeenByProjectServer(ctx context.Context, projectI
 func (s *LogAgentService) ReportHealthByToken(ctx context.Context, req LogAgentHealthReportRequest) error {
 	agent, err := s.AuthenticateByToken(ctx, strings.TrimSpace(req.Token))
 	if err != nil {
-		return err
+		return svcerr.Pass("log-agent", "ReportHealthByToken", err)
 	}
 	now := time.Now()
 	wasOffline := agent.LastSeenAt == nil || now.Sub(*agent.LastSeenAt) > logAgentHeartbeatTimeout
@@ -342,7 +344,7 @@ func lastOfflineReasonDisplay(agent *model.LogAgent, online bool) string {
 func (s *LogAgentService) RecordOfflineEpisodes(ctx context.Context) error {
 	agents, err := s.repo.ListAll(ctx)
 	if err != nil {
-		return err
+		return svcerr.Pass("log-agent", "RecordOfflineEpisodes", err)
 	}
 	now := time.Now()
 	for i := range agents {
@@ -422,14 +424,14 @@ func (s *LogAgentService) ListByProject(ctx context.Context, q LogAgentListQuery
 		PageSize:  10000,
 	})
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "ListByProject", err)
 	}
 	projectName, _ := s.serverRepo.ProjectNameByID(ctx, q.ProjectID)
 	out := make([]LogAgentListItem, 0, len(servers))
 	for _, sv := range servers {
 		item, err := s.buildListItem(ctx, q.ProjectID, sv)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("log-agent", "ListByProject", err)
 		}
 		item.ProjectName = projectName
 		if q.Online != nil && item.Online != *q.Online {
@@ -457,7 +459,7 @@ func (s *LogAgentService) buildListItem(ctx context.Context, projectID uint, sv 
 	reportedHealth := ""
 	agent, err := s.repo.GetByProjectAndServer(ctx, projectID, sv.ID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "buildListItem", err)
 	}
 	if err == nil && agent != nil {
 		item.Name = agent.Name
@@ -517,7 +519,7 @@ func (s *LogAgentService) BatchRefreshHeartbeat(ctx context.Context, req AgentBa
 		PageSize:  10000,
 	})
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "BatchRefreshHeartbeat", err)
 	}
 	projectName, _ := s.serverRepo.ProjectNameByID(ctx, req.ProjectID)
 	list := make([]LogAgentListItem, 0)
@@ -529,7 +531,7 @@ func (s *LogAgentService) BatchRefreshHeartbeat(ctx context.Context, req AgentBa
 		}
 		item, err := s.buildListItem(ctx, req.ProjectID, sv)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass("log-agent", "BatchRefreshHeartbeat", err)
 		}
 		item.ProjectName = projectName
 		if item.RecentPublishing && item.AgentID != nil {
@@ -566,7 +568,7 @@ func (s *LogAgentService) Status(ctx context.Context, projectID, serverID, logSo
 	}
 	agent, err := s.repo.GetByProjectAndServer(ctx, projectID, serverID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "Status", err)
 	}
 	reported := ""
 	if err == nil && agent != nil {
@@ -675,7 +677,7 @@ func (s *LogAgentService) Bootstrap(ctx context.Context, req AgentBootstrapReque
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrLogSourceServerNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "Bootstrap", err)
 	}
 	if sv.ProjectID != req.ProjectID {
 		return nil, constants.ErrServerNotInProject
@@ -687,7 +689,7 @@ func (s *LogAgentService) Bootstrap(ctx context.Context, req AgentBootstrapReque
 		Version:   ver,
 	})
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "Bootstrap", err)
 	}
 	grpcTarget := normalizeGrpcServerTarget(req.PlatformURL)
 	run := fmt.Sprintf(
@@ -730,11 +732,11 @@ WantedBy=multi-user.target
 func (s *LogAgentService) RuntimeConfigByToken(ctx context.Context, token string) (*AgentRuntimeConfigResult, error) {
 	agent, err := s.AuthenticateByToken(ctx, token)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "RuntimeConfigByToken", err)
 	}
 	sources, err := s.logRepo.ListByProjectAndServer(ctx, agent.ProjectID, agent.ServerID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass("log-agent", "RuntimeConfigByToken", err)
 	}
 	out := make([]AgentRuntimeSource, 0, len(sources))
 	for _, it := range sources {
@@ -773,13 +775,13 @@ func (s *LogAgentService) DeleteForProject(ctx context.Context, projectID, agent
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrNotFound
 		}
-		return err
+		return svcerr.Pass("log-agent", "DeleteForProject", err)
 	}
 	if err := s.repo.DeleteByIDAndProject(ctx, agentID, projectID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrNotFound
 		}
-		return err
+		return svcerr.Pass("log-agent", "DeleteForProject", err)
 	}
 	return nil
 }

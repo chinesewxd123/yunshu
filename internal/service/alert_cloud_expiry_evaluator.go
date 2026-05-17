@@ -13,6 +13,7 @@ import (
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 	cryptox "yunshu/internal/pkg/crypto"
 )
 
@@ -56,7 +57,7 @@ func (s *AlertService) tickCloudExpiryRules(ctx context.Context) error {
 func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force bool) error {
 	var rules []model.CloudExpiryRule
 	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&rules).Error; err != nil {
-		return err
+		return svcerr.Pass("alert.cloud-expiry", "tickCloudExpiryRulesWithMode", err)
 	}
 	if !force && s.aead == nil {
 		if s.infoLog != nil && len(rules) > 0 {

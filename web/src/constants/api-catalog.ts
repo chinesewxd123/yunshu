@@ -1,5 +1,5 @@
 /**
- * 与后端 `internal/router/router.go` 中 `/api/v1` 路由对齐，便于在控制台核对「接口 ↔ 页面」映射。
+ * 与后端 `internal/router/register_*_routes.go` 中 `/api/v1` 路由对齐，便于在控制台核对「接口 ↔ 页面」映射。
  * 若后端增删路由，请同步更新本文件与 `cmd/seed.go` 中 Casbin 能力项（`Name` 与本文件 `summary` 保持一致，便于 API 管理页「一键补全接口」与权限名对齐）。
  */
 export type ApiCatalogRow = {
@@ -144,6 +144,13 @@ export const API_CATALOG_GROUPS: { title: string; routes: ApiCatalogRow[] }[] = 
       { method: "PUT", path: "/api/v1/alerts/channels/:id", summary: "更新告警通道", ui: "告警通道", auth: true },
       { method: "DELETE", path: "/api/v1/alerts/channels/:id", summary: "删除告警通道", ui: "告警通道", auth: true },
       { method: "POST", path: "/api/v1/alerts/channels/:id/test", summary: "测试告警通道", ui: "告警通道", auth: true },
+      {
+        method: "POST",
+        path: "/api/v1/alerts/channels/preview-template",
+        summary: "预览通道消息模板",
+        ui: "告警通道 · 模板预览",
+        auth: true,
+      },
       { method: "GET", path: "/api/v1/alerts/events", summary: "告警事件列表（支持 category 筛选）", ui: "历史告警记录", auth: true },
       { method: "GET", path: "/api/v1/alerts/history/stats", summary: "告警历史统计", ui: "告警配置中心", auth: true },
       { method: "GET", path: "/api/v1/alerts/datasources", summary: "告警数据源列表", ui: "告警监控平台 · 数据源", auth: true },
@@ -173,7 +180,44 @@ export const API_CATALOG_GROUPS: { title: string; routes: ApiCatalogRow[] }[] = 
       { method: "POST", path: "/api/v1/alerts/duty-blocks", summary: "创建规则值班班次", ui: "告警监控平台 · 规则与值班绑定", auth: true },
       { method: "PUT", path: "/api/v1/alerts/duty-blocks/:id", summary: "更新规则值班班次", ui: "告警监控平台 · 规则与值班绑定", auth: true },
       { method: "DELETE", path: "/api/v1/alerts/duty-blocks/:id", summary: "删除规则值班班次", ui: "告警监控平台 · 规则与值班绑定", auth: true },
+      { method: "GET", path: "/api/v1/alerts/subscriptions/tree", summary: "订阅路由树", ui: "告警配置中心 · 订阅路由", auth: true },
+      { method: "POST", path: "/api/v1/alerts/subscriptions", summary: "创建订阅节点", ui: "告警配置中心 · 订阅路由", auth: true },
+      { method: "PUT", path: "/api/v1/alerts/subscriptions/:id", summary: "更新订阅节点", ui: "告警配置中心 · 订阅路由", auth: true },
+      { method: "DELETE", path: "/api/v1/alerts/subscriptions/:id", summary: "删除订阅节点", ui: "告警配置中心 · 订阅路由", auth: true },
+      { method: "GET", path: "/api/v1/alerts/receiver-groups", summary: "接收组列表", ui: "告警配置中心 · 接收组", auth: true },
+      { method: "POST", path: "/api/v1/alerts/receiver-groups", summary: "创建接收组", ui: "告警配置中心 · 接收组", auth: true },
+      { method: "PUT", path: "/api/v1/alerts/receiver-groups/:id", summary: "更新接收组", ui: "告警配置中心 · 接收组", auth: true },
+      { method: "DELETE", path: "/api/v1/alerts/receiver-groups/:id", summary: "删除接收组", ui: "告警配置中心 · 接收组", auth: true },
+      { method: "GET", path: "/api/v1/alerts/cloud-expiry-rules", summary: "云到期规则列表", ui: "告警监控平台 · 云到期", auth: true },
+      { method: "POST", path: "/api/v1/alerts/cloud-expiry-rules/evaluate-now", summary: "立即评估云到期规则", ui: "告警监控平台 · 云到期", auth: true },
       { method: "POST", path: "/api/v1/agents/health/report", summary: "Agent 健康上报", ui: "Agent 列表/日志平台", auth: false },
+    ],
+  },
+  {
+    title: "K8s 工作负载",
+    routes: [
+      { method: "GET", path: "/api/v1/deployments", summary: "Deployment 列表", ui: "工作负载 · Deployment", auth: true },
+      { method: "GET", path: "/api/v1/deployments/detail", summary: "Deployment 详情", ui: "工作负载 · Deployment", auth: true },
+      { method: "GET", path: "/api/v1/deployments/rollout-status", summary: "Deployment 发布状态", ui: "工作负载 · Deployment", auth: true },
+      { method: "GET", path: "/api/v1/deployments/pods", summary: "Deployment 关联 Pod", ui: "工作负载 · 关联 Pod", auth: true },
+      { method: "POST", path: "/api/v1/deployments/scale", summary: "Deployment 水平扩缩", ui: "工作负载 · Deployment", auth: true },
+      { method: "POST", path: "/api/v1/deployments/container-resources", summary: "Deployment 垂直扩缩", ui: "工作负载 · Deployment", auth: true },
+      { method: "POST", path: "/api/v1/deployments/restart", summary: "Deployment 滚动重启", ui: "工作负载 · Deployment", auth: true },
+      { method: "GET", path: "/api/v1/statefulsets", summary: "StatefulSet 列表", ui: "工作负载 · StatefulSet", auth: true },
+      { method: "POST", path: "/api/v1/statefulsets/scale", summary: "StatefulSet 水平扩缩", ui: "工作负载 · StatefulSet", auth: true },
+      { method: "POST", path: "/api/v1/statefulsets/container-resources", summary: "StatefulSet 垂直扩缩", ui: "工作负载 · StatefulSet", auth: true },
+      { method: "GET", path: "/api/v1/daemonsets", summary: "DaemonSet 列表", ui: "工作负载 · DaemonSet", auth: true },
+      { method: "POST", path: "/api/v1/daemonsets/container-resources", summary: "DaemonSet 垂直扩缩", ui: "工作负载 · DaemonSet", auth: true },
+      { method: "GET", path: "/api/v1/jobs", summary: "Job 列表", ui: "工作负载 · Job", auth: true },
+      { method: "GET", path: "/api/v1/jobs/pods", summary: "Job 关联 Pod", ui: "工作负载 · Job", auth: true },
+      { method: "POST", path: "/api/v1/jobs/rerun", summary: "Job 重新执行", ui: "工作负载 · Job", auth: true },
+      { method: "POST", path: "/api/v1/jobs/container-resources", summary: "Job 垂直扩缩", ui: "工作负载 · Job", auth: true },
+      { method: "GET", path: "/api/v1/cronjobs", summary: "CronJob 列表", ui: "工作负载 · CronJob", auth: true },
+      { method: "GET", path: "/api/v1/cronjobs/v2", summary: "CronJob 列表（增强字段）", ui: "工作负载 · CronJob", auth: true },
+      { method: "GET", path: "/api/v1/cronjobs/pods", summary: "CronJob 关联 Pod", ui: "工作负载 · CronJob", auth: true },
+      { method: "POST", path: "/api/v1/cronjobs/suspend", summary: "CronJob 挂起/恢复", ui: "工作负载 · CronJob", auth: true },
+      { method: "POST", path: "/api/v1/cronjobs/trigger", summary: "CronJob 手动触发", ui: "工作负载 · CronJob", auth: true },
+      { method: "POST", path: "/api/v1/cronjobs/container-resources", summary: "CronJob 垂直扩缩", ui: "工作负载 · CronJob", auth: true },
     ],
   },
   {

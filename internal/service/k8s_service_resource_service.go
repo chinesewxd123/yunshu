@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/pkg/k8sutil"
 
@@ -69,7 +69,7 @@ func (s *K8sServiceResourceService) List(ctx context.Context, q K8sServiceListQu
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, k8sServiceGVK, ns)
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt38cc1640ac12, err))
+		return nil, svcerr.Internal("k8s.service.resource", "api", err, constants.ErrFmt38cc1640ac12)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	out := make([]K8sServiceItem, 0, len(listU))
@@ -136,7 +136,7 @@ func (s *K8sServiceResourceService) Detail(ctx context.Context, q K8sServiceDeta
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg951c363660f3)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt42eaecf6d979, err))
+		return nil, svcerr.Internal("k8s.service.resource", "api", err, constants.ErrFmt42eaecf6d979)
 	}
 	obj := u.DeepCopy()
 	obj.SetManagedFields(nil)
@@ -154,7 +154,7 @@ func (s *K8sServiceResourceService) Apply(ctx context.Context, req K8sServiceApp
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
+		return k8sFail("k8s.service.resource", "api", err)
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func (s *K8sServiceResourceService) Delete(ctx context.Context, req K8sServiceDe
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd89543e517f1, err))
+		return k8sFail("k8s.service.resource", "api", err)
 	}
 	return nil
 }
