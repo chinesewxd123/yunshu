@@ -20,6 +20,10 @@
   - 重新生成：`go run ./tools/genopenapi -out docs/apipost/permission-system.openapi.yaml`
 - Swagger 生成物：`docs/swagger/swagger.yaml`、`docs/swagger/swagger.json`（以实际构建为准）
 
+## HTML 阅读版（团队分享）
+
+在仓库根目录执行 `go run ./cmd/md2html --bundle` 或 `scripts/build-docs-html.ps1`，生成 **`docs/html/index.html`**：单文件 HTML，含侧边目录、Mermaid、时间线与提示框，可直接发给同事离线阅读。说明见 `tools/md2html/README.md`。
+
 ## 相关文档
 
 - 告警通知（配置与聚合）：`docs/alert-notify-guide.md`
