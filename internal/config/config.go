@@ -18,9 +18,10 @@ type Config struct {
 	Auth     AuthConfig     `mapstructure:"auth"`
 	Casbin   CasbinConfig   `mapstructure:"casbin"`
 	Swagger  SwaggerConfig  `mapstructure:"swagger"`
-	Alert    AlertConfig    `mapstructure:"alert"`
-	Security SecurityConfig `mapstructure:"security"`
-	Agent    AgentConfig    `mapstructure:"agent"`
+	Alert           AlertConfig           `mapstructure:"alert"`
+	K8sEventForward K8sEventForwardConfig `mapstructure:"k8s_event_forward"`
+	Security        SecurityConfig        `mapstructure:"security"`
+	Agent           AgentConfig           `mapstructure:"agent"`
 }
 
 type GRPCConfig struct {
@@ -255,6 +256,7 @@ func Load(path string) (*Config, error) {
 	if cfg.GRPC.MaxSendMsgBytes <= 0 {
 		cfg.GRPC.MaxSendMsgBytes = 8 * 1024 * 1024
 	}
+	cfg.K8sEventForward.ApplyDefaults()
 	return &cfg, nil
 }
 

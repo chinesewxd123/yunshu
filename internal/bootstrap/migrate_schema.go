@@ -253,6 +253,9 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&model.K8sNamespaceDenyRule{},
 		&model.K8sNamespaceAllowRule{},
 		&model.K8sClusterAccessGrant{},
+		&model.K8sForwardedEvent{},
+		&model.K8sEventForwardRule{},
+		&model.K8sEventForwardSetting{},
 	); err != nil {
 		return err
 	}

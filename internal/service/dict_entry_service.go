@@ -116,6 +116,12 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			{DictType: "alert_webhook_token", Label: "Webhook Token 示例", Value: "change-me-alert-token", Sort: intRef(1), Status: 0, Remark: "alert.webhook_token：用于 Alertmanager Webhook 鉴权"},
 			{DictType: "alert_enrich_prometheus_url", Label: "Prometheus 地址示例", Value: "http://127.0.0.1:9090", Sort: intRef(1), Status: 0, Remark: "alert.prometheus_url：用于告警增强查询"},
 			{DictType: "alert_enrich_prometheus_token", Label: "Prometheus Token（可选）", Value: "", Sort: intRef(1), Status: 0, Remark: "alert.prometheus_token：敏感信息建议仅在生产库维护"},
+			// K8s Event 多集群转发（字典优先，YAML 兜底；入站复用 /alerts/webhook/alertmanager）
+			{DictType: "k8s_event_forward_enabled", Label: "启用 Event 转发", Value: "false", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.enabled：true/false"},
+			{DictType: "k8s_event_forward_watcher_buffer_size", Label: "监听通道缓冲", Value: "1000", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.watcher_buffer_size"},
+			{DictType: "k8s_event_forward_worker_interval_seconds", Label: "批处理周期(秒)", Value: "10", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_interval_seconds"},
+			{DictType: "k8s_event_forward_worker_batch_size", Label: "批大小", Value: "50", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_batch_size"},
+			{DictType: "k8s_event_forward_worker_max_retries", Label: "最大重试", Value: "3", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_max_retries"},
 			{DictType: "wecom_notify_mode", Label: "群机器人(robot)", Value: "robot", Sort: intRef(1), Status: 1, Remark: "企业微信通知模式"},
 			{DictType: "wecom_notify_mode", Label: "企业应用(app)", Value: "app", Sort: intRef(2), Status: 1, Remark: "企业微信通知模式"},
 			{DictType: "dingtalk_notify_mode", Label: "群机器人(robot)", Value: "robot", Sort: intRef(1), Status: 1, Remark: "钉钉通知模式"},
@@ -184,7 +190,12 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			"mail_from_name":                {},
 			"alert_webhook_token":           {},
 			"alert_enrich_prometheus_url":   {},
-			"alert_enrich_prometheus_token": {},
+			"alert_enrich_prometheus_token":           {},
+			"k8s_event_forward_enabled":               {},
+			"k8s_event_forward_watcher_buffer_size":     {},
+			"k8s_event_forward_worker_interval_seconds": {},
+			"k8s_event_forward_worker_batch_size":         {},
+			"k8s_event_forward_worker_max_retries":        {},
 		}
 		for _, item := range seed {
 			var (

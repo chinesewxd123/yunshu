@@ -19,6 +19,16 @@ func registerK8sRoutes(api *gin.RouterGroup, d *routeDeps) {
 	clusters.GET("/:id/component-statuses", d.clusterHandler.ComponentStatuses)
 	clusters.GET("/:id/api-resources", d.k8sDiscoveryHandler.ListAPIResources)
 
+	ef := api.Group("/k8s/event-forward")
+	ef.Use(d.authMiddleware, d.authorize, d.opAudit)
+	ef.GET("/rules", d.k8sEventForwardHandler.ListRules)
+	ef.POST("/rules", d.k8sEventForwardHandler.CreateRule)
+	ef.GET("/rules/:id", d.k8sEventForwardHandler.GetRule)
+	ef.PUT("/rules/:id", d.k8sEventForwardHandler.UpdateRule)
+	ef.DELETE("/rules/:id", d.k8sEventForwardHandler.DeleteRule)
+	ef.GET("/settings", d.k8sEventForwardHandler.GetSettings)
+	ef.PUT("/settings", d.k8sEventForwardHandler.UpdateSettings)
+
 	pods := api.Group("/pods")
 	pods.Use(d.authMiddleware, d.authorize, d.k8sScopeAuthorize, d.opAudit)
 	pods.GET("", d.podHandler.List)

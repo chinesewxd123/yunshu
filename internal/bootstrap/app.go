@@ -31,12 +31,15 @@ type App struct {
 	Enforcer *casbin.SyncedEnforcer
 	Mailer   mailer.Sender
 	Engine   *gin.Engine
+	// YamlK8sEventForwardBase config.yaml 底稿，供 Event 转发运行期从字典重新解析。
+	YamlK8sEventForwardBase config.K8sEventForwardConfig
 }
 
 type Builder struct {
-	app         *App
-	err         error
-	yamlMailBase config.MailConfig // config.yaml 中的 mail 底稿（字典覆盖前）
+	app                      *App
+	err                      error
+	yamlMailBase             config.MailConfig             // config.yaml 中的 mail 底稿（字典覆盖前）
+	yamlK8sEventForwardBase  config.K8sEventForwardConfig // config.yaml 中的 k8s_event_forward 底稿
 }
 
 func NewBuilder() *Builder {
@@ -55,6 +58,8 @@ func (b *Builder) WithConfig(path string) *Builder {
 	}
 	b.app.Config = cfg
 	b.yamlMailBase = cfg.Mail
+	b.yamlK8sEventForwardBase = cfg.K8sEventForward
+	b.app.YamlK8sEventForwardBase = cfg.K8sEventForward
 	return b
 }
 
@@ -127,7 +132,7 @@ func (b *Builder) WithMySQL() *Builder {
 	return b
 }
 
-// WithDictOverrides 在 MySQL 已就绪后，从数据字典覆盖“运行期可变”的配置项（告警域 + 邮件）。
+// WithDictOverrides 在 MySQL 已就绪后，从数据字典覆盖“运行期可变”的配置项（告警域 + 邮件 + K8s Event 转发）。
 // 注意：mysql/redis/app.env/grpc.listen_addr 等启动期项仍以 env/yaml 为准，避免启动鸡生蛋。
 func (b *Builder) WithDictOverrides() *Builder {
 	if b.err != nil {

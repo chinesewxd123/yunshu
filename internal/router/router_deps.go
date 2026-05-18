@@ -65,6 +65,7 @@ type routeDeps struct {
 	k8sDiscoveryHandler      *handler.K8sDiscoveryHandler
 	k8sHPAHandler            *handler.K8sHPAHandler
 	k8sResourceWatchHandler  *handler.K8sResourceWatchHandler
+	k8sEventForwardHandler   *handler.K8sEventForwardHandler
 	eventHandler             *handler.EventHandler
 	crdHandler               *handler.CRDHandler
 	crHandler                *handler.CRHandler
@@ -206,6 +207,8 @@ func wireRouteDeps(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) 
 	k8sDiscoveryHandler := handler.NewK8sDiscoveryHandler(k8sDiscoveryService)
 	k8sHPAHandler := handler.NewK8sHPAHandler(k8sHPAService)
 	k8sResourceWatchHandler := handler.NewK8sResourceWatchHandler(k8sRuntimeService)
+	k8sEventForwardAdminSvc := service.NewK8sEventForwardAdminService(app.DB)
+	k8sEventForwardHandler := handler.NewK8sEventForwardHandler(k8sEventForwardAdminSvc)
 	eventHandler := handler.NewEventHandler(eventService)
 	crdHandler := handler.NewCRDHandler(crdService)
 	crHandler := handler.NewCRHandler(crService)
@@ -273,6 +276,7 @@ func wireRouteDeps(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) 
 		k8sDiscoveryHandler:     k8sDiscoveryHandler,
 		k8sHPAHandler:           k8sHPAHandler,
 		k8sResourceWatchHandler: k8sResourceWatchHandler,
+		k8sEventForwardHandler:  k8sEventForwardHandler,
 		eventHandler:            eventHandler,
 		crdHandler:              crdHandler,
 		crHandler:               crHandler,

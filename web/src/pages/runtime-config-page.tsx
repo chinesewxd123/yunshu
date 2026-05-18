@@ -54,6 +54,7 @@ export function RuntimeConfigPage() {
 
   const [alertForm] = Form.useForm();
   const [mailForm] = Form.useForm();
+  const [k8sEventForm] = Form.useForm();
 
   const dictTypes = useMemo(
     () => ({
@@ -68,6 +69,12 @@ export function RuntimeConfigPage() {
       mailFromEmail: "mail_from_email",
       mailFromName: "mail_from_name",
       mailUseTLS: "mail_use_tls",
+
+      k8sEnabled: "k8s_event_forward_enabled",
+      k8sBuffer: "k8s_event_forward_watcher_buffer_size",
+      k8sInterval: "k8s_event_forward_worker_interval_seconds",
+      k8sBatch: "k8s_event_forward_worker_batch_size",
+      k8sRetries: "k8s_event_forward_worker_max_retries",
     }),
     [],
   );
@@ -81,6 +88,13 @@ export function RuntimeConfigPage() {
           loadSingleton(dictTypes.alertWebhookToken, { label: "Webhook Token", value: "", status: 1, remark: "覆盖 alert.webhook_token（重启服务生效）", sort: 0 }),
           loadSingleton(dictTypes.alertPromURL, { label: "Prometheus URL", value: "", status: 1, remark: "覆盖 alert.prometheus_url（重启服务生效）", sort: 0 }),
           loadSingleton(dictTypes.alertPromToken, { label: "Prometheus Token", value: "", status: 0, remark: "覆盖 alert.prometheus_token（重启服务生效）", sort: 0 }),
+        ]);
+        const [k8sEnabled, k8sBuffer, k8sInterval, k8sBatch, k8sRetries] = await Promise.all([
+          loadSingleton(dictTypes.k8sEnabled, { label: "启用 Event 转发", value: "false", status: 0, remark: "覆盖 k8s_event_forward.enabled（Worker 批处理周期内可热更新）", sort: 0 }),
+          loadSingleton(dictTypes.k8sBuffer, { label: "监听缓冲", value: "1000", status: 0, remark: "覆盖 watcher_buffer_size（重启 watcher 生效）", sort: 0 }),
+          loadSingleton(dictTypes.k8sInterval, { label: "批处理周期(秒)", value: "10", status: 0, remark: "覆盖 worker_interval_seconds", sort: 0 }),
+          loadSingleton(dictTypes.k8sBatch, { label: "批大小", value: "50", status: 0, remark: "覆盖 worker_batch_size", sort: 0 }),
+          loadSingleton(dictTypes.k8sRetries, { label: "最大重试", value: "3", status: 0, remark: "覆盖 worker_max_retries", sort: 0 }),
         ]);
         const [mailHost, mailPort, mailUsername, mailPassword, mailFromEmail, mailFromName, mailUseTLS] = await Promise.all([
           loadSingleton(dictTypes.mailHost, { label: "SMTP Host", value: "smtp.163.com", status: 1, remark: "覆盖 mail.host（重启服务生效）", sort: 0 }),
@@ -97,6 +111,17 @@ export function RuntimeConfigPage() {
           webhook: { ...webhook, status: webhook.status === 1 },
           promURL: { ...promURL, status: promURL.status === 1 },
           promToken: { ...promToken, status: promToken.status === 1 },
+        });
+        k8sEventForm.setFieldsValue({
+          k8sEnabled: {
+            ...k8sEnabled,
+            status: k8sEnabled.status === 1,
+            value: String(k8sEnabled.value || "").toLowerCase() === "true",
+          },
+          k8sBuffer: { ...k8sBuffer, status: k8sBuffer.status === 1, value: Number(k8sBuffer.value || 0) || 1000 },
+          k8sInterval: { ...k8sInterval, status: k8sInterval.status === 1, value: Number(k8sInterval.value || 0) || 10 },
+          k8sBatch: { ...k8sBatch, status: k8sBatch.status === 1, value: Number(k8sBatch.value || 0) || 50 },
+          k8sRetries: { ...k8sRetries, status: k8sRetries.status === 1, value: Number(k8sRetries.value || 0) || 3 },
         });
         mailForm.setFieldsValue({
           mailHost: { ...mailHost, status: mailHost.status === 1 },
@@ -120,7 +145,7 @@ export function RuntimeConfigPage() {
     return () => {
       cancelled = true;
     };
-  }, [alertForm, mailForm, dictTypes]);
+  }, [alertForm, k8sEventForm, mailForm, dictTypes]);
 
   async function saveAlert() {
     const v = await alertForm.validateFields();
@@ -132,6 +157,24 @@ export function RuntimeConfigPage() {
         upsertSingleton(v.promToken),
       ]);
       message.success("告警配置已保存（重启服务生效）");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveK8sEventForward() {
+    const v = await k8sEventForm.validateFields();
+    setSaving(true);
+    try {
+      const k8sEnabled = { ...v.k8sEnabled, value: v.k8sEnabled?.value ? "true" : "false" };
+      await Promise.all([
+        upsertSingleton(k8sEnabled),
+        upsertSingleton({ ...v.k8sBuffer, value: String(Number(v.k8sBuffer?.value ?? 0) || 0) }),
+        upsertSingleton({ ...v.k8sInterval, value: String(Number(v.k8sInterval?.value ?? 0) || 0) }),
+        upsertSingleton({ ...v.k8sBatch, value: String(Number(v.k8sBatch?.value ?? 0) || 0) }),
+        upsertSingleton({ ...v.k8sRetries, value: String(Number(v.k8sRetries?.value ?? 0) || 0) }),
+      ]);
+      message.success("K8s Event 转发配置已保存（开关与 Worker 参数下一批处理周期内生效；缓冲变更建议重启服务）");
     } finally {
       setSaving(false);
     }
@@ -195,9 +238,9 @@ export function RuntimeConfigPage() {
         message="说明"
         description={
           <div>
-            <div>这里直接读写数据字典中的配置项，服务端启动时会从字典覆盖 `config.yaml` 中的告警/邮件配置。</div>
+            <div>这里直接读写数据字典中的配置项，服务端启动时会从字典覆盖 `config.yaml` 中的告警/邮件/K8s Event 转发配置。</div>
             <div>
-              <Typography.Text strong>保存后需要重启服务</Typography.Text> 才会生效（当前策略为启动读取一次，稳定优先）。
+              <Typography.Text strong>告警/邮件</Typography.Text> 保存后需重启服务；<Typography.Text strong>K8s Event 转发</Typography.Text> 开关与 Worker 参数在下一批处理周期内热更新。
             </div>
           </div>
         }
@@ -283,6 +326,93 @@ export function RuntimeConfigPage() {
                   <DictItemEditor name="mailFromName" title="From Name（mail.from_name）" placeholder="例如 YunShu" />
                   <Button type="primary" loading={saving} onClick={() => void saveMail()}>
                     保存邮件配置
+                  </Button>
+                </Space>
+              </Form>
+            ),
+          },
+          {
+            key: "k8s-event-forward",
+            label: "K8s Event 转发",
+            children: (
+              <Form form={k8sEventForm} layout="vertical" autoComplete="off">
+                <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="入站复用告警平台 Webhook"
+                    description="规则 webhook_url 留空或填 internal/alertmanager 时，Worker 将 POST 到 /api/v1/alerts/webhook/alertmanager，鉴权使用 alert_webhook_token。"
+                  />
+                  <Card size="small" title="启用（k8s_event_forward_enabled）">
+                    <Space direction="vertical" style={{ width: "100%" }} size="small">
+                      <Form.Item name={["k8sEnabled", "id"]} hidden>
+                        <Input />
+                      </Form.Item>
+                      <Form.Item name={["k8sEnabled", "dict_type"]} hidden>
+                        <Input />
+                      </Form.Item>
+                      <Space wrap>
+                        <Form.Item name={["k8sEnabled", "status"]} label="启用覆盖" style={{ marginBottom: 0 }} valuePropName="checked">
+                          <Switch checkedChildren="启用" unCheckedChildren="停用" />
+                        </Form.Item>
+                        <Form.Item name={["k8sEnabled", "label"]} label="显示名" style={{ marginBottom: 0, minWidth: 220 }}>
+                          <Input />
+                        </Form.Item>
+                      </Space>
+                      <Form.Item name={["k8sEnabled", "value"]} label="是否启用转发" valuePropName="checked">
+                        <Switch checkedChildren="是" unCheckedChildren="否" />
+                      </Form.Item>
+                      <Form.Item name={["k8sEnabled", "remark"]} label="说明" style={{ marginBottom: 0 }}>
+                        <Input placeholder="可选" />
+                      </Form.Item>
+                    </Space>
+                  </Card>
+                  <Card size="small" title="监听缓冲（k8s_event_forward_watcher_buffer_size）">
+                    <Space direction="vertical" style={{ width: "100%" }} size="small">
+                      <Form.Item name={["k8sBuffer", "id"]} hidden>
+                        <Input />
+                      </Form.Item>
+                      <Form.Item name={["k8sBuffer", "dict_type"]} hidden>
+                        <Input />
+                      </Form.Item>
+                      <Space wrap>
+                        <Form.Item name={["k8sBuffer", "status"]} label="启用覆盖" style={{ marginBottom: 0 }} valuePropName="checked">
+                          <Switch checkedChildren="启用" unCheckedChildren="停用" />
+                        </Form.Item>
+                      </Space>
+                      <Form.Item name={["k8sBuffer", "value"]} label="缓冲大小" rules={[{ required: true }]}>
+                        <InputNumber min={100} max={100000} style={{ width: "100%" }} />
+                      </Form.Item>
+                    </Space>
+                  </Card>
+                  <Card size="small" title="Worker 参数">
+                    <Space direction="vertical" style={{ width: "100%" }} size="small">
+                      {(
+                        [
+                          ["k8sInterval", "批处理周期(秒)", 1, 3600],
+                          ["k8sBatch", "批大小", 1, 500],
+                          ["k8sRetries", "最大重试", 0, 20],
+                        ] as const
+                      ).map(([name, title, min, max]) => (
+                        <Card key={name} size="small" type="inner" title={title}>
+                          <Form.Item name={[name, "id"]} hidden>
+                            <Input />
+                          </Form.Item>
+                          <Form.Item name={[name, "dict_type"]} hidden>
+                            <Input />
+                          </Form.Item>
+                          <Form.Item name={[name, "status"]} label="启用覆盖" valuePropName="checked">
+                            <Switch />
+                          </Form.Item>
+                          <Form.Item name={[name, "value"]} label="值" rules={[{ required: true }]}>
+                            <InputNumber min={min} max={max} style={{ width: "100%" }} />
+                          </Form.Item>
+                        </Card>
+                      ))}
+                    </Space>
+                  </Card>
+                  <Button type="primary" loading={saving} onClick={() => void saveK8sEventForward()}>
+                    保存 K8s Event 转发配置
                   </Button>
                 </Space>
               </Form>

@@ -128,6 +128,18 @@ alert:
   # 仅内置 PromQL 监控规则的调度节拍（robfig/cron 六段式，含秒）。云到期规则在控制台配置 Cron，由服务内独立节拍轮询。空则默认 */5 * * * * *（每 5 秒）。
   # monitor_eval_cron_spec: "*/5 * * * * *"
 
+# 多集群 K8s Event 转发：请在「运行期配置中心 / 数据字典」维护（字典优先，下列 YAML 兜底）
+# dict_type: k8s_event_forward_enabled | k8s_event_forward_watcher_buffer_size |
+#            k8s_event_forward_worker_interval_seconds | k8s_event_forward_worker_batch_size |
+#            k8s_event_forward_worker_max_retries
+# 入站复用告警平台 POST /api/v1/alerts/webhook/alertmanager（鉴权同 alert_webhook_token）
+k8s_event_forward:
+  enabled: false
+  watcher_buffer_size: 1000
+  worker_interval_seconds: 10
+  worker_batch_size: 50
+  worker_max_retries: 3
+
 # =========================
 # 配置源收敛说明（建议）
 # =========================
@@ -142,6 +154,7 @@ alert:
 #    - alert.webhook_token    -> alert_webhook_token
 #    - alert.prometheus_url   -> alert_enrich_prometheus_url
 #    - alert.prometheus_token -> alert_enrich_prometheus_token
+#    - k8s_event_forward.*    -> k8s_event_forward_enabled / _watcher_buffer_size / _worker_*
 #
 # 3) 业务页面辅助选项（仅字典，不在 YAML 维护）：
 #    - dingtalk_webhook_url / wecom_webhook_url / alert_webhook_url

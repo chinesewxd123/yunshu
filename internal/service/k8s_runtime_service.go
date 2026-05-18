@@ -166,6 +166,12 @@ func (s *K8sRuntimeService) GetClusterKubectl(ctx context.Context, id uint) (*mo
 	return cluster, k, nil
 }
 
+// EnsureClusterRegistered 将集群注册到 kom（供 Event 转发等后台任务使用）。
+func (s *K8sRuntimeService) EnsureClusterRegistered(ctx context.Context, id uint) error {
+	_, _, err := s.GetClusterKubectl(ctx, id)
+	return err
+}
+
 // serverGitVersionFromKubeconfig 使用 client-go Discovery 拉取 GitVersion（与 kubectl 一致）。
 // kom 在进程重启后偶发 Status().ServerVersion() 为空，不能作为心跳唯一依据。
 func serverGitVersionFromKubeconfig(kubeconfig string) (string, error) {

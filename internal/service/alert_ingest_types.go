@@ -29,6 +29,8 @@ func CanonicalAlertsFromAlertmanagerPayload(p AlertManagerPayload) []CanonicalIn
 		src = "platform_monitor"
 	case "cloud-expiry":
 		src = "cloud_expiry"
+	case "k8s-events":
+		src = "k8s_event"
 	}
 	out := make([]CanonicalIngressAlert, 0, len(p.Alerts))
 	for i := range p.Alerts {

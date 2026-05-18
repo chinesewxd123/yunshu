@@ -17,6 +17,13 @@ type dictConfigOverrides struct {
 	AlertPrometheusURLType   string
 	AlertPrometheusTokenType string
 
+	// K8s Event Forward
+	K8sEventForwardEnabledType               string
+	K8sEventForwardWatcherBufferSizeType     string
+	K8sEventForwardWorkerIntervalSecondsType string
+	K8sEventForwardWorkerBatchSizeType       string
+	K8sEventForwardWorkerMaxRetriesType      string
+
 	// Mail
 	MailHostType      string
 	MailPortType      string
@@ -32,6 +39,12 @@ func defaultDictConfigOverrides() dictConfigOverrides {
 		AlertWebhookTokenType:    "alert_webhook_token",
 		AlertPrometheusURLType:   "alert_enrich_prometheus_url",
 		AlertPrometheusTokenType: "alert_enrich_prometheus_token",
+
+		K8sEventForwardEnabledType:               "k8s_event_forward_enabled",
+		K8sEventForwardWatcherBufferSizeType:     "k8s_event_forward_watcher_buffer_size",
+		K8sEventForwardWorkerIntervalSecondsType: "k8s_event_forward_worker_interval_seconds",
+		K8sEventForwardWorkerBatchSizeType:       "k8s_event_forward_worker_batch_size",
+		K8sEventForwardWorkerMaxRetriesType:      "k8s_event_forward_worker_max_retries",
 
 		MailHostType:      "mail_host",
 		MailPortType:      "mail_port",
@@ -129,6 +142,15 @@ func (b *Builder) applyDictConfigOverrides(ctx context.Context, ov dictConfigOve
 		b.app.Config.Alert.PrometheusToken = v
 		logf("config override from dict", "key", "alert.prometheus_token", "dict_type", ov.AlertPrometheusTokenType, "sensitive", true)
 	}
+
+	// K8s Event Forward: 字典优先，YAML 兜底
+	b.app.Config.K8sEventForward = dictconfig.ResolveK8sEventForwardConfig(
+		ctx, b.app.DB, b.yamlK8sEventForwardBase, dictconfig.DefaultK8sEventForwardDictTypes(),
+	)
+	logf("k8s event forward config resolved (dict overrides yaml)",
+		"enabled", b.app.Config.K8sEventForward.Enabled,
+		"worker_interval_seconds", b.app.Config.K8sEventForward.WorkerIntervalSeconds,
+	)
 
 	// Mail: 字典优先，YAML 兜底（与发信时 DynamicSender 解析规则一致）
 	types := dictconfig.MailDictTypes{

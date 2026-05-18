@@ -114,7 +114,10 @@ var serverCmd = &cobra.Command{
 		}
 		defer runtimeClient.Close()
 
-		router.Register(app, runtimeClient)
+		k8sEventForwardMgr := router.Register(app, runtimeClient)
+		if k8sEventForwardMgr != nil {
+			defer k8sEventForwardMgr.Stop()
+		}
 
 		sweepCtx, sweepCancel := context.WithCancel(context.Background())
 		defer sweepCancel()
