@@ -155,17 +155,9 @@ func (s *K8sNamespaceService) List(ctx context.Context, query NamespaceListQuery
 		}
 	}
 
-	listU, err := s.dyn.ListByGVK(ctx, k, namespaceGVK, "")
+	list, err := s.runtime.ListNamespacesViaKom(ctx, query.ClusterID)
 	if err != nil {
-		return nil, k8sFail("k8s.namespace", "List", err, "cluster_id", query.ClusterID)
-	}
-	list := make([]corev1.Namespace, 0, len(listU))
-	for _, item := range listU {
-		var ns corev1.Namespace
-		if e := runtime.DefaultUnstructuredConverter.FromUnstructured(item.Object, &ns); e != nil {
-			continue
-		}
-		list = append(list, ns)
+		return nil, err
 	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]NamespaceListItem, 0, len(list))

@@ -39,6 +39,20 @@ func k8sRepoErr(component, operation string, err error, attrs ...any) error {
 	return svcerr.Pass(component, operation, err, attrs...)
 }
 
+func isK8sUnauthorizedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if ae, ok := apperror.IsAppError(err); ok && ae.ErrorCode == "26002" {
+		return true
+	}
+	if apierrors.IsUnauthorized(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unauthorized")
+}
+
 func k8sMapAPIError(err error) error {
 	if err == nil {
 		return nil

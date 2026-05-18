@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,20 +97,8 @@ func (s *K8sRuntimeService) registerClusterIfNeeded(clusterID string, kubeconfig
 	}
 	s.komMu.Unlock()
 
-	f, err := os.CreateTemp("", "kom-kubeconfig-*")
-	if err != nil {
-		return svcerr.Pass("k8s.runtime", "registerClusterIfNeeded", err, "cluster_id", clusterID)
-	}
-	tmpPath := f.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if _, err := f.WriteString(kubeconfig); err != nil {
-		_ = f.Close()
-		return svcerr.Pass("k8s.runtime", "registerClusterIfNeeded", err, "cluster_id", clusterID)
-	}
-	_ = f.Close()
-
-	_, err = kom.Clusters().RegisterByPathWithID(tmpPath, clusterID)
+	// 使用 kom 原生 RegisterByStringWithID，与 RegisterByPathWithID 等价，避免临时文件在容器/Windows 下的路径问题。
+	_, err := kom.Clusters().RegisterByStringWithID(kubeconfig, clusterID)
 	if err != nil {
 		logx.LogErr("k8s.runtime", "registerClusterIfNeeded", err, "cluster_id", clusterID)
 		s.komMu.Lock()
@@ -254,6 +241,21 @@ func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) 
 			s.komMu.Unlock()
 			return "", s.GetClusterConnState(id), svcerr.InternalMsg("k8s.runtime", "CheckClusterHeartbeat", fmt.Sprintf(constants.ErrFmt5d75fe17f8ef, errMsg), "cluster_id", id, "detail", errMsg)
 		}
+	}
+	if probeErr := s.probeClusterListNamespacesKom(ctx, id); probeErr != nil {
+		errMsg := probeErr.Error()
+		s.komMu.Lock()
+		st := s.connState[clusterID]
+		st.State = "degraded"
+		st.LastAttemptAt = time.Now()
+		st.LastError = errMsg
+		st.ConsecutiveFailures++
+		s.connState[clusterID] = st
+		s.komMu.Unlock()
+		if _, ok := apperror.IsAppError(probeErr); ok {
+			return "", s.GetClusterConnState(id), probeErr
+		}
+		return "", s.GetClusterConnState(id), svcerr.InternalMsg("k8s.runtime", "CheckClusterHeartbeat", errMsg, "cluster_id", id)
 	}
 	s.komMu.Lock()
 	st := s.connState[clusterID]

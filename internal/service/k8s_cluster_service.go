@@ -463,13 +463,9 @@ func (s *K8sClusterService) ListNamespaces(ctx context.Context, id uint, pack *k
 	if err := s.ensureClusterOwningProjectAccess(ctx, cl); err != nil {
 		return nil, err
 	}
-	_, k, err := s.runtime.GetClusterKubectl(ctx, id)
+	nsList, err := s.runtime.ListNamespacesViaKom(ctx, id)
 	if err != nil {
 		return nil, err
-	}
-	var nsList []corev1.Namespace
-	if err := k.Resource(&corev1.Namespace{}).List(&nsList).Error; err != nil {
-		return nil, k8sFail("k8s.cluster", "ListNamespaces", err, "cluster_id", id)
 	}
 	out := make([]NamespaceItem, 0, len(nsList))
 	for _, ns := range nsList {
