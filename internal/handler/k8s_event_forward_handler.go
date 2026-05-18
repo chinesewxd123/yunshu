@@ -37,11 +37,8 @@ func (h *K8sEventForwardHandler) GetRule(c *gin.Context) {
 }
 
 func (h *K8sEventForwardHandler) CreateRule(c *gin.Context) {
-	ServeJSON201(c, func(ctx context.Context, req model.K8sEventForwardRule) (*model.K8sEventForwardRule, error) {
-		if err := h.svc.CreateRule(ctx, &req); err != nil {
-			return nil, err
-		}
-		return &req, nil
+	ServeJSON201(c, func(ctx context.Context, req service.K8sEventForwardRuleUpsertRequest) (*model.K8sEventForwardRule, error) {
+		return h.svc.CreateRule(ctx, req)
 	})
 }
 
@@ -51,17 +48,17 @@ func (h *K8sEventForwardHandler) UpdateRule(c *gin.Context) {
 		response.Error(c, err)
 		return
 	}
-	var req model.K8sEventForwardRule
+	var req service.K8sEventForwardRuleUpsertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, err)
 		return
 	}
-	req.ID = id
-	if err := h.svc.UpdateRule(c.Request.Context(), &req); err != nil {
+	rule, err := h.svc.UpdateRule(c.Request.Context(), id, req)
+	if err != nil {
 		response.Error(c, err)
 		return
 	}
-	response.Success(c, req)
+	response.Success(c, rule)
 }
 
 func (h *K8sEventForwardHandler) DeleteRule(c *gin.Context) {
