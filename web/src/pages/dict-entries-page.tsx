@@ -1,6 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { PROJECT_DICT_TYPE_OPTIONS } from "../constants/dict-types";
 import { createDictEntry, deleteDictEntry, getDictEntries, updateDictEntry, type DictEntryItem, type DictPayload } from "../services/dict";
 import { formatDateTime } from "../utils/format";
@@ -8,9 +9,16 @@ import { formatDateTime } from "../utils/format";
 const defaultQuery = { keyword: "", dict_type: "", page: 1, page_size: 10 };
 
 export function DictEntriesPage() {
+  const [searchParams] = useSearchParams();
+  const initialDictType = String(searchParams.get("dict_type") || "").trim();
+  const initialKeyword = String(searchParams.get("keyword") || "").trim();
   const [list, setList] = useState<DictEntryItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [query, setQuery] = useState(defaultQuery);
+  const [query, setQuery] = useState(() => ({
+    ...defaultQuery,
+    dict_type: initialDictType,
+    keyword: initialKeyword,
+  }));
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [current, setCurrent] = useState<DictEntryItem | null>(null);
@@ -37,6 +45,15 @@ export function DictEntriesPage() {
   useEffect(() => {
     void loadData(query);
   }, [query]);
+
+  useEffect(() => {
+    const dt = String(searchParams.get("dict_type") || "").trim();
+    const kw = String(searchParams.get("keyword") || "").trim();
+    setQuery((prev) => {
+      if (prev.dict_type === dt && prev.keyword === kw) return prev;
+      return { ...prev, dict_type: dt, keyword: kw, page: 1 };
+    });
+  }, [searchParams]);
 
   useEffect(() => {
     if (!open || current || !formDictType) return;

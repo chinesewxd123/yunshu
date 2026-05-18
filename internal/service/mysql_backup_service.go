@@ -275,7 +275,7 @@ func (s *MysqlBackupService) CheckRemoteBackup(ctx context.Context, projectID, i
 	logFile := filepath.ToSlash(filepath.Join(inst.RemoteLogDir, fmt.Sprintf("full_backup_data_%s.log", day.Format("2006-01-02"))))
 
 	checkScript := fmt.Sprintf(`test -f %q && tail -n 1 %q`, remoteFile, logFile)
-	res, err := sshCli.Exec(ctx, checkScript, 4096)
+	res, err := sshCli.Exec(ctx, checkScript, 8192)
 	if err != nil {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgSSHExecFailedPrefix + err.Error())
 	}
@@ -417,18 +417,21 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 		label = "dump"
 	}
 
+	logPath := fmt.Sprintf("/tmp/yunshu_mysql_%d_%s.log", inst.ID, ts)
 	escapedPW := shellQuote(pw)
 	dumpCmd := fmt.Sprintf(
-		`set -euo pipefail; export MYSQL_PWD=%s; mysqldump -h%s -P%d -u%s --single-transaction --quick --routines --triggers %s 2>/dev/null | gzip -c > %s`,
-		escapedPW, shellQuote(inst.MysqlHost), inst.MysqlPort, shellQuote(inst.MysqlUser), dumpTarget, shellQuote(remotePath),
+		`set -euo pipefail; LOG=%s; export MYSQL_PWD=%s; mysqldump -h%s -P%d -u%s --single-transaction --quick --routines --triggers %s 2>"$LOG" | gzip -c > %s; EC=$?; echo "=== mysqldump exit=$EC ==="; tail -n 120 "$LOG" 2>/dev/null || true; exit $EC`,
+		shellQuote(logPath), escapedPW, shellQuote(inst.MysqlHost), inst.MysqlPort, shellQuote(inst.MysqlUser), dumpTarget, shellQuote(remotePath),
 	)
-	res, err := sshCli.Exec(ctx, dumpCmd, 8192)
+	res, err := sshCli.Exec(ctx, dumpCmd, 65536)
+	job.LogExcerpt = mysqlbackup.TruncateLog(strings.TrimSpace(res.Stdout + res.Stderr))
 	if err != nil {
 		return err
 	}
 	if res.ExitCode != 0 {
 		return fmt.Errorf("mysqldump failed: %s", strings.TrimSpace(res.Stderr+res.Stdout))
 	}
+	_ = sshCli.RemoveRemoteFile(logPath)
 
 	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
@@ -462,22 +465,26 @@ func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *mod
 		return err
 	}
 	job.CheckOK = check.OK
-	job.LogExcerpt = check.Message
-	if !check.OK {
-		return fmt.Errorf("远端备份检查未通过: %s", check.Message)
-	}
 	job.RemotePath = check.BackupFile
 
-	minioCli, err := objectstore.NewFromDB(ctx, s.db)
-	if err != nil {
-		return err
-	}
 	sshCli, _, err := s.dialServer(ctx, inst.ServerID)
 	if err != nil {
 		return err
 	}
 	defer sshCli.Close()
+	if logTail, err := s.tailRemoteFile(ctx, sshCli, check.LogFile, 80); err == nil {
+		job.LogExcerpt = mysqlbackup.TruncateLog(logTail)
+	} else {
+		job.LogExcerpt = check.Message
+	}
+	if !check.OK {
+		return fmt.Errorf("远端备份检查未通过: %s", check.Message)
+	}
 
+	minioCli, err := objectstore.NewFromDB(ctx, s.db)
+	if err != nil {
+		return err
+	}
 	ts := time.Now().UTC().Format("20060102_150405")
 	localPath := filepath.Join(os.TempDir(), fmt.Sprintf("mysql_remote_%d_%s.tar.gz", inst.ID, ts))
 	defer os.Remove(localPath)
@@ -643,4 +650,16 @@ func (s *MysqlBackupService) toInstanceItem(ctx context.Context, inst model.Mysq
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func (s *MysqlBackupService) tailRemoteFile(ctx context.Context, sshCli *sshclient.Client, path string, lines int) (string, error) {
+	if lines <= 0 {
+		lines = 50
+	}
+	script := fmt.Sprintf(`tail -n %d %q 2>/dev/null || true`, lines, path)
+	res, err := sshCli.Exec(ctx, script, 65536)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(res.Stdout + res.Stderr), nil
 }

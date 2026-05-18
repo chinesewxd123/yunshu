@@ -45,7 +45,6 @@ const PATH_COMPONENT_FALLBACK: Record<string, string> = {
   "/alert-duty": "alert-duty-page",
   "/agent-list": "agent-list-page",
   "/dict-entries": "dict-entries-page",
-  "/runtime-config": "runtime-config-page",
   "/k8s/event-forward": "k8s-event-forward-page",
   "/mysql-backup": "mysql-backup-page",
   "/dashboard": "dashboard-page",

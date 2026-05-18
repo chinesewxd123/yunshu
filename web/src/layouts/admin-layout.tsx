@@ -82,7 +82,6 @@ const FALLBACK_MENU_ITEMS: MenuProps["items"] = [
     label: "系统管理",
     children: [
       { key: "/departments", icon: <ApartmentOutlined />, label: <Link to="/departments">组织架构</Link> },
-      { key: "/runtime-config", icon: <DatabaseOutlined />, label: <Link to="/runtime-config">配置中心</Link> },
       { key: "/dict-entries", icon: <DatabaseOutlined />, label: <Link to="/dict-entries">数据字典</Link> },
       { key: "/login-logs", icon: <LoginOutlined />, label: <Link to="/login-logs">登录日志</Link> },
       { key: "/operation-logs", icon: <HistoryOutlined />, label: <Link to="/operation-logs">操作历史</Link> },
@@ -167,7 +166,6 @@ export function AdminLayout() {
       "/users": "租户列表",
       "/departments": "组织架构",
       "/dict-entries": "数据字典",
-      "/runtime-config": "配置中心",
       "/roles": "角色模板",
       "/permissions": "API 列表",
       "/policies": "策略列表",

@@ -265,7 +265,8 @@ function RulesPanel() {
             <Typography.Text code>internal</Typography.Text> / <Typography.Text code>alertmanager</Typography.Text> 时，将 POST 到告警平台{" "}
             <Typography.Text code>/api/v1/alerts/webhook/alertmanager</Typography.Text>（鉴权使用数据字典{" "}
             <Typography.Text code>alert_webhook_token</Typography.Text>）。全局开关请在{" "}
-            <Link to="/runtime-config">运行期配置中心</Link> 维护。
+            <Link to="/dict-entries?keyword=k8s_event_forward_">数据字典</Link> 维护{" "}
+            <Typography.Text code>k8s_event_forward_*</Typography.Text>。
           </span>
         }
       />
@@ -403,8 +404,9 @@ function WorkerSettingsPanel() {
         message="与数据字典的关系"
         description={
           <span>
-            下列参数存于数据库，优先级高于 <Typography.Text code>config.yaml</Typography.Text>，低于数据字典（字典在{" "}
-            <Link to="/runtime-config">运行期配置中心</Link> 维护）。全局总开关请使用字典项{" "}
+            下列参数与 <Link to="/dict-entries?keyword=k8s_event_forward_">数据字典</Link> 中{" "}
+            <Typography.Text code>k8s_event_forward_*</Typography.Text> 为同一数据源，启动时覆盖{" "}
+            <Typography.Text code>config.yaml</Typography.Text>。全局总开关请使用字典项{" "}
             <Typography.Text code>k8s_event_forward_enabled</Typography.Text>。
           </span>
         }

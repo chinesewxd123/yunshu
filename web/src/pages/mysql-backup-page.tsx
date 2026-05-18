@@ -1,4 +1,13 @@
-import { CloudUploadOutlined, DeleteOutlined, EditOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import {
+  CloudUploadOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  FileTextOutlined,
+  LinkOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  ThunderboltOutlined,
+} from "@ant-design/icons";
 import {
   Alert,
   Button,
@@ -7,6 +16,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -45,6 +55,7 @@ export function MysqlBackupPage() {
   const [jobs, setJobs] = useState<MysqlBackupJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [logJob, setLogJob] = useState<MysqlBackupJob | null>(null);
   const [editing, setEditing] = useState<MysqlBackupInstance | null>(null);
   const [form] = Form.useForm<MysqlBackupInstancePayload & { mysql_password?: string }>();
 
@@ -263,24 +274,32 @@ export function MysqlBackupPage() {
       render: (n?: number) => (n ? `${(n / 1024 / 1024).toFixed(2)} MiB` : "-"),
     },
     { title: "MinIO 对象", dataIndex: "minio_object", ellipsis: true },
+    { title: "远端路径", dataIndex: "remote_path", width: 140, ellipsis: true },
     { title: "完成时间", dataIndex: "finished_at", width: 168, render: (v?: string) => formatDateTime(v) },
     {
-      title: "",
-      width: 100,
-      render: (_, row) =>
-        row.status === "success" && row.minio_object ? (
-          <Button
-            size="small"
-            icon={<LinkOutlined />}
-            onClick={() =>
-              void presignMysqlBackupJob(projectId!, row.id).then((r) => {
-                window.open(r.url, "_blank");
-              })
-            }
-          >
-            下载
+      title: "操作",
+      width: 160,
+      fixed: "right",
+      render: (_, row) => (
+        <Space>
+          <Button size="small" icon={<FileTextOutlined />} onClick={() => setLogJob(row)}>
+            日志
           </Button>
-        ) : null,
+          {row.status === "success" && row.minio_object ? (
+            <Button
+              size="small"
+              icon={<LinkOutlined />}
+              onClick={() =>
+                void presignMysqlBackupJob(projectId!, row.id).then((r) => {
+                  window.open(r.url, "_blank");
+                })
+              }
+            >
+              下载
+            </Button>
+          ) : null}
+        </Space>
+      ),
     },
   ];
 
@@ -312,8 +331,9 @@ export function MysqlBackupPage() {
         style={{ marginBottom: 12 }}
         message={
           <span>
-            复用项目内服务器 SSH 凭据；归档至 MinIO 请在 <Link to="/runtime-config">运行期配置</Link> 填写{" "}
-            <Typography.Text code>minio_*</Typography.Text> 字典项。远端 xtrabackup 检查逻辑对齐 mysql_golang_tools。
+            复用项目内服务器 SSH 凭据；归档至 MinIO 请在{" "}
+            <Link to="/dict-entries?keyword=minio_">数据字典</Link> 维护 <Typography.Text code>minio_*</Typography.Text>、
+            <Typography.Text code>mysql_backup_scheduler_*</Typography.Text> 等项。远端 xtrabackup 检查逻辑对齐 mysql_golang_tools。
           </span>
         }
       />
@@ -440,6 +460,39 @@ export function MysqlBackupPage() {
           </Form.Item>
         </Form>
       </Drawer>
+      <Modal
+        title={logJob ? `备份日志 #${logJob.id}` : "备份日志"}
+        open={!!logJob}
+        onCancel={() => setLogJob(null)}
+        footer={null}
+        width={720}
+        destroyOnClose
+      >
+        {logJob ? (
+          <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            {logJob.error_message ? (
+              <Alert type="error" showIcon message="错误信息" description={<pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{logJob.error_message}</pre>} />
+            ) : null}
+            <div>
+              <Typography.Text type="secondary">执行日志（mysqldump 输出或远端 xtrabackup 日志尾部）</Typography.Text>
+              <pre
+                style={{
+                  marginTop: 8,
+                  maxHeight: 420,
+                  overflow: "auto",
+                  padding: 12,
+                  background: "var(--ant-color-fill-quaternary, #f5f5f5)",
+                  borderRadius: 6,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-all",
+                }}
+              >
+                {logJob.log_excerpt?.trim() || "（无日志内容，请确认备份已执行完成）"}
+              </pre>
+            </div>
+          </Space>
+        ) : null}
+      </Modal>
     </Card>
   );
 }

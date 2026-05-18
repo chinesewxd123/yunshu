@@ -337,6 +337,14 @@ func (s *MenuService) ensureBuiltInMenus(ctx context.Context, tree []model.Menu)
 		changed = true
 	}
 
+	runtimeCfgChanged, err := s.hideRuntimeConfigMenu(ctx)
+	if err != nil {
+		return false, svcerr.Pass("menu", "ensureBuiltInMenus", err)
+	}
+	if runtimeCfgChanged {
+		changed = true
+	}
+
 	orgChanged, err := s.ensureOrgMenus(ctx)
 	if err != nil {
 		return false, svcerr.Pass("menu", "ensureBuiltInMenus", err)
@@ -790,6 +798,37 @@ func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) 
 		}
 	}
 
+	return changed, nil
+}
+
+// hideRuntimeConfigMenu 运行期配置中心已废弃，统一使用数据字典。
+func (s *MenuService) hideRuntimeConfigMenu(ctx context.Context) (bool, error) {
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return false, svcerr.Pass("menu", "hideRuntimeConfigMenu", err)
+	}
+	changed := false
+	for i := range all {
+		m := &all[i]
+		if strings.TrimSpace(m.Path) != "/runtime-config" {
+			continue
+		}
+		needSave := false
+		if !m.Hidden {
+			m.Hidden = true
+			needSave = true
+		}
+		if strings.TrimSpace(m.Redirect) != "/dict-entries" {
+			m.Redirect = "/dict-entries"
+			needSave = true
+		}
+		if needSave {
+			if err := s.menuRepo.Update(ctx, m); err != nil {
+				return false, svcerr.Pass("menu", "hideRuntimeConfigMenu", err)
+			}
+			changed = true
+		}
+	}
 	return changed, nil
 }
 
