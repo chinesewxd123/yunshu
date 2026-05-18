@@ -57,6 +57,17 @@ func registerProjectRoutes(api *gin.RouterGroup, d *routeDeps) {
 	projectScoped.GET("/log-files", d.projectHandler.ListLogFiles)
 	projectScoped.GET("/log-units", d.projectHandler.ListLogUnits)
 
+	mysqlBackup := projectScoped.Group("/mysql-backup")
+	mysqlBackup.GET("/instances", d.mysqlBackupHandler.ListInstances)
+	mysqlBackup.POST("/instances", d.mysqlBackupHandler.CreateInstance)
+	mysqlBackup.PUT("/instances/:instanceId", d.mysqlBackupHandler.UpdateInstance)
+	mysqlBackup.DELETE("/instances/:instanceId", d.mysqlBackupHandler.DeleteInstance)
+	mysqlBackup.POST("/instances/:instanceId/ping", d.mysqlBackupHandler.PingInstance)
+	mysqlBackup.POST("/instances/:instanceId/check-remote", d.mysqlBackupHandler.CheckRemote)
+	mysqlBackup.POST("/instances/:instanceId/run", d.mysqlBackupHandler.RunBackup)
+	mysqlBackup.GET("/jobs", d.mysqlBackupHandler.ListJobs)
+	mysqlBackup.GET("/jobs/:jobId/presign", d.mysqlBackupHandler.PresignJob)
+
 	projectsWS := api.Group("/projects")
 	projectsWS.Use(d.wsAuthMiddleware, d.authorize, middleware.RequireProjectMemberAccess(d.projectMemberRepo, d.app.Logger))
 	projectsWS.GET("/:id/servers/:serverId/terminal/ws", d.projectHandler.ServerTerminalWS)

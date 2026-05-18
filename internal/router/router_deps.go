@@ -74,6 +74,8 @@ type routeDeps struct {
 	overviewHandler          *handler.OverviewHandler
 
 	projectHandler         *handler.ProjectHandler
+	mysqlBackupSvc         *service.MysqlBackupService
+	mysqlBackupHandler     *handler.MysqlBackupHandler
 	logAgentHandler        *handler.LogAgentHandler
 	agentDiscoveryHandler  *handler.AgentDiscoveryHandler
 }
@@ -167,6 +169,12 @@ func wireRouteDeps(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) 
 	if err != nil {
 		panic(err)
 	}
+	mysqlBackupRepo := repository.NewMysqlBackupRepository(app.DB)
+	mysqlBackupSvc, err := service.NewMysqlBackupService(mysqlBackupRepo, serverRepo, projectRepo, app.DB, app.Config.Security.EncryptionKey)
+	if err != nil {
+		panic(err)
+	}
+	mysqlBackupHandler := handler.NewMysqlBackupHandler(mysqlBackupSvc)
 	logAgentService := service.NewLogAgentService(logAgentRepo, serverRepo, logRepo, app.Config.Agent.RegisterSecret, app.Config.Agent.DiscoveryRoots)
 	agentDiscoveryService := service.NewAgentDiscoveryService(agentDiscoveryRepo, logAgentRepo, serverRepo, logRepo)
 
@@ -285,6 +293,8 @@ func wireRouteDeps(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) 
 		overviewHandler:         overviewHandler,
 
 		projectHandler:        projectHandler,
+		mysqlBackupSvc:        mysqlBackupSvc,
+		mysqlBackupHandler:    mysqlBackupHandler,
 		logAgentHandler:       logAgentHandler,
 		agentDiscoveryHandler: agentDiscoveryHandler,
 	}

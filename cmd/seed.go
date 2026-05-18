@@ -454,6 +454,16 @@ func defaultPermissions() []model.Permission {
 		{Name: "项目日志单元", Resource: "/api/v1/projects/:id/log-units", Action: "GET", Description: "List log units"},
 		{Name: "项目服务器终端 WS", Resource: "/api/v1/projects/:id/servers/:serverId/terminal/ws", Action: "GET", Description: "Server terminal websocket"},
 
+		{Name: "MySQL备份实例列表", Resource: "/api/v1/projects/:id/mysql-backup/instances", Action: "GET", Description: "List MySQL backup instances"},
+		{Name: "MySQL备份实例创建", Resource: "/api/v1/projects/:id/mysql-backup/instances", Action: "POST", Description: "Create MySQL backup instance"},
+		{Name: "MySQL备份实例更新", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId", Action: "PUT", Description: "Update MySQL backup instance"},
+		{Name: "MySQL备份实例删除", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId", Action: "DELETE", Description: "Delete MySQL backup instance"},
+		{Name: "MySQL备份连通测试", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId/ping", Action: "POST", Description: "Ping MySQL backup instance"},
+		{Name: "MySQL远端备份检查", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId/check-remote", Action: "POST", Description: "Check remote xtrabackup backup"},
+		{Name: "MySQL执行备份", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId/run", Action: "POST", Description: "Run MySQL backup job"},
+		{Name: "MySQL备份任务列表", Resource: "/api/v1/projects/:id/mysql-backup/jobs", Action: "GET", Description: "List MySQL backup jobs"},
+		{Name: "MySQL备份预签名下载", Resource: "/api/v1/projects/:id/mysql-backup/jobs/:jobId/presign", Action: "GET", Description: "Presign MySQL backup download URL"},
+
 		{Name: "Event 列表", Resource: "/api/v1/events", Action: "GET", Description: "List events"},
 		{Name: "CRD 列表", Resource: "/api/v1/crds", Action: "GET", Description: "List custom resource definitions"},
 		{Name: "CRD 详情", Resource: "/api/v1/crds/detail", Action: "GET", Description: "Get custom resource definition detail"},
@@ -646,6 +656,7 @@ func defaultMenus() []model.Menu {
 				{Name: "日志源配置", Path: "/project-log-sources", Icon: "FileSearchOutlined", Sort: 5, Component: "project-log-sources-page", Status: 1},
 				{Name: "日志平台", Path: "/project-logs", Icon: "FileTextOutlined", Sort: 6, Component: "project-logs-page", Status: 1},
 				{Name: "Agent 列表", Path: "/agent-list", Icon: "RobotOutlined", Sort: 7, Component: "agent-list-page", Status: 1},
+				{Name: "MySQL 备份", Path: "/mysql-backup", Icon: "DatabaseOutlined", Sort: 8, Component: "mysql-backup-page", Status: 1},
 			},
 		},
 		{
@@ -695,9 +706,10 @@ func defaultMenus() []model.Menu {
 				{Name: "IngressClass 入口类", Path: "/ingress-classes", Icon: "GatewayOutlined", Sort: 18, Component: "ingress-classes-page", Status: 1},
 				{Name: "网络策略管理", Path: "/network-policies", Icon: "DeploymentUnitOutlined", Sort: 19, Component: "network-policies-page", Status: 1},
 				{Name: "Event 事件", Path: "/events", Icon: "FileSearchOutlined", Sort: 20, Component: "events-page", Status: 1},
-				{Name: "ServiceAccount 管理", Path: "/serviceaccounts", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "serviceaccounts-page", Status: 1},
-				{Name: "API 资源发现", Path: "/cluster-api-resources", Icon: "UnorderedListOutlined", Sort: 22, Component: "cluster-api-resources-page", Status: 1},
-				{Name: "HPA 弹性伸缩", Path: "/horizontal-pod-autoscalers", Icon: "LineChartOutlined", Sort: 23, Component: "horizontal-pod-autoscalers-page", Status: 1},
+				{Name: "K8s Event 转发", Path: "/k8s/event-forward", Icon: "ShareAltOutlined", Sort: 21, Component: "k8s-event-forward-page", Status: 1},
+				{Name: "ServiceAccount 管理", Path: "/serviceaccounts", Icon: "SafetyCertificateOutlined", Sort: 22, Component: "serviceaccounts-page", Status: 1},
+				{Name: "API 资源发现", Path: "/cluster-api-resources", Icon: "UnorderedListOutlined", Sort: 23, Component: "cluster-api-resources-page", Status: 1},
+				{Name: "HPA 弹性伸缩", Path: "/horizontal-pod-autoscalers", Icon: "LineChartOutlined", Sort: 24, Component: "horizontal-pod-autoscalers-page", Status: 1},
 			},
 		},
 		{

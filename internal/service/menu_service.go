@@ -511,6 +511,7 @@ func (s *MenuService) ensureProjectMgmtMenus(ctx context.Context) (bool, error) 
 		{Path: "/project-log-sources", Name: "日志源配置", Icon: "FileSearchOutlined", Sort: 4, Component: "project-log-sources-page", Status: 1},
 		{Path: "/project-logs", Name: "日志平台", Icon: "FileTextOutlined", Sort: 5, Component: "project-logs-page", Status: 1},
 		{Path: "/agent-list", Name: "Agent 列表", Icon: "RobotOutlined", Sort: 6, Component: "agent-list-page", Status: 1},
+		{Path: "/mysql-backup", Name: "MySQL 备份", Icon: "DatabaseOutlined", Sort: 7, Component: "mysql-backup-page", Status: 1},
 	}
 
 	var root *model.Menu
@@ -623,6 +624,7 @@ func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bo
 		{Path: "/ingresses", Name: "Ingress 管理", Icon: "GatewayOutlined", Sort: 17, Component: "ingresses-page", Status: 1},
 		{Path: "/ingress-classes", Name: "IngressClass 入口类", Icon: "GatewayOutlined", Sort: 18, Component: "ingress-classes-page", Status: 1},
 		{Path: "/network-policies", Name: "网络策略管理", Icon: "DeploymentUnitOutlined", Sort: 19, Component: "network-policies-page", Status: 1},
+		{Path: "/k8s/event-forward", Name: "K8s Event 转发", Icon: "ShareAltOutlined", Sort: 21, Component: "k8s-event-forward-page", Status: 1},
 		{Path: "/rbac/roles", Name: "RBAC - Role", Icon: "SafetyCertificateOutlined", Sort: 20, Component: "rbac-roles-page", Status: 1},
 		{Path: "/rbac/rolebindings", Name: "RBAC - RoleBinding", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "rbac-rolebindings-page", Status: 1},
 		{Path: "/rbac/clusterroles", Name: "RBAC - ClusterRole", Icon: "SafetyCertificateOutlined", Sort: 22, Component: "rbac-clusterroles-page", Status: 1},

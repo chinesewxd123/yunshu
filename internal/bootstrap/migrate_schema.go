@@ -256,6 +256,8 @@ func AutoMigrateModels(db *gorm.DB) error {
 		&model.K8sForwardedEvent{},
 		&model.K8sEventForwardRule{},
 		&model.K8sEventForwardSetting{},
+		&model.MysqlBackupInstance{},
+		&model.MysqlBackupJob{},
 	); err != nil {
 		return err
 	}

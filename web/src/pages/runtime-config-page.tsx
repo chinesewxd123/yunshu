@@ -55,6 +55,7 @@ export function RuntimeConfigPage() {
   const [alertForm] = Form.useForm();
   const [mailForm] = Form.useForm();
   const [k8sEventForm] = Form.useForm();
+  const [minioForm] = Form.useForm();
 
   const dictTypes = useMemo(
     () => ({
@@ -75,6 +76,13 @@ export function RuntimeConfigPage() {
       k8sInterval: "k8s_event_forward_worker_interval_seconds",
       k8sBatch: "k8s_event_forward_worker_batch_size",
       k8sRetries: "k8s_event_forward_worker_max_retries",
+
+      minioEndpoint: "minio_endpoint",
+      minioAccessKey: "minio_access_key",
+      minioSecretKey: "minio_secret_key",
+      minioBucket: "minio_bucket",
+      minioUseSSL: "minio_use_ssl",
+      minioPrefix: "minio_backup_prefix",
     }),
     [],
   );
@@ -95,6 +103,14 @@ export function RuntimeConfigPage() {
           loadSingleton(dictTypes.k8sInterval, { label: "批处理周期(秒)", value: "10", status: 0, remark: "覆盖 worker_interval_seconds", sort: 0 }),
           loadSingleton(dictTypes.k8sBatch, { label: "批大小", value: "50", status: 0, remark: "覆盖 worker_batch_size", sort: 0 }),
           loadSingleton(dictTypes.k8sRetries, { label: "最大重试", value: "3", status: 0, remark: "覆盖 worker_max_retries", sort: 0 }),
+        ]);
+        const [minioEndpoint, minioAccessKey, minioSecretKey, minioBucket, minioUseSSL, minioPrefix] = await Promise.all([
+          loadSingleton(dictTypes.minioEndpoint, { label: "MinIO Endpoint", value: "127.0.0.1:9000", status: 0, remark: "MySQL 备份归档", sort: 0 }),
+          loadSingleton(dictTypes.minioAccessKey, { label: "Access Key", value: "", status: 0, remark: "", sort: 0 }),
+          loadSingleton(dictTypes.minioSecretKey, { label: "Secret Key", value: "", status: 0, remark: "", sort: 0 }),
+          loadSingleton(dictTypes.minioBucket, { label: "Bucket", value: "yunshu-mysql-backup", status: 0, remark: "", sort: 0 }),
+          loadSingleton(dictTypes.minioUseSSL, { label: "Use SSL", value: "false", status: 0, remark: "true/false", sort: 0 }),
+          loadSingleton(dictTypes.minioPrefix, { label: "对象前缀", value: "mysql-backups", status: 0, remark: "", sort: 0 }),
         ]);
         const [mailHost, mailPort, mailUsername, mailPassword, mailFromEmail, mailFromName, mailUseTLS] = await Promise.all([
           loadSingleton(dictTypes.mailHost, { label: "SMTP Host", value: "smtp.163.com", status: 1, remark: "覆盖 mail.host（重启服务生效）", sort: 0 }),
@@ -123,6 +139,18 @@ export function RuntimeConfigPage() {
           k8sBatch: { ...k8sBatch, status: k8sBatch.status === 1, value: Number(k8sBatch.value || 0) || 50 },
           k8sRetries: { ...k8sRetries, status: k8sRetries.status === 1, value: Number(k8sRetries.value || 0) || 3 },
         });
+        minioForm.setFieldsValue({
+          minioEndpoint: { ...minioEndpoint, status: minioEndpoint.status === 1 },
+          minioAccessKey: { ...minioAccessKey, status: minioAccessKey.status === 1 },
+          minioSecretKey: { ...minioSecretKey, status: minioSecretKey.status === 1 },
+          minioBucket: { ...minioBucket, status: minioBucket.status === 1 },
+          minioUseSSL: {
+            ...minioUseSSL,
+            status: minioUseSSL.status === 1,
+            value: String(minioUseSSL.value || "").toLowerCase() === "true",
+          },
+          minioPrefix: { ...minioPrefix, status: minioPrefix.status === 1 },
+        });
         mailForm.setFieldsValue({
           mailHost: { ...mailHost, status: mailHost.status === 1 },
           mailPort: { ...mailPort, status: mailPort.status === 1, value: Number(mailPort.value || 0) || 465 },
@@ -145,7 +173,7 @@ export function RuntimeConfigPage() {
     return () => {
       cancelled = true;
     };
-  }, [alertForm, k8sEventForm, mailForm, dictTypes]);
+  }, [alertForm, k8sEventForm, mailForm, minioForm, dictTypes]);
 
   async function saveAlert() {
     const v = await alertForm.validateFields();
@@ -175,6 +203,25 @@ export function RuntimeConfigPage() {
         upsertSingleton({ ...v.k8sRetries, value: String(Number(v.k8sRetries?.value ?? 0) || 0) }),
       ]);
       message.success("K8s Event 转发配置已保存（开关与 Worker 参数下一批处理周期内生效；缓冲变更建议重启服务）");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveMinio() {
+    const v = await minioForm.validateFields();
+    setSaving(true);
+    try {
+      const minioUseSSL = { ...v.minioUseSSL, value: v.minioUseSSL?.value ? "true" : "false" };
+      await Promise.all([
+        upsertSingleton(v.minioEndpoint),
+        upsertSingleton(v.minioAccessKey),
+        upsertSingleton(v.minioSecretKey),
+        upsertSingleton(v.minioBucket),
+        upsertSingleton(minioUseSSL),
+        upsertSingleton(v.minioPrefix),
+      ]);
+      message.success("MinIO 配置已保存（立即生效）");
     } finally {
       setSaving(false);
     }
@@ -326,6 +373,38 @@ export function RuntimeConfigPage() {
                   <DictItemEditor name="mailFromName" title="From Name（mail.from_name）" placeholder="例如 YunShu" />
                   <Button type="primary" loading={saving} onClick={() => void saveMail()}>
                     保存邮件配置
+                  </Button>
+                </Space>
+              </Form>
+            ),
+          },
+          {
+            key: "minio",
+            label: "MinIO（MySQL 备份）",
+            children: (
+              <Form form={minioForm} layout="vertical" autoComplete="off">
+                <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                  <DictItemEditor name="minioEndpoint" title="Endpoint（minio_endpoint）" placeholder="127.0.0.1:9000" />
+                  <DictItemEditor name="minioAccessKey" title="Access Key" placeholder="minioadmin" />
+                  <DictItemEditor name="minioSecretKey" title="Secret Key" placeholder="密钥" password />
+                  <DictItemEditor name="minioBucket" title="Bucket" placeholder="yunshu-mysql-backup" />
+                  <Card size="small" title="Use SSL（minio_use_ssl）">
+                    <Form.Item name={["minioUseSSL", "id"]} hidden>
+                      <Input />
+                    </Form.Item>
+                    <Form.Item name={["minioUseSSL", "dict_type"]} hidden>
+                      <Input />
+                    </Form.Item>
+                    <Form.Item name={["minioUseSSL", "status"]} label="启用覆盖" valuePropName="checked">
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item name={["minioUseSSL", "value"]} label="SSL" valuePropName="checked">
+                      <Switch />
+                    </Form.Item>
+                  </Card>
+                  <DictItemEditor name="minioPrefix" title="对象前缀（minio_backup_prefix）" placeholder="mysql-backups" />
+                  <Button type="primary" loading={saving} onClick={() => void saveMinio()}>
+                    保存 MinIO 配置
                   </Button>
                 </Space>
               </Form>

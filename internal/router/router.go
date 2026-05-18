@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"log/slog"
 
 	"yunshu/internal/bootstrap"
@@ -12,7 +13,8 @@ import (
 )
 
 // Register 装配依赖并注册全部 HTTP 路由；返回 K8s Event 转发管理器（可能为 nil）。
-func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) *k8seventforward.Manager {
+// bgCtx 用于 MySQL 定时备份等后台 Worker，进程退出时应 cancel。
+func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient, bgCtx context.Context) *k8seventforward.Manager {
 	handler.SetLogger(app.Logger)
 	registerSwagger(app)
 
@@ -21,6 +23,11 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) *k8se
 	registerPlatformRoutes(api, d)
 	registerK8sRoutes(api, d)
 	registerProjectRoutes(api, d)
+
+	if d.mysqlBackupSvc != nil && bgCtx != nil {
+		d.mysqlBackupSvc.SetInfoLogger(app.Logger.Info)
+		go d.mysqlBackupSvc.RunMysqlBackupScheduler(bgCtx, app.Logger.Info)
+	}
 
 	clusterRepo := repository.NewK8sClusterRepository(app.DB)
 	runtimeSvc := service.NewK8sRuntimeService(clusterRepo)

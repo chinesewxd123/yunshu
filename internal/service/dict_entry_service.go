@@ -122,6 +122,16 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			{DictType: "k8s_event_forward_worker_interval_seconds", Label: "批处理周期(秒)", Value: "10", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_interval_seconds"},
 			{DictType: "k8s_event_forward_worker_batch_size", Label: "批大小", Value: "50", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_batch_size"},
 			{DictType: "k8s_event_forward_worker_max_retries", Label: "最大重试", Value: "3", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_max_retries"},
+			// MinIO（MySQL 备份归档，字典权威来源）
+			{DictType: "minio_endpoint", Label: "MinIO Endpoint", Value: "127.0.0.1:9000", Sort: intRef(1), Status: 0, Remark: "如 127.0.0.1:9000 或 minio.example.com:9000"},
+			{DictType: "minio_access_key", Label: "MinIO AccessKey", Value: "", Sort: intRef(1), Status: 0, Remark: "MinIO 访问密钥"},
+			{DictType: "minio_secret_key", Label: "MinIO SecretKey", Value: "", Sort: intRef(1), Status: 0, Remark: "MinIO 秘密密钥"},
+			{DictType: "minio_bucket", Label: "MinIO Bucket", Value: "yunshu-mysql-backup", Sort: intRef(1), Status: 0, Remark: "备份归档桶名"},
+			{DictType: "minio_use_ssl", Label: "MinIO 使用 SSL", Value: "false", Sort: intRef(1), Status: 0, Remark: "true/false"},
+			{DictType: "minio_region", Label: "MinIO Region", Value: "", Sort: intRef(1), Status: 0, Remark: "可选"},
+			{DictType: "minio_backup_prefix", Label: "对象前缀", Value: "mysql-backups", Sort: intRef(1), Status: 0, Remark: "对象键前缀，如 mysql-backups"},
+			{DictType: "mysql_backup_scheduler_enabled", Label: "启用 MySQL 定时备份 Worker", Value: "true", Sort: intRef(1), Status: 0, Remark: "后台 Cron 调度总开关"},
+			{DictType: "mysql_backup_scheduler_tick_spec", Label: "调度轮询 Cron", Value: "*/30 * * * * *", Sort: intRef(1), Status: 0, Remark: "六段式 Cron，用于轮询各实例 cron_spec 是否到点"},
 			{DictType: "wecom_notify_mode", Label: "群机器人(robot)", Value: "robot", Sort: intRef(1), Status: 1, Remark: "企业微信通知模式"},
 			{DictType: "wecom_notify_mode", Label: "企业应用(app)", Value: "app", Sort: intRef(2), Status: 1, Remark: "企业微信通知模式"},
 			{DictType: "dingtalk_notify_mode", Label: "群机器人(robot)", Value: "robot", Sort: intRef(1), Status: 1, Remark: "钉钉通知模式"},
@@ -196,6 +206,13 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			"k8s_event_forward_worker_interval_seconds": {},
 			"k8s_event_forward_worker_batch_size":         {},
 			"k8s_event_forward_worker_max_retries":        {},
+			"minio_endpoint":                                {},
+			"minio_access_key":                              {},
+			"minio_secret_key":                              {},
+			"minio_bucket":                                  {},
+			"minio_use_ssl":                                 {},
+			"minio_region":                                  {},
+			"minio_backup_prefix":                           {},
 		}
 		for _, item := range seed {
 			var (
