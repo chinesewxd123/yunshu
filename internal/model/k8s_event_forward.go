@@ -1,12 +1,13 @@
 package model
 
 import (
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 )
 
-// K8sForwardedEvent 持久化的待转发 K8s Warning 事件（参考 k8m k8s_events）。
+// K8sForwardedEvent 持久化的待转发 K8s 事件（参考 k8m k8s_events；Normal 不转发）。
 type K8sForwardedEvent struct {
 	ID        int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	EvtKey    string    `json:"evt_key" gorm:"size:255;uniqueIndex:idx_k8s_fwd_evt_key"`
@@ -26,7 +27,13 @@ type K8sForwardedEvent struct {
 
 func (K8sForwardedEvent) TableName() string { return "k8s_forwarded_events" }
 
-func (e *K8sForwardedEvent) IsWarning() bool { return e.Type == "Warning" }
+// ShouldForward 是否应转发：K8s Event 标准类型为 Normal / Warning，Normal 不发送，其余均发送。
+func (e *K8sForwardedEvent) ShouldForward() bool {
+	if e == nil {
+		return false
+	}
+	return !strings.EqualFold(strings.TrimSpace(e.Type), "Normal")
+}
 
 // K8sEventForwardRule 多集群事件转发规则（参考 k8m k8s_event_config）。
 type K8sEventForwardRule struct {

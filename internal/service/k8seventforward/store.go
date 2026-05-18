@@ -99,4 +99,19 @@ func (s *Store) GetClusterName(ctx context.Context, id uint) string {
 	return c.Name
 }
 
+// GetClusterOwningProjectID 集群归属项目（k8s_clusters.owning_project_id），用于告警订阅路由。
+func (s *Store) GetClusterOwningProjectID(ctx context.Context, id uint) uint {
+	if id == 0 {
+		return 0
+	}
+	var c model.K8sCluster
+	if err := s.db.WithContext(ctx).Select("owning_project_id").First(&c, id).Error; err != nil {
+		return 0
+	}
+	if c.OwningProjectID != nil && *c.OwningProjectID > 0 {
+		return *c.OwningProjectID
+	}
+	return 0
+}
+
 func nowUTC() time.Time { return time.Now().UTC() }

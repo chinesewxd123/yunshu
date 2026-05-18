@@ -129,7 +129,7 @@ func (w *Watcher) watchCluster(clusterID string, id uint) {
 				continue
 			}
 			m := w.fromK8sEvent(clusterID, &typed)
-			if m == nil || !m.IsWarning() {
+			if m == nil || !m.ShouldForward() {
 				continue
 			}
 			if err := w.enqueue(m); err != nil {

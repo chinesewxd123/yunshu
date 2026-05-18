@@ -178,6 +178,7 @@ func (w *Worker) push(ctx context.Context, url, ruleName, clusterID string, even
 		cid = uint(id)
 	}
 	clusterName := w.store.GetClusterName(ctx, cid)
-	payload := buildAlertManagerPayload(ruleName, clusterID, clusterName, events)
+	projectID := w.store.GetClusterOwningProjectID(ctx, cid)
+	payload := buildAlertManagerPayload(ruleName, clusterID, clusterName, projectID, events)
 	return w.client.PostAlertmanager(ctx, url, payload)
 }

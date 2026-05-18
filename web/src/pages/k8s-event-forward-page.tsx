@@ -261,7 +261,8 @@ function RulesPanel() {
         message="转发说明"
         description={
           <span>
-            仅转发 K8s <Typography.Text code>Warning</Typography.Text> 事件。Webhook 留空或填{" "}
+            K8s Event 标准类型为 <Typography.Text code>Normal</Typography.Text> / <Typography.Text code>Warning</Typography.Text>，仅{" "}
+            <Typography.Text code>Normal</Typography.Text> 不转发；告警自动携带集群归属项目的 <Typography.Text code>project_id</Typography.Text>，走项目订阅路由（请在集群管理设置「归属项目」）。Webhook 留空或填{" "}
             <Typography.Text code>internal</Typography.Text> / <Typography.Text code>alertmanager</Typography.Text> 时，将 POST 到告警平台{" "}
             <Typography.Text code>/api/v1/alerts/webhook/alertmanager</Typography.Text>（鉴权使用数据字典{" "}
             <Typography.Text code>alert_webhook_token</Typography.Text>）。全局开关请在{" "}

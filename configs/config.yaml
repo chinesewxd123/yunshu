@@ -128,7 +128,7 @@ alert:
   # 仅内置 PromQL 监控规则的调度节拍（robfig/cron 六段式，含秒）。云到期规则在控制台配置 Cron，由服务内独立节拍轮询。空则默认 */5 * * * * *（每 5 秒）。
   # monitor_eval_cron_spec: "*/5 * * * * *"
 
-# 多集群 K8s Event 转发：请在「数据字典」维护（字典优先，下列 YAML 兜底）
+# 多集群 K8s Event 转发：请在「数据字典」维护（字典优先，下列 YAML 兜底）；Normal 不转发，告警 labels 带集群 owning_project_id
 # dict_type: k8s_event_forward_enabled | k8s_event_forward_watcher_buffer_size |
 #            k8s_event_forward_worker_interval_seconds | k8s_event_forward_worker_batch_size |
 #            k8s_event_forward_worker_max_retries
