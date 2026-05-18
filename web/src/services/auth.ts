@@ -37,7 +37,7 @@ export function emailLogin(payload: EmailLoginPayload) {
 
 export function registerByEmail(payload: RegisterPayload) {
   // 注册失败提示由页面自行处理，避免拦截器通用文案覆盖后端细节。
-  return getData<MessageData>(http.post("/auth/register", payload, { silentErrorToast: true }));
+  return getData<RegisterResult>(http.post("/auth/register", payload, { silentErrorToast: true }));
 }
 
 export function logout() {

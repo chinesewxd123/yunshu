@@ -71,6 +71,7 @@ const API_ERROR_MESSAGES: Record<string, string> = {
   "25003": "该用户名或邮箱已有待审核申请，请勿重复提交",
   // K8s 26xxx
   "26001": "该命名空间已存在，请勿重复创建",
+  "26002": "Kubernetes 集群认证失败：请检查集群 Token/证书是否有效，或在集群管理中重新保存直连配置",
   // 非数字 fallback（部分非 AppError 路径）
   INTERNAL_ERROR: "服务器内部错误",
   BAD_REQUEST: "请求参数无效",

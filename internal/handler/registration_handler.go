@@ -23,7 +23,7 @@ func NewRegistrationHandler(svc *service.RegistrationService) *RegistrationHandl
 
 // Apply 提交申请对应的 HTTP 接口处理逻辑。
 func (h *RegistrationHandler) Apply(c *gin.Context) {
-	ServeJSONOK(c, nil, func(ctx context.Context, req service.ApplyRegisterRequest) error {
+	ServeJSONOK(c, gin.H{"message": "注册申请已提交，请等待管理员审核"}, func(ctx context.Context, req service.ApplyRegisterRequest) error {
 		return h.service.Apply(ctx, req)
 	})
 }

@@ -198,7 +198,7 @@ export function LoginPage() {
         code: String(values.code ?? "").trim().replace(/[^\d]/g, ""),
       };
       const result = await registerByEmail(payload);
-      message.success(result.message || "注册申请已提交，请等待管理员审核");
+      message.success(result?.message || "注册申请已提交，请等待管理员审核");
       setRegisterOpen(false);
       registerForm.resetFields();
     } catch (e) {

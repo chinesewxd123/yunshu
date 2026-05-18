@@ -24,7 +24,7 @@ func TestK8sMapAPIError(t *testing.T) {
 		{"not found", apierrors.NewNotFound(gr, "x"), "10004"},
 		{"forbidden", apierrors.NewForbidden(gr, "x", errors.New("denied")), "10003"},
 		{"conflict", apierrors.NewConflict(gr, "x", errors.New("exists")), "10005"},
-		{"unauthorized", apierrors.NewUnauthorized("no"), "11023"},
+		{"unauthorized", apierrors.NewUnauthorized("no"), "26002"},
 		{"bad request", apierrors.NewBadRequest("bad"), "11020"},
 		{"generic", errors.New("network"), ""},
 	}
@@ -69,6 +69,15 @@ func TestK8sRepoErrNotFound(t *testing.T) {
 	ae, ok := apperror.IsAppError(got)
 	if !ok || ae.ErrorCode != "10004" {
 		t.Fatalf("expected not found, got %v", got)
+	}
+}
+
+func TestK8sMapAPIErrorUnauthorizedString(t *testing.T) {
+	t.Parallel()
+	got := k8sMapAPIError(errors.New("Unauthorized"))
+	ae, ok := apperror.IsAppError(got)
+	if !ok || ae.ErrorCode != "26002" {
+		t.Fatalf("expected 26002, got %v", got)
 	}
 }
 

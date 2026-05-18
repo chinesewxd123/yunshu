@@ -147,6 +147,8 @@ var (
 var (
 	// ErrK8sNamespaceAlreadyExists 表单创建命名空间时名称已在集群中存在（HTTP 409 / error_code 26001）。
 	ErrK8sNamespaceAlreadyExists = BizError(http.StatusConflict, 26001, "该命名空间已存在，请勿重复创建")
+	// ErrK8sClusterAPIUnauthorized 集群 Token/证书无效（HTTP 403，避免与平台登录 401 混淆导致前端误登出）。
+	ErrK8sClusterAPIUnauthorized = BizError(http.StatusForbidden, 26002, ErrMsgK8sAPIUnauthorized)
 )
 
 // ErrK8sNamespaceAlreadyExistsMsg 返回业务码 26001，文案包含冲突的名称。

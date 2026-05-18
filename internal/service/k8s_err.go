@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 
 	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/constants"
@@ -50,7 +51,7 @@ func k8sMapAPIError(err error) error {
 	case apierrors.IsConflict(err):
 		return constants.ErrConflict
 	case apierrors.IsUnauthorized(err):
-		return constants.ErrUnauthorizedWithMsg(constants.ErrMsgK8sAPIUnauthorized)
+		return constants.ErrK8sClusterAPIUnauthorized
 	case apierrors.IsInvalid(err), apierrors.IsBadRequest(err):
 		msg := string(apierrors.ReasonForError(err))
 		if msg == "" {
@@ -58,6 +59,23 @@ func k8sMapAPIError(err error) error {
 		}
 		return constants.ErrBadRequestWithMsg(msg)
 	default:
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "unauthorized") || strings.Contains(msg, "401 unauthorized") {
+			return constants.ErrK8sClusterAPIUnauthorized
+		}
 		return err
 	}
+}
+
+// k8sFailOrInternal 优先映射 apiserver 业务错误；否则返回带上下文的 10901。
+func k8sFailOrInternal(component, operation string, err error, msgFmt string, attrs ...any) error {
+	if err == nil {
+		return nil
+	}
+	if mapped := k8sMapAPIError(err); mapped != err {
+		if _, ok := apperror.IsAppError(mapped); ok {
+			return mapped
+		}
+	}
+	return svcerr.Internal(component, operation, err, msgFmt, attrs...)
 }

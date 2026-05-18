@@ -27,7 +27,7 @@ func (s *K8sWorkloadService) ListDeployments(ctx context.Context, q NamespacedLi
 	gvk, _ := s.dyn.GVKByKind("Deployment")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt78bb8313c519)
+		return nil, k8sFailOrInternal("k8s.workload", "ListDeployments", err, constants.ErrFmt78bb8313c519)
 	}
 	list := make([]appsv1.Deployment, 0, len(listU))
 	for _, item := range listU {
