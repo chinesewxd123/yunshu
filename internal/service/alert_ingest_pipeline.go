@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func (s *AlertService) ingestCanonicalAlerts(ctx context.Context, items []Canoni
 		Where("enabled = ?", true).
 		Order("id ASC").
 		Find(&channels).Error; err != nil {
-		return svcerr.Pass("alert.ingest", "ingestCanonicalAlerts", err)
+		return svcerr.Pass(ctx, "alert.ingest", "ingestCanonicalAlerts", err)
 	}
 	for _, ca := range items {
 		alert := ca.Alert

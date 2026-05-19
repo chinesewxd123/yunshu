@@ -158,6 +158,7 @@ export function MysqlBackupPage() {
       database_name: "",
       table_name: "",
       database_names: "",
+      upload_to_minio: true,
       remote_data_dir: "/export/servers/data/mybackup/my3306/xtrabackup/data",
       remote_log_dir: "/export/servers/data/mybackup/my3306/xtrabackup/log",
       mysqldump_work_dir: "/export/backup/yunshu",
@@ -183,6 +184,7 @@ export function MysqlBackupPage() {
       database_name: row.database_name,
       table_name: row.table_name,
       database_names: row.database_names,
+      upload_to_minio: row.upload_to_minio !== false,
       remote_data_dir: row.remote_data_dir,
       remote_log_dir: row.remote_log_dir,
       mysqldump_work_dir: row.mysqldump_work_dir || "/export/backup/yunshu",
@@ -400,8 +402,9 @@ export function MysqlBackupPage() {
             <Link to="/dict-entries?keyword=minio_">数据字典</Link> 维护 <Typography.Text code>minio_*</Typography.Text>、
             <Typography.Text code>mysql_backup_scheduler_*</Typography.Text> 等项。
             <strong>mysqldump</strong> 适合新接入库（平台经 SSH 直接备份）。
-            <strong>远端 xtrabackup</strong> 会扫描近 30 天最新有效 <Typography.Text code>full_*.tar.gz</Typography.Text> 并上传；
+            <strong>远端 xtrabackup</strong> 会扫描近 30 天最新有效 <Typography.Text code>full_*.tar.gz</Typography.Text>；
             若服务器尚无 xtrabackup 产物，执行备份将<strong>自动改用 mysqldump</strong>。
+            是否上传 MinIO 由实例开关控制；上传后<strong>不删除</strong> SSH 服务器上的备份文件。mysqldump 与 xtrabackup 落盘目录须分开配置。
           </span>
         }
       />
@@ -467,6 +470,14 @@ export function MysqlBackupPage() {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
+          <Form.Item
+            name="upload_to_minio"
+            label="上传 MinIO"
+            valuePropName="checked"
+            extra="关闭时仅在 SSH 服务器保留备份文件，任务日志中可查看远端路径"
+          >
+            <Switch />
+          </Form.Item>
           <Form.Item name="mysql_host" label="MySQL Host">
             <Input placeholder="127.0.0.1" />
           </Form.Item>
@@ -530,43 +541,73 @@ export function MysqlBackupPage() {
               ) : null
             }
           </Form.Item>
-          <Divider orientation="left" plain>
-            mysqldump 参数
-          </Divider>
-          <Form.Item
-            name="mysqldump_work_dir"
-            label="远端落盘目录"
-            extra="SSH 服务器上的绝对路径，备份 sql.gz 与日志写在此目录（勿用 /tmp）"
-            rules={[{ required: true }, { pattern: /^\//, message: "须以 / 开头的绝对路径" }]}
-          >
-            <Input placeholder="/export/backup/yunshu" />
-          </Form.Item>
-          <Form.Item name="mysqldump_options" label="mysqldump 选项">
-            <Checkbox.Group
-              options={mysqldumpOptions.map((o) => ({ label: o.label, value: o.id }))}
-              style={{ display: "flex", flexDirection: "column", gap: 6 }}
-            />
-          </Form.Item>
-          <Form.Item name="mysqldump_extra_args" label="额外参数" extra="空格分隔，每项须以 - 开头，如 --max-allowed-packet=512M">
-            <Input placeholder="--max-allowed-packet=512M" />
-          </Form.Item>
           <Form.Item noStyle shouldUpdate={(p, c) => p.backup_mode !== c.backup_mode}>
-            {({ getFieldValue }) =>
-              getFieldValue("backup_mode") === "remote_check" ? (
-                <>
-                  <Form.Item
-                    name="remote_data_dir"
-                    label="远端备份数据目录"
-                    extra="已有 cron xtrabackup 时填写；新库可留默认，执行备份会自动 mysqldump"
-                  >
-                    <Input />
-                  </Form.Item>
-                  <Form.Item name="remote_log_dir" label="远端备份日志目录" extra="与 xtrabackup 脚本日志路径一致">
-                    <Input />
-                  </Form.Item>
-                </>
-              ) : null
-            }
+            {({ getFieldValue }) => {
+              const mode = getFieldValue("backup_mode");
+              if (mode === "mysqldump") {
+                return (
+                  <>
+                    <Divider orientation="left" plain>
+                      mysqldump
+                    </Divider>
+                    <Form.Item
+                      name="mysqldump_work_dir"
+                      label="远端落盘目录"
+                      extra="仅存放平台 mysqldump 产物（yunshu_mysql_*），勿与 xtrabackup 目录相同"
+                      rules={[{ required: true }, { pattern: /^\//, message: "须以 / 开头的绝对路径" }]}
+                    >
+                      <Input placeholder="/export/backup/yunshu" />
+                    </Form.Item>
+                    <Form.Item name="mysqldump_options" label="mysqldump 选项">
+                      <Checkbox.Group
+                        options={mysqldumpOptions.map((o) => ({ label: o.label, value: o.id }))}
+                        style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                      />
+                    </Form.Item>
+                    <Form.Item name="mysqldump_extra_args" label="额外参数" extra="空格分隔，每项须以 - 开头">
+                      <Input placeholder="--max-allowed-packet=512M" />
+                    </Form.Item>
+                  </>
+                );
+              }
+              if (mode === "remote_check") {
+                return (
+                  <>
+                    <Divider orientation="left" plain>
+                      远端 xtrabackup
+                    </Divider>
+                    <Form.Item
+                      name="remote_data_dir"
+                      label="远端备份数据目录"
+                      rules={[{ required: true }, { pattern: /^\//, message: "须为绝对路径" }]}
+                      extra="扫描 full_*.tar.gz，平台不会删除此目录下的文件"
+                    >
+                      <Input />
+                    </Form.Item>
+                    <Form.Item
+                      name="remote_log_dir"
+                      label="远端备份日志目录"
+                      rules={[{ required: true }, { pattern: /^\//, message: "须为绝对路径" }]}
+                      extra="与 xtrabackup 脚本日志路径一致，任务日志将 tail 此目录"
+                    >
+                      <Input />
+                    </Form.Item>
+                    <Divider orientation="left" plain>
+                      回退 mysqldump
+                    </Divider>
+                    <Form.Item
+                      name="mysqldump_work_dir"
+                      label="回退落盘目录"
+                      extra="无 xtrabackup 产物时自动 mysqldump 使用，须与上方数据/日志目录隔离"
+                      rules={[{ required: true }, { pattern: /^\//, message: "须以 / 开头的绝对路径" }]}
+                    >
+                      <Input placeholder="/export/backup/yunshu" />
+                    </Form.Item>
+                  </>
+                );
+              }
+              return null;
+            }}
           </Form.Item>
         </Form>
       </Drawer>

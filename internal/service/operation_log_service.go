@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func (s *OperationLogService) List(ctx context.Context, query OperationLogListQu
 		PageSize:   pageSize,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("operation-log", "List", err)
+		return nil, svcerr.Pass(ctx, "operation-log", "List", err)
 	}
 	return &pagination.Result[model.OperationLog]{
 		List:     list,
@@ -77,7 +77,7 @@ func (s *OperationLogService) Export(ctx context.Context, query OperationLogList
 		PageSize:   pageSize,
 	})
 	if err != nil {
-		return svcerr.Pass("operation-log", "Export", err)
+		return svcerr.Pass(ctx, "operation-log", "Export", err)
 	}
 	f := excelize.NewFile()
 	sheet := "Sheet1"

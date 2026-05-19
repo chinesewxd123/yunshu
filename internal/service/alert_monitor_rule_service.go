@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -77,11 +77,11 @@ func (s *AlertMonitorRuleService) List(ctx context.Context, q AlertMonitorRuleLi
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
-		return nil, 0, page, pageSize, svcerr.Pass("alert.rule", "List", err)
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.rule", "List", err)
 	}
 	var list []model.AlertMonitorRule
 	if err := tx.Order("id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
-		return nil, 0, page, pageSize, svcerr.Pass("alert.rule", "List", err)
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.rule", "List", err)
 	}
 	out := make([]AlertMonitorRuleListItem, 0, len(list))
 	for _, row := range list {
@@ -101,7 +101,7 @@ func (s *AlertMonitorRuleService) List(ctx context.Context, q AlertMonitorRuleLi
 func (s *AlertMonitorRuleService) ListEnabled(ctx context.Context) ([]model.AlertMonitorRule, error) {
 	var list []model.AlertMonitorRule
 	err := s.db.WithContext(ctx).Where("enabled = ?", true).Order("id ASC").Find(&list).Error
-	return list, svcerr.Pass("alert.rule", "ListEnabled", err)
+	return list, svcerr.Pass(ctx, "alert.rule", "ListEnabled", err)
 }
 
 func (s *AlertMonitorRuleService) Get(ctx context.Context, id uint) (*model.AlertMonitorRule, error) {
@@ -110,7 +110,7 @@ func (s *AlertMonitorRuleService) Get(ctx context.Context, id uint) (*model.Aler
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgdfcd891c9a94)
 		}
-		return nil, svcerr.Pass("alert.rule", "Get", err)
+		return nil, svcerr.Pass(ctx, "alert.rule", "Get", err)
 	}
 	return &row, nil
 }
@@ -121,7 +121,7 @@ func (s *AlertMonitorRuleService) Create(ctx context.Context, req AlertMonitorRu
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgaf3782e3e26f)
 		}
-		return nil, svcerr.Pass("alert.rule", "Create", err)
+		return nil, svcerr.Pass(ctx, "alert.rule", "Create", err)
 	}
 	ev := req.EvalIntervalSeconds
 	if ev <= 0 {
@@ -151,7 +151,7 @@ func (s *AlertMonitorRuleService) Create(ctx context.Context, req AlertMonitorRu
 		Enabled:             req.Enabled == nil || *req.Enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return nil, svcerr.Pass("alert.rule", "Create", err)
+		return nil, svcerr.Pass(ctx, "alert.rule", "Create", err)
 	}
 	return &row, nil
 }
@@ -159,7 +159,7 @@ func (s *AlertMonitorRuleService) Create(ctx context.Context, req AlertMonitorRu
 func (s *AlertMonitorRuleService) Update(ctx context.Context, id uint, req AlertMonitorRuleUpsertRequest) (*model.AlertMonitorRule, error) {
 	row, err := s.Get(ctx, id)
 	if err != nil {
-		return nil, svcerr.Pass("alert.rule", "Update", err)
+		return nil, svcerr.Pass(ctx, "alert.rule", "Update", err)
 	}
 	if req.DatasourceID > 0 && req.DatasourceID != row.DatasourceID {
 		var ds model.AlertDatasource
@@ -167,7 +167,7 @@ func (s *AlertMonitorRuleService) Update(ctx context.Context, id uint, req Alert
 			if err == gorm.ErrRecordNotFound {
 				return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgaf3782e3e26f)
 			}
-			return nil, svcerr.Pass("alert.rule", "Update", err)
+			return nil, svcerr.Pass(ctx, "alert.rule", "Update", err)
 		}
 		row.DatasourceID = req.DatasourceID
 	}
@@ -196,7 +196,7 @@ func (s *AlertMonitorRuleService) Update(ctx context.Context, id uint, req Alert
 		row.Enabled = *req.Enabled
 	}
 	if err := s.db.WithContext(ctx).Save(row).Error; err != nil {
-		return nil, svcerr.Pass("alert.rule", "Update", err)
+		return nil, svcerr.Pass(ctx, "alert.rule", "Update", err)
 	}
 	return row, nil
 }
@@ -204,11 +204,11 @@ func (s *AlertMonitorRuleService) Update(ctx context.Context, id uint, req Alert
 func (s *AlertMonitorRuleService) Delete(ctx context.Context, id uint) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("monitor_rule_id = ?", id).Delete(&model.AlertRuleAssignee{}).Error; err != nil {
-			return svcerr.Pass("alert.rule", "Delete", err)
+			return svcerr.Pass(ctx, "alert.rule", "Delete", err)
 		}
 		res := tx.Delete(&model.AlertMonitorRule{}, id)
 		if res.Error != nil {
-			return svcerr.Pass("alert.rule", "Delete", res.Error)
+			return svcerr.Pass(ctx, "alert.rule", "Delete", res.Error)
 		}
 		if res.RowsAffected == 0 {
 			return constants.ErrNotFoundWithMsg(constants.ErrMsgdfcd891c9a94)

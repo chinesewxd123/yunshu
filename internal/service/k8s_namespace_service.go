@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -374,7 +374,7 @@ func (s *K8sNamespaceService) Detail(ctx context.Context, query NamespaceDetailQ
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg52d9e6e7f573)
 		}
-		return nil, svcerr.Internal("k8s.namespace", "api", err, constants.ErrFmt059d07c698fe)
+		return nil, svcerr.Internal(ctx, "k8s.namespace", "api", err, constants.ErrFmt059d07c698fe)
 	}
 	var ns corev1.Namespace
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &ns)
@@ -517,7 +517,7 @@ func (s *K8sNamespaceService) Apply(ctx context.Context, req NamespaceApplyReque
 		return true
 	})
 	if err != nil {
-		return k8sFail("k8s.namespace", "api", err)
+		return k8sFail(ctx, "k8s.namespace", "api", err)
 	}
 	return nil
 }
@@ -561,7 +561,7 @@ func (s *K8sNamespaceService) Delete(ctx context.Context, req NamespaceDeleteReq
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return k8sFail("k8s.namespace", "api", err)
+		return k8sFail(ctx, "k8s.namespace", "api", err)
 	}
 	return nil
 }

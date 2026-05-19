@@ -16,20 +16,15 @@ import (
 	"github.com/redis/go-redis/v9" // redis.Client 由路由注入
 )
 
-func respondSessionStoreError(c *gin.Context, logger *logx.Logger, err error) {
+func respondSessionStoreError(c *gin.Context, _ *logx.Logger, err error) {
 	switch {
 	case errors.Is(err, store.ErrSessionNotFound):
 		response.Error(c, constants.ErrLoginSessionExpired)
 	case errors.Is(err, store.ErrRedisRequired), errors.Is(err, store.ErrRedisUnavailable):
-		if logger != nil {
-			logger.Error.Error("redis session validation failed", "error", err)
-		}
+		httpLog("http.auth").Error("redis session validation failed", "error", err)
 		response.Error(c, constants.ErrInternal)
 	default:
-		if logger != nil {
-			logger.Error.Error("session validation failed", "error", err)
-		}
-		response.Error(c, constants.ErrInternal)
+		httpLog("http.auth").Error("session validation failed", "error", err)
 	}
 }
 
@@ -45,7 +40,7 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 		tokenString := strings.TrimPrefix(header, "Bearer ")
 		claims, err := auth.ParseToken(secret, tokenString)
 		if err != nil {
-			logger.Info.Warn("parse token failed", "error", err)
+			httpLog("http.auth").Warn("parse token failed", "error", err)
 			response.Error(c, constants.ErrAccessTokenInvalid)
 			c.Abort()
 			return
@@ -88,6 +83,7 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 
 		c.Set(auth.ContextClaimsKey, claims)
 		c.Set(auth.ContextUserKey, currentUser)
+		c.Request = c.Request.WithContext(logx.WithUser(c.Request.Context(), user.ID, user.Username))
 		c.Next()
 	}
 }

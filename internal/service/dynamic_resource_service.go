@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -102,7 +102,7 @@ func (s *DynamicResourceService) ResolveCRKindFromCRD(ctx context.Context, k *ko
 		Kind:    "CustomResourceDefinition",
 	}, "")
 	if err != nil {
-		return "", svcerr.Internal("k8s.dynamic", "list_crd", err, constants.ErrFmt2b30d4949c98)
+		return "", svcerr.Internal(ctx, "k8s.dynamic", "list_crd", err, constants.ErrFmt2b30d4949c98)
 	}
 	for _, item := range list {
 		var crd apiextv1.CustomResourceDefinition

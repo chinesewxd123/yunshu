@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -55,7 +55,7 @@ func (s *K8sNamespaceAllowService) Create(ctx context.Context, req K8sNamespaceA
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			return nil, constants.ErrConflictWithMsg("该主体在此集群下对该命名空间的允许规则已存在")
 		}
-		return nil, svcerr.Pass("k8s.namespace-allow", "Create", err)
+		return nil, svcerr.Pass(ctx, "k8s.namespace-allow", "Create", err)
 	}
 	return it, nil
 }

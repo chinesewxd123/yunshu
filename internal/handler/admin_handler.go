@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func (h *AdminHandler) ListBannedIPs(c *gin.Context) {
 	ctx := c.Request.Context()
 	keys, err := h.rdb.Keys(ctx, "ban:ip:*").Result()
 	if err != nil {
-		response.Error(c, svcerr.Pass("admin", "ListBannedIPs", err))
+		response.Error(c, svcerr.Pass(ctx, "admin", "ListBannedIPs", err))
 		return
 	}
 	result := make([]gin.H, 0, len(keys))
@@ -71,7 +71,7 @@ func (h *AdminHandler) UnbanIP(c *gin.Context) {
 	ServeJSONOK(c, gin.H{"message": "unbanned"}, func(ctx context.Context, req unbanRequest) error {
 		key := store.BanIPKey(req.IP)
 		if err := h.rdb.Del(ctx, key).Err(); err != nil {
-			return svcerr.Pass("admin", "UnbanIP", err)
+			return svcerr.Pass(ctx, "admin", "UnbanIP", err)
 		}
 		return nil
 	})

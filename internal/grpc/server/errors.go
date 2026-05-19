@@ -13,7 +13,6 @@ func toStatusErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	logGRPCError("rpc", err)
 	var appErr *apperror.AppError
 	if errors.As(err, &appErr) {
 		switch appErr.StatusCode {

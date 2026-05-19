@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -27,7 +27,7 @@ func (s *K8sWorkloadService) ListDeployments(ctx context.Context, q NamespacedLi
 	gvk, _ := s.dyn.GVKByKind("Deployment")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, k8sFailOrInternal("k8s.workload", "ListDeployments", err, constants.ErrFmt78bb8313c519)
+		return nil, k8sFailOrInternal(ctx, "k8s.workload", "ListDeployments", err, constants.ErrFmt78bb8313c519)
 	}
 	list := make([]appsv1.Deployment, 0, len(listU))
 	for _, item := range listU {
@@ -95,7 +95,7 @@ func (s *K8sWorkloadService) DeploymentDetail(ctx context.Context, q NamespacedD
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgf6d026c4bc20)
 		}
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmta3018a66177e)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmta3018a66177e)
 	}
 	var obj appsv1.Deployment
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -126,12 +126,12 @@ func (s *K8sWorkloadService) DeploymentScale(ctx context.Context, req WorkloadSc
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsgf6d026c4bc20)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	copyObj := obj.DeepCopy()
 	copyObj.Spec.Replicas = &req.Replicas
 	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }
@@ -151,7 +151,7 @@ func (s *K8sWorkloadService) DeploymentRestart(ctx context.Context, q Namespaced
 		if apierrors.IsForbidden(err) {
 			return constants.ErrForbiddenWithMsg(constants.ErrMsg4a3ba8680915)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }
@@ -167,7 +167,7 @@ func (s *K8sWorkloadService) DeploymentPatchContainerResources(ctx context.Conte
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsgf6d026c4bc20)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	containers := obj.Spec.Template.Spec.Containers
 	idx := workloadContainerIndex(containers, req.ContainerName)
@@ -189,7 +189,7 @@ func (s *K8sWorkloadService) DeploymentPatchContainerResources(ctx context.Conte
 		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
 	}
 	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }

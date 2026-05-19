@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -66,11 +66,11 @@ func ResolveWatchTarget(cfg *rest.Config, q *K8sResourceWatchQuery) (watchGVR, e
 func resolveGVRWithRESTMapper(cfg *rest.Config, group, version, resource string) (watchGVR, error) {
 	disc, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		return watchGVR{}, svcerr.Internal("k8s.watch", "discovery_client", err, "discovery client: %v")
+		return watchGVR{}, svcerr.Internal(context.Background(), "k8s.watch", "discovery_client", err, "discovery client: %v")
 	}
 	gr, err := restmapper.GetAPIGroupResources(disc)
 	if err != nil {
-		return watchGVR{}, svcerr.Internal("k8s.watch", "api_groups", err, "discovery: %v")
+		return watchGVR{}, svcerr.Internal(context.Background(), "k8s.watch", "api_groups", err, "discovery: %v")
 	}
 	mapper := restmapper.NewDiscoveryRESTMapper(gr)
 
@@ -145,7 +145,7 @@ func (s *K8sRuntimeService) StreamResourceWatch(ctx context.Context, cfg *rest.C
 
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		return svcerr.Internal("k8s.watch", "dynamic_client", err, "dynamic client: %v")
+		return svcerr.Internal(ctx, "k8s.watch", "dynamic_client", err, "dynamic client: %v")
 	}
 
 	ri := dyn.Resource(def.GVR)
@@ -162,7 +162,7 @@ func (s *K8sRuntimeService) StreamResourceWatch(ctx context.Context, cfg *rest.C
 		watcher, err = ri.Watch(wctx, opts)
 	}
 	if err != nil {
-		return svcerr.Internal("k8s.watch", "watch", err, "watch: %v")
+		return svcerr.Internal(ctx, "k8s.watch", "watch", err, "watch: %v")
 	}
 	defer watcher.Stop()
 

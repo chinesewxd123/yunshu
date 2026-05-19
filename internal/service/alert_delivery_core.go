@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"bytes"
@@ -29,7 +29,7 @@ func (s *AlertService) sendToChannel(ctx context.Context, channel *model.AlertCh
 	payload["title"] = title
 	settings, err := parseChannelSettings(channel.HeadersJSON)
 	if err != nil {
-		return 0, "", svcerr.Pass("alert.delivery", "sendToChannel", err)
+		return 0, "", svcerr.Pass(ctx, "alert.delivery", "sendToChannel", err)
 	}
 	if strings.EqualFold(strings.TrimSpace(channel.Type), alertdispatch.ChannelTypeEmail) {
 		return s.sendEmailChannel(ctx, channel, source, title, severity, status, payload)

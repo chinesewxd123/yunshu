@@ -53,9 +53,7 @@ func RequireProjectMemberAccess(memberRepo *repository.ProjectMemberRepository, 
 				c.Abort()
 				return
 			}
-			if logger != nil {
-				logger.Error.Error("project member lookup failed", "error", err)
-			}
+			httpLog("http.project_access").Error("project member lookup failed", "error", err)
 			response.Error(c, constants.ErrInternal)
 			c.Abort()
 			return

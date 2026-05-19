@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -15,7 +15,9 @@ import (
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
 	cryptox "yunshu/internal/pkg/crypto"
+	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/mysqlbackup"
+	"yunshu/internal/service/svclog"
 	"yunshu/internal/pkg/objectstore"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/pkg/sshclient"
@@ -34,7 +36,7 @@ type MysqlBackupService struct {
 	aead        cipher.AEAD
 	schedMu     sync.Mutex
 	schedRunning map[uint]bool
-	infoLog      *slog.Logger
+	bizLog       *logx.Component
 }
 
 func NewMysqlBackupService(
@@ -55,11 +57,12 @@ func NewMysqlBackupService(
 		db:           db,
 		aead:         aead,
 		schedRunning: make(map[uint]bool),
+		bizLog:       svclog.Service("mysql.backup"),
 	}, nil
 }
 
-func (s *MysqlBackupService) SetInfoLogger(log *slog.Logger) {
-	s.infoLog = log
+func (s *MysqlBackupService) SetBizLog(c *logx.Component) {
+	s.bizLog = c
 }
 
 type MysqlBackupInstanceItem struct {
@@ -79,6 +82,7 @@ type MysqlBackupInstanceItem struct {
 	DatabaseNames string `json:"database_names"`
 	RemoteDataDir      string   `json:"remote_data_dir"`
 	RemoteLogDir       string   `json:"remote_log_dir"`
+	UploadToMinio      bool     `json:"upload_to_minio"`
 	MysqldumpWorkDir   string   `json:"mysqldump_work_dir"`
 	MysqldumpOptions   []string `json:"mysqldump_options"`
 	MysqldumpExtraArgs string   `json:"mysqldump_extra_args"`
@@ -105,6 +109,7 @@ type MysqlBackupInstanceUpsertRequest struct {
 	DatabaseNames string `json:"database_names"`
 	RemoteDataDir      string   `json:"remote_data_dir"`
 	RemoteLogDir       string   `json:"remote_log_dir"`
+	UploadToMinio      *bool    `json:"upload_to_minio"`
 	MysqldumpWorkDir   string   `json:"mysqldump_work_dir"`
 	MysqldumpOptions   []string `json:"mysqldump_options"`
 	MysqldumpExtraArgs string   `json:"mysqldump_extra_args"`
@@ -130,7 +135,7 @@ func (s *MysqlBackupService) ListInstances(ctx context.Context, q MysqlBackupIns
 		ProjectID: q.ProjectID, Page: q.Page, PageSize: q.PageSize,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("mysql.backup", "ListInstances", err)
+		return nil, svcerr.Pass(ctx, "mysql.backup", "ListInstances", err)
 	}
 	out := make([]MysqlBackupInstanceItem, 0, len(list))
 	for _, inst := range list {
@@ -159,7 +164,7 @@ func (s *MysqlBackupService) UpsertInstance(ctx context.Context, id uint, req My
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrNotFound
 			}
-			return nil, svcerr.Pass("mysql.backup", "UpsertInstance", err)
+			return nil, svcerr.Pass(ctx, "mysql.backup", "UpsertInstance", err)
 		}
 		inst = existing
 	} else {
@@ -204,12 +209,20 @@ func (s *MysqlBackupService) UpsertInstance(ctx context.Context, id uint, req My
 	inst.DatabaseNames = strings.TrimSpace(req.DatabaseNames)
 	inst.RemoteDataDir = strings.TrimSpace(req.RemoteDataDir)
 	inst.RemoteLogDir = strings.TrimSpace(req.RemoteLogDir)
+	if req.UploadToMinio != nil {
+		inst.UploadToMinio = *req.UploadToMinio
+	} else if id == 0 {
+		inst.UploadToMinio = true
+	}
 
 	workDir, err := mysqlbackup.NormalizeMysqldumpWorkDir(req.MysqldumpWorkDir)
 	if err != nil {
 		return nil, constants.ErrBadRequestWithMsg(err.Error())
 	}
 	inst.MysqldumpWorkDir = workDir
+	if err := mysqlbackup.ValidateBackupPathIsolation(workDir, inst.RemoteDataDir, inst.RemoteLogDir); err != nil {
+		return nil, constants.ErrBadRequestWithMsg(err.Error())
+	}
 	optionsJSON := marshalMysqldumpOptionIDs(req.MysqldumpOptions)
 	optIDs, err := mysqlbackup.ParseMysqldumpOptionIDs(optionsJSON)
 	if err != nil {
@@ -240,7 +253,7 @@ func (s *MysqlBackupService) UpsertInstance(ctx context.Context, id uint, req My
 	if pw := strings.TrimSpace(req.MysqlPassword); pw != "" {
 		enc, err := cryptox.EncryptString(s.aead, pw)
 		if err != nil {
-			return nil, svcerr.Pass("mysql.backup", "UpsertInstance", err)
+			return nil, svcerr.Pass(ctx, "mysql.backup", "UpsertInstance", err)
 		}
 		inst.EncPassword = enc
 	} else if id == 0 {
@@ -249,11 +262,11 @@ func (s *MysqlBackupService) UpsertInstance(ctx context.Context, id uint, req My
 
 	if id > 0 {
 		if err := s.backupRepo.UpdateInstance(ctx, inst); err != nil {
-			return nil, svcerr.Pass("mysql.backup", "UpsertInstance", err)
+			return nil, svcerr.Pass(ctx, "mysql.backup", "UpsertInstance", err)
 		}
 	} else {
 		if err := s.backupRepo.CreateInstance(ctx, inst); err != nil {
-			return nil, svcerr.Pass("mysql.backup", "UpsertInstance", err)
+			return nil, svcerr.Pass(ctx, "mysql.backup", "UpsertInstance", err)
 		}
 	}
 	item := s.toInstanceItem(ctx, *inst)
@@ -265,7 +278,7 @@ func (s *MysqlBackupService) DeleteInstance(ctx context.Context, projectID, id u
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrNotFound
 		}
-		return svcerr.Pass("mysql.backup", "DeleteInstance", err)
+		return svcerr.Pass(ctx, "mysql.backup", "DeleteInstance", err)
 	}
 	return s.backupRepo.DeleteInstance(ctx, id)
 }
@@ -329,8 +342,8 @@ func (s *MysqlBackupService) RunBackup(ctx context.Context, projectID, instanceI
 
 func (s *MysqlBackupService) enqueueBackup(ctx context.Context, projectID, instanceID uint, trigger string) (*model.MysqlBackupJob, error) {
 	n, _ := s.backupRepo.FailStaleRunningJobs(ctx, 2*time.Hour)
-	if n > 0 && s.infoLog != nil {
-		s.infoLog.Warn("mysql_backup_stale_jobs_marked_failed", slog.Int64("count", n))
+	if n > 0 && s.bizLog != nil {
+		s.bizLog.Warn("mysql_backup_stale_jobs_marked_failed", slog.Int64("count", n))
 	}
 	inst, _, err := s.loadInstanceSecrets(ctx, projectID, instanceID)
 	if err != nil {
@@ -341,7 +354,7 @@ func (s *MysqlBackupService) enqueueBackup(ctx context.Context, projectID, insta
 	}
 	running, err := s.backupRepo.HasRunningJob(ctx, instanceID)
 	if err != nil {
-		return nil, svcerr.Pass("mysql.backup", "enqueueBackup", err)
+		return nil, svcerr.Pass(ctx, "mysql.backup", "enqueueBackup", err)
 	}
 	if running {
 		return nil, constants.ErrBadRequestWithMsg("该实例已有进行中的备份任务")
@@ -361,7 +374,7 @@ func (s *MysqlBackupService) enqueueBackup(ctx context.Context, projectID, insta
 		StartedAt:    &now,
 	}
 	if err := s.backupRepo.CreateJob(ctx, job); err != nil {
-		return nil, svcerr.Pass("mysql.backup", "enqueueBackup", err)
+		return nil, svcerr.Pass(ctx, "mysql.backup", "enqueueBackup", err)
 	}
 
 	go s.runBackupJobAsync(job.ID, projectID, instanceID, trigger)
@@ -420,22 +433,24 @@ func (s *MysqlBackupService) finishBackupJob(ctx context.Context, jobID, project
 }
 
 func (s *MysqlBackupService) logBackupJobBegin(jobID uint, inst *model.MysqlBackupInstance, trigger string) {
-	if s.infoLog == nil || inst == nil {
+	if s.bizLog == nil || inst == nil {
 		return
 	}
-	s.infoLog.Info("mysql_backup_job_begin",
+	s.bizLog.Info("mysql_backup_job_begin",
 		slog.Uint64("job_id", uint64(jobID)),
 		slog.Uint64("instance_id", uint64(inst.ID)),
 		slog.Uint64("project_id", uint64(inst.ProjectID)),
 		slog.String("instance_name", inst.Name),
 		slog.String("backup_mode", inst.BackupMode),
 		slog.String("trigger", trigger),
-		slog.String("mysql", fmt.Sprintf("%s@%s:%d", inst.MysqlUser, inst.MysqlHost, inst.MysqlPort)),
+		slog.String("mysql_user", inst.MysqlUser),
+		slog.String("mysql_host", inst.MysqlHost),
+		slog.Int("mysql_port", inst.MysqlPort),
 	)
 }
 
 func (s *MysqlBackupService) logBackupJobDone(jobID, instanceID uint, instanceName, trigger, status string, dur time.Duration, runErr error, extra ...any) {
-	if s.infoLog == nil {
+	if s.bizLog == nil {
 		return
 	}
 	attrs := []any{
@@ -449,18 +464,18 @@ func (s *MysqlBackupService) logBackupJobDone(jobID, instanceID uint, instanceNa
 	attrs = append(attrs, extra...)
 	if runErr != nil {
 		attrs = append(attrs, slog.String("error", runErr.Error()))
-		s.infoLog.Warn("mysql_backup_job_finished", attrs...)
+		s.bizLog.Error("mysql_backup_job_finished", attrs...)
 		return
 	}
-	s.infoLog.Info("mysql_backup_job_finished", attrs...)
+	s.bizLog.Info("mysql_backup_job_finished", attrs...)
 }
 
 func (s *MysqlBackupService) logBackupPhase(jobID uint, phase string, attrs ...any) {
-	if s.infoLog == nil {
+	if s.bizLog == nil {
 		return
 	}
 	base := []any{slog.Uint64("job_id", uint64(jobID)), slog.String("phase", phase)}
-	s.infoLog.Info("mysql_backup_job_phase", append(base, attrs...)...)
+	s.bizLog.Info("mysql_backup_job_phase", append(base, attrs...)...)
 }
 
 func validateMysqlBackupScope(scope, dbName, tableName, databaseNames string) error {
@@ -483,14 +498,6 @@ func validateMysqlBackupScope(scope, dbName, tableName, databaseNames string) er
 }
 
 func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model.MysqlBackupInstance, pw string, job *model.MysqlBackupJob, target mysqlbackup.DumpTarget) error {
-	minioCli, err := objectstore.NewFromDB(ctx, s.db)
-	if err != nil {
-		return err
-	}
-	s.logBackupPhase(job.ID, "minio_client_ready",
-		slog.String("endpoint", minioCli.Endpoint()),
-		slog.String("bucket", minioCli.Bucket()),
-	)
 	sshCli, sv, err := s.dialServer(ctx, inst.ServerID)
 	if err != nil {
 		return err
@@ -537,7 +544,22 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 		return fmt.Errorf("mysqldump failed: %s", strings.TrimSpace(res.Stderr+res.Stdout))
 	}
 	s.logBackupPhase(job.ID, "mysqldump_done", slog.Int("exit_code", res.ExitCode), slog.Duration("ssh_duration", res.Duration))
-	_ = sshCli.RemoveRemoteFile(logPath)
+
+	if !inst.UploadToMinio {
+		s.logBackupPhase(job.ID, "skip_minio_upload", slog.String("remote_sql_gz", remotePath), slog.String("remote_log", logPath))
+		job.CheckOK = true
+		_ = sv
+		return nil
+	}
+
+	minioCli, err := objectstore.NewFromDB(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	s.logBackupPhase(job.ID, "minio_client_ready",
+		slog.String("endpoint", minioCli.Endpoint()),
+		slog.String("bucket", minioCli.Bucket()),
+	)
 
 	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
@@ -550,7 +572,6 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 	if err := sshCli.DownloadFile(waitCtx, remotePath, localPath); err != nil {
 		return err
 	}
-	_ = sshCli.RemoveRemoteFile(remotePath)
 	s.logBackupPhase(job.ID, "local_dump_ready", slog.String("local_path", localPath))
 
 	objectKey := fmt.Sprintf("project_%d/instance_%d/%s_%s.sql.gz", inst.ProjectID, inst.ID, label, ts)
@@ -599,10 +620,11 @@ func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *mod
 	}
 	defer sshCli.Close()
 	s.logBackupPhase(job.ID, "remote_xtrabackup_found", slog.String("backup_file", artifact.BackupFile), slog.String("backup_day", artifact.BackupDay))
-	if logTail, err := s.tailRemoteFile(ctx, sshCli, artifact.LogFile, 80); err == nil {
-		job.LogExcerpt = mysqlbackup.TruncateLog(logTail)
-	} else {
-		job.LogExcerpt = artifact.Message
+	job.LogExcerpt = s.collectXtrabackupLogExcerpt(ctx, sshCli, inst, artifact)
+
+	if !inst.UploadToMinio {
+		s.logBackupPhase(job.ID, "skip_minio_upload", slog.String("remote_backup", artifact.BackupFile))
+		return nil
 	}
 
 	minioCli, err := objectstore.NewFromDB(ctx, s.db)
@@ -629,12 +651,35 @@ func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *mod
 	return nil
 }
 
+func (s *MysqlBackupService) collectXtrabackupLogExcerpt(ctx context.Context, sshCli *sshclient.Client, inst *model.MysqlBackupInstance, artifact *mysqlbackup.RemoteBackupArtifact) string {
+	var parts []string
+	if artifact != nil && strings.TrimSpace(artifact.Stdout) != "" {
+		parts = append(parts, "=== find script ===\n"+strings.TrimSpace(artifact.Stdout))
+	}
+	script := mysqlbackup.BuildTailXtrabackupLogScript(inst.RemoteLogDir, artifact.BackupDay, 120)
+	if res, err := sshCli.Exec(ctx, script, 65536); err == nil {
+		tail := strings.TrimSpace(res.Stdout + res.Stderr)
+		if tail != "" {
+			parts = append(parts, tail)
+		}
+	}
+	if artifact != nil && strings.TrimSpace(artifact.LogFile) != "" {
+		if tail, err := s.tailRemoteFile(ctx, sshCli, artifact.LogFile, 120); err == nil && strings.TrimSpace(tail) != "" {
+			parts = append(parts, "=== configured log path ===\n"+strings.TrimSpace(tail))
+		}
+	}
+	if len(parts) == 0 && artifact != nil {
+		parts = append(parts, artifact.Message)
+	}
+	return mysqlbackup.TruncateLog(strings.Join(parts, "\n\n"))
+}
+
 func (s *MysqlBackupService) ListJobs(ctx context.Context, q MysqlBackupJobListQuery) (*pagination.Result[model.MysqlBackupJob], error) {
 	list, total, err := s.backupRepo.ListJobs(ctx, repository.MysqlBackupJobListParams{
 		ProjectID: q.ProjectID, InstanceID: q.InstanceID, Page: q.Page, PageSize: q.PageSize,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("mysql.backup", "ListJobs", err)
+		return nil, svcerr.Pass(ctx, "mysql.backup", "ListJobs", err)
 	}
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
 	return &pagination.Result[model.MysqlBackupJob]{List: list, Total: total, Page: page, PageSize: pageSize}, nil
@@ -648,8 +693,11 @@ func (s *MysqlBackupService) PresignDownload(ctx context.Context, projectID, job
 		}
 		return "", err
 	}
-	if job.ProjectID != projectID || job.Status != "success" || strings.TrimSpace(job.MinioObject) == "" {
-		return "", constants.ErrBadRequestWithMsg("任务未完成或无归档对象")
+	if job.ProjectID != projectID || job.Status != "success" {
+		return "", constants.ErrBadRequestWithMsg("任务未完成")
+	}
+	if strings.TrimSpace(job.MinioObject) == "" {
+		return "", constants.ErrBadRequestWithMsg("该任务未上传 MinIO，请查看日志中的远端路径")
 	}
 	cli, err := objectstore.NewFromDB(ctx, s.db)
 	if err != nil {
@@ -671,14 +719,14 @@ func (s *MysqlBackupService) loadInstanceSecrets(ctx context.Context, projectID,
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, "", constants.ErrNotFound
 		}
-		return nil, "", svcerr.Pass("mysql.backup", "loadInstanceSecrets", err)
+		return nil, "", svcerr.Pass(ctx, "mysql.backup", "loadInstanceSecrets", err)
 	}
 	if inst.EncPassword == "" {
 		return nil, "", constants.ErrBadRequestWithMsg("未配置 MySQL 密码")
 	}
 	pw, err := cryptox.DecryptString(s.aead, inst.EncPassword)
 	if err != nil {
-		return nil, "", svcerr.Pass("mysql.backup", "loadInstanceSecrets", err)
+		return nil, "", svcerr.Pass(ctx, "mysql.backup", "loadInstanceSecrets", err)
 	}
 	return inst, pw, nil
 }
@@ -689,13 +737,13 @@ func (s *MysqlBackupService) dialServer(ctx context.Context, serverID uint) (*ss
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil, constants.ErrLogSourceServerNotFound
 		}
-		return nil, nil, svcerr.Pass("mysql.backup", "dialServer", err)
+		return nil, nil, svcerr.Pass(ctx, "mysql.backup", "dialServer", err)
 	}
 	cred, err := s.serverRepo.GetCredentialByServerID(ctx, serverID)
 	if err != nil {
 		return nil, nil, constants.ErrBadRequestWithMsg(constants.ErrMsgfeb33ee7c48c)
 	}
-	cfg, err := s.decryptCredentialToSSHConfig(*sv, *cred)
+	cfg, err := s.decryptCredentialToSSHConfig(ctx, *sv, *cred)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -706,7 +754,7 @@ func (s *MysqlBackupService) dialServer(ctx context.Context, serverID uint) (*ss
 	return cli, sv, nil
 }
 
-func (s *MysqlBackupService) decryptCredentialToSSHConfig(sv model.Server, cred model.ServerCredential) (sshclient.Config, error) {
+func (s *MysqlBackupService) decryptCredentialToSSHConfig(ctx context.Context, sv model.Server, cred model.ServerCredential) (sshclient.Config, error) {
 	cfg := sshclient.Config{Host: sv.Host, Port: sv.Port, Username: cred.Username}
 	switch strings.ToLower(strings.TrimSpace(cred.AuthType)) {
 	case "password":
@@ -715,7 +763,7 @@ func (s *MysqlBackupService) decryptCredentialToSSHConfig(sv model.Server, cred 
 		}
 		pw, err := cryptox.DecryptString(s.aead, *cred.EncPassword)
 		if err != nil {
-			return sshclient.Config{}, svcerr.Pass("mysql.backup", "decryptCredentialToSSHConfig", err)
+			return sshclient.Config{}, svcerr.Pass(ctx, "mysql.backup", "decryptCredentialToSSHConfig", err)
 		}
 		cfg.AuthType = sshclient.AuthPassword
 		cfg.Password = pw
@@ -725,14 +773,14 @@ func (s *MysqlBackupService) decryptCredentialToSSHConfig(sv model.Server, cred 
 		}
 		pk, err := cryptox.DecryptString(s.aead, *cred.EncPrivateKey)
 		if err != nil {
-			return sshclient.Config{}, svcerr.Pass("mysql.backup", "decryptCredentialToSSHConfig", err)
+			return sshclient.Config{}, svcerr.Pass(ctx, "mysql.backup", "decryptCredentialToSSHConfig", err)
 		}
 		cfg.AuthType = sshclient.AuthKey
 		cfg.PrivateKey = pk
 		if cred.EncPassphrase != nil {
 			pp, err := cryptox.DecryptString(s.aead, *cred.EncPassphrase)
 			if err != nil {
-				return sshclient.Config{}, svcerr.Pass("mysql.backup", "decryptCredentialToSSHConfig", err)
+				return sshclient.Config{}, svcerr.Pass(ctx, "mysql.backup", "decryptCredentialToSSHConfig", err)
 			}
 			cfg.Passphrase = pp
 		}
@@ -748,7 +796,7 @@ func (s *MysqlBackupService) ensureServerInProject(ctx context.Context, projectI
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrLogSourceServerNotFound
 		}
-		return svcerr.Pass("mysql.backup", "ensureServerInProject", err)
+		return svcerr.Pass(ctx, "mysql.backup", "ensureServerInProject", err)
 	}
 	if sv.ProjectID != projectID {
 		return constants.ErrServerNotInCurrentProject
@@ -763,7 +811,7 @@ func (s *MysqlBackupService) toInstanceItem(ctx context.Context, inst model.Mysq
 		MysqlUser: inst.MysqlUser, BackupMode: inst.BackupMode,
 		BackupScope: inst.BackupScope, DatabaseName: inst.DatabaseName, TableName: inst.BackupTable,
 		DatabaseNames: inst.DatabaseNames, RemoteDataDir: inst.RemoteDataDir, RemoteLogDir: inst.RemoteLogDir,
-		MysqldumpWorkDir: inst.MysqldumpWorkDir, MysqldumpExtraArgs: inst.MysqldumpExtraArgs,
+		UploadToMinio: inst.UploadToMinio, MysqldumpWorkDir: inst.MysqldumpWorkDir, MysqldumpExtraArgs: inst.MysqldumpExtraArgs,
 		ScheduleEnabled: inst.ScheduleEnabled, CronSpec: inst.CronSpec,
 	}
 	item.MysqldumpOptions = parseMysqldumpOptionsForAPI(inst.MysqldumpOptions)

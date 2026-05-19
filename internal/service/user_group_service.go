@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -83,7 +83,7 @@ func (s *UserGroupService) ensureProjectAdmin(ctx context.Context, projectID uin
 		if err == gorm.ErrRecordNotFound {
 			return constants.ErrProjectMemberRequired
 		}
-		return svcerr.Pass("user-group", "ensureProjectAdmin", err)
+		return svcerr.Pass(ctx, "user-group", "ensureProjectAdmin", err)
 	}
 	if !projectaccess.RoleAtLeast(m.Role, "admin") {
 		return constants.ErrProjectAdminRequired
@@ -99,7 +99,7 @@ func (s *UserGroupService) ensureProjectMember(ctx context.Context, projectID, u
 	if err == gorm.ErrRecordNotFound {
 		return constants.ErrBadRequestWithMsg("项目专属用户组的成员须为该项目成员")
 	}
-	return svcerr.Pass("user-group", "ensureProjectMember", err)
+	return svcerr.Pass(ctx, "user-group", "ensureProjectMember", err)
 }
 
 func (s *UserGroupService) ensureVisibleScopedGroup(ctx context.Context, g *model.UserGroup) error {
@@ -120,7 +120,7 @@ func (s *UserGroupService) ensureVisibleScopedGroup(ctx context.Context, g *mode
 	if err == gorm.ErrRecordNotFound {
 		return constants.ErrForbidden
 	}
-	return svcerr.Pass("user-group", "ensureVisibleScopedGroup", err)
+	return svcerr.Pass(ctx, "user-group", "ensureVisibleScopedGroup", err)
 }
 
 func (s *UserGroupService) List(ctx context.Context, query UserGroupListQuery) (*pagination.Result[UserGroupItem], error) {
@@ -137,7 +137,7 @@ func (s *UserGroupService) List(ctx context.Context, query UserGroupListQuery) (
 		ScopeProjectID: scope,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("user-group", "List", err)
+		return nil, svcerr.Pass(ctx, "user-group", "List", err)
 	}
 	items := make([]UserGroupItem, 0, len(list))
 	for i := range list {
@@ -158,21 +158,21 @@ func (s *UserGroupService) Detail(ctx context.Context, id uint) (*UserGroupDetai
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserGroupNotFound
 		}
-		return nil, svcerr.Pass("user-group", "Detail", err)
+		return nil, svcerr.Pass(ctx, "user-group", "Detail", err)
 	}
 	if err := s.ensureVisibleScopedGroup(ctx, g); err != nil {
-		return nil, svcerr.Pass("user-group", "Detail", err)
+		return nil, svcerr.Pass(ctx, "user-group", "Detail", err)
 	}
 	n, _ := s.repo.CountMembers(ctx, id)
 	ids, err := s.repo.ListMemberUserIDs(ctx, id)
 	if err != nil {
-		return nil, svcerr.Pass("user-group", "Detail", err)
+		return nil, svcerr.Pass(ctx, "user-group", "Detail", err)
 	}
 	members := make([]UserGroupMemberRow, 0)
 	if len(ids) > 0 && s.userRepo != nil {
 		users, err := s.userRepo.ListByIDs(ctx, ids)
 		if err != nil {
-			return nil, svcerr.Pass("user-group", "Detail", err)
+			return nil, svcerr.Pass(ctx, "user-group", "Detail", err)
 		}
 		byID := make(map[uint]model.User, len(users))
 		for _, u := range users {
@@ -201,7 +201,7 @@ func (s *UserGroupService) Create(ctx context.Context, req UserGroupCreateReques
 	if _, err := s.repo.GetByCode(ctx, code); err == nil {
 		return nil, constants.ErrConflictWithMsg("用户组编码已存在")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, svcerr.Pass("user-group", "Create", err)
+		return nil, svcerr.Pass(ctx, "user-group", "Create", err)
 	}
 	st := req.Status
 	if st != model.StatusDisabled {
@@ -214,11 +214,11 @@ func (s *UserGroupService) Create(ctx context.Context, req UserGroupCreateReques
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return nil, constants.ErrProjectNotFound
 				}
-				return nil, svcerr.Pass("user-group", "Create", err)
+				return nil, svcerr.Pass(ctx, "user-group", "Create", err)
 			}
 		}
 		if err := s.ensureProjectAdmin(ctx, *req.ScopeProjectID); err != nil {
-			return nil, svcerr.Pass("user-group", "Create", err)
+			return nil, svcerr.Pass(ctx, "user-group", "Create", err)
 		}
 		v := *req.ScopeProjectID
 		scope = &v
@@ -231,7 +231,7 @@ func (s *UserGroupService) Create(ctx context.Context, req UserGroupCreateReques
 		ScopeProjectID:  scope,
 	}
 	if err := s.repo.Create(ctx, g); err != nil {
-		return nil, svcerr.Pass("user-group", "Create", err)
+		return nil, svcerr.Pass(ctx, "user-group", "Create", err)
 	}
 	item := NewUserGroupItem(*g, 0)
 	return &item, nil
@@ -243,10 +243,10 @@ func (s *UserGroupService) Update(ctx context.Context, id uint, req UserGroupUpd
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserGroupNotFound
 		}
-		return nil, svcerr.Pass("user-group", "Update", err)
+		return nil, svcerr.Pass(ctx, "user-group", "Update", err)
 	}
 	if err := s.ensureVisibleScopedGroup(ctx, g); err != nil {
-		return nil, svcerr.Pass("user-group", "Update", err)
+		return nil, svcerr.Pass(ctx, "user-group", "Update", err)
 	}
 	if req.Name != nil {
 		g.Name = strings.TrimSpace(*req.Name)
@@ -261,7 +261,7 @@ func (s *UserGroupService) Update(ctx context.Context, id uint, req UserGroupUpd
 		if *req.ScopeProjectID == 0 {
 			if g.ScopeProjectID != nil && *g.ScopeProjectID > 0 {
 				if err := s.ensureProjectAdmin(ctx, *g.ScopeProjectID); err != nil {
-					return nil, svcerr.Pass("user-group", "Update", err)
+					return nil, svcerr.Pass(ctx, "user-group", "Update", err)
 				}
 			}
 			g.ScopeProjectID = nil
@@ -271,18 +271,18 @@ func (s *UserGroupService) Update(ctx context.Context, id uint, req UserGroupUpd
 					if errors.Is(err, gorm.ErrRecordNotFound) {
 						return nil, constants.ErrProjectNotFound
 					}
-					return nil, svcerr.Pass("user-group", "Update", err)
+					return nil, svcerr.Pass(ctx, "user-group", "Update", err)
 				}
 			}
 			if err := s.ensureProjectAdmin(ctx, *req.ScopeProjectID); err != nil {
-				return nil, svcerr.Pass("user-group", "Update", err)
+				return nil, svcerr.Pass(ctx, "user-group", "Update", err)
 			}
 			v := *req.ScopeProjectID
 			g.ScopeProjectID = &v
 		}
 	}
 	if err := s.repo.Save(ctx, g); err != nil {
-		return nil, svcerr.Pass("user-group", "Update", err)
+		return nil, svcerr.Pass(ctx, "user-group", "Update", err)
 	}
 	n, _ := s.repo.CountMembers(ctx, id)
 	item := NewUserGroupItem(*g, n)
@@ -295,13 +295,13 @@ func (s *UserGroupService) Delete(ctx context.Context, id uint) error {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrUserGroupNotFound
 		}
-		return svcerr.Pass("user-group", "Delete", err)
+		return svcerr.Pass(ctx, "user-group", "Delete", err)
 	}
 	if err := s.ensureVisibleScopedGroup(ctx, g); err != nil {
-		return svcerr.Pass("user-group", "Delete", err)
+		return svcerr.Pass(ctx, "user-group", "Delete", err)
 	}
 	if err := s.repo.ReplaceMemberUserIDs(ctx, id, nil); err != nil {
-		return svcerr.Pass("user-group", "Delete", err)
+		return svcerr.Pass(ctx, "user-group", "Delete", err)
 	}
 	return s.repo.Delete(ctx, g)
 }
@@ -312,10 +312,10 @@ func (s *UserGroupService) AssignUsers(ctx context.Context, id uint, req UserGro
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrUserGroupNotFound
 		}
-		return svcerr.Pass("user-group", "AssignUsers", err)
+		return svcerr.Pass(ctx, "user-group", "AssignUsers", err)
 	}
 	if err := s.ensureVisibleScopedGroup(ctx, g); err != nil {
-		return svcerr.Pass("user-group", "AssignUsers", err)
+		return svcerr.Pass(ctx, "user-group", "AssignUsers", err)
 	}
 	ids := dedupeUints(req.UserIDs)
 	if len(ids) > 0 {
@@ -324,7 +324,7 @@ func (s *UserGroupService) AssignUsers(ctx context.Context, id uint, req UserGro
 		}
 		users, err := s.userRepo.ListByIDs(ctx, ids)
 		if err != nil {
-			return svcerr.Pass("user-group", "AssignUsers", err)
+			return svcerr.Pass(ctx, "user-group", "AssignUsers", err)
 		}
 		if len(users) != len(ids) {
 			return constants.ErrBadRequestWithMsg("存在无效的用户 ID")
@@ -332,7 +332,7 @@ func (s *UserGroupService) AssignUsers(ctx context.Context, id uint, req UserGro
 		if g.ScopeProjectID != nil && *g.ScopeProjectID > 0 {
 			for _, uid := range ids {
 				if err := s.ensureProjectMember(ctx, *g.ScopeProjectID, uid); err != nil {
-					return svcerr.Pass("user-group", "AssignUsers", err)
+					return svcerr.Pass(ctx, "user-group", "AssignUsers", err)
 				}
 			}
 		}

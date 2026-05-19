@@ -25,8 +25,8 @@ func logHTTPError(c *gin.Context, err error) {
 	}
 	c.Set(ctxKeyBizErrorLogged, true)
 
+	log := logx.Biz("http.api").WithLayer(logx.LayerAPI).W(c.Request.Context())
 	attrs := []any{
-		"layer", "api",
 		"method", c.Request.Method,
 	}
 	if route := c.FullPath(); route != "" {
@@ -34,23 +34,16 @@ func logHTTPError(c *gin.Context, err error) {
 	} else if c.Request.URL != nil {
 		attrs = append(attrs, "path", c.Request.URL.Path)
 	}
-	if rid, ok := c.Get("request_id"); ok {
-		attrs = append(attrs, "request_id", rid)
-	}
-	if uid, ok := c.Get("user_id"); ok {
-		attrs = append(attrs, "user_id", uid)
-	}
 
-	log := logx.Default()
 	var appErr *apperror.AppError
 	if errors.As(err, &appErr) {
 		attrs = append(attrs, "error_code", appErr.ErrorCode, "http_status", appErr.StatusCode)
 		if appErr.StatusCode >= http.StatusInternalServerError {
-			log.Error.Error("api business error", append(attrs, "error", err.Error())...)
+			log.Error("api business error", append(attrs, "error", err.Error())...)
 			return
 		}
-		log.Info.Debug("api client error", append(attrs, "error", err.Error())...)
+		log.Warn("api client error", append(attrs, "error", err.Error())...)
 		return
 	}
-	log.Error.Error("api business error", append(attrs, "error", err.Error())...)
+	log.Error("api business error", append(attrs, "error", err.Error())...)
 }

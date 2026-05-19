@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -116,7 +116,7 @@ func mergeAssigneeEmailsWithReceiverGroup(recipients []string, payload map[strin
 func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.AlertChannel, source, title, severity, status string, payload map[string]interface{}) (int, string, error) {
 	recipients, err := parseEmailRecipients(channel.HeadersJSON)
 	if err != nil {
-		return 0, "", svcerr.Pass("alert.delivery", "sendEmailChannel", err)
+		return 0, "", svcerr.Pass(ctx, "alert.delivery", "sendEmailChannel", err)
 	}
 	recipients = mergeAssigneeEmails(recipients, payload)
 	recipients = mergeAssigneeEmailsWithReceiverGroup(recipients, payload)
@@ -124,11 +124,11 @@ func (s *AlertService) sendEmailChannel(ctx context.Context, channel *model.Aler
 		return 0, "", constants.ErrBadRequestWithMsg(constants.ErrMsgc47e8ed41463)
 	}
 	if s.mailer == nil || !s.mailer.Enabled() {
-		return 0, "", svcerr.InternalMsg("alert.delivery", "api", constants.ErrMsg71c5fe1e9994)
+		return 0, "", svcerr.InternalMsg(ctx, "alert.delivery", "api", constants.ErrMsg71c5fe1e9994)
 	}
 	settings, err := parseChannelSettings(channel.HeadersJSON)
 	if err != nil {
-		return 0, "", svcerr.Pass("alert.delivery", "sendEmailChannel", err)
+		return 0, "", svcerr.Pass(ctx, "alert.delivery", "sendEmailChannel", err)
 	}
 	subject := strings.TrimSpace(title)
 	mdBody := s.renderChannelMessage(ctx, title, severity, status, payload, settings)

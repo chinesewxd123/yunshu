@@ -1,6 +1,7 @@
-package service
+﻿package service
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -13,7 +14,7 @@ import (
 )
 
 // k8sFail 统一处理 K8s Service 层错误：保留 AppError；映射 apiserver 状态码；其余走 svcerr.Pass。
-func k8sFail(component, operation string, err error, attrs ...any) error {
+func k8sFail(ctx context.Context, component, operation string, err error, attrs ...any) error {
 	if err == nil {
 		return nil
 	}
@@ -25,18 +26,18 @@ func k8sFail(component, operation string, err error, attrs ...any) error {
 			return mapped
 		}
 	}
-	return svcerr.Pass(component, operation, err, attrs...)
+	return svcerr.Pass(ctx, component, operation, err, attrs...)
 }
 
 // k8sRepoErr 将仓储层错误转为业务错误（未找到 → 10004）。
-func k8sRepoErr(component, operation string, err error, attrs ...any) error {
+func k8sRepoErr(ctx context.Context, component, operation string, err error, attrs ...any) error {
 	if err == nil {
 		return nil
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return constants.ErrNotFound
 	}
-	return svcerr.Pass(component, operation, err, attrs...)
+	return svcerr.Pass(ctx, component, operation, err, attrs...)
 }
 
 func isK8sUnauthorizedErr(err error) bool {
@@ -82,7 +83,7 @@ func k8sMapAPIError(err error) error {
 }
 
 // k8sFailOrInternal 优先映射 apiserver 业务错误；否则返回带上下文的 10901。
-func k8sFailOrInternal(component, operation string, err error, msgFmt string, attrs ...any) error {
+func k8sFailOrInternal(ctx context.Context, component, operation string, err error, msgFmt string, attrs ...any) error {
 	if err == nil {
 		return nil
 	}
@@ -91,5 +92,5 @@ func k8sFailOrInternal(component, operation string, err error, msgFmt string, at
 			return mapped
 		}
 	}
-	return svcerr.Internal(component, operation, err, msgFmt, attrs...)
+	return svcerr.Internal(ctx, component, operation, err, msgFmt, attrs...)
 }

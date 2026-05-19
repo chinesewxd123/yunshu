@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -20,7 +20,7 @@ func (s *K8sPodService) Diagnose(ctx context.Context, query PodDiagnoseQuery) (*
 	}
 	var pod corev1.Pod
 	if err := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(query.Namespace).Name(query.Name).Get(&pod).Error; err != nil {
-		return nil, svcerr.Internal("k8s.pod.diagnose", "api", err, constants.ErrFmtc52b9130d74c)
+		return nil, svcerr.Internal(ctx, "k8s.pod.diagnose", "api", err, constants.ErrFmtc52b9130d74c)
 	}
 
 	events, _ := s.Events(ctx, PodEventQuery(query))

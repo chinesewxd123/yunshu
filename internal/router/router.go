@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"yunshu/internal/bootstrap"
+	"yunshu/internal/service/svclog"
 	grpcclient "yunshu/internal/grpc/client"
 	"yunshu/internal/handler"
 	"yunshu/internal/repository"
@@ -25,22 +26,24 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient, bgCtx
 	registerProjectRoutes(api, d)
 
 	if d.mysqlBackupSvc != nil && bgCtx != nil {
-		d.mysqlBackupSvc.SetInfoLogger(app.Logger.Info)
-		go d.mysqlBackupSvc.RunMysqlBackupScheduler(bgCtx, app.Logger.Info)
+		mysqlLog := svclog.Worker("mysql.backup")
+		d.mysqlBackupSvc.SetBizLog(mysqlLog)
+		go d.mysqlBackupSvc.RunMysqlBackupScheduler(bgCtx, mysqlLog)
 	}
 
 	clusterRepo := repository.NewK8sClusterRepository(app.DB)
 	runtimeSvc := service.NewK8sRuntimeService(clusterRepo)
+	k8sFwdLog := svclog.Worker("k8s.event_forward")
 	mgr, err := k8seventforward.NewManager(
 		app.DB,
 		runtimeSvc,
 		app.YamlK8sEventForwardBase,
 		app.Config.Alert,
 		app.Config.App.Port,
-		app.Logger.Info,
+		k8sFwdLog,
 	)
 	if err != nil {
-		app.Logger.Info.Warn("k8s event forward manager init failed", slog.Any("error", err))
+		k8sFwdLog.Error("manager init failed", slog.Any("error", err))
 		return nil
 	}
 	mgr.Start()

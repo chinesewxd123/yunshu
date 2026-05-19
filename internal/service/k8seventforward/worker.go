@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/model"
 )
 
@@ -16,7 +17,7 @@ type Worker struct {
 	store    *Store
 	client   *WebhookClient
 	cfg      RuntimeConfig
-	log      *slog.Logger
+	log      *logx.Component
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
@@ -27,7 +28,7 @@ type Worker struct {
 	isEnabled     func() bool
 }
 
-func NewWorker(store *Store, client *WebhookClient, cfg RuntimeConfig, log *slog.Logger) *Worker {
+func NewWorker(store *Store, client *WebhookClient, cfg RuntimeConfig, log *logx.Component) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Worker{
 		store:    store,
@@ -77,7 +78,7 @@ func (w *Worker) loop() {
 			return
 		case <-ticker.C:
 			if err := w.processBatch(); err != nil {
-				w.log.Warn("k8s event forward: batch failed", slog.Any("error", err))
+				w.log.Warn("batch failed", slog.Any("error", err))
 			}
 		}
 	}
@@ -137,7 +138,7 @@ func (w *Worker) processBatch() error {
 
 		for clusterID, batch := range grouped {
 			if err := w.push(ctx, webhookURL, rule.Name, clusterID, batch); err != nil {
-				w.log.Warn("k8s event forward: webhook push failed",
+				w.log.Warn("webhook push failed",
 					slog.String("rule", rule.Name),
 					slog.String("cluster_id", clusterID),
 					slog.Any("error", err))

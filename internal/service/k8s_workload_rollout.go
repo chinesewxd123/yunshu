@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func (s *K8sWorkloadService) DeploymentRolloutStatus(ctx context.Context, q Depl
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgf6d026c4bc20)
 		}
-		return nil, svcerr.Internal("k8s.workload.rollout", "api", err, constants.ErrFmta3018a66177e)
+		return nil, svcerr.Internal(ctx, "k8s.workload.rollout", "api", err, constants.ErrFmta3018a66177e)
 	}
 	st := dep.Status
 	spec := dep.Spec

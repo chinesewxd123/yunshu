@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -149,7 +149,7 @@ func (s *K8sClusterService) ensureClusterOwningProjectAccess(ctx context.Context
 		if err == gorm.ErrRecordNotFound {
 			return constants.ErrK8sClusterProjectAccessDenied
 		}
-		return svcerr.Pass("k8s.cluster", "ensureClusterOwningProjectAccess", err)
+		return svcerr.Pass(ctx, "k8s.cluster", "ensureClusterOwningProjectAccess", err)
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func (s *K8sClusterService) validateAssignOwningProject(ctx context.Context, pid
 		if err == gorm.ErrRecordNotFound {
 			return constants.ErrK8sClusterProjectAccessDenied
 		}
-		return svcerr.Pass("k8s.cluster", "validateAssignOwningProject", err)
+		return svcerr.Pass(ctx, "k8s.cluster", "validateAssignOwningProject", err)
 	}
 	if !projectaccess.RoleAtLeast(m.Role, "admin") {
 		return constants.ErrProjectAdminRequired
@@ -370,7 +370,7 @@ func (s *K8sClusterService) Update(ctx context.Context, id uint, req K8sClusterU
 func (s *K8sClusterService) Delete(ctx context.Context, id uint) error {
 	cl, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return k8sRepoErr("k8s.cluster", "Delete", err, "cluster_id", id)
+		return k8sRepoErr(ctx, "k8s.cluster", "Delete", err, "cluster_id", id)
 	}
 	if err := s.ensureClusterOwningProjectAccess(ctx, cl); err != nil {
 		return err
@@ -511,7 +511,7 @@ func (s *K8sClusterService) ListComponentStatuses(ctx context.Context, id uint) 
 	probedAt := time.Now().Format(time.RFC3339)
 	var list []corev1.ComponentStatus
 	if err := k.Resource(&corev1.ComponentStatus{}).List(&list).Error; err != nil {
-		return nil, svcerr.Internal("k8s.cluster", "api", err, constants.ErrFmt559cb56d5b9d)
+		return nil, svcerr.Internal(ctx, "k8s.cluster", "api", err, constants.ErrFmt559cb56d5b9d)
 	}
 	out := make([]ComponentStatusItem, 0, len(list))
 	for _, item := range list {

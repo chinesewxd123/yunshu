@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func (s *K8sWorkloadService) Apply(ctx context.Context, req NamespacedApplyReque
 		return true
 	})
 	if err != nil {
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }
@@ -147,7 +147,7 @@ func (s *K8sWorkloadService) deleteWorkloadByKind(ctx context.Context, req Names
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return svcerr.Internalf("k8s.workload", "delete", err, constants.ErrFmt32b88f9cc2e5, kind)
+		return svcerr.Internalf(ctx, "k8s.workload", "delete", err, constants.ErrFmt32b88f9cc2e5, kind)
 	}
 	return nil
 }
@@ -163,12 +163,12 @@ func (s *K8sWorkloadService) CronJobSuspend(ctx context.Context, req CronJobSusp
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsgc6ae960d40d1)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	copyObj := obj.DeepCopy()
 	copyObj.Spec.Suspend = &req.Suspend
 	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }
@@ -184,7 +184,7 @@ func (s *K8sWorkloadService) CronJobTrigger(ctx context.Context, req CronJobTrig
 		if apierrors.IsNotFound(err) {
 			return "", constants.ErrBadRequestWithMsg(constants.ErrMsgc6ae960d40d1)
 		}
-		return "", svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt687b79e3dfdb)
+		return "", svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt687b79e3dfdb)
 	}
 	jobName := fmt.Sprintf("%s-manual-%d", cj.Name, time.Now().Unix())
 	job := &batchv1.Job{
@@ -203,7 +203,7 @@ func (s *K8sWorkloadService) CronJobTrigger(ctx context.Context, req CronJobTrig
 		UID:        cj.UID,
 	}}
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Create(job).Error; err != nil {
-		return "", svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt25f9e144a662)
+		return "", svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt25f9e144a662)
 	}
 	return jobName, nil
 }

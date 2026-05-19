@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"yunshu/internal/service/svcerr"
@@ -92,7 +92,7 @@ func (s *AlertService) updateFingerprintState(ctx context.Context, fingerprint, 
 	if strings.EqualFold(status, "firing") {
 		count, err = s.redis.HIncrBy(ctx, key, "count", 1).Result()
 		if err != nil {
-			return 1, false, svcerr.Pass("alert.aggregate", "updateFingerprintState", err)
+			return 1, false, svcerr.Pass(ctx, "alert.aggregate", "updateFingerprintState", err)
 		}
 		_, _ = s.redis.HSet(ctx, key, "last_status", "firing").Result()
 		_, _ = s.redis.Expire(ctx, key, time.Duration(s.cfg.DedupTTLSeconds)*time.Second).Result()
@@ -125,7 +125,7 @@ func (s *AlertService) markResolvedNotificationSent(ctx context.Context, fingerp
 	key := "alert:resolved:sent:" + strings.TrimSpace(fingerprint)
 	ok, err := s.redis.SetNX(ctx, key, "1", time.Duration(s.cfg.DedupTTLSeconds)*time.Second).Result()
 	if err != nil {
-		return true, svcerr.Pass("alert.aggregate", "markResolvedNotificationSent", err)
+		return true, svcerr.Pass(ctx, "alert.aggregate", "markResolvedNotificationSent", err)
 	}
 	return ok, nil
 }

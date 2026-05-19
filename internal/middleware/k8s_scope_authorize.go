@@ -153,7 +153,7 @@ func K8sScopeAuthorize(
 		if nsDenyRepo != nil && namespace != "" && namespace != "_cluster" {
 			denied, err := nsDenyRepo.IsDenied(c.Request.Context(), pack, clusterID, namespace)
 			if err != nil {
-				logger.Error.Error("k8s namespace deny check failed", "error", err)
+				httpLog("http.k8s_scope").Error("namespace deny check failed", "error", err)
 				response.Error(c, constants.ErrInternal)
 				c.Abort()
 				return
@@ -168,7 +168,7 @@ func K8sScopeAuthorize(
 		if nsAllowRepo != nil && clusterID > 0 && namespace != "" && namespace != "_cluster" {
 			active, err := nsAllowRepo.WhitelistActiveForCluster(c.Request.Context(), pack, clusterID)
 			if err != nil {
-				logger.Error.Error("k8s namespace allow check failed", "error", err)
+				httpLog("http.k8s_scope").Error("namespace allow check failed", "error", err)
 				response.Error(c, constants.ErrInternal)
 				c.Abort()
 				return
@@ -176,7 +176,7 @@ func K8sScopeAuthorize(
 			if active {
 				ok, err := nsAllowRepo.NamespaceAllowed(c.Request.Context(), pack, clusterID, namespace)
 				if err != nil {
-					logger.Error.Error("k8s namespace allow match failed", "error", err)
+					httpLog("http.k8s_scope").Error("namespace allow match failed", "error", err)
 					response.Error(c, constants.ErrInternal)
 					c.Abort()
 					return

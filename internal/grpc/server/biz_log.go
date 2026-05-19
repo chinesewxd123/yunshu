@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -8,11 +9,11 @@ import (
 	logx "yunshu/internal/pkg/logger"
 )
 
-func logGRPCError(method string, err error) {
+func logGRPCError(ctx context.Context, method string, err error) {
 	if err == nil || apperror.AlreadyLogged(err) {
 		return
 	}
-	b := logx.Biz("grpc")
+	b := logx.Biz("grpc.server").WithLayer(logx.LayerGRPC).W(ctx)
 	var appErr *apperror.AppError
 	if errors.As(err, &appErr) {
 		attrs := []any{"method", method, "error_code", appErr.ErrorCode, "http_status", appErr.StatusCode, "error", err.Error()}
@@ -20,7 +21,7 @@ func logGRPCError(method string, err error) {
 			b.Error("rpc business error", attrs...)
 			return
 		}
-		b.Debug("rpc client error", attrs...)
+		b.Warn("rpc client error", attrs...)
 		return
 	}
 	b.Error("rpc failed", "method", method, "error", err.Error())

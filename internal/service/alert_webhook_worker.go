@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func (s *AlertService) shouldEnqueueAlertmanagerWebhook() bool {
 func (s *AlertService) enqueueAlertmanagerWebhook(ctx context.Context, payload AlertManagerPayload) error {
 	bs, err := json.Marshal(payload)
 	if err != nil {
-		return svcerr.InternalMsg("alert.webhook", "api", constants.ErrMsg39d72e4b8516)
+		return svcerr.InternalMsg(ctx, "alert.webhook", "api", constants.ErrMsg39d72e4b8516)
 	}
 	maxLen := s.cfg.WebhookQueueMaxLen
 	if maxLen <= 0 {
@@ -44,25 +44,22 @@ func (s *AlertService) enqueueAlertmanagerWebhook(ctx context.Context, payload A
 	}
 	ok, err := luaEnqueueAlertWebhook.Run(ctx, s.redis, []string{redisKeyAlertWebhookQueue}, maxLen, string(bs)).Int()
 	if err != nil {
-		return svcerr.Pass("alert.webhook", "enqueueAlertmanagerWebhook", err)
+		return svcerr.Pass(ctx, "alert.webhook", "enqueueAlertmanagerWebhook", err)
 	}
 	if ok == 0 {
-		return svcerr.InternalMsg("alert.webhook", "api", constants.ErrMsgfd7c760c8d45)
+		return svcerr.InternalMsg(ctx, "alert.webhook", "api", constants.ErrMsgfd7c760c8d45)
 	}
 	return nil
 }
 
 func (s *AlertService) logWebhook(level string, msg string, attrs ...any) {
-	if s.infoLog == nil {
-		return
-	}
 	switch level {
 	case "warn":
-		s.infoLog.Warn(msg, attrs...)
+		s.bizLog.Warn(msg, attrs...)
 	case "error":
-		s.infoLog.Error(msg, attrs...)
+		s.bizLog.Error(msg, attrs...)
 	default:
-		s.infoLog.Info(msg, attrs...)
+		s.bizLog.Info(msg, attrs...)
 	}
 }
 

@@ -7,8 +7,10 @@ import (
 
 	"yunshu/internal/config"
 	"yunshu/internal/dictconfig"
+	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/model"
 	"yunshu/internal/service"
+	"yunshu/internal/service/svclog"
 
 	"gorm.io/gorm"
 )
@@ -29,7 +31,7 @@ type Manager struct {
 	store    *Store
 	watcher  *Watcher
 	worker   *Worker
-	log      *slog.Logger
+	log      *logx.Component
 	enabled  bool
 	db       *gorm.DB
 	yamlBase config.K8sEventForwardConfig
@@ -42,10 +44,10 @@ func NewManager(
 	yamlBase config.K8sEventForwardConfig,
 	alertCfg config.AlertConfig,
 	appPort int,
-	log *slog.Logger,
+	log *logx.Component,
 ) (*Manager, error) {
 	if log == nil {
-		log = slog.Default()
+		log = svclog.Worker("k8s.event_forward")
 	}
 	ctx := context.Background()
 	resolved := dictconfig.ResolveK8sEventForwardConfig(ctx, db, yamlBase, dictconfig.DefaultK8sEventForwardDictTypes())
@@ -92,7 +94,7 @@ func (m *Manager) reloadRuntimeConfig() {
 	m.enabled = resolved.Enabled
 	rt, err := loadRuntimeConfig(m.store, resolved, m.appPort)
 	if err != nil {
-		m.log.Warn("k8s event forward: reload config failed", slog.Any("error", err))
+		m.log.Warn("reload config failed", slog.Any("error", err))
 		return
 	}
 	m.worker.RefreshSettings(rt)
@@ -126,20 +128,20 @@ func firstPositive(a, b int) int {
 
 func (m *Manager) Start() {
 	if !m.enabled {
-		m.log.Info("k8s event forward disabled in config")
+		m.log.Info("disabled in config")
 		return
 	}
 	ctx := context.Background()
 	ok, err := m.store.HasEnabledRules(ctx)
 	if err != nil {
-		m.log.Warn("k8s event forward: check rules failed", slog.Any("error", err))
+		m.log.Warn("check rules failed", slog.Any("error", err))
 		return
 	}
 	if !ok {
-		m.log.Info("k8s event forward: no enabled rules, watcher/worker not started")
+		m.log.Info("no enabled rules, watcher/worker not started")
 		return
 	}
-	m.log.Info("k8s event forward: starting watcher and worker")
+	m.log.Info("starting watcher and worker")
 	m.watcher.Start()
 	m.worker.Start()
 }

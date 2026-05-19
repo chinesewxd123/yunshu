@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -323,7 +323,7 @@ SELECT
   COALESCE(SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END), 0) AS today_created
 FROM alert_events
 WHERE deleted_at IS NULL`, dayStart, dayEnd).Scan(&agg).Error; err != nil {
-		return nil, svcerr.Pass("alert", "HistoryStats", err)
+		return nil, svcerr.Pass(ctx, "alert", "HistoryStats", err)
 	}
 	stats.Total = agg.Total
 	stats.Firing = agg.Firing
@@ -338,7 +338,7 @@ WHERE deleted_at IS NULL`, dayStart, dayEnd).Scan(&agg).Error; err != nil {
 		Order("cluster ASC").
 		Limit(500).
 		Pluck("cluster", &clusters).Error; err != nil {
-		return nil, svcerr.Pass("alert", "HistoryStats", err)
+		return nil, svcerr.Pass(ctx, "alert", "HistoryStats", err)
 	}
 	stats.ClusterValues = clusters
 	var pipes []string
@@ -348,7 +348,7 @@ WHERE deleted_at IS NULL`, dayStart, dayEnd).Scan(&agg).Error; err != nil {
 		Order("monitor_pipeline ASC").
 		Limit(32).
 		Pluck("monitor_pipeline", &pipes).Error; err != nil {
-		return nil, svcerr.Pass("alert", "HistoryStats", err)
+		return nil, svcerr.Pass(ctx, "alert", "HistoryStats", err)
 	}
 	stats.MonitorPipelineValues = pipes
 	var dsRows []AlertDatasourceFilterOption
@@ -359,7 +359,7 @@ WHERE deleted_at IS NULL`, dayStart, dayEnd).Scan(&agg).Error; err != nil {
 		Order("id DESC").
 		Limit(200).
 		Scan(&dsRows).Error; err != nil {
-		return nil, svcerr.Pass("alert", "HistoryStats", err)
+		return nil, svcerr.Pass(ctx, "alert", "HistoryStats", err)
 	}
 	stats.DatasourceFilterOptions = dsRows
 	return stats, nil

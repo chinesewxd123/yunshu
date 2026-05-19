@@ -9,7 +9,9 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"yunshu/internal/dictconfig"
+	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/model"
+	"yunshu/internal/service/svclog"
 )
 
 const defaultMysqlBackupInnerTick = "*/30 * * * * *"
@@ -40,16 +42,16 @@ func shouldRunMysqlBackupByCron(spec string, last *time.Time, now time.Time) boo
 }
 
 // RunMysqlBackupScheduler 启动定时备份 Worker（字典 mysql_backup_scheduler_* 控制开关与节拍）。
-func (s *MysqlBackupService) RunMysqlBackupScheduler(ctx context.Context, log *slog.Logger) {
+func (s *MysqlBackupService) RunMysqlBackupScheduler(ctx context.Context, log *logx.Component) {
 	if s == nil || s.db == nil {
 		return
 	}
 	if log == nil {
-		log = slog.Default()
+		log = svclog.Worker("mysql.backup.scheduler")
 	}
 	cfg := dictconfig.ResolveMysqlBackupSchedulerConfig(ctx, s.db, dictconfig.DefaultMysqlBackupSchedulerDictTypes())
 	if !cfg.Enabled {
-		log.Info("mysql_backup_scheduler disabled by dict")
+		log.Info("disabled by dict")
 		return
 	}
 	spec := strings.TrimSpace(cfg.TickSpec)
@@ -62,14 +64,14 @@ func (s *MysqlBackupService) RunMysqlBackupScheduler(ctx context.Context, log *s
 			return
 		}
 		if err := s.tickScheduledBackups(ctx); err != nil && log != nil {
-			log.Warn("mysql_backup_scheduler tick failed", slog.Any("error", err))
+			log.Warn("tick failed", slog.Any("error", err))
 		}
 	}
 	if _, err := c.AddFunc(spec, job); err != nil {
-		log.Error("mysql_backup_scheduler init failed", slog.String("spec", spec), slog.Any("error", err))
+		log.Error("init failed", slog.String("tick_spec", spec), slog.Any("error", err))
 		return
 	}
-	log.Info("mysql_backup_scheduler started", slog.String("tick_spec", spec))
+	log.Info("started", slog.String("tick_spec", spec))
 	c.Start()
 	<-ctx.Done()
 	stopCtx := c.Stop()

@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func (s *LoginLogService) List(ctx context.Context, query LoginLogListQuery) (*p
 		PageSize: pageSize,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("login-log", "List", err)
+		return nil, svcerr.Pass(ctx, "login-log", "List", err)
 	}
 	return &pagination.Result[model.LoginLog]{
 		List:     list,
@@ -78,7 +78,7 @@ func (s *LoginLogService) Export(ctx context.Context, query LoginLogListQuery, w
 		PageSize: pageSize,
 	})
 	if err != nil {
-		return svcerr.Pass("login-log", "Export", err)
+		return svcerr.Pass(ctx, "login-log", "Export", err)
 	}
 	f := excelize.NewFile()
 	sheet := "Sheet1"

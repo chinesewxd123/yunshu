@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -27,7 +27,7 @@ func (s *K8sWorkloadService) ListJobs(ctx context.Context, q NamespacedListQuery
 	gvk, _ := s.dyn.GVKByKind("Job")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt9987a1977622)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt9987a1977622)
 	}
 	list := make([]batchv1.Job, 0, len(listU))
 	for _, item := range listU {
@@ -114,7 +114,7 @@ func (s *K8sWorkloadService) JobDetail(ctx context.Context, q NamespacedDetailQu
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg656deb688b72)
 		}
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt1a7e7f82dbdc)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt1a7e7f82dbdc)
 	}
 	var obj batchv1.Job
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -137,7 +137,7 @@ func (s *K8sWorkloadService) JobRerun(ctx context.Context, req JobRerunRequest) 
 		if apierrors.IsNotFound(err) {
 			return "", constants.ErrBadRequestWithMsg(constants.ErrMsg656deb688b72)
 		}
-		return "", svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt1a7e7f82dbdc)
+		return "", svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt1a7e7f82dbdc)
 	}
 	newName := fmt.Sprintf("%s-rerun-%d", job.Name, time.Now().Unix())
 	newJob := &batchv1.Job{
@@ -152,7 +152,7 @@ func (s *K8sWorkloadService) JobRerun(ctx context.Context, req JobRerunRequest) 
 	newJob.Spec.Selector = nil
 	newJob.Spec.ManualSelector = nil
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Create(newJob).Error; err != nil {
-		return "", svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt2abaeffc289e)
+		return "", svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt2abaeffc289e)
 	}
 	return newName, nil
 }
@@ -164,7 +164,7 @@ func (s *K8sWorkloadService) JobPods(ctx context.Context, q RelatedPodsQuery) ([
 	}
 	var job batchv1.Job
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(q.Namespace).Name(q.Name).Get(&job).Error; err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt1a7e7f82dbdc)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt1a7e7f82dbdc)
 	}
 	selector := ""
 	if job.Spec.Selector != nil {
@@ -187,7 +187,7 @@ func (s *K8sWorkloadService) JobPatchContainerResources(ctx context.Context, req
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsg656deb688b72)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	containers := obj.Spec.Template.Spec.Containers
 	idx := workloadContainerIndex(containers, req.ContainerName)
@@ -209,7 +209,7 @@ func (s *K8sWorkloadService) JobPatchContainerResources(ctx context.Context, req
 		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
 	}
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }

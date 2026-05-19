@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -138,7 +138,7 @@ type ServerListQuery struct {
 // ListServers 查询列表相关的业务逻辑。
 func (s *ProjectMgmtService) ListServers(ctx context.Context, q ServerListQuery) (*pagination.Result[ServerItem], error) {
 	if err := s.ensureDefaultServerGroups(ctx, q.ProjectID); err != nil {
-		return nil, svcerr.Pass("project", "ListServers", err)
+		return nil, svcerr.Pass(ctx, "project", "ListServers", err)
 	}
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
 	// If cloud_account_id provided, resolve to its group_id for server filtering.
@@ -146,7 +146,7 @@ func (s *ProjectMgmtService) ListServers(ctx context.Context, q ServerListQuery)
 	if q.CloudAccountID != nil {
 		acc, err := s.cloudAccountRepo.GetByID(ctx, *q.CloudAccountID)
 		if err != nil {
-			return nil, svcerr.Pass("project", "ListServers", err)
+			return nil, svcerr.Pass(ctx, "project", "ListServers", err)
 		}
 		if acc.ProjectID != q.ProjectID {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg053a6a395b16)
@@ -165,7 +165,7 @@ func (s *ProjectMgmtService) ListServers(ctx context.Context, q ServerListQuery)
 		PageSize:   pageSize,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("project", "ListServers", err)
+		return nil, svcerr.Pass(ctx, "project", "ListServers", err)
 	}
 	out := make([]ServerItem, 0, len(list))
 	for _, it := range list {
@@ -202,7 +202,7 @@ type ServerUpsertRequest struct {
 // UpsertServer 执行对应的业务逻辑。
 func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertRequest) (*ServerItem, error) {
 	if err := s.ensureDefaultServerGroups(ctx, req.ProjectID); err != nil {
-		return nil, svcerr.Pass("project", "UpsertServer", err)
+		return nil, svcerr.Pass(ctx, "project", "UpsertServer", err)
 	}
 	if req.Port <= 0 {
 		req.Port = 22
@@ -224,7 +224,7 @@ func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertR
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrLogSourceServerNotFound
 			}
-			return nil, svcerr.Pass("project", "UpsertServer", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertServer", err)
 		}
 	} else {
 		sv = &model.Server{}
@@ -249,11 +249,11 @@ func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertR
 
 	if sv.ID == 0 {
 		if err := s.serverRepo.Create(ctx, sv); err != nil {
-			return nil, svcerr.Pass("project", "UpsertServer", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertServer", err)
 		}
 	} else {
 		if err := s.serverRepo.Save(ctx, sv); err != nil {
-			return nil, svcerr.Pass("project", "UpsertServer", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertServer", err)
 		}
 	}
 
@@ -264,18 +264,18 @@ func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertR
 			c, err := s.serverRepo.GetCredentialByServerID(ctx, sv.ID)
 			if err != nil {
 				if !errors.Is(err, gorm.ErrRecordNotFound) {
-					return nil, svcerr.Pass("project", "UpsertServer", err)
+					return nil, svcerr.Pass(ctx, "project", "UpsertServer", err)
 				}
 			} else {
 				existingCred = c
 			}
 		}
-		cred, err := s.buildCredentialForSave(*sv, req, existingCred)
+		cred, err := s.buildCredentialForSave(ctx, *sv, req, existingCred)
 		if err != nil {
-			return nil, svcerr.Pass("project", "UpsertServer", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertServer", err)
 		}
 		if err := s.serverRepo.UpsertCredential(ctx, cred); err != nil {
-			return nil, svcerr.Pass("project", "UpsertServer", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertServer", err)
 		}
 	}
 
@@ -283,7 +283,7 @@ func (s *ProjectMgmtService) UpsertServer(ctx context.Context, req ServerUpsertR
 	return &item, nil
 }
 
-func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req ServerUpsertRequest, existing *model.ServerCredential) (*model.ServerCredential, error) {
+func (s *ProjectMgmtService) buildCredentialForSave(ctx context.Context, server model.Server, req ServerUpsertRequest, existing *model.ServerCredential) (*model.ServerCredential, error) {
 	authType := strings.ToLower(strings.TrimSpace(req.AuthType))
 	if authType == "" {
 		authType = "password"
@@ -300,7 +300,7 @@ func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req Ser
 		if req.Password != nil && strings.TrimSpace(*req.Password) != "" {
 			enc, err := cryptox.EncryptString(s.aead, *req.Password)
 			if err != nil {
-				return nil, svcerr.Pass("project", "buildCredentialForSave", err)
+				return nil, svcerr.Pass(ctx, "project", "buildCredentialForSave", err)
 			}
 			cred.EncPassword = &enc
 		} else if existing != nil && existing.EncPassword != nil && strings.TrimSpace(*existing.EncPassword) != "" {
@@ -312,7 +312,7 @@ func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req Ser
 		if req.PrivateKey != nil && strings.TrimSpace(*req.PrivateKey) != "" {
 			encKey, err := cryptox.EncryptString(s.aead, *req.PrivateKey)
 			if err != nil {
-				return nil, svcerr.Pass("project", "buildCredentialForSave", err)
+				return nil, svcerr.Pass(ctx, "project", "buildCredentialForSave", err)
 			}
 			cred.EncPrivateKey = &encKey
 		} else if existing != nil && existing.EncPrivateKey != nil && strings.TrimSpace(*existing.EncPrivateKey) != "" {
@@ -323,7 +323,7 @@ func (s *ProjectMgmtService) buildCredentialForSave(server model.Server, req Ser
 		if req.Passphrase != nil && strings.TrimSpace(*req.Passphrase) != "" {
 			encPP, err := cryptox.EncryptString(s.aead, *req.Passphrase)
 			if err != nil {
-				return nil, svcerr.Pass("project", "buildCredentialForSave", err)
+				return nil, svcerr.Pass(ctx, "project", "buildCredentialForSave", err)
 			}
 			cred.EncPassphrase = &encPP
 		} else if existing != nil {
@@ -347,7 +347,7 @@ func (s *ProjectMgmtService) GetServer(ctx context.Context, id uint) (*ServerDet
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrLogSourceServerNotFound
 		}
-		return nil, svcerr.Pass("project", "GetServer", err)
+		return nil, svcerr.Pass(ctx, "project", "GetServer", err)
 	}
 	base := toServerItem(*sv)
 	out := &ServerDetailItem{ServerItem: base}
@@ -356,7 +356,7 @@ func (s *ProjectMgmtService) GetServer(ctx context.Context, id uint) (*ServerDet
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return out, nil
 		}
-		return nil, svcerr.Pass("project", "GetServer", err)
+		return nil, svcerr.Pass(ctx, "project", "GetServer", err)
 	}
 	out.AuthType = cred.AuthType
 	out.Username = cred.Username
@@ -403,7 +403,7 @@ func (s *ProjectMgmtService) ExecServerCommand(ctx context.Context, req ServerEx
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrLogSourceServerNotFound
 		}
-		return nil, svcerr.Pass("project", "ExecServerCommand", err)
+		return nil, svcerr.Pass(ctx, "project", "ExecServerCommand", err)
 	}
 	if sv.ProjectID != req.ProjectID {
 		return nil, constants.ErrServerNotInCurrentProject
@@ -413,12 +413,12 @@ func (s *ProjectMgmtService) ExecServerCommand(ctx context.Context, req ServerEx
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgfeb33ee7c48c)
 		}
-		return nil, svcerr.Pass("project", "ExecServerCommand", err)
+		return nil, svcerr.Pass(ctx, "project", "ExecServerCommand", err)
 	}
 
-	sshCfg, err := s.decryptCredentialToSSHConfig(*sv, *cred)
+	sshCfg, err := s.decryptCredentialToSSHConfig(ctx, *sv, *cred)
 	if err != nil {
-		return nil, svcerr.Pass("project", "ExecServerCommand", err)
+		return nil, svcerr.Pass(ctx, "project", "ExecServerCommand", err)
 	}
 
 	timeoutSec := req.TimeoutSec
@@ -460,7 +460,7 @@ func (s *ProjectMgmtService) StreamServerTerminal(ctx context.Context, projectID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrLogSourceServerNotFound
 		}
-		return svcerr.Pass("project", "StreamServerTerminal", err)
+		return svcerr.Pass(ctx, "project", "StreamServerTerminal", err)
 	}
 	if sv.ProjectID != projectID {
 		return constants.ErrServerNotInCurrentProject
@@ -470,11 +470,11 @@ func (s *ProjectMgmtService) StreamServerTerminal(ctx context.Context, projectID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsgfeb33ee7c48c)
 		}
-		return svcerr.Pass("project", "StreamServerTerminal", err)
+		return svcerr.Pass(ctx, "project", "StreamServerTerminal", err)
 	}
-	sshCfg, err := s.decryptCredentialToSSHConfig(*sv, *cred)
+	sshCfg, err := s.decryptCredentialToSSHConfig(ctx, *sv, *cred)
 	if err != nil {
-		return svcerr.Pass("project", "StreamServerTerminal", err)
+		return svcerr.Pass(ctx, "project", "StreamServerTerminal", err)
 	}
 	cli, err := sshclient.Dial(ctx, sshCfg)
 	if err != nil {
@@ -514,11 +514,11 @@ type ServerGroupTreeQuery struct {
 // ListServerGroupTree 查询列表相关的业务逻辑。
 func (s *ProjectMgmtService) ListServerGroupTree(ctx context.Context, q ServerGroupTreeQuery) ([]ServerGroupItem, error) {
 	if err := s.ensureDefaultServerGroups(ctx, q.ProjectID); err != nil {
-		return nil, svcerr.Pass("project", "ListServerGroupTree", err)
+		return nil, svcerr.Pass(ctx, "project", "ListServerGroupTree", err)
 	}
 	list, err := s.serverGroupRepo.ListByProject(ctx, q.ProjectID)
 	if err != nil {
-		return nil, svcerr.Pass("project", "ListServerGroupTree", err)
+		return nil, svcerr.Pass(ctx, "project", "ListServerGroupTree", err)
 	}
 	items := make([]ServerGroupItem, 0, len(list))
 	for _, it := range list {
@@ -554,7 +554,7 @@ func (s *ProjectMgmtService) ListServerGroupTree(ctx context.Context, q ServerGr
 // UpsertServerGroup 执行对应的业务逻辑。
 func (s *ProjectMgmtService) UpsertServerGroup(ctx context.Context, req ServerGroupUpsertRequest) (*ServerGroupItem, error) {
 	if err := s.ensureDefaultServerGroups(ctx, req.ProjectID); err != nil {
-		return nil, svcerr.Pass("project", "UpsertServerGroup", err)
+		return nil, svcerr.Pass(ctx, "project", "UpsertServerGroup", err)
 	}
 	category := strings.TrimSpace(req.Category)
 	if category == "" {
@@ -574,7 +574,7 @@ func (s *ProjectMgmtService) UpsertServerGroup(ctx context.Context, req ServerGr
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg97c4c24a4cdf)
 			}
-			return nil, svcerr.Pass("project", "UpsertServerGroup", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertServerGroup", err)
 		}
 	} else {
 		item = &model.ServerGroup{}
@@ -592,7 +592,7 @@ func (s *ProjectMgmtService) UpsertServerGroup(ctx context.Context, req ServerGr
 		err = s.serverGroupRepo.Save(ctx, item)
 	}
 	if err != nil {
-		return nil, svcerr.Pass("project", "UpsertServerGroup", err)
+		return nil, svcerr.Pass(ctx, "project", "UpsertServerGroup", err)
 	}
 	return &ServerGroupItem{
 		ID: item.ID, ProjectID: item.ProjectID, ParentID: item.ParentID, Name: item.Name,
@@ -607,7 +607,7 @@ func (s *ProjectMgmtService) DeleteServerGroup(ctx context.Context, projectID, g
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrNotFoundWithMsg(constants.ErrMsg97c4c24a4cdf)
 		}
-		return svcerr.Pass("project", "DeleteServerGroup", err)
+		return svcerr.Pass(ctx, "project", "DeleteServerGroup", err)
 	}
 	if group.ProjectID != projectID {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg757ed9cbc3d5)
@@ -662,7 +662,7 @@ func toCloudAccountItem(it model.CloudAccount) CloudAccountItem {
 func (s *ProjectMgmtService) ListCloudAccounts(ctx context.Context, q CloudAccountListQuery) ([]CloudAccountItem, error) {
 	list, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, q.ProjectID, q.GroupID)
 	if err != nil {
-		return nil, svcerr.Pass("project", "ListCloudAccounts", err)
+		return nil, svcerr.Pass(ctx, "project", "ListCloudAccounts", err)
 	}
 	out := make([]CloudAccountItem, 0, len(list))
 	for _, it := range list {
@@ -681,7 +681,7 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgd19fc495559f)
 			}
-			return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertCloudAccount", err)
 		}
 	} else {
 		item = &model.CloudAccount{}
@@ -702,7 +702,7 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 	if strings.TrimSpace(req.AK) != "" {
 		accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, req.ProjectID, nil)
 		if err != nil {
-			return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertCloudAccount", err)
 		}
 		for _, ex := range accounts {
 			if req.ID != nil && ex.ID == *req.ID {
@@ -724,14 +724,14 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 	if strings.TrimSpace(req.AK) != "" {
 		encAK, err := cryptox.EncryptString(s.aead, req.AK)
 		if err != nil {
-			return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertCloudAccount", err)
 		}
 		item.EncAK = &encAK
 	}
 	if strings.TrimSpace(req.SK) != "" {
 		encSK, err := cryptox.EncryptString(s.aead, req.SK)
 		if err != nil {
-			return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertCloudAccount", err)
 		}
 		item.EncSK = &encSK
 	}
@@ -741,7 +741,7 @@ func (s *ProjectMgmtService) UpsertCloudAccount(ctx context.Context, req CloudAc
 		err = s.cloudAccountRepo.Save(ctx, item)
 	}
 	if err != nil {
-		return nil, svcerr.Pass("project", "UpsertCloudAccount", err)
+		return nil, svcerr.Pass(ctx, "project", "UpsertCloudAccount", err)
 	}
 	out := toCloudAccountItem(*item)
 	return &out, nil
@@ -810,7 +810,7 @@ func (s *ProjectMgmtService) SyncCloudAccount(ctx context.Context, req CloudSync
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgd19fc495559f)
 		}
-		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
+		return nil, svcerr.Pass(ctx, "project", "SyncCloudAccount", err)
 	}
 	if acc.ProjectID != req.ProjectID {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg053a6a395b16)
@@ -820,15 +820,15 @@ func (s *ProjectMgmtService) SyncCloudAccount(ctx context.Context, req CloudSync
 	}
 	ak, err := cryptox.DecryptString(s.aead, *acc.EncAK)
 	if err != nil {
-		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
+		return nil, svcerr.Pass(ctx, "project", "SyncCloudAccount", err)
 	}
 	sk, err := cryptox.DecryptString(s.aead, *acc.EncSK)
 	if err != nil {
-		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
+		return nil, svcerr.Pass(ctx, "project", "SyncCloudAccount", err)
 	}
 	provider, err := s.providerFor(acc.Provider)
 	if err != nil {
-		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
+		return nil, svcerr.Pass(ctx, "project", "SyncCloudAccount", err)
 	}
 	instances, err := provider.ListInstances(ctx, ak, sk, acc.RegionScope)
 	now := time.Now()
@@ -837,7 +837,7 @@ func (s *ProjectMgmtService) SyncCloudAccount(ctx context.Context, req CloudSync
 		msg := err.Error()
 		acc.LastSyncError = &msg
 		_ = s.cloudAccountRepo.Save(ctx, acc)
-		return nil, svcerr.Pass("project", "SyncCloudAccount", err)
+		return nil, svcerr.Pass(ctx, "project", "SyncCloudAccount", err)
 	}
 	acc.LastSyncError = nil
 	_ = s.cloudAccountRepo.Save(ctx, acc)
@@ -927,7 +927,7 @@ func (s *ProjectMgmtService) DeleteCloudAccount(ctx context.Context, projectID, 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrNotFoundWithMsg(constants.ErrMsgd19fc495559f)
 		}
-		return svcerr.Pass("project", "DeleteCloudAccount", err)
+		return svcerr.Pass(ctx, "project", "DeleteCloudAccount", err)
 	}
 	if acc.ProjectID != projectID {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg053a6a395b16)
@@ -946,7 +946,7 @@ func (s *ProjectMgmtService) ensureDefaultServerGroups(ctx context.Context, proj
 
 	list, err := s.serverGroupRepo.ListByProject(ctx, projectID)
 	if err != nil {
-		return svcerr.Pass("project", "ensureDefaultServerGroups", err)
+		return svcerr.Pass(ctx, "project", "ensureDefaultServerGroups", err)
 	}
 	if len(list) == 0 {
 		selfHosted := model.ServerGroup{
@@ -966,10 +966,10 @@ func (s *ProjectMgmtService) ensureDefaultServerGroups(ctx context.Context, proj
 			Status:    model.StatusEnabled,
 		}
 		if err := s.serverGroupRepo.Create(ctx, &selfHosted); err != nil {
-			return svcerr.Pass("project", "ensureDefaultServerGroups", err)
+			return svcerr.Pass(ctx, "project", "ensureDefaultServerGroups", err)
 		}
 		if err := s.serverGroupRepo.Create(ctx, &cloudRoot); err != nil {
-			return svcerr.Pass("project", "ensureDefaultServerGroups", err)
+			return svcerr.Pass(ctx, "project", "ensureDefaultServerGroups", err)
 		}
 		alibaba := model.ServerGroup{
 			ProjectID: projectID,
@@ -1009,7 +1009,7 @@ func (s *ProjectMgmtService) ensureDefaultServerGroups(ctx context.Context, proj
 	// later without group_id while default groups already exist.
 	list, err = s.serverGroupRepo.ListByProject(ctx, projectID)
 	if err != nil {
-		return svcerr.Pass("project", "ensureDefaultServerGroups", err)
+		return svcerr.Pass(ctx, "project", "ensureDefaultServerGroups", err)
 	}
 	var selfHostedID uint
 	for _, g := range list {
@@ -1033,7 +1033,7 @@ func (s *ProjectMgmtService) ensureDefaultServerGroups(ctx context.Context, proj
 			Status:    model.StatusEnabled,
 		}
 		if err := s.serverGroupRepo.Create(ctx, &selfHosted); err != nil {
-			return svcerr.Pass("project", "ensureDefaultServerGroups", err)
+			return svcerr.Pass(ctx, "project", "ensureDefaultServerGroups", err)
 		}
 		selfHostedID = selfHosted.ID
 	}
@@ -1068,7 +1068,7 @@ type ServerTestResult struct {
 func (s *ProjectMgmtService) TestServerConnectivity(ctx context.Context, req ServerTestRequest) (*ServerTestResult, error) {
 	sv, err := s.serverRepo.GetByID(ctx, req.ServerID)
 	if err != nil {
-		return nil, svcerr.Pass("project", "TestServerConnectivity", err)
+		return nil, svcerr.Pass(ctx, "project", "TestServerConnectivity", err)
 	}
 	if strings.TrimSpace(sv.SourceType) == model.ServerGroupCategoryCloud {
 		return s.testCloudServerConnectivityBySDK(ctx, sv)
@@ -1107,7 +1107,7 @@ type ServerSyncResult struct {
 func (s *ProjectMgmtService) BatchTestServerConnectivity(ctx context.Context, req BatchServerTestRequest) (*BatchServerTestResult, error) {
 	serverIDs, err := s.resolveProjectServerIDs(ctx, req.ProjectID, req.ServerIDs)
 	if err != nil {
-		return nil, svcerr.Pass("project", "BatchTestServerConnectivity", err)
+		return nil, svcerr.Pass(ctx, "project", "BatchTestServerConnectivity", err)
 	}
 	if len(serverIDs) == 0 {
 		return &BatchServerTestResult{Total: 0, Results: []ServerTestResult{}}, nil
@@ -1135,7 +1135,7 @@ func (s *ProjectMgmtService) BatchTestServerConnectivity(ctx context.Context, re
 func (s *ProjectMgmtService) SyncProjectServers(ctx context.Context, req ServerSyncRequest) (*ServerSyncResult, error) {
 	serverIDs, err := s.resolveProjectServerIDs(ctx, req.ProjectID, req.ServerIDs)
 	if err != nil {
-		return nil, svcerr.Pass("project", "SyncProjectServers", err)
+		return nil, svcerr.Pass(ctx, "project", "SyncProjectServers", err)
 	}
 	if len(serverIDs) == 0 {
 		return &ServerSyncResult{UpdatedAt: time.Now().Format(time.RFC3339), TestResults: []ServerTestResult{}}, nil
@@ -1170,7 +1170,7 @@ func (s *ProjectMgmtService) resolveProjectServerIDs(ctx context.Context, projec
 		PageSize:  10000,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("project", "resolveProjectServerIDs", err)
+		return nil, svcerr.Pass(ctx, "project", "resolveProjectServerIDs", err)
 	}
 	if len(serverIDs) == 0 {
 		out := make([]uint, 0, len(list))
@@ -1273,7 +1273,7 @@ func (s *ProjectMgmtService) testCloudServerConnectivityBySDK(ctx context.Contex
 	groupID := *sv.GroupID
 	accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, sv.ProjectID, &groupID)
 	if err != nil {
-		return nil, svcerr.Pass("project", "testCloudServerConnectivityBySDK", err)
+		return nil, svcerr.Pass(ctx, "project", "testCloudServerConnectivityBySDK", err)
 	}
 	providerName := strings.TrimSpace(sv.Provider)
 	var account *model.CloudAccount
@@ -1302,11 +1302,11 @@ func (s *ProjectMgmtService) testCloudServerConnectivityBySDK(ctx context.Contex
 
 	ak, err := cryptox.DecryptString(s.aead, *account.EncAK)
 	if err != nil {
-		return nil, svcerr.Pass("project", "testCloudServerConnectivityBySDK", err)
+		return nil, svcerr.Pass(ctx, "project", "testCloudServerConnectivityBySDK", err)
 	}
 	sk, err := cryptox.DecryptString(s.aead, *account.EncSK)
 	if err != nil {
-		return nil, svcerr.Pass("project", "testCloudServerConnectivityBySDK", err)
+		return nil, svcerr.Pass(ctx, "project", "testCloudServerConnectivityBySDK", err)
 	}
 	provider, err := s.providerFor(account.Provider)
 	if err != nil {
@@ -1398,7 +1398,7 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrLogSourceServerNotFound
 		}
-		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
+		return nil, svcerr.Pass(ctx, "project", "RunCloudServerAction", err)
 	}
 	if sv.ProjectID != projectID {
 		return nil, constants.ErrServerNotInCurrentProject
@@ -1412,7 +1412,7 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 	groupID := *sv.GroupID
 	accounts, err := s.cloudAccountRepo.ListByProjectAndGroup(ctx, sv.ProjectID, &groupID)
 	if err != nil {
-		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
+		return nil, svcerr.Pass(ctx, "project", "RunCloudServerAction", err)
 	}
 	providerName := strings.TrimSpace(sv.Provider)
 	var account *model.CloudAccount
@@ -1434,15 +1434,15 @@ func (s *ProjectMgmtService) RunCloudServerAction(ctx context.Context, projectID
 	}
 	ak, err := cryptox.DecryptString(s.aead, *account.EncAK)
 	if err != nil {
-		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
+		return nil, svcerr.Pass(ctx, "project", "RunCloudServerAction", err)
 	}
 	sk, err := cryptox.DecryptString(s.aead, *account.EncSK)
 	if err != nil {
-		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
+		return nil, svcerr.Pass(ctx, "project", "RunCloudServerAction", err)
 	}
 	provider, err := s.providerFor(account.Provider)
 	if err != nil {
-		return nil, svcerr.Pass("project", "RunCloudServerAction", err)
+		return nil, svcerr.Pass(ctx, "project", "RunCloudServerAction", err)
 	}
 
 	instances, err := provider.ListInstances(ctx, ak, sk, account.RegionScope)
@@ -1550,7 +1550,7 @@ func (s *ProjectMgmtService) detectRemoteOSAndArch(ctx context.Context, cli *ssh
 	return "", "", "connected"
 }
 
-func (s *ProjectMgmtService) decryptCredentialToSSHConfig(sv model.Server, cred model.ServerCredential) (sshclient.Config, error) {
+func (s *ProjectMgmtService) decryptCredentialToSSHConfig(ctx context.Context, sv model.Server, cred model.ServerCredential) (sshclient.Config, error) {
 	cfg := sshclient.Config{
 		Host:     sv.Host,
 		Port:     sv.Port,
@@ -1563,7 +1563,7 @@ func (s *ProjectMgmtService) decryptCredentialToSSHConfig(sv model.Server, cred 
 		}
 		pw, err := cryptox.DecryptString(s.aead, *cred.EncPassword)
 		if err != nil {
-			return sshclient.Config{}, svcerr.Pass("project", "decryptCredentialToSSHConfig", err)
+			return sshclient.Config{}, svcerr.Pass(ctx, "project", "decryptCredentialToSSHConfig", err)
 		}
 		cfg.AuthType = sshclient.AuthPassword
 		cfg.Password = pw
@@ -1573,14 +1573,14 @@ func (s *ProjectMgmtService) decryptCredentialToSSHConfig(sv model.Server, cred 
 		}
 		pk, err := cryptox.DecryptString(s.aead, *cred.EncPrivateKey)
 		if err != nil {
-			return sshclient.Config{}, svcerr.Pass("project", "decryptCredentialToSSHConfig", err)
+			return sshclient.Config{}, svcerr.Pass(ctx, "project", "decryptCredentialToSSHConfig", err)
 		}
 		cfg.AuthType = sshclient.AuthKey
 		cfg.PrivateKey = pk
 		if cred.EncPassphrase != nil {
 			pp, err := cryptox.DecryptString(s.aead, *cred.EncPassphrase)
 			if err != nil {
-				return sshclient.Config{}, svcerr.Pass("project", "decryptCredentialToSSHConfig", err)
+				return sshclient.Config{}, svcerr.Pass(ctx, "project", "decryptCredentialToSSHConfig", err)
 			}
 			cfg.Passphrase = pp
 		}
@@ -1600,7 +1600,7 @@ func (s *ProjectMgmtService) ImportServersFromExcel(ctx context.Context, project
 	sheet := f.GetSheetName(0)
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return 0, svcerr.Pass("project", "ImportServersFromExcel", err)
+		return 0, svcerr.Pass(ctx, "project", "ImportServersFromExcel", err)
 	}
 	if len(rows) <= 1 {
 		return 0, nil
@@ -1658,7 +1658,7 @@ func (s *ProjectMgmtService) ImportServersFromExcel(ctx context.Context, project
 func (s *ProjectMgmtService) ExportServersToExcel(ctx context.Context, projectID uint, keyword string) (*excelize.File, error) {
 	list, _, err := s.serverRepo.List(ctx, repository.ServerListParams{ProjectID: projectID, Keyword: strings.TrimSpace(keyword), Page: 1, PageSize: 10000})
 	if err != nil {
-		return nil, svcerr.Pass("project", "ExportServersToExcel", err)
+		return nil, svcerr.Pass(ctx, "project", "ExportServersToExcel", err)
 	}
 	f := excelize.NewFile()
 	sheet := f.GetSheetName(0)

@@ -107,8 +107,8 @@ func OperationAudit(opSvc *service.OperationLogService, logger *logx.Logger) gin
 			LatencyMs:      latency,
 		}
 
-		if err := opSvc.Record(c.Request.Context(), entry); err != nil && logger != nil {
-			logger.Error.Error("operation audit persist failed", "error", err, "path", path)
+		if err := opSvc.Record(c.Request.Context(), entry); err != nil {
+			httpLog("http.audit").Error("operation audit persist failed", "error", err, "path", path)
 		}
 	}
 }

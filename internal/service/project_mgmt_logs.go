@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -27,7 +27,7 @@ func (s *ProjectMgmtService) ListServices(ctx context.Context, q ServiceListQuer
 		PageSize:  pageSize,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("project", "ListServices", err)
+		return nil, svcerr.Pass(ctx, "project", "ListServices", err)
 	}
 	out := make([]ServiceItem, 0, len(list))
 	for _, it := range list {
@@ -60,7 +60,7 @@ func (s *ProjectMgmtService) UpsertService(ctx context.Context, req ServiceUpser
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsgac7e51a53391)
 			}
-			return nil, svcerr.Pass("project", "UpsertService", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertService", err)
 		}
 	} else {
 		it = &model.Service{}
@@ -73,11 +73,11 @@ func (s *ProjectMgmtService) UpsertService(ctx context.Context, req ServiceUpser
 	it.Status = status
 	if it.ID == 0 {
 		if err := s.serviceRepo.Create(ctx, it); err != nil {
-			return nil, svcerr.Pass("project", "UpsertService", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertService", err)
 		}
 	} else {
 		if err := s.serviceRepo.Save(ctx, it); err != nil {
-			return nil, svcerr.Pass("project", "UpsertService", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertService", err)
 		}
 	}
 	out := toServiceItem(*it)
@@ -131,7 +131,7 @@ func (s *ProjectMgmtService) ListLogSources(ctx context.Context, q LogSourceList
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
 	list, total, err := s.logRepo.List(ctx, repository.LogSourceListParams{ProjectID: q.ProjectID, ServiceID: q.ServiceID, Page: page, PageSize: pageSize})
 	if err != nil {
-		return nil, svcerr.Pass("project", "ListLogSources", err)
+		return nil, svcerr.Pass(ctx, "project", "ListLogSources", err)
 	}
 	out := make([]LogSourceItem, 0, len(list))
 	for _, it := range list {
@@ -171,7 +171,7 @@ func (s *ProjectMgmtService) UpsertLogSource(ctx context.Context, req LogSourceU
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
 			}
-			return nil, svcerr.Pass("project", "UpsertLogSource", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertLogSource", err)
 		}
 	} else {
 		it = &model.ServiceLogSource{}
@@ -187,11 +187,11 @@ func (s *ProjectMgmtService) UpsertLogSource(ctx context.Context, req LogSourceU
 	it.Status = status
 	if it.ID == 0 {
 		if err := s.logRepo.Create(ctx, it); err != nil {
-			return nil, svcerr.Pass("project", "UpsertLogSource", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertLogSource", err)
 		}
 	} else {
 		if err := s.logRepo.Save(ctx, it); err != nil {
-			return nil, svcerr.Pass("project", "UpsertLogSource", err)
+			return nil, svcerr.Pass(ctx, "project", "UpsertLogSource", err)
 		}
 	}
 	out := toLogSourceItem(*it)
@@ -262,14 +262,14 @@ func (s *ProjectMgmtService) ValidateLogSourceAccess(ctx context.Context, projec
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrLogSourceServerNotFound
 		}
-		return svcerr.Pass("project", "ValidateLogSourceAccess", err)
+		return svcerr.Pass(ctx, "project", "ValidateLogSourceAccess", err)
 	}
 	if sv.ProjectID != projectID {
 		return constants.ErrServerNotInCurrentProject
 	}
 	ok, err := s.logRepo.BelongsToProjectServer(ctx, projectID, serverID, logSourceID)
 	if err != nil {
-		return svcerr.Pass("project", "ValidateLogSourceAccess", err)
+		return svcerr.Pass(ctx, "project", "ValidateLogSourceAccess", err)
 	}
 	if !ok {
 		return constants.ErrNotFoundWithMsg(constants.ErrMsg9d63941807e2)
@@ -280,7 +280,7 @@ func (s *ProjectMgmtService) ValidateLogSourceAccess(ctx context.Context, projec
 // ExportLogs 导出相关的业务逻辑。
 func (s *ProjectMgmtService) ExportLogs(ctx context.Context, q LogExportQuery) ([]byte, string, error) {
 	if err := s.ValidateLogSourceAccess(ctx, q.ProjectID, q.ServerID, q.LogSourceID); err != nil {
-		return nil, "", svcerr.Pass("project", "ExportLogs", err)
+		return nil, "", svcerr.Pass(ctx, "project", "ExportLogs", err)
 	}
 
 	var includeRe *regexp.Regexp

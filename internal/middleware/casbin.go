@@ -36,7 +36,7 @@ func Authorize(enforcer *casbin.SyncedEnforcer, logger *logx.Logger, k8sAccessRe
 
 		allowed, err := enforcer.Enforce(service.UserSubject(user.ID), path, c.Request.Method)
 		if err != nil {
-			logger.Error.Error("casbin authorize failed", "error", err, "path", path, "method", c.Request.Method)
+			httpLog("http.authorize").Error("casbin authorize failed", "error", err, "path", path, "method", c.Request.Method)
 			response.Error(c, constants.ErrInternal)
 			c.Abort()
 			return

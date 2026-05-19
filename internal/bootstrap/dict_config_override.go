@@ -123,8 +123,7 @@ func (b *Builder) applyDictConfigOverrides(ctx context.Context, ov dictConfigOve
 		if b.app.Logger == nil {
 			return
 		}
-		// 用 Info logger，避免引入新的 logger API 依赖；具体格式由 logger 实现决定
-		b.app.Logger.Info.Info(msg, kv...)
+		b.app.Logger.Biz("config").Info(msg, kv...)
 	}
 
 	// Alert: webhook_token

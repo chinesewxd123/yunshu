@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -56,14 +56,14 @@ func (s *AlertService) ListEvents(ctx context.Context, q AlertEventListQuery) (l
 		}
 	}
 	if err = tx.Count(&total).Error; err != nil {
-		return nil, 0, page, pageSize, svcerr.Pass("alert", "ListEvents", err)
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert", "ListEvents", err)
 	}
 	if err = tx.
 		Order("id DESC").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&list).Error; err != nil {
-		return nil, 0, page, pageSize, svcerr.Pass("alert", "ListEvents", err)
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert", "ListEvents", err)
 	}
 	for i := range list {
 		hydrateAlertEvent(&list[i])

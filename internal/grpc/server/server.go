@@ -15,7 +15,7 @@ type RuntimeServer struct {
 }
 
 func Start(addr string, impl *LogPlatformServer, maxRecvBytes, maxSendBytes int) (*RuntimeServer, error) {
-	opts := make([]grpc.ServerOption, 0, 2)
+	opts := []grpc.ServerOption{grpc.UnaryInterceptor(unaryLogInterceptor)}
 	if maxRecvBytes > 0 {
 		opts = append(opts, grpc.MaxRecvMsgSize(maxRecvBytes))
 	}

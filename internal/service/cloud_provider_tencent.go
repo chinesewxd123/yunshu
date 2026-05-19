@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"yunshu/internal/service/svcerr"
@@ -19,7 +19,7 @@ type TencentCloudProvider struct{}
 
 func (p *TencentCloudProvider) ListInstances(ctx context.Context, ak, sk, regionScope string) ([]CloudInstance, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, svcerr.Pass("project.cloud", "ListInstances", err)
+		return nil, svcerr.Pass(ctx, "project.cloud", "ListInstances", err)
 	}
 	regions := make([]string, 0)
 	for _, it := range strings.Split(regionScope, ",") {
@@ -47,27 +47,27 @@ func (p *TencentCloudProvider) ListInstances(ctx context.Context, ak, sk, region
 	out := make([]CloudInstance, 0)
 	for _, region := range regions {
 		if err := ctx.Err(); err != nil {
-			return nil, svcerr.Pass("project.cloud", "ListInstances", err)
+			return nil, svcerr.Pass(ctx, "project.cloud", "ListInstances", err)
 		}
 		cred := common.NewCredential(strings.TrimSpace(ak), strings.TrimSpace(sk))
 		cpf := profile.NewClientProfile()
 		cpf.HttpProfile.Scheme = "https"
 		client, err := cvm.NewClient(cred, region, cpf)
 		if err != nil {
-			return nil, svcerr.Pass("project.cloud", "ListInstances", err)
+			return nil, svcerr.Pass(ctx, "project.cloud", "ListInstances", err)
 		}
 		offset := int64(0)
 		limit := int64(100)
 		for {
 			if err := ctx.Err(); err != nil {
-				return nil, svcerr.Pass("project.cloud", "ListInstances", err)
+				return nil, svcerr.Pass(ctx, "project.cloud", "ListInstances", err)
 			}
 			req := cvm.NewDescribeInstancesRequest()
 			req.Limit = common.Int64Ptr(limit)
 			req.Offset = common.Int64Ptr(offset)
 			resp, err := client.DescribeInstances(req)
 			if err != nil {
-				return nil, svcerr.Pass("project.cloud", "ListInstances", err)
+				return nil, svcerr.Pass(ctx, "project.cloud", "ListInstances", err)
 			}
 			if resp == nil || resp.Response == nil {
 				break
@@ -227,69 +227,69 @@ func marshalTencentTags(tags []*cvm.Tag) string {
 
 func (p *TencentCloudProvider) ResetInstancePassword(ctx context.Context, ak, sk, region, instanceID, newPassword string) error {
 	if err := ctx.Err(); err != nil {
-		return svcerr.Pass("project.cloud", "ResetInstancePassword", err)
+		return svcerr.Pass(ctx, "project.cloud", "ResetInstancePassword", err)
 	}
 	cred := common.NewCredential(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	cpf := profile.NewClientProfile()
 	cpf.HttpProfile.Scheme = "https"
 	client, err := cvm.NewClient(cred, strings.TrimSpace(region), cpf)
 	if err != nil {
-		return svcerr.Pass("project.cloud", "ResetInstancePassword", err)
+		return svcerr.Pass(ctx, "project.cloud", "ResetInstancePassword", err)
 	}
 	req := cvm.NewResetInstancesPasswordRequest()
 	req.InstanceIds = []*string{common.StringPtr(strings.TrimSpace(instanceID))}
 	req.Password = common.StringPtr(newPassword)
 	req.ForceStop = common.BoolPtr(true)
 	_, err = client.ResetInstancesPassword(req)
-	return svcerr.Pass("project.cloud", "ResetInstancePassword", err)
+	return svcerr.Pass(ctx, "project.cloud", "ResetInstancePassword", err)
 }
 
 func (p *TencentCloudProvider) RebootInstance(ctx context.Context, ak, sk, region, instanceID string) error {
 	if err := ctx.Err(); err != nil {
-		return svcerr.Pass("project.cloud", "RebootInstance", err)
+		return svcerr.Pass(ctx, "project.cloud", "RebootInstance", err)
 	}
 	cred := common.NewCredential(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	cpf := profile.NewClientProfile()
 	cpf.HttpProfile.Scheme = "https"
 	client, err := cvm.NewClient(cred, strings.TrimSpace(region), cpf)
 	if err != nil {
-		return svcerr.Pass("project.cloud", "RebootInstance", err)
+		return svcerr.Pass(ctx, "project.cloud", "RebootInstance", err)
 	}
 	req := cvm.NewRebootInstancesRequest()
 	req.InstanceIds = []*string{common.StringPtr(strings.TrimSpace(instanceID))}
 	req.StopType = common.StringPtr("SOFT_FIRST")
 	_, err = client.RebootInstances(req)
-	return svcerr.Pass("project.cloud", "RebootInstance", err)
+	return svcerr.Pass(ctx, "project.cloud", "RebootInstance", err)
 }
 
 func (p *TencentCloudProvider) ShutdownInstance(ctx context.Context, ak, sk, region, instanceID string) error {
 	if err := ctx.Err(); err != nil {
-		return svcerr.Pass("project.cloud", "ShutdownInstance", err)
+		return svcerr.Pass(ctx, "project.cloud", "ShutdownInstance", err)
 	}
 	cred := common.NewCredential(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	cpf := profile.NewClientProfile()
 	cpf.HttpProfile.Scheme = "https"
 	client, err := cvm.NewClient(cred, strings.TrimSpace(region), cpf)
 	if err != nil {
-		return svcerr.Pass("project.cloud", "ShutdownInstance", err)
+		return svcerr.Pass(ctx, "project.cloud", "ShutdownInstance", err)
 	}
 	req := cvm.NewStopInstancesRequest()
 	req.InstanceIds = []*string{common.StringPtr(strings.TrimSpace(instanceID))}
 	req.StopType = common.StringPtr("SOFT_FIRST")
 	_, err = client.StopInstances(req)
-	return svcerr.Pass("project.cloud", "ShutdownInstance", err)
+	return svcerr.Pass(ctx, "project.cloud", "ShutdownInstance", err)
 }
 
 func (p *TencentCloudProvider) QueryInstanceExpireAt(ctx context.Context, ak, sk, region, instanceID string) (*time.Time, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, svcerr.Pass("project.cloud", "QueryInstanceExpireAt", err)
+		return nil, svcerr.Pass(ctx, "project.cloud", "QueryInstanceExpireAt", err)
 	}
 	cred := common.NewCredential(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	cpf := profile.NewClientProfile()
 	cpf.HttpProfile.Scheme = "https"
 	client, err := cvm.NewClient(cred, strings.TrimSpace(region), cpf)
 	if err != nil {
-		return nil, svcerr.Pass("project.cloud", "QueryInstanceExpireAt", err)
+		return nil, svcerr.Pass(ctx, "project.cloud", "QueryInstanceExpireAt", err)
 	}
 	req := cvm.NewDescribeInstancesRequest()
 	req.Limit = common.Int64Ptr(1)
@@ -301,7 +301,7 @@ func (p *TencentCloudProvider) QueryInstanceExpireAt(ctx context.Context, ak, sk
 	}
 	resp, err := client.DescribeInstances(req)
 	if err != nil {
-		return nil, svcerr.Pass("project.cloud", "QueryInstanceExpireAt", err)
+		return nil, svcerr.Pass(ctx, "project.cloud", "QueryInstanceExpireAt", err)
 	}
 	if resp == nil || resp.Response == nil || len(resp.Response.InstanceSet) == 0 {
 		return nil, nil
@@ -343,21 +343,21 @@ func parseTencentExpiredTime(raw string) (time.Time, bool) {
 
 func (p *TencentCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, region, instanceID string, oldTags, newTags map[string]string) error {
 	if err := ctx.Err(); err != nil {
-		return svcerr.Pass("project.cloud", "SyncInstanceTags", err)
+		return svcerr.Pass(ctx, "project.cloud", "SyncInstanceTags", err)
 	}
 	cred := common.NewCredential(strings.TrimSpace(ak), strings.TrimSpace(sk))
 	cpf := profile.NewClientProfile()
 	cpf.HttpProfile.Scheme = "https"
 	resource, err := p.buildTagResource(ctx, cred, cpf, strings.TrimSpace(region), strings.TrimSpace(instanceID))
 	if err != nil {
-		return svcerr.Pass("project.cloud", "SyncInstanceTags", err)
+		return svcerr.Pass(ctx, "project.cloud", "SyncInstanceTags", err)
 	}
 	if len(oldTags) == 0 && len(newTags) == 0 {
 		return nil
 	}
 	tagClient, err := tag.NewClient(cred, strings.TrimSpace(region), cpf)
 	if err != nil {
-		return svcerr.Pass("project.cloud", "SyncInstanceTags", err)
+		return svcerr.Pass(ctx, "project.cloud", "SyncInstanceTags", err)
 	}
 	toUnbind := make([]*string, 0)
 	for k, oldV := range oldTags {
@@ -374,7 +374,7 @@ func (p *TencentCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, reg
 		req.ResourceList = []*string{common.StringPtr(resource)}
 		req.TagKeys = toUnbind
 		if _, err := tagClient.UnTagResources(req); err != nil {
-			return svcerr.Pass("project.cloud", "SyncInstanceTags", err)
+			return svcerr.Pass(ctx, "project.cloud", "SyncInstanceTags", err)
 		}
 	}
 	toBind := make([]*tag.Tag, 0)
@@ -397,7 +397,7 @@ func (p *TencentCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, reg
 		req.ResourceList = []*string{common.StringPtr(resource)}
 		req.Tags = toBind
 		if _, err := tagClient.TagResources(req); err != nil {
-			return svcerr.Pass("project.cloud", "SyncInstanceTags", err)
+			return svcerr.Pass(ctx, "project.cloud", "SyncInstanceTags", err)
 		}
 	}
 	return nil
@@ -405,15 +405,15 @@ func (p *TencentCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, reg
 
 func (p *TencentCloudProvider) buildTagResource(ctx context.Context, cred *common.Credential, cpf *profile.ClientProfile, region, instanceID string) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", svcerr.Pass("project.cloud", "buildTagResource", err)
+		return "", svcerr.Pass(ctx, "project.cloud", "buildTagResource", err)
 	}
 	stsClient, err := sts.NewClient(cred, region, cpf)
 	if err != nil {
-		return "", svcerr.Pass("project.cloud", "buildTagResource", err)
+		return "", svcerr.Pass(ctx, "project.cloud", "buildTagResource", err)
 	}
 	identityResp, err := stsClient.GetCallerIdentity(sts.NewGetCallerIdentityRequest())
 	if err != nil {
-		return "", svcerr.Pass("project.cloud", "buildTagResource", err)
+		return "", svcerr.Pass(ctx, "project.cloud", "buildTagResource", err)
 	}
 	if identityResp == nil || identityResp.Response == nil || identityResp.Response.AccountId == nil {
 		return "", fmt.Errorf("无法获取腾讯云账号 AccountId")

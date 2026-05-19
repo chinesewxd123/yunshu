@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -57,7 +57,7 @@ func (s *K8sHPAService) List(ctx context.Context, q HPAListQuery) ([]HPAItem, er
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, hpaGVK, q.Namespace)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.hpa", "api", err, constants.ErrFmte5f4df2bc9c2)
+		return nil, svcerr.Internal(ctx, "k8s.hpa", "api", err, constants.ErrFmte5f4df2bc9c2)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	out := make([]HPAItem, 0, len(listU))
@@ -85,7 +85,7 @@ func (s *K8sHPAService) Detail(ctx context.Context, q HPADetailQuery) (*HPADetai
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsge64b05879667)
 		}
-		return nil, svcerr.Internal("k8s.hpa", "api", err, constants.ErrFmtd28ea35ac553)
+		return nil, svcerr.Internal(ctx, "k8s.hpa", "api", err, constants.ErrFmtd28ea35ac553)
 	}
 	var obj autoscalingv2.HorizontalPodAutoscaler
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -106,7 +106,7 @@ func (s *K8sHPAService) Apply(ctx context.Context, req HPAApplyRequest) error {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
-		return k8sFail("k8s.hpa", "api", err)
+		return k8sFail(ctx, "k8s.hpa", "api", err)
 	}
 	return nil
 }
@@ -120,7 +120,7 @@ func (s *K8sHPAService) Delete(ctx context.Context, req HPADeleteRequest) error 
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return k8sFail("k8s.hpa", "api", err)
+		return k8sFail(ctx, "k8s.hpa", "api", err)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
-package service
+﻿package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -56,7 +57,7 @@ func TestK8sMapAPIError(t *testing.T) {
 func TestK8sFailPreservesAppError(t *testing.T) {
 	t.Parallel()
 	orig := constants.ErrForbidden
-	got := k8sFail("k8s.test", "op", orig)
+	got := k8sFail(context.Background(), "k8s.test", "op", orig)
 	ae, ok := apperror.IsAppError(got)
 	if !ok || ae.ErrorCode != "10003" {
 		t.Fatalf("expected forbidden preserved, got %v", got)
@@ -65,7 +66,7 @@ func TestK8sFailPreservesAppError(t *testing.T) {
 
 func TestK8sRepoErrNotFound(t *testing.T) {
 	t.Parallel()
-	got := k8sRepoErr("k8s.test", "get", gorm.ErrRecordNotFound)
+	got := k8sRepoErr(context.Background(), "k8s.test", "get", gorm.ErrRecordNotFound)
 	ae, ok := apperror.IsAppError(got)
 	if !ok || ae.ErrorCode != "10004" {
 		t.Fatalf("expected not found, got %v", got)
@@ -84,7 +85,7 @@ func TestK8sMapAPIErrorUnauthorizedString(t *testing.T) {
 func TestK8sFailMapsNotFound(t *testing.T) {
 	t.Parallel()
 	err := apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, "n1")
-	got := k8sFail("k8s.workload", "get", err)
+	got := k8sFail(context.Background(), "k8s.workload", "get", err)
 	ae, ok := apperror.IsAppError(got)
 	if !ok || ae.ErrorCode != "10004" {
 		t.Fatalf("expected 10004, got %v", got)

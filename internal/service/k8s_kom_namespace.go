@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -40,7 +40,7 @@ func (s *K8sRuntimeService) listNamespacesKomOnce(ctx context.Context, clusterID
 	}
 	var list []corev1.Namespace
 	if listErr := k.WithContext(ctx).Resource(&corev1.Namespace{}).List(&list).Error; listErr != nil {
-		return nil, k8sFail("k8s.runtime", "ListNamespacesViaKom", listErr, "cluster_id", clusterID)
+		return nil, k8sFail(ctx, "k8s.runtime", "ListNamespacesViaKom", listErr, "cluster_id", clusterID)
 	}
 	return list, nil
 }

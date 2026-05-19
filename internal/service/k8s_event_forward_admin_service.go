@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -44,13 +44,13 @@ func (s *K8sEventForwardAdminService) ListRules(ctx context.Context, q K8sEventF
 	page, pageSize := pagination.Normalize(q.Page, q.PageSize)
 	var total int64
 	if err := s.db.WithContext(ctx).Model(&model.K8sEventForwardRule{}).Count(&total).Error; err != nil {
-		return nil, svcerr.Pass("k8s.event-forward", "ListRules", err)
+		return nil, svcerr.Pass(ctx, "k8s.event-forward", "ListRules", err)
 	}
 	var list []model.K8sEventForwardRule
 	err := s.db.WithContext(ctx).Order("id DESC").
 		Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error
 	if err != nil {
-		return nil, svcerr.Pass("k8s.event-forward", "ListRules", err)
+		return nil, svcerr.Pass(ctx, "k8s.event-forward", "ListRules", err)
 	}
 	return &pagination.Result[model.K8sEventForwardRule]{
 		List: list, Total: total, Page: page, PageSize: pageSize,
@@ -63,7 +63,7 @@ func (s *K8sEventForwardAdminService) GetRule(ctx context.Context, id uint) (*mo
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrNotFound
 		}
-		return nil, svcerr.Pass("k8s.event-forward", "GetRule", err)
+		return nil, svcerr.Pass(ctx, "k8s.event-forward", "GetRule", err)
 	}
 	return &rule, nil
 }
@@ -74,7 +74,7 @@ func (s *K8sEventForwardAdminService) CreateRule(ctx context.Context, req K8sEve
 		return nil, err
 	}
 	if err := s.db.WithContext(ctx).Create(rule).Error; err != nil {
-		return nil, svcerr.Pass("k8s.event-forward", "CreateRule", err)
+		return nil, svcerr.Pass(ctx, "k8s.event-forward", "CreateRule", err)
 	}
 	return rule, nil
 }
@@ -85,7 +85,7 @@ func (s *K8sEventForwardAdminService) UpdateRule(ctx context.Context, id uint, r
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrNotFound
 		}
-		return nil, svcerr.Pass("k8s.event-forward", "UpdateRule", err)
+		return nil, svcerr.Pass(ctx, "k8s.event-forward", "UpdateRule", err)
 	}
 	rule, err := normalizeK8sEventForwardRule(req)
 	if err != nil {
@@ -97,10 +97,10 @@ func (s *K8sEventForwardAdminService) UpdateRule(ctx context.Context, id uint, r
 		Select("Name", "Description", "ClusterIDs", "WebhookURL", "Enabled",
 			"RuleNamespaces", "RuleNames", "RuleReasons", "RuleReverse", "UpdatedAt").
 		Updates(rule).Error; err != nil {
-		return nil, svcerr.Pass("k8s.event-forward", "UpdateRule", err)
+		return nil, svcerr.Pass(ctx, "k8s.event-forward", "UpdateRule", err)
 	}
 	if err := s.db.WithContext(ctx).First(&existing, id).Error; err != nil {
-		return nil, svcerr.Pass("k8s.event-forward", "UpdateRule", err)
+		return nil, svcerr.Pass(ctx, "k8s.event-forward", "UpdateRule", err)
 	}
 	return &existing, nil
 }
@@ -108,7 +108,7 @@ func (s *K8sEventForwardAdminService) UpdateRule(ctx context.Context, id uint, r
 func (s *K8sEventForwardAdminService) DeleteRule(ctx context.Context, id uint) error {
 	res := s.db.WithContext(ctx).Delete(&model.K8sEventForwardRule{}, id)
 	if res.Error != nil {
-		return svcerr.Pass("k8s.event-forward", "DeleteRule", res.Error)
+		return svcerr.Pass(ctx, "k8s.event-forward", "DeleteRule", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return constants.ErrNotFound
@@ -124,7 +124,7 @@ func (s *K8sEventForwardAdminService) GetSettings(ctx context.Context) (*model.K
 		return &st, nil
 	}
 	if err != nil {
-		return nil, svcerr.Pass("k8s.event-forward", "GetSettings", err)
+		return nil, svcerr.Pass(ctx, "k8s.event-forward", "GetSettings", err)
 	}
 	return &st, nil
 }

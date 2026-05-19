@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -95,11 +95,11 @@ func (s *AlertDatasourceService) List(ctx context.Context, q AlertDatasourceList
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
-		return nil, 0, page, pageSize, svcerr.Pass("alert.datasource", "List", err)
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.datasource", "List", err)
 	}
 	var list []AlertDatasourceItem
 	if err := tx.Order("ad.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
-		return nil, 0, page, pageSize, svcerr.Pass("alert.datasource", "List", err)
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.datasource", "List", err)
 	}
 	for i := range list {
 		s.mask(&list[i].AlertDatasource)
@@ -113,7 +113,7 @@ func (s *AlertDatasourceService) Get(ctx context.Context, id uint) (*model.Alert
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
 		}
-		return nil, svcerr.Pass("alert.datasource", "Get", err)
+		return nil, svcerr.Pass(ctx, "alert.datasource", "Get", err)
 	}
 	s.mask(&row)
 	return &row, nil
@@ -122,7 +122,7 @@ func (s *AlertDatasourceService) Get(ctx context.Context, id uint) (*model.Alert
 func (s *AlertDatasourceService) getRaw(ctx context.Context, id uint) (*model.AlertDatasource, error) {
 	var row model.AlertDatasource
 	if err := s.db.WithContext(ctx).First(&row, id).Error; err != nil {
-		return nil, svcerr.Pass("alert.datasource", "getRaw", err)
+		return nil, svcerr.Pass(ctx, "alert.datasource", "getRaw", err)
 	}
 	return &row, nil
 }
@@ -151,7 +151,7 @@ func (s *AlertDatasourceService) Create(ctx context.Context, req AlertDatasource
 		Remark:        strings.TrimSpace(req.Remark),
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return nil, svcerr.Pass("alert.datasource", "Create", err)
+		return nil, svcerr.Pass(ctx, "alert.datasource", "Create", err)
 	}
 	s.mask(&row)
 	return &row, nil
@@ -163,7 +163,7 @@ func (s *AlertDatasourceService) Update(ctx context.Context, id uint, req AlertD
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
 		}
-		return nil, svcerr.Pass("alert.datasource", "Update", err)
+		return nil, svcerr.Pass(ctx, "alert.datasource", "Update", err)
 	}
 	if req.ProjectID == 0 {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg9a7f154a70af)
@@ -201,7 +201,7 @@ func (s *AlertDatasourceService) Update(ctx context.Context, id uint, req AlertD
 		}
 	}
 	if err := s.db.WithContext(ctx).Save(row).Error; err != nil {
-		return nil, svcerr.Pass("alert.datasource", "Update", err)
+		return nil, svcerr.Pass(ctx, "alert.datasource", "Update", err)
 	}
 	s.mask(row)
 	return row, nil
@@ -210,7 +210,7 @@ func (s *AlertDatasourceService) Update(ctx context.Context, id uint, req AlertD
 func (s *AlertDatasourceService) Delete(ctx context.Context, id uint) error {
 	res := s.db.WithContext(ctx).Delete(&model.AlertDatasource{}, id)
 	if res.Error != nil {
-		return svcerr.Pass("alert.datasource", "Delete", res.Error)
+		return svcerr.Pass(ctx, "alert.datasource", "Delete", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
@@ -224,7 +224,7 @@ func (s *AlertDatasourceService) clientFor(ctx context.Context, id uint) (*proma
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil, constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
 		}
-		return nil, nil, svcerr.Pass("alert.datasource", "clientFor", err)
+		return nil, nil, svcerr.Pass(ctx, "alert.datasource", "clientFor", err)
 	}
 	if !row.Enabled {
 		return nil, nil, constants.ErrBadRequestWithMsg(constants.ErrMsgfa357d889ce0)
@@ -245,36 +245,36 @@ func (s *AlertDatasourceService) clientFor(ctx context.Context, id uint) (*proma
 func (s *AlertDatasourceService) PromQuery(ctx context.Context, id uint, req PromQueryRequest) (json.RawMessage, error) {
 	cli, _, err := s.clientFor(ctx, id)
 	if err != nil {
-		return nil, svcerr.Pass("alert.datasource", "PromQuery", err)
+		return nil, svcerr.Pass(ctx, "alert.datasource", "PromQuery", err)
 	}
 	qctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	body, _, err := cli.QueryInstant(qctx, strings.TrimSpace(req.Query), strings.TrimSpace(req.Time))
-	return body, svcerr.Pass("alert.datasource", "PromQuery", err)
+	return body, svcerr.Pass(ctx, "alert.datasource", "PromQuery", err)
 }
 
 // PromQueryRange 范围查询。
 func (s *AlertDatasourceService) PromQueryRange(ctx context.Context, id uint, req PromQueryRangeRequest) (json.RawMessage, error) {
 	cli, _, err := s.clientFor(ctx, id)
 	if err != nil {
-		return nil, svcerr.Pass("alert.datasource", "PromQueryRange", err)
+		return nil, svcerr.Pass(ctx, "alert.datasource", "PromQueryRange", err)
 	}
 	qctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	body, _, err := cli.QueryRange(qctx, strings.TrimSpace(req.Query), strings.TrimSpace(req.Start), strings.TrimSpace(req.End), strings.TrimSpace(req.Step))
-	return body, svcerr.Pass("alert.datasource", "PromQueryRange", err)
+	return body, svcerr.Pass(ctx, "alert.datasource", "PromQueryRange", err)
 }
 
 // PrometheusActiveAlerts 查询 Prometheus /api/v1/alerts（活跃告警快照）。
 func (s *AlertDatasourceService) PrometheusActiveAlerts(ctx context.Context, id uint) (json.RawMessage, error) {
 	cli, _, err := s.clientFor(ctx, id)
 	if err != nil {
-		return nil, svcerr.Pass("alert.datasource", "PrometheusActiveAlerts", err)
+		return nil, svcerr.Pass(ctx, "alert.datasource", "PrometheusActiveAlerts", err)
 	}
 	qctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	body, _, err := cli.ActiveAlerts(qctx)
-	return body, svcerr.Pass("alert.datasource", "PrometheusActiveAlerts", err)
+	return body, svcerr.Pass(ctx, "alert.datasource", "PrometheusActiveAlerts", err)
 }
 
 // PingDatasource 连通性检查：使用库内 promapi 客户端发起即时查询 vector(1)（与 PromQuery 同源配置）。
@@ -285,7 +285,7 @@ func (s *AlertDatasourceService) PingDatasource(ctx context.Context, id uint) (*
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg2f3e2fbecdc5)
 		}
-		return nil, svcerr.Pass("alert.datasource", "PingDatasource", err)
+		return nil, svcerr.Pass(ctx, "alert.datasource", "PingDatasource", err)
 	}
 	t := strings.TrimSpace(row.Type)
 	if t == "" {

@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -56,7 +56,7 @@ func (s *K8sNetworkPolicyService) List(ctx context.Context, q NetworkPolicyListQ
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, networkPolicyGVK, q.Namespace)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.network.policy", "api", err, constants.ErrFmte5f4df2bc9c2)
+		return nil, svcerr.Internal(ctx, "k8s.network.policy", "api", err, constants.ErrFmte5f4df2bc9c2)
 	}
 
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
@@ -85,7 +85,7 @@ func (s *K8sNetworkPolicyService) Detail(ctx context.Context, q NetworkPolicyDet
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsge64b05879667)
 		}
-		return nil, svcerr.Internal("k8s.network.policy", "api", err, constants.ErrFmtd28ea35ac553)
+		return nil, svcerr.Internal(ctx, "k8s.network.policy", "api", err, constants.ErrFmtd28ea35ac553)
 	}
 	var obj networkingv1.NetworkPolicy
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -106,7 +106,7 @@ func (s *K8sNetworkPolicyService) Apply(ctx context.Context, req NetworkPolicyAp
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
-		return k8sFail("k8s.network.policy", "api", err)
+		return k8sFail(ctx, "k8s.network.policy", "api", err)
 	}
 	return nil
 }
@@ -120,7 +120,7 @@ func (s *K8sNetworkPolicyService) Delete(ctx context.Context, req NetworkPolicyD
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return k8sFail("k8s.network.policy", "api", err)
+		return k8sFail(ctx, "k8s.network.policy", "api", err)
 	}
 	return nil
 }

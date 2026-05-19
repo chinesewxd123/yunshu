@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -25,7 +25,7 @@ func (s *K8sWorkloadService) ListCronJobs(ctx context.Context, q NamespacedListQ
 	gvk, _ := s.dyn.GVKByKind("CronJob")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt336d54b211b0)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt336d54b211b0)
 	}
 	list := make([]batchv1.CronJob, 0, len(listU))
 	for _, item := range listU {
@@ -77,7 +77,7 @@ func (s *K8sWorkloadService) ListCronJobsV2(ctx context.Context, q NamespacedLis
 	gvk, _ := s.dyn.GVKByKind("CronJob")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt336d54b211b0)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt336d54b211b0)
 	}
 	list := make([]batchv1.CronJob, 0, len(listU))
 	for _, item := range listU {
@@ -152,14 +152,14 @@ func (s *K8sWorkloadService) CronJobPods(ctx context.Context, q RelatedPodsQuery
 	}
 	var cj batchv1.CronJob
 	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(q.Namespace).Name(q.Name).Get(&cj).Error; err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt687b79e3dfdb)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt687b79e3dfdb)
 	}
 
 	// CronJob 触发后，Pod 通常由 Job 创建并带有 job-name 标签；
 	// 直接按 cronjob 标签查 Pod 在部分版本/场景会为空，因此改为“先找 Job，再找 Pod”。
 	var jobs []batchv1.Job
 	if err := k.WithContext(ctx).Resource(&batchv1.Job{}).Namespace(q.Namespace).List(&jobs).Error; err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmtc13b046a7597)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmtc13b046a7597)
 	}
 
 	all := make([]RelatedPodItem, 0)
@@ -204,7 +204,7 @@ func (s *K8sWorkloadService) CronJobDetail(ctx context.Context, q NamespacedDeta
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgc6ae960d40d1)
 		}
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt687b79e3dfdb)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt687b79e3dfdb)
 	}
 	var obj batchv1.CronJob
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -227,7 +227,7 @@ func (s *K8sWorkloadService) CronJobPatchContainerResources(ctx context.Context,
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsgc6ae960d40d1)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	containers := obj.Spec.JobTemplate.Spec.Template.Spec.Containers
 	idx := workloadContainerIndex(containers, req.ContainerName)
@@ -249,7 +249,7 @@ func (s *K8sWorkloadService) CronJobPatchContainerResources(ctx context.Context,
 		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
 	}
 	if err := k.WithContext(ctx).Resource(&batchv1.CronJob{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }

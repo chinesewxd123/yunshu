@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -37,7 +37,7 @@ func (s *PermissionService) Create(ctx context.Context, req PermissionCreateRequ
 		K8sScopeEnabled: req.K8sScopeEnabled,
 	}
 	if err := s.permissionRepo.Create(ctx, &permission); err != nil {
-		return nil, svcerr.Pass("permission", "Create", err)
+		return nil, svcerr.Pass(ctx, "permission", "Create", err)
 	}
 	response := NewPermissionItem(permission)
 	return &response, nil
@@ -50,7 +50,7 @@ func (s *PermissionService) Update(ctx context.Context, id uint, req PermissionU
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrPermissionNotFound
 		}
-		return nil, svcerr.Pass("permission", "Update", err)
+		return nil, svcerr.Pass(ctx, "permission", "Update", err)
 	}
 
 	oldResource := permission.Resource
@@ -72,10 +72,10 @@ func (s *PermissionService) Update(ctx context.Context, id uint, req PermissionU
 	}
 
 	if err = s.permissionRepo.Save(ctx, permission); err != nil {
-		return nil, svcerr.Pass("permission", "Update", err)
+		return nil, svcerr.Pass(ctx, "permission", "Update", err)
 	}
 	if err = ReplacePermissionResource(s.enforcer, oldResource, oldAction, permission.Resource, permission.Action); err != nil {
-		return nil, svcerr.Pass("permission", "Update", err)
+		return nil, svcerr.Pass(ctx, "permission", "Update", err)
 	}
 	response := NewPermissionItem(*permission)
 	return &response, nil
@@ -88,11 +88,11 @@ func (s *PermissionService) Delete(ctx context.Context, id uint) error {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrPermissionNotFound
 		}
-		return svcerr.Pass("permission", "Delete", err)
+		return svcerr.Pass(ctx, "permission", "Delete", err)
 	}
 
 	if err = s.permissionRepo.Delete(ctx, permission); err != nil {
-		return svcerr.Pass("permission", "Delete", err)
+		return svcerr.Pass(ctx, "permission", "Delete", err)
 	}
 	return RemovePermissionPolicies(s.enforcer, permission.Resource, permission.Action)
 }
@@ -104,7 +104,7 @@ func (s *PermissionService) Detail(ctx context.Context, id uint) (*PermissionIte
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrPermissionNotFound
 		}
-		return nil, svcerr.Pass("permission", "Detail", err)
+		return nil, svcerr.Pass(ctx, "permission", "Detail", err)
 	}
 	response := NewPermissionItem(*permission)
 	return &response, nil
@@ -121,7 +121,7 @@ func (s *PermissionService) List(ctx context.Context, query PermissionListQuery)
 		K8sRelated: query.K8sRelated,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("permission", "List", err)
+		return nil, svcerr.Pass(ctx, "permission", "List", err)
 	}
 
 	list := make([]PermissionItem, 0, len(permissions))

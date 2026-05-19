@@ -33,6 +33,7 @@ func RequestLogger(logger *logx.Logger) gin.HandlerFunc {
 		}
 		c.Set("request_id", requestID)
 		c.Writer.Header().Set("X-Request-ID", requestID)
+		c.Request = c.Request.WithContext(logx.WithRequestID(c.Request.Context(), requestID))
 
 		reqBody := ""
 		if shouldCaptureRequestLogBody(c) && c.Request != nil && c.Request.Body != nil {
@@ -74,15 +75,16 @@ func RequestLogger(logger *logx.Logger) gin.HandlerFunc {
 			attrs = append(attrs, "errors", c.Errors.String())
 		}
 
+		access := logx.Biz("http.access").WithLayer(logx.LayerHTTP).W(c.Request.Context())
 		if c.Writer.Status() >= 500 {
-			logger.Error.Error("http request completed", attrs...)
+			access.Error("http request completed", attrs...)
 			return
 		}
 		if c.Writer.Status() >= 400 {
-			logger.Info.Warn("http request completed", attrs...)
+			access.Warn("http request completed", attrs...)
 			return
 		}
-		logger.Info.Info("http request completed", attrs...)
+		access.Info("http request completed", attrs...)
 	}
 }
 

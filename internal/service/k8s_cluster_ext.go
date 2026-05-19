@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strings"
 
+	"yunshu/internal/service/svclog"
 	"yunshu/internal/model"
 	"yunshu/internal/repository"
 
@@ -185,7 +185,7 @@ func buildKubeconfigFromDirectConfig(config *DirectConfig) (string, error) {
 
 	// 设置认证方式
 	if token != "" {
-		slog.Info("k8s direct auth token debug",
+		svclog.Service("k8s.cluster").Info("direct auth token configured",
 			"token_len", len(token),
 			"token_masked", maskSecretEdge(token, 8),
 			"server", serverRaw,

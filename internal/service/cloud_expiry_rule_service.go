@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -56,18 +56,18 @@ func (s *CloudExpiryRuleService) List(ctx context.Context, q CloudExpiryRuleList
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
-		return nil, 0, page, pageSize, svcerr.Pass("alert.cloud-expiry", "List", err)
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.cloud-expiry", "List", err)
 	}
 	var list []model.CloudExpiryRule
 	if err := tx.Order("id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
-		return nil, 0, page, pageSize, svcerr.Pass("alert.cloud-expiry", "List", err)
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.cloud-expiry", "List", err)
 	}
 	return list, total, page, pageSize, nil
 }
 
 func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRuleUpsertRequest) (*model.CloudExpiryRule, error) {
 	if err := ValidateCloudExpiryCronSpec(req.EvalCronSpec); err != nil {
-		return nil, svcerr.Pass("alert.cloud-expiry", "Create", err)
+		return nil, svcerr.Pass(ctx, "alert.cloud-expiry", "Create", err)
 	}
 	days := req.AdvanceDays
 	if days <= 0 {
@@ -98,7 +98,7 @@ func (s *CloudExpiryRuleService) Create(ctx context.Context, req CloudExpiryRule
 		Enabled:             req.Enabled == nil || *req.Enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		return nil, svcerr.Pass("alert.cloud-expiry", "Create", err)
+		return nil, svcerr.Pass(ctx, "alert.cloud-expiry", "Create", err)
 	}
 	return &row, nil
 }
@@ -109,10 +109,10 @@ func (s *CloudExpiryRuleService) Update(ctx context.Context, id uint, req CloudE
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg34cc3b1e5427)
 		}
-		return nil, svcerr.Pass("alert.cloud-expiry", "Update", err)
+		return nil, svcerr.Pass(ctx, "alert.cloud-expiry", "Update", err)
 	}
 	if err := ValidateCloudExpiryCronSpec(req.EvalCronSpec); err != nil {
-		return nil, svcerr.Pass("alert.cloud-expiry", "Update", err)
+		return nil, svcerr.Pass(ctx, "alert.cloud-expiry", "Update", err)
 	}
 	if req.ProjectID > 0 {
 		row.ProjectID = req.ProjectID
@@ -141,7 +141,7 @@ func (s *CloudExpiryRuleService) Update(ctx context.Context, id uint, req CloudE
 		return nil, constants.ErrBadRequestWithMsg("已启用定时评估时必须填写 eval_cron_spec（Cron 表达式）")
 	}
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
-		return nil, svcerr.Pass("alert.cloud-expiry", "Update", err)
+		return nil, svcerr.Pass(ctx, "alert.cloud-expiry", "Update", err)
 	}
 	return &row, nil
 }

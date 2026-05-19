@@ -32,9 +32,7 @@ func WSAuth(secret string, redisClient *redis.Client, userRepo *repository.UserR
 
 		claims, err := auth.ParseToken(secret, tokenString)
 		if err != nil {
-			if logger != nil {
-				logger.Info.Warn("parse ws token failed", "error", err)
-			}
+			httpLog("http.ws_auth").Warn("parse ws token failed", "error", err)
 			response.Error(c, constants.ErrAccessTokenInvalid)
 			c.Abort()
 			return

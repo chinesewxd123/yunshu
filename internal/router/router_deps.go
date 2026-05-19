@@ -1,7 +1,6 @@
 package router
 
 import (
-	"log/slog"
 	"strings"
 
 	"yunshu/internal/bootstrap"
@@ -129,10 +128,10 @@ func wireRouteDeps(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) 
 		DutySvc:            alertDutySvc,
 		ReceiverGroupCache: alertReceiverGroupCache,
 		EncryptionKey:      app.Config.Security.EncryptionKey,
-		InfoLog:            app.Logger.Info,
+		BizLog:             app.Logger.Biz("alert"),
 	})
 	if strings.TrimSpace(app.Config.Alert.WebhookToken) == "" {
-		slog.Warn("alert.webhook_token is empty; Alertmanager webhooks will be rejected until configured")
+		app.Logger.Biz("router").Warn("alert.webhook_token is empty; Alertmanager webhooks will be rejected until configured")
 	}
 	cloudExpiryRuleSvc := service.NewCloudExpiryRuleService(app.DB)
 	alertDatasourceSvc := service.NewAlertDatasourceService(app.DB)

@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -21,7 +21,7 @@ func (s *K8sWorkloadService) DeploymentPods(ctx context.Context, q RelatedPodsQu
 	}
 	var d appsv1.Deployment
 	if err := k.WithContext(ctx).Resource(&appsv1.Deployment{}).Namespace(q.Namespace).Name(q.Name).Get(&d).Error; err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmta3018a66177e)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmta3018a66177e)
 	}
 	selector := metav1.FormatLabelSelector(d.Spec.Selector)
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
@@ -35,7 +35,7 @@ func (s *K8sWorkloadService) StatefulSetPods(ctx context.Context, q RelatedPodsQ
 	}
 	var st appsv1.StatefulSet
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(q.Namespace).Name(q.Name).Get(&st).Error; err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt70dba6fa52bd)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt70dba6fa52bd)
 	}
 	selector := metav1.FormatLabelSelector(st.Spec.Selector)
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
@@ -56,7 +56,7 @@ func listPodsBySelector(ctx context.Context, k *kom.Kubectl, namespace, selector
 		query = query.WithLabelSelector(strings.TrimSpace(opts.LabelSelector))
 	}
 	if err := query.List(&list).Error; err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt3ab38ee441a3)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt3ab38ee441a3)
 	}
 	out := make([]RelatedPodItem, 0, len(list))
 	for _, p := range list {

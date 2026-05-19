@@ -31,7 +31,7 @@ func (h *ProjectHandler) ServerTerminalWS(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	sess := newWSSession(c.Request.Context(), nil)
+	sess := newWSSession(c.Request.Context(), httpLog("http.ws.terminal"))
 	defer sess.Cancel()
 	defer sess.Wait()
 

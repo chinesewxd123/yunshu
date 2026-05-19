@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -70,19 +70,19 @@ func (s *AuthService) SendEmailCode(ctx context.Context, req SendEmailCodeReques
 	email := normalizeEmail(req.Email)
 	scene := strings.TrimSpace(req.Scene)
 
-	if err := s.ensureEmailCodeDependencies(); err != nil {
-		return nil, svcerr.Pass("auth", "SendEmailCode", err)
+	if err := s.ensureEmailCodeDependencies(ctx); err != nil {
+		return nil, svcerr.Pass(ctx, "auth", "SendEmailCode", err)
 	}
 	if err := s.validateScenePreconditions(ctx, scene, email); err != nil {
-		return nil, svcerr.Pass("auth", "SendEmailCode", err)
+		return nil, svcerr.Pass(ctx, "auth", "SendEmailCode", err)
 	}
 	if err := s.ensureEmailCodeCooldown(ctx, scene, email); err != nil {
-		return nil, svcerr.Pass("auth", "SendEmailCode", err)
+		return nil, svcerr.Pass(ctx, "auth", "SendEmailCode", err)
 	}
 
 	code, err := generateNumericCode(6)
 	if err != nil {
-		return nil, svcerr.Pass("auth", "SendEmailCode", err)
+		return nil, svcerr.Pass(ctx, "auth", "SendEmailCode", err)
 	}
 
 	codeTTL := s.emailCodeTTL()
@@ -94,13 +94,13 @@ func (s *AuthService) SendEmailCode(ctx context.Context, req SendEmailCodeReques
 	pipe.Set(ctx, codeKey, code, codeTTL)
 	pipe.Set(ctx, cooldownKey, "1", cooldownTTL)
 	if _, err = pipe.Exec(ctx); err != nil {
-		return nil, svcerr.Pass("auth", "SendEmailCode", err)
+		return nil, svcerr.Pass(ctx, "auth", "SendEmailCode", err)
 	}
 
 	subject, body := s.buildVerificationEmail(scene, code, codeTTL)
 	if err = s.mailer.Send(ctx, email, subject, body); err != nil {
 		_ = s.redis.Del(ctx, codeKey, cooldownKey).Err()
-		return nil, svcerr.Internal("auth", "SendEmailCode", err, constants.ErrMsg52c1dc6bb947)
+		return nil, svcerr.Internal(ctx, "auth", "SendEmailCode", err, constants.ErrMsg52c1dc6bb947)
 	}
 
 	return &SendEmailCodeResponse{
@@ -139,7 +139,7 @@ func (s *AuthService) SendLoginCodeByUsername(ctx context.Context, req SendLogin
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, svcerr.Pass("auth", "SendLoginCodeByUsername", err)
+		return nil, svcerr.Pass(ctx, "auth", "SendLoginCodeByUsername", err)
 	}
 
 	if user.Status != model.StatusEnabled {
@@ -162,21 +162,21 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*LoginRespon
 	user, err := s.userRepo.GetByUsernameForAuth(ctx, username)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, svcerr.Reject("auth", "Login", constants.ErrPasswordIncorrect, "reason", "user_not_found", "username", username)
+			return nil, svcerr.Reject(ctx, "auth", "Login", constants.ErrPasswordIncorrect, "reason", "user_not_found", "username", username)
 		}
-		return nil, svcerr.Pass("auth", "Login", err, "username", username)
+		return nil, svcerr.Pass(ctx, "auth", "Login", err, "username", username)
 	}
 
 	if user.Status != model.StatusEnabled {
 		return nil, constants.ErrAccountDisabled
 	}
 	if err = password.Compare(user.Password, req.Password); err != nil {
-		return nil, svcerr.Reject("auth", "Login", constants.ErrPasswordIncorrect, "reason", "bad_password", "username", username)
+		return nil, svcerr.Reject(ctx, "auth", "Login", constants.ErrPasswordIncorrect, "reason", "bad_password", "username", username)
 	}
 
 	// Validate password login code
 	if err = s.validatePasswordLoginCode(ctx, req.CaptchaKey, req.Code); err != nil {
-		return nil, svcerr.Pass("auth", "Login", err)
+		return nil, svcerr.Pass(ctx, "auth", "Login", err)
 	}
 	s.clearPasswordLoginCode(ctx, req.CaptchaKey)
 
@@ -191,14 +191,14 @@ func (s *AuthService) EmailLogin(ctx context.Context, req EmailLoginRequest) (*L
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, svcerr.Pass("auth", "EmailLogin", err)
+		return nil, svcerr.Pass(ctx, "auth", "EmailLogin", err)
 	}
 
 	if user.Status != model.StatusEnabled {
 		return nil, constants.ErrAccountDisabled
 	}
 	if err = s.validateEmailCode(ctx, emailCodeSceneLogin, email, req.Code); err != nil {
-		return nil, svcerr.Pass("auth", "EmailLogin", err)
+		return nil, svcerr.Pass(ctx, "auth", "EmailLogin", err)
 	}
 	s.clearEmailCode(ctx, emailCodeSceneLogin, email)
 
@@ -212,15 +212,15 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*Regis
 	nickname := strings.TrimSpace(req.Nickname)
 
 	if err := s.ensureUserDoesNotExist(ctx, username, email); err != nil {
-		return nil, svcerr.Pass("auth", "Register", err)
+		return nil, svcerr.Pass(ctx, "auth", "Register", err)
 	}
 	if err := s.validateEmailCode(ctx, emailCodeSceneRegister, email, req.Code); err != nil {
-		return nil, svcerr.Pass("auth", "Register", err)
+		return nil, svcerr.Pass(ctx, "auth", "Register", err)
 	}
 
 	hashedPassword, err := password.Hash(req.Password)
 	if err != nil {
-		return nil, svcerr.Pass("auth", "Register", err)
+		return nil, svcerr.Pass(ctx, "auth", "Register", err)
 	}
 
 	user := model.User{
@@ -232,7 +232,7 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*Regis
 		Roles:    []model.Role{},
 	}
 	if err = s.userRepo.Create(ctx, &user); err != nil {
-		return nil, svcerr.Pass("auth", "Register", err)
+		return nil, svcerr.Pass(ctx, "auth", "Register", err)
 	}
 
 	s.clearEmailCode(ctx, emailCodeSceneRegister, email)
@@ -246,7 +246,7 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*Regis
 // Logout 退出登录相关的业务逻辑。
 func (s *AuthService) Logout(ctx context.Context, tokenID string) error {
 	if s.redis == nil {
-		return svcerr.InternalMsg("auth", "api", constants.ErrMsgaf4823214b6e)
+		return svcerr.InternalMsg(ctx, "auth", "api", constants.ErrMsgaf4823214b6e)
 	}
 	return s.redis.Del(ctx, store.AccessTokenKey(tokenID)).Err()
 }
@@ -258,7 +258,7 @@ func (s *AuthService) Me(ctx context.Context, userID uint) (*UserDetailResponse,
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, svcerr.Pass("auth", "Me", err)
+		return nil, svcerr.Pass(ctx, "auth", "Me", err)
 	}
 
 	response := NewUserDetailResponse(*user)
@@ -272,7 +272,7 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID uint, req Update
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, svcerr.Pass("auth", "UpdateProfile", err)
+		return nil, svcerr.Pass(ctx, "auth", "UpdateProfile", err)
 	}
 
 	nickname := strings.TrimSpace(req.Nickname)
@@ -295,7 +295,7 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID uint, req Update
 	user.Phone = strings.TrimSpace(req.Phone)
 
 	if err = s.userRepo.Save(ctx, user); err != nil {
-		return nil, svcerr.Pass("auth", "UpdateProfile", err)
+		return nil, svcerr.Pass(ctx, "auth", "UpdateProfile", err)
 	}
 	resp := NewUserDetailResponse(*user)
 	return &resp, nil
@@ -308,7 +308,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, req Chang
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrUserNotFound
 		}
-		return svcerr.Pass("auth", "ChangePassword", err)
+		return svcerr.Pass(ctx, "auth", "ChangePassword", err)
 	}
 
 	if err = password.Compare(user.Password, req.OldPassword); err != nil {
@@ -320,11 +320,11 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, req Chang
 
 	hashed, err := password.Hash(req.NewPassword)
 	if err != nil {
-		return svcerr.Pass("auth", "ChangePassword", err)
+		return svcerr.Pass(ctx, "auth", "ChangePassword", err)
 	}
 	user.Password = hashed
 	if err = s.userRepo.Save(ctx, user); err != nil {
-		return svcerr.Pass("auth", "ChangePassword", err)
+		return svcerr.Pass(ctx, "auth", "ChangePassword", err)
 	}
 
 	// 使该用户的所有 token 失效（强制重新登录）
@@ -357,14 +357,14 @@ func (s *AuthService) issueLoginResponse(ctx context.Context, user *model.User) 
 		},
 	})
 	if err != nil {
-		return nil, svcerr.Pass("auth", "issueLoginResponse", err)
+		return nil, svcerr.Pass(ctx, "auth", "issueLoginResponse", err)
 	}
 
 	if s.redis == nil {
-		return nil, svcerr.InternalMsg("auth", "api", constants.ErrMsgaf4823214b6e)
+		return nil, svcerr.InternalMsg(ctx, "auth", "api", constants.ErrMsgaf4823214b6e)
 	}
 	if err = s.redis.Set(ctx, store.AccessTokenKey(tokenID), user.ID, time.Until(expiresAt)).Err(); err != nil {
-		return nil, svcerr.Pass("auth", "issueLoginResponse", err)
+		return nil, svcerr.Pass(ctx, "auth", "issueLoginResponse", err)
 	}
 
 	return &LoginResponse{
@@ -381,7 +381,7 @@ func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg390ccdec9f3f)
 	}
 	if s.redis == nil {
-		return nil, svcerr.InternalMsg("auth", "api", constants.ErrMsgaf4823214b6e)
+		return nil, svcerr.InternalMsg(ctx, "auth", "api", constants.ErrMsgaf4823214b6e)
 	}
 
 	// Check if user exists
@@ -389,14 +389,14 @@ func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, svcerr.Pass("auth", "SendPasswordLoginCode", err)
+		return nil, svcerr.Pass(ctx, "auth", "SendPasswordLoginCode", err)
 	}
 
 	// Check cooldown
 	cooldownKey := store.PasswordLoginCodeCooldownKey(username)
 	exists, err := s.redis.Exists(ctx, cooldownKey).Result()
 	if err != nil {
-		return nil, svcerr.Pass("auth", "SendPasswordLoginCode", err)
+		return nil, svcerr.Pass(ctx, "auth", "SendPasswordLoginCode", err)
 	}
 	if exists > 0 {
 		ttl, err := s.redis.TTL(ctx, cooldownKey).Result()
@@ -420,11 +420,11 @@ func (s *AuthService) SendPasswordLoginCode(ctx context.Context, username string
 	captcha := base64Captcha.NewCaptcha(driver, memStore)
 	captchaKey, imageBase64, err := captcha.Generate()
 	if err != nil {
-		return nil, svcerr.InternalMsg("auth", "api", constants.ErrMsg6f15f7c820be)
+		return nil, svcerr.InternalMsg(ctx, "auth", "api", constants.ErrMsg6f15f7c820be)
 	}
 	cooldownTTL := s.emailCodeCooldown()
 	if err = s.redis.Set(ctx, cooldownKey, "1", cooldownTTL).Err(); err != nil {
-		return nil, svcerr.Pass("auth", "SendPasswordLoginCode", err)
+		return nil, svcerr.Pass(ctx, "auth", "SendPasswordLoginCode", err)
 	}
 
 	return &SendPasswordLoginCodeResponse{
@@ -459,12 +459,12 @@ func (s *AuthService) clearPasswordLoginCode(ctx context.Context, captchaKey str
 	// no-op: base64Captcha.DefaultMemStore.Verify(..., clear=true) already clears used code.
 }
 
-func (s *AuthService) ensureEmailCodeDependencies() error {
+func (s *AuthService) ensureEmailCodeDependencies(ctx context.Context) error {
 	if s.redis == nil {
-		return svcerr.InternalMsg("auth", "api", constants.ErrMsgaf4823214b6e)
+		return svcerr.InternalMsg(ctx, "auth", "api", constants.ErrMsgaf4823214b6e)
 	}
 	if s.mailer == nil || !s.mailer.Enabled() {
-		return svcerr.InternalMsg("auth", "api", constants.ErrMsg1222f2978c2d)
+		return svcerr.InternalMsg(ctx, "auth", "api", constants.ErrMsg1222f2978c2d)
 	}
 	return nil
 }
@@ -477,7 +477,7 @@ func (s *AuthService) validateScenePreconditions(ctx context.Context, scene, ema
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return constants.ErrUserNotFound
 			}
-			return svcerr.Pass("auth", "validateScenePreconditions", err)
+			return svcerr.Pass(ctx, "auth", "validateScenePreconditions", err)
 		}
 		if user.Status != model.StatusEnabled {
 			return constants.ErrAccountDisabled
@@ -486,7 +486,7 @@ func (s *AuthService) validateScenePreconditions(ctx context.Context, scene, ema
 		if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
 			return constants.ErrEmailAlreadyRegistered
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return svcerr.Pass("auth", "validateScenePreconditions", err)
+			return svcerr.Pass(ctx, "auth", "validateScenePreconditions", err)
 		}
 	default:
 		return constants.ErrBadRequestWithMsg(constants.ErrMsga94172c66b0b)
@@ -498,7 +498,7 @@ func (s *AuthService) validateScenePreconditions(ctx context.Context, scene, ema
 func (s *AuthService) ensureEmailCodeCooldown(ctx context.Context, scene, email string) error {
 	ttl, err := s.redis.TTL(ctx, store.EmailCodeCooldownKey(scene, email)).Result()
 	if err != nil {
-		return svcerr.Pass("auth", "ensureEmailCodeCooldown", err)
+		return svcerr.Pass(ctx, "auth", "ensureEmailCodeCooldown", err)
 	}
 	if ttl > 0 {
 		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmte5ea7331dbac, int(ttl.Seconds())))
@@ -508,7 +508,7 @@ func (s *AuthService) ensureEmailCodeCooldown(ctx context.Context, scene, email 
 
 func (s *AuthService) validateEmailCode(ctx context.Context, scene, email, code string) error {
 	if s.redis == nil {
-		return svcerr.InternalMsg("auth", "api", constants.ErrMsgaf4823214b6e)
+		return svcerr.InternalMsg(ctx, "auth", "api", constants.ErrMsgaf4823214b6e)
 	}
 
 	storedCode, err := s.redis.Get(ctx, store.EmailCodeKey(scene, email)).Result()
@@ -516,7 +516,7 @@ func (s *AuthService) validateEmailCode(ctx context.Context, scene, email, code 
 		if errors.Is(err, redis.Nil) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsgfa17d917b702)
 		}
-		return svcerr.Pass("auth", "validateEmailCode", err)
+		return svcerr.Pass(ctx, "auth", "validateEmailCode", err)
 	}
 
 	if strings.TrimSpace(code) != storedCode {
@@ -537,13 +537,13 @@ func (s *AuthService) ensureUserDoesNotExist(ctx context.Context, username, emai
 	if _, err := s.userRepo.GetByEmail(ctx, email); err == nil {
 		return constants.ErrEmailAlreadyRegistered
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return svcerr.Pass("auth", "ensureUserDoesNotExist", err)
+		return svcerr.Pass(ctx, "auth", "ensureUserDoesNotExist", err)
 	}
 
 	if _, err := s.userRepo.GetByUsername(ctx, username); err == nil {
 		return constants.ErrUsernameTaken
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return svcerr.Pass("auth", "ensureUserDoesNotExist", err)
+		return svcerr.Pass(ctx, "auth", "ensureUserDoesNotExist", err)
 	}
 
 	return nil
@@ -603,7 +603,7 @@ func generateNumericCode(length int) (string, error) {
 
 	number, err := rand.Int(rand.Reader, max)
 	if err != nil {
-		return "", svcerr.Pass("auth", "generateNumericCode", err)
+		return "", svcerr.Pass(context.Background(), "auth", "generateNumericCode", err)
 	}
 
 	return fmt.Sprintf("%0*d", length, number.Int64()), nil

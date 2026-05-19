@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -27,7 +27,7 @@ func (s *K8sWorkloadService) ListStatefulSets(ctx context.Context, q NamespacedL
 	gvk, _ := s.dyn.GVKByKind("StatefulSet")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt3bef5bb60df3)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt3bef5bb60df3)
 	}
 	list := make([]appsv1.StatefulSet, 0, len(listU))
 	for _, item := range listU {
@@ -94,7 +94,7 @@ func (s *K8sWorkloadService) StatefulSetDetail(ctx context.Context, q Namespaced
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg728d3e3b08a7)
 		}
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt70dba6fa52bd)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt70dba6fa52bd)
 	}
 	var obj appsv1.StatefulSet
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -122,12 +122,12 @@ func (s *K8sWorkloadService) StatefulSetScale(ctx context.Context, req WorkloadS
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsg728d3e3b08a7)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	copyObj := obj.DeepCopy()
 	copyObj.Spec.Replicas = &req.Replicas
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }
@@ -143,7 +143,7 @@ func (s *K8sWorkloadService) StatefulSetPatchContainerResources(ctx context.Cont
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsg728d3e3b08a7)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	containers := obj.Spec.Template.Spec.Containers
 	idx := workloadContainerIndex(containers, req.ContainerName)
@@ -165,7 +165,7 @@ func (s *K8sWorkloadService) StatefulSetPatchContainerResources(ctx context.Cont
 		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
 	}
 	if err := k.WithContext(ctx).Resource(&appsv1.StatefulSet{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }
@@ -185,7 +185,7 @@ func (s *K8sWorkloadService) StatefulSetRestart(ctx context.Context, q Namespace
 		if apierrors.IsForbidden(err) {
 			return constants.ErrForbiddenWithMsg(constants.ErrMsga0421725a51e)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }

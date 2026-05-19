@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func (s *DepartmentService) hasDepartmentAccess(ctx context.Context, actor *auth
 	}
 	scope, err := s.actorDepartmentScopeIDs(ctx, actor)
 	if err != nil {
-		return false, svcerr.Pass("department", "hasDepartmentAccess", err)
+		return false, svcerr.Pass(ctx, "department", "hasDepartmentAccess", err)
 	}
 	if len(scope) == 0 {
 		return false, nil
@@ -97,15 +97,15 @@ type DepartmentDetailResponse struct {
 func (s *DepartmentService) Tree(ctx context.Context) ([]DepartmentDetailResponse, error) {
 	all, err := s.repo.ListAll(ctx)
 	if err != nil {
-		return nil, svcerr.Pass("department", "Tree", err)
+		return nil, svcerr.Pass(ctx, "department", "Tree", err)
 	}
 	leaderMap, err := s.buildLeaderMap(ctx, all)
 	if err != nil {
-		return nil, svcerr.Pass("department", "Tree", err)
+		return nil, svcerr.Pass(ctx, "department", "Tree", err)
 	}
 	userCountMap, err := s.buildUserCountMap(ctx)
 	if err != nil {
-		return nil, svcerr.Pass("department", "Tree", err)
+		return nil, svcerr.Pass(ctx, "department", "Tree", err)
 	}
 	return buildDepartmentTree(all, leaderMap, userCountMap), nil
 }
@@ -116,7 +116,7 @@ func (s *DepartmentService) TreeByActor(ctx context.Context, actor *auth.Current
 	}
 	all, err := s.Tree(ctx)
 	if err != nil {
-		return nil, svcerr.Pass("department", "TreeByActor", err)
+		return nil, svcerr.Pass(ctx, "department", "TreeByActor", err)
 	}
 	if auth.IsSuperAdminRole(actor.RoleCodes) {
 		return all, nil
@@ -153,7 +153,7 @@ func (s *DepartmentService) Detail(ctx context.Context, id uint) (*DepartmentDet
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrDepartmentNotFound
 		}
-		return nil, svcerr.Pass("department", "Detail", err)
+		return nil, svcerr.Pass(ctx, "department", "Detail", err)
 	}
 	resp := s.toResponse(ctx, *item)
 	return &resp, nil
@@ -162,7 +162,7 @@ func (s *DepartmentService) Detail(ctx context.Context, id uint) (*DepartmentDet
 func (s *DepartmentService) DetailByActor(ctx context.Context, actor *auth.CurrentUser, id uint) (*DepartmentDetailResponse, error) {
 	ok, err := s.hasDepartmentAccess(ctx, actor, id)
 	if err != nil {
-		return nil, svcerr.Pass("department", "DetailByActor", err)
+		return nil, svcerr.Pass(ctx, "department", "DetailByActor", err)
 	}
 	if !ok {
 		return nil, constants.ErrForbidden
@@ -177,22 +177,22 @@ func (s *DepartmentService) Create(ctx context.Context, req DepartmentCreateRequ
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsga784a6e1674f)
 	}
 	if err := s.ensureLeaderExists(ctx, req.LeaderID); err != nil {
-		return nil, svcerr.Pass("department", "Create", err)
+		return nil, svcerr.Pass(ctx, "department", "Create", err)
 	}
 	if exists, err := s.repo.ExistsByCode(ctx, code, 0); err != nil {
-		return nil, svcerr.Pass("department", "Create", err)
+		return nil, svcerr.Pass(ctx, "department", "Create", err)
 	} else if exists {
 		return nil, constants.ErrConflictWithMsg(constants.ErrMsgf5ccd8b73cf5)
 	}
 	if exists, err := s.repo.ExistsByNameInParent(ctx, req.ParentID, name, 0); err != nil {
-		return nil, svcerr.Pass("department", "Create", err)
+		return nil, svcerr.Pass(ctx, "department", "Create", err)
 	} else if exists {
 		return nil, constants.ErrConflictWithMsg(constants.ErrMsg6719d7537f54)
 	}
 
 	ancestors, level, err := s.resolveAncestorsAndLevel(ctx, req.ParentID)
 	if err != nil {
-		return nil, svcerr.Pass("department", "Create", err)
+		return nil, svcerr.Pass(ctx, "department", "Create", err)
 	}
 	status := req.Status
 	if status != 0 {
@@ -212,7 +212,7 @@ func (s *DepartmentService) Create(ctx context.Context, req DepartmentCreateRequ
 		Remark:    strings.TrimSpace(req.Remark),
 	}
 	if err = s.repo.Create(ctx, &item); err != nil {
-		return nil, svcerr.Pass("department", "Create", err)
+		return nil, svcerr.Pass(ctx, "department", "Create", err)
 	}
 	resp := s.toResponse(ctx, item)
 	return &resp, nil
@@ -230,7 +230,7 @@ func (s *DepartmentService) CreateByActor(ctx context.Context, actor *auth.Curre
 	}
 	ok, err := s.hasDepartmentAccess(ctx, actor, *req.ParentID)
 	if err != nil {
-		return nil, svcerr.Pass("department", "CreateByActor", err)
+		return nil, svcerr.Pass(ctx, "department", "CreateByActor", err)
 	}
 	if !ok {
 		return nil, constants.ErrForbiddenWithMsg(constants.ErrMsg099012ab5b6c)
@@ -244,7 +244,7 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrDepartmentNotFound
 		}
-		return nil, svcerr.Pass("department", "Update", err)
+		return nil, svcerr.Pass(ctx, "department", "Update", err)
 	}
 
 	name := strings.TrimSpace(req.Name)
@@ -256,15 +256,15 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg0915d23f388b)
 	}
 	if err := s.ensureLeaderExists(ctx, req.LeaderID); err != nil {
-		return nil, svcerr.Pass("department", "Update", err)
+		return nil, svcerr.Pass(ctx, "department", "Update", err)
 	}
 	if exists, err := s.repo.ExistsByCode(ctx, code, id); err != nil {
-		return nil, svcerr.Pass("department", "Update", err)
+		return nil, svcerr.Pass(ctx, "department", "Update", err)
 	} else if exists {
 		return nil, constants.ErrConflictWithMsg(constants.ErrMsgf5ccd8b73cf5)
 	}
 	if exists, err := s.repo.ExistsByNameInParent(ctx, req.ParentID, name, id); err != nil {
-		return nil, svcerr.Pass("department", "Update", err)
+		return nil, svcerr.Pass(ctx, "department", "Update", err)
 	} else if exists {
 		return nil, constants.ErrConflictWithMsg(constants.ErrMsg6719d7537f54)
 	}
@@ -274,7 +274,7 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 	oldLevel := item.Level
 	newAncestors, newLevel, err := s.resolveAncestorsAndLevel(ctx, req.ParentID)
 	if err != nil {
-		return nil, svcerr.Pass("department", "Update", err)
+		return nil, svcerr.Pass(ctx, "department", "Update", err)
 	}
 	if req.ParentID != nil {
 		parent, err := s.repo.GetByID(ctx, *req.ParentID)
@@ -282,7 +282,7 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 			if err == gorm.ErrRecordNotFound {
 				return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg1e390c7912c1)
 			}
-			return nil, svcerr.Pass("department", "Update", err)
+			return nil, svcerr.Pass(ctx, "department", "Update", err)
 		}
 		selfPath := fmt.Sprintf("%s%d/", oldAncestors, item.ID)
 		if strings.HasPrefix(parent.Ancestors, selfPath) {
@@ -304,7 +304,7 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 
 	err = s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(item).Error; err != nil {
-			return svcerr.Pass("department", "Update", err)
+			return svcerr.Pass(ctx, "department", "Update", err)
 		}
 		if sameUintPtr(oldParentID, req.ParentID) && oldAncestors == newAncestors && oldLevel == newLevel {
 			return nil
@@ -315,19 +315,19 @@ func (s *DepartmentService) Update(ctx context.Context, id uint, req DepartmentU
 		if err := tx.Model(&model.Department{}).
 			Where("ancestors LIKE ?", oldPrefix+"%").
 			Update("ancestors", gorm.Expr("REPLACE(ancestors, ?, ?)", oldPrefix, newPrefix)).Error; err != nil {
-			return svcerr.Pass("department", "Update", err)
+			return svcerr.Pass(ctx, "department", "Update", err)
 		}
 		if levelDiff != 0 {
 			if err := tx.Model(&model.Department{}).
 				Where("ancestors LIKE ?", oldPrefix+"%").
 				Update("level", gorm.Expr("level + ?", levelDiff)).Error; err != nil {
-				return svcerr.Pass("department", "Update", err)
+				return svcerr.Pass(ctx, "department", "Update", err)
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, svcerr.Pass("department", "Update", err)
+		return nil, svcerr.Pass(ctx, "department", "Update", err)
 	}
 
 	resp := s.toResponse(ctx, *item)
@@ -341,7 +341,7 @@ func (s *DepartmentService) UpdateByActor(ctx context.Context, actor *auth.Curre
 	if !auth.IsSuperAdminRole(actor.RoleCodes) {
 		ok, err := s.hasDepartmentAccess(ctx, actor, id)
 		if err != nil {
-			return nil, svcerr.Pass("department", "UpdateByActor", err)
+			return nil, svcerr.Pass(ctx, "department", "UpdateByActor", err)
 		}
 		if !ok {
 			return nil, constants.ErrForbidden
@@ -349,7 +349,7 @@ func (s *DepartmentService) UpdateByActor(ctx context.Context, actor *auth.Curre
 		if req.ParentID != nil {
 			ok, err = s.hasDepartmentAccess(ctx, actor, *req.ParentID)
 			if err != nil {
-				return nil, svcerr.Pass("department", "UpdateByActor", err)
+				return nil, svcerr.Pass(ctx, "department", "UpdateByActor", err)
 			}
 			if !ok {
 				return nil, constants.ErrForbiddenWithMsg(constants.ErrMsgc23b85234e2a)
@@ -365,24 +365,24 @@ func (s *DepartmentService) Delete(ctx context.Context, id uint) error {
 		if err == gorm.ErrRecordNotFound {
 			return constants.ErrDepartmentNotFound
 		}
-		return svcerr.Pass("department", "Delete", err)
+		return svcerr.Pass(ctx, "department", "Delete", err)
 	}
 	children, err := s.repo.CountChildren(ctx, id)
 	if err != nil {
-		return svcerr.Pass("department", "Delete", err)
+		return svcerr.Pass(ctx, "department", "Delete", err)
 	}
 	if children > 0 {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsgc22172530052)
 	}
 	users, err := s.repo.CountUsers(ctx, id)
 	if err != nil {
-		return svcerr.Pass("department", "Delete", err)
+		return svcerr.Pass(ctx, "department", "Delete", err)
 	}
 	if users > 0 {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsga110c1191380)
 	}
 	if err := s.repo.DeleteByID(ctx, item.ID); err != nil {
-		return svcerr.Pass("department", "Delete", err)
+		return svcerr.Pass(ctx, "department", "Delete", err)
 	}
 	if s.assigneeSvc != nil {
 		_ = s.assigneeSvc.PruneDepartmentFromAllAssignees(ctx, item.ID)
@@ -397,7 +397,7 @@ func (s *DepartmentService) DeleteByActor(ctx context.Context, actor *auth.Curre
 	if !auth.IsSuperAdminRole(actor.RoleCodes) {
 		ok, err := s.hasDepartmentAccess(ctx, actor, id)
 		if err != nil {
-			return svcerr.Pass("department", "DeleteByActor", err)
+			return svcerr.Pass(ctx, "department", "DeleteByActor", err)
 		}
 		if !ok {
 			return constants.ErrForbidden
@@ -415,7 +415,7 @@ func (s *DepartmentService) resolveAncestorsAndLevel(ctx context.Context, parent
 		if err == gorm.ErrRecordNotFound {
 			return "", 0, constants.ErrBadRequestWithMsg(constants.ErrMsg1e390c7912c1)
 		}
-		return "", 0, svcerr.Pass("department", "resolveAncestorsAndLevel", err)
+		return "", 0, svcerr.Pass(ctx, "department", "resolveAncestorsAndLevel", err)
 	}
 	ancestors := fmt.Sprintf("%s%d/", parent.Ancestors, parent.ID)
 	return ancestors, parent.Level + 1, nil
@@ -430,7 +430,7 @@ func (s *DepartmentService) ensureLeaderExists(ctx context.Context, leaderID *ui
 		if err == gorm.ErrRecordNotFound {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsgdccca82abd43)
 		}
-		return svcerr.Pass("department", "ensureLeaderExists", err)
+		return svcerr.Pass(ctx, "department", "ensureLeaderExists", err)
 	}
 	return nil
 }
@@ -453,7 +453,7 @@ func (s *DepartmentService) buildLeaderMap(ctx context.Context, list []model.Dep
 	}
 	users, err := s.userRepo.ListByIDs(ctx, ids)
 	if err != nil {
-		return nil, svcerr.Pass("department", "buildLeaderMap", err)
+		return nil, svcerr.Pass(ctx, "department", "buildLeaderMap", err)
 	}
 	result := make(map[uint]string, len(users))
 	for _, u := range users {
@@ -475,7 +475,7 @@ func (s *DepartmentService) buildUserCountMap(ctx context.Context) (map[uint]int
 		Group("department_id").
 		Scan(&rows).Error
 	if err != nil {
-		return nil, svcerr.Pass("department", "buildUserCountMap", err)
+		return nil, svcerr.Pass(ctx, "department", "buildUserCountMap", err)
 	}
 	result := make(map[uint]int64, len(rows))
 	for _, r := range rows {

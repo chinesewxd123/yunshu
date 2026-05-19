@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func (s *K8sWorkloadService) ListDaemonSets(ctx context.Context, q NamespacedLis
 	gvk, _ := s.dyn.GVKByKind("DaemonSet")
 	listU, err := s.dyn.ListByGVKWithSelector(ctx, k, gvk, q.Namespace, q.LabelQuery)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt22f7c7b69366)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt22f7c7b69366)
 	}
 	list := make([]appsv1.DaemonSet, 0, len(listU))
 	for _, item := range listU {
@@ -94,7 +94,7 @@ func (s *K8sWorkloadService) DaemonSetDetail(ctx context.Context, q NamespacedDe
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg728030d27854)
 		}
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt960ced5a2f6f)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt960ced5a2f6f)
 	}
 	var obj appsv1.DaemonSet
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -122,7 +122,7 @@ func (s *K8sWorkloadService) DaemonSetRestart(ctx context.Context, q NamespacedD
 		if apierrors.IsForbidden(err) {
 			return constants.ErrForbiddenWithMsg(constants.ErrMsg6e28e4e09c23)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }
@@ -135,7 +135,7 @@ func (s *K8sWorkloadService) DaemonSetPods(ctx context.Context, q RelatedPodsQue
 	}
 	var ds appsv1.DaemonSet
 	if err := k.WithContext(ctx).Resource(&appsv1.DaemonSet{}).Namespace(q.Namespace).Name(q.Name).Get(&ds).Error; err != nil {
-		return nil, svcerr.Internal("k8s.workload", "api", err, constants.ErrFmt960ced5a2f6f)
+		return nil, svcerr.Internal(ctx, "k8s.workload", "api", err, constants.ErrFmt960ced5a2f6f)
 	}
 	selector := metav1.FormatLabelSelector(ds.Spec.Selector)
 	return listPodsBySelector(ctx, k, q.Namespace, selector)
@@ -152,7 +152,7 @@ func (s *K8sWorkloadService) DaemonSetPatchContainerResources(ctx context.Contex
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsg728030d27854)
 		}
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	containers := obj.Spec.Template.Spec.Containers
 	idx := workloadContainerIndex(containers, req.ContainerName)
@@ -174,7 +174,7 @@ func (s *K8sWorkloadService) DaemonSetPatchContainerResources(ctx context.Contex
 		return constants.ErrBadRequestWithMsg(fmt.Sprintf(constants.ErrFmt81f1534a632d, err))
 	}
 	if err := k.WithContext(ctx).Resource(&appsv1.DaemonSet{}).Namespace(req.Namespace).Update(copyObj).Error; err != nil {
-		return k8sFail("k8s.workload", "api", err)
+		return k8sFail(ctx, "k8s.workload", "api", err)
 	}
 	return nil
 }

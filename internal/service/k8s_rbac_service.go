@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -107,7 +107,7 @@ func (s *K8sRBACService) ListRoles(ctx context.Context, query RbacListQuery) ([]
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, roleGVK, ns)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.rbac", "api", err, constants.ErrFmt951c7ad77bce)
+		return nil, svcerr.Internal(ctx, "k8s.rbac", "api", err, constants.ErrFmt951c7ad77bce)
 	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]RoleListItem, 0, len(listU))
@@ -142,7 +142,7 @@ func (s *K8sRBACService) ListRoleBindings(ctx context.Context, query RbacListQue
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, roleBindingGVK, ns)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.rbac", "api", err, constants.ErrFmt3489b1e268aa)
+		return nil, svcerr.Internal(ctx, "k8s.rbac", "api", err, constants.ErrFmt3489b1e268aa)
 	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]RoleBindingListItem, 0, len(listU))
@@ -183,7 +183,7 @@ func (s *K8sRBACService) ListClusterRoles(ctx context.Context, query RbacListQue
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, clusterRoleGVK, "")
 	if err != nil {
-		return nil, svcerr.Internal("k8s.rbac", "api", err, constants.ErrFmt5f9235a5cff6)
+		return nil, svcerr.Internal(ctx, "k8s.rbac", "api", err, constants.ErrFmt5f9235a5cff6)
 	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]ClusterRoleListItem, 0, len(listU))
@@ -213,7 +213,7 @@ func (s *K8sRBACService) ListClusterRoleBindings(ctx context.Context, query Rbac
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, clusterRoleBindingGVK, "")
 	if err != nil {
-		return nil, svcerr.Internal("k8s.rbac", "api", err, constants.ErrFmt05b921e3a64d)
+		return nil, svcerr.Internal(ctx, "k8s.rbac", "api", err, constants.ErrFmt05b921e3a64d)
 	}
 	kw := strings.ToLower(strings.TrimSpace(query.Keyword))
 	out := make([]ClusterRoleBindingListItem, 0, len(listU))
@@ -283,7 +283,7 @@ func (s *K8sRBACService) Detail(ctx context.Context, kind string, query RbacName
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg4aefbe3428ef)
 		}
-		return nil, svcerr.Internal("k8s.rbac", "api", err, constants.ErrFmt0aa6043acdf6)
+		return nil, svcerr.Internal(ctx, "k8s.rbac", "api", err, constants.ErrFmt0aa6043acdf6)
 	}
 
 	obj := u.DeepCopy()
@@ -312,7 +312,7 @@ func (s *K8sRBACService) Apply(ctx context.Context, req RbacApplyRequest) error 
 		}
 		return len(refs) > 0
 	}); err != nil {
-		return k8sFail("k8s.rbac", "api", err)
+		return k8sFail(ctx, "k8s.rbac", "api", err)
 	}
 	return nil
 }
@@ -349,7 +349,7 @@ func (s *K8sRBACService) Delete(ctx context.Context, kind string, req RbacDelete
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return k8sFail("k8s.rbac", "api", err)
+		return k8sFail(ctx, "k8s.rbac", "api", err)
 	}
 	return nil
 }

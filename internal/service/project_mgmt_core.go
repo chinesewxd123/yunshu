@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -49,7 +49,7 @@ func NewProjectMgmtService(
 ) (*ProjectMgmtService, error) {
 	aead, err := cryptox.NewAESGCMFromKeyString(encryptionKey)
 	if err != nil {
-		return nil, svcerr.Pass("project", "NewProjectMgmtService", err)
+		return nil, svcerr.Pass(context.Background(), "project", "NewProjectMgmtService", err)
 	}
 	return &ProjectMgmtService{
 		projectRepo:      projectRepo,
@@ -144,7 +144,7 @@ func (s *ProjectMgmtService) ListProjects(ctx context.Context, q ProjectListQuer
 		list, total, err = s.projectRepo.List(ctx, params)
 	}
 	if err != nil {
-		return nil, svcerr.Pass("project", "ListProjects", err)
+		return nil, svcerr.Pass(ctx, "project", "ListProjects", err)
 	}
 	out := make([]ProjectItem, 0, len(list))
 	for _, it := range list {
@@ -173,7 +173,7 @@ func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID ui
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrDepartmentNotFound
 			}
-			return nil, svcerr.Pass("project", "CreateProject", err)
+			return nil, svcerr.Pass(ctx, "project", "CreateProject", err)
 		}
 	}
 	var ownerDept *uint
@@ -183,13 +183,13 @@ func (s *ProjectMgmtService) CreateProject(ctx context.Context, creatorUserID ui
 	}
 	p := model.Project{Name: strings.TrimSpace(req.Name), Code: strings.TrimSpace(req.Code), Description: req.Description, Status: status, OwnerDepartmentID: ownerDept}
 	if err := s.projectRepo.Create(ctx, &p); err != nil {
-		return nil, svcerr.Pass("project", "CreateProject", err)
+		return nil, svcerr.Pass(ctx, "project", "CreateProject", err)
 	}
 	if s.memberRepo != nil && creatorUserID > 0 {
 		m := model.ProjectMember{ProjectID: p.ID, UserID: creatorUserID, Role: "owner"}
 		if err := s.memberRepo.Create(ctx, &m); err != nil {
 			_ = s.projectRepo.DeleteByID(ctx, p.ID)
-			return nil, svcerr.Internal("project", "CreateProject", err, "项目已创建但写入负责人失败: %v")
+			return nil, svcerr.Internal(ctx, "project", "CreateProject", err, "项目已创建但写入负责人失败: %v")
 		}
 	}
 	item := toProjectItem(p)
@@ -214,7 +214,7 @@ func (s *ProjectMgmtService) UpdateProject(ctx context.Context, id uint, req Pro
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrProjectNotFound
 		}
-		return nil, svcerr.Pass("project", "UpdateProject", err)
+		return nil, svcerr.Pass(ctx, "project", "UpdateProject", err)
 	}
 	if req.Name != nil {
 		p.Name = strings.TrimSpace(*req.Name)
@@ -237,7 +237,7 @@ func (s *ProjectMgmtService) UpdateProject(ctx context.Context, id uint, req Pro
 					if errors.Is(err, gorm.ErrRecordNotFound) {
 						return nil, constants.ErrDepartmentNotFound
 					}
-					return nil, svcerr.Pass("project", "UpdateProject", err)
+					return nil, svcerr.Pass(ctx, "project", "UpdateProject", err)
 				}
 			}
 			v := *req.OwnerDepartmentID
@@ -245,7 +245,7 @@ func (s *ProjectMgmtService) UpdateProject(ctx context.Context, id uint, req Pro
 		}
 	}
 	if err := s.projectRepo.Save(ctx, p); err != nil {
-		return nil, svcerr.Pass("project", "UpdateProject", err)
+		return nil, svcerr.Pass(ctx, "project", "UpdateProject", err)
 	}
 	item := toProjectItem(*p)
 	s.enrichMyProjectRole(ctx, &item)
@@ -258,7 +258,7 @@ func (s *ProjectMgmtService) DeleteProject(ctx context.Context, id uint) error {
 		_ = s.memberRepo.DeleteByProject(ctx, id)
 	}
 	if err := s.projectRepo.DeleteByID(ctx, id); err != nil {
-		return svcerr.Pass("project", "DeleteProject", err)
+		return svcerr.Pass(ctx, "project", "DeleteProject", err)
 	}
 	return nil
 }
@@ -313,11 +313,11 @@ func (s *ProjectMgmtService) ListProjectMembers(ctx context.Context, projectID u
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrProjectNotFound
 		}
-		return nil, svcerr.Pass("project", "ListProjectMembers", err)
+		return nil, svcerr.Pass(ctx, "project", "ListProjectMembers", err)
 	}
 	rows, err := s.memberRepo.ListDisplayByProject(ctx, projectID)
 	if err != nil {
-		return nil, svcerr.Pass("project", "ListProjectMembers", err)
+		return nil, svcerr.Pass(ctx, "project", "ListProjectMembers", err)
 	}
 	return toProjectMemberItems(rows), nil
 }
@@ -334,21 +334,21 @@ func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uin
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrProjectNotFound
 		}
-		return nil, svcerr.Pass("project", "AddProjectMember", err)
+		return nil, svcerr.Pass(ctx, "project", "AddProjectMember", err)
 	}
 	if s.userRepo == nil {
-		return nil, svcerr.InternalMsg("project", "api", constants.ErrMsgcc60c2c3c788)
+		return nil, svcerr.InternalMsg(ctx, "project", "api", constants.ErrMsgcc60c2c3c788)
 	}
 	if _, err := s.userRepo.GetByID(ctx, req.UserID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, svcerr.Pass("project", "AddProjectMember", err)
+		return nil, svcerr.Pass(ctx, "project", "AddProjectMember", err)
 	}
 	if _, err := s.memberRepo.GetByProjectAndUser(ctx, projectID, req.UserID); err == nil {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsga802e1b5e9e2)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, svcerr.Pass("project", "AddProjectMember", err)
+		return nil, svcerr.Pass(ctx, "project", "AddProjectMember", err)
 	}
 	row := model.ProjectMember{
 		ProjectID: projectID,
@@ -356,11 +356,11 @@ func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uin
 		Role:      normalizeProjectMemberRole(req.Role),
 	}
 	if err := s.memberRepo.Create(ctx, &row); err != nil {
-		return nil, svcerr.Pass("project", "AddProjectMember", err)
+		return nil, svcerr.Pass(ctx, "project", "AddProjectMember", err)
 	}
 	drows, err := s.memberRepo.ListDisplayByProject(ctx, projectID)
 	if err != nil {
-		return nil, svcerr.Pass("project", "AddProjectMember", err)
+		return nil, svcerr.Pass(ctx, "project", "AddProjectMember", err)
 	}
 	for _, r := range drows {
 		if r.ID == row.ID {
@@ -368,7 +368,7 @@ func (s *ProjectMgmtService) AddProjectMember(ctx context.Context, projectID uin
 			return &it[0], nil
 		}
 	}
-	return nil, svcerr.InternalMsg("project", "api", constants.ErrMsg1fe0209f952f)
+	return nil, svcerr.InternalMsg(ctx, "project", "api", constants.ErrMsg1fe0209f952f)
 }
 
 // ProjectMemberUpdateRequest 更新成员角色。
@@ -382,25 +382,25 @@ func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID,
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrProjectNotFound
 		}
-		return nil, svcerr.Pass("project", "UpdateProjectMember", err)
+		return nil, svcerr.Pass(ctx, "project", "UpdateProjectMember", err)
 	}
 	m, err := s.memberRepo.GetByID(ctx, memberID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsge7773625bf8b)
 		}
-		return nil, svcerr.Pass("project", "UpdateProjectMember", err)
+		return nil, svcerr.Pass(ctx, "project", "UpdateProjectMember", err)
 	}
 	if m.ProjectID != projectID {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg461337ef3f89)
 	}
 	m.Role = normalizeProjectMemberRole(req.Role)
 	if err := s.memberRepo.Save(ctx, m); err != nil {
-		return nil, svcerr.Pass("project", "UpdateProjectMember", err)
+		return nil, svcerr.Pass(ctx, "project", "UpdateProjectMember", err)
 	}
 	drows, err := s.memberRepo.ListDisplayByProject(ctx, projectID)
 	if err != nil {
-		return nil, svcerr.Pass("project", "UpdateProjectMember", err)
+		return nil, svcerr.Pass(ctx, "project", "UpdateProjectMember", err)
 	}
 	for _, r := range drows {
 		if r.ID == memberID {
@@ -408,7 +408,7 @@ func (s *ProjectMgmtService) UpdateProjectMember(ctx context.Context, projectID,
 			return &it[0], nil
 		}
 	}
-	return nil, svcerr.InternalMsg("project", "api", constants.ErrMsg2940a3d4007c)
+	return nil, svcerr.InternalMsg(ctx, "project", "api", constants.ErrMsg2940a3d4007c)
 }
 
 // RemoveProjectMember 移除项目成员。
@@ -417,14 +417,14 @@ func (s *ProjectMgmtService) RemoveProjectMember(ctx context.Context, projectID,
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrProjectNotFound
 		}
-		return svcerr.Pass("project", "RemoveProjectMember", err)
+		return svcerr.Pass(ctx, "project", "RemoveProjectMember", err)
 	}
 	m, err := s.memberRepo.GetByID(ctx, memberID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrNotFoundWithMsg(constants.ErrMsge7773625bf8b)
 		}
-		return svcerr.Pass("project", "RemoveProjectMember", err)
+		return svcerr.Pass(ctx, "project", "RemoveProjectMember", err)
 	}
 	if m.ProjectID != projectID {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg461337ef3f89)

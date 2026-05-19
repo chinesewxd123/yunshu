@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -36,13 +36,13 @@ func (s *K8sDiscoveryService) ListAPIResources(ctx context.Context, clusterID ui
 	}
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.discovery", "api", err, constants.ErrFmt6d3ec85d0a18)
+		return nil, svcerr.Internal(ctx, "k8s.discovery", "api", err, constants.ErrFmt6d3ec85d0a18)
 	}
 
 	_, lists, err := cs.Discovery().ServerGroupsAndResources()
 	if err != nil {
 		if lists == nil || len(lists) == 0 {
-			return nil, svcerr.Internal("k8s.discovery", "server_groups", err, "discovery: %v")
+			return nil, svcerr.Internal(ctx, "k8s.discovery", "server_groups", err, "discovery: %v")
 		}
 	}
 

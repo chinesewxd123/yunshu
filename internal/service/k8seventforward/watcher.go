@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/model"
 	"yunshu/internal/service"
 
@@ -21,7 +22,7 @@ type Watcher struct {
 	store    *Store
 	runtime  *service.K8sRuntimeService
 	cfg      RuntimeConfig
-	log      *slog.Logger
+	log      *logx.Component
 	eventCh  chan *model.K8sForwardedEvent
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -29,7 +30,7 @@ type Watcher struct {
 	active   map[string]bool // clusterID -> watching
 }
 
-func NewWatcher(store *Store, runtime *service.K8sRuntimeService, cfg RuntimeConfig, log *slog.Logger) *Watcher {
+func NewWatcher(store *Store, runtime *service.K8sRuntimeService, cfg RuntimeConfig, log *logx.Component) *Watcher {
 	ctx, cancel := context.WithCancel(context.Background())
 	buf := cfg.WatcherBufferSize
 	if buf <= 0 {
@@ -74,7 +75,7 @@ func (w *Watcher) ensureWatches() {
 
 	ids, err := w.store.ListEnabledClusterIDs(ctx)
 	if err != nil {
-		w.log.Warn("k8s event forward: list clusters failed", slog.Any("error", err))
+		w.log.Warn("list clusters failed", slog.Any("error", err))
 		return
 	}
 	for _, id := range ids {
@@ -99,7 +100,7 @@ func (w *Watcher) watchCluster(clusterID string, id uint) {
 
 	ctx := w.ctx
 	if err := w.runtime.EnsureClusterRegistered(ctx, id); err != nil {
-		w.log.Warn("k8s event forward: register cluster failed",
+		w.log.Warn("register cluster failed",
 			slog.String("cluster_id", clusterID), slog.Any("error", err))
 		return
 	}
@@ -107,13 +108,13 @@ func (w *Watcher) watchCluster(clusterID string, id uint) {
 	var watcher watch.Interface
 	var evt eventsv1.Event
 	if err := kom.Cluster(clusterID).WithContext(ctx).Resource(&evt).AllNamespace().Watch(&watcher).Error; err != nil {
-		w.log.Warn("k8s event forward: watch failed",
+		w.log.Warn("watch failed",
 			slog.String("cluster_id", clusterID), slog.Any("error", err))
 		return
 	}
 	defer watcher.Stop()
 
-	w.log.Info("k8s event forward: watching events", slog.String("cluster_id", clusterID))
+	w.log.Info("watching events", slog.String("cluster_id", clusterID))
 	for {
 		select {
 		case <-ctx.Done():
@@ -124,7 +125,7 @@ func (w *Watcher) watchCluster(clusterID string, id uint) {
 			}
 			var typed eventsv1.Event
 			if err := kom.Cluster(clusterID).WithContext(ctx).Tools().ConvertRuntimeObjectToTypedObject(e.Object, &typed); err != nil {
-				w.log.Warn("k8s event forward: convert event failed",
+				w.log.Warn("convert event failed",
 					slog.String("cluster_id", clusterID), slog.Any("error", err))
 				continue
 			}
@@ -133,7 +134,7 @@ func (w *Watcher) watchCluster(clusterID string, id uint) {
 				continue
 			}
 			if err := w.enqueue(m); err != nil {
-				w.log.Warn("k8s event forward: enqueue failed",
+				w.log.Warn("enqueue failed",
 					slog.String("evt_key", m.EvtKey), slog.Any("error", err))
 			}
 		}
@@ -197,7 +198,7 @@ func (w *Watcher) persistLoop() {
 			err := w.store.SaveEvent(ctx, ev)
 			cancel()
 			if err != nil {
-				w.log.Warn("k8s event forward: save event failed", slog.Any("error", err))
+				w.log.Warn("save event failed", slog.Any("error", err))
 			}
 		}
 	}

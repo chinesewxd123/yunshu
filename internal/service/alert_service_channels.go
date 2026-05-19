@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -170,7 +170,7 @@ func (s *AlertService) ListChannels(ctx context.Context, q AlertChannelListQuery
 		tx = tx.Where("name LIKE ? OR url LIKE ?", like, like)
 	}
 	if err := tx.Find(&list).Error; err != nil {
-		return nil, svcerr.Pass("alert", "ListChannels", err)
+		return nil, svcerr.Pass(ctx, "alert", "ListChannels", err)
 	}
 	return list, nil
 }
@@ -200,13 +200,13 @@ func (s *AlertService) CreateChannel(ctx context.Context, req AlertChannelUpsert
 		ch.Enabled = *req.Enabled
 	}
 	if err := validateHeadersJSON(ch.HeadersJSON); err != nil {
-		return nil, svcerr.Pass("alert", "CreateChannel", err)
+		return nil, svcerr.Pass(ctx, "alert", "CreateChannel", err)
 	}
 	if err := validateEmailChannelRecipients(ch.Enabled, ch.Type, ch.HeadersJSON); err != nil {
-		return nil, svcerr.Pass("alert", "CreateChannel", err)
+		return nil, svcerr.Pass(ctx, "alert", "CreateChannel", err)
 	}
 	if err := s.db.WithContext(ctx).Create(ch).Error; err != nil {
-		return nil, svcerr.Pass("alert", "CreateChannel", err)
+		return nil, svcerr.Pass(ctx, "alert", "CreateChannel", err)
 	}
 	return ch, nil
 }
@@ -215,7 +215,7 @@ func (s *AlertService) CreateChannel(ctx context.Context, req AlertChannelUpsert
 func (s *AlertService) UpdateChannel(ctx context.Context, id uint, req AlertChannelUpsertRequest) (*model.AlertChannel, error) {
 	var ch model.AlertChannel
 	if err := s.db.WithContext(ctx).First(&ch, id).Error; err != nil {
-		return nil, svcerr.Pass("alert", "UpdateChannel", err)
+		return nil, svcerr.Pass(ctx, "alert", "UpdateChannel", err)
 	}
 	ch.Name = strings.TrimSpace(req.Name)
 	ch.Type = strings.TrimSpace(req.Type)
@@ -238,13 +238,13 @@ func (s *AlertService) UpdateChannel(ctx context.Context, id uint, req AlertChan
 		ch.Enabled = *req.Enabled
 	}
 	if err := validateHeadersJSON(ch.HeadersJSON); err != nil {
-		return nil, svcerr.Pass("alert", "UpdateChannel", err)
+		return nil, svcerr.Pass(ctx, "alert", "UpdateChannel", err)
 	}
 	if err := validateEmailChannelRecipients(ch.Enabled, ch.Type, ch.HeadersJSON); err != nil {
-		return nil, svcerr.Pass("alert", "UpdateChannel", err)
+		return nil, svcerr.Pass(ctx, "alert", "UpdateChannel", err)
 	}
 	if err := s.db.WithContext(ctx).Save(&ch).Error; err != nil {
-		return nil, svcerr.Pass("alert", "UpdateChannel", err)
+		return nil, svcerr.Pass(ctx, "alert", "UpdateChannel", err)
 	}
 	return &ch, nil
 }
@@ -252,7 +252,7 @@ func (s *AlertService) UpdateChannel(ctx context.Context, id uint, req AlertChan
 // DeleteChannel 删除相关的业务逻辑。
 func (s *AlertService) DeleteChannel(ctx context.Context, id uint) error {
 	if err := s.db.WithContext(ctx).Delete(&model.AlertChannel{}, id).Error; err != nil {
-		return svcerr.Pass("alert", "DeleteChannel", err)
+		return svcerr.Pass(ctx, "alert", "DeleteChannel", err)
 	}
 	return nil
 }
@@ -261,7 +261,7 @@ func (s *AlertService) DeleteChannel(ctx context.Context, id uint) error {
 func (s *AlertService) TestChannel(ctx context.Context, id uint, req AlertTestRequest) error {
 	var ch model.AlertChannel
 	if err := s.db.WithContext(ctx).First(&ch, id).Error; err != nil {
-		return svcerr.Pass("alert", "TestChannel", err)
+		return svcerr.Pass(ctx, "alert", "TestChannel", err)
 	}
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
@@ -286,7 +286,7 @@ func (s *AlertService) TestChannel(ctx context.Context, id uint, req AlertTestRe
 		"cluster":    "manual-test",
 	}
 	_, _, err := s.sendToChannel(ctx, &ch, alertdispatch.NewEnvelope("manual-test", title, severity, "firing", payload))
-	return svcerr.Pass("alert", "TestChannel", err)
+	return svcerr.Pass(ctx, "alert", "TestChannel", err)
 }
 
 // ListEvents 查询列表相关的业务逻辑。

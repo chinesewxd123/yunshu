@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -64,7 +64,7 @@ func (s *K8sEventService) List(ctx context.Context, q EventListQuery) ([]EventIt
 		query = query.Namespace(ns)
 	}
 	if err := query.List(&list).Error; err != nil {
-		return nil, svcerr.Internal("k8s.event", "api", err, constants.ErrFmtd678ffdd4e0f)
+		return nil, svcerr.Internal(ctx, "k8s.event", "api", err, constants.ErrFmtd678ffdd4e0f)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	kind := strings.TrimSpace(q.Kind)

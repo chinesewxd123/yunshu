@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -99,7 +99,7 @@ func (s *K8sIngressService) List(ctx context.Context, q IngressListQuery) ([]Ing
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, ingressGVK, q.Namespace)
 	if err != nil {
-		return nil, svcerr.Internal("k8s.ingress", "api", err, constants.ErrFmt7f0818fd6f52)
+		return nil, svcerr.Internal(ctx, "k8s.ingress", "api", err, constants.ErrFmt7f0818fd6f52)
 	}
 	list := make([]networkingv1.Ingress, 0, len(listU))
 	for _, item := range listU {
@@ -132,7 +132,7 @@ func (s *K8sIngressService) Detail(ctx context.Context, q IngressDetailQuery) (*
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg82a55c47e927)
 		}
-		return nil, svcerr.Internal("k8s.ingress", "api", err, constants.ErrFmtd0e7b9970841)
+		return nil, svcerr.Internal(ctx, "k8s.ingress", "api", err, constants.ErrFmtd0e7b9970841)
 	}
 	var obj networkingv1.Ingress
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -173,7 +173,7 @@ func (s *K8sIngressService) Apply(ctx context.Context, req IngressApplyRequest) 
 		return true
 	})
 	if err != nil {
-		return k8sFail("k8s.ingress", "api", err)
+		return k8sFail(ctx, "k8s.ingress", "api", err)
 	}
 	return nil
 }
@@ -188,7 +188,7 @@ func (s *K8sIngressService) Delete(ctx context.Context, req IngressDeleteRequest
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return k8sFail("k8s.ingress", "api", err)
+		return k8sFail(ctx, "k8s.ingress", "api", err)
 	}
 	return nil
 }
@@ -201,11 +201,11 @@ func (s *K8sIngressService) ListClasses(ctx context.Context, q IngressClassListQ
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, ingressClassGVK, "")
 	if err != nil {
-		return nil, svcerr.Internal("k8s.ingress", "api", err, constants.ErrFmt6c250f47f18b)
+		return nil, svcerr.Internal(ctx, "k8s.ingress", "api", err, constants.ErrFmt6c250f47f18b)
 	}
 	ingsU, err := s.dyn.ListByGVK(ctx, k, ingressGVK, "")
 	if err != nil {
-		return nil, svcerr.Internal("k8s.ingress", "api", err, constants.ErrFmt7f0818fd6f52)
+		return nil, svcerr.Internal(ctx, "k8s.ingress", "api", err, constants.ErrFmt7f0818fd6f52)
 	}
 	classCounter := map[string]int{}
 	for _, item := range ingsU {
@@ -249,7 +249,7 @@ func (s *K8sIngressService) DetailClass(ctx context.Context, q IngressClassDetai
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgeb6e8490034b)
 		}
-		return nil, svcerr.Internal("k8s.ingress", "api", err, constants.ErrFmt829d798aa9fb)
+		return nil, svcerr.Internal(ctx, "k8s.ingress", "api", err, constants.ErrFmt829d798aa9fb)
 	}
 	var obj networkingv1.IngressClass
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -286,7 +286,7 @@ func (s *K8sIngressService) ApplyClass(ctx context.Context, req IngressClassAppl
 		return true
 	})
 	if err != nil {
-		return k8sFail("k8s.ingress", "api", err)
+		return k8sFail(ctx, "k8s.ingress", "api", err)
 	}
 	return nil
 }
@@ -301,7 +301,7 @@ func (s *K8sIngressService) DeleteClass(ctx context.Context, req IngressClassDel
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return k8sFail("k8s.ingress", "api", err)
+		return k8sFail(ctx, "k8s.ingress", "api", err)
 	}
 	return nil
 }
@@ -332,7 +332,7 @@ func (s *K8sIngressService) RestartIngressNginxPods(ctx context.Context, req Ing
 	var pods []corev1.Pod
 	q := k.WithContext(ctx).Resource(&corev1.Pod{}).Namespace(ns).WithLabelSelector(selector)
 	if err := q.List(&pods).Error; err != nil {
-		return nil, svcerr.Internal("k8s.ingress", "api", err, constants.ErrFmt0cbe9766f7af)
+		return nil, svcerr.Internal(ctx, "k8s.ingress", "api", err, constants.ErrFmt0cbe9766f7af)
 	}
 	// 兜底：如果 selector 太严格导致空，再尝试兼容历史 label
 	if len(pods) == 0 && strings.TrimSpace(req.Selector) == "" {

@@ -3,8 +3,9 @@
 package eventbus
 
 import (
-	"log/slog"
 	"sync"
+
+	"yunshu/internal/service/svclog"
 )
 
 // Type 事件类型。
@@ -66,6 +67,7 @@ func (b *Bus) Publish(e Event) {
 		}
 	}
 	if dropped > 0 {
-		slog.Debug("eventbus dropped for slow consumers", "type", e.Type, "dropped", dropped)
+		svclog.Worker("eventbus").Warn("dropped for slow consumers",
+			"type", e.Type, "dropped", dropped)
 	}
 }

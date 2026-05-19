@@ -50,21 +50,22 @@ var serverCmd = &cobra.Command{
 		}
 		defer app.Close()
 
-		logx.SetDefault(app.Logger)
+		logx.Init(app.Logger)
 		handler.SetLogger(app.Logger)
 
 		if err := bootstrap.AutoMigrateModels(app.DB); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
-		app.Logger.Info.Info("database schema migrated")
+		bootLog := app.Logger.Biz("bootstrap")
+		bootLog.Info("database schema migrated")
 		if err := app.Enforcer.LoadPolicy(); err != nil {
 			return fmt.Errorf("reload casbin policy: %w", err)
 		}
 
 		// 初始化只读演示用户
 		ctx := context.Background()
-		if err := initReadonlyDemoUser(ctx, app.DB, app.Enforcer, app.Logger.Info); err != nil {
-			app.Logger.Info.Error("failed to init readonly demo user", slog.Any("error", err))
+		if err := initReadonlyDemoUser(ctx, app.DB, app.Enforcer, bootLog); err != nil {
+			bootLog.Error("failed to init readonly demo user", slog.Any("error", err))
 			// 非致命错误，继续启动
 		}
 
@@ -136,7 +137,7 @@ var serverCmd = &cobra.Command{
 					err := agentSvc.RecordOfflineEpisodes(ctx)
 					cancel()
 					if err != nil {
-						app.Logger.Info.Warn("record offline episodes failed", slog.Any("error", err))
+						app.Logger.Biz("agent").Warn("record offline episodes failed", slog.Any("error", err))
 					}
 				}
 			}
@@ -153,7 +154,7 @@ var serverCmd = &cobra.Command{
 
 		errCh := make(chan error, 1)
 		go func() {
-			app.Logger.Info.Info("permission system server started", "addr", server.Addr)
+			app.Logger.Biz("server").Info("started", "addr", server.Addr)
 			if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- err
 			}
@@ -164,7 +165,7 @@ var serverCmd = &cobra.Command{
 
 		select {
 		case sig := <-stop:
-			app.Logger.Info.Info("received shutdown signal", "signal", sig.String())
+			app.Logger.Biz("server").Info("received shutdown signal", "signal", sig.String())
 		case err := <-errCh:
 			return err
 		}
@@ -184,13 +185,14 @@ var serverCmd = &cobra.Command{
 
 		ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), httpShutdown)
 		defer cancelHTTP()
+		defer logx.Sync()
 		return server.Shutdown(ctxHTTP)
 	},
 }
 
 // initReadonlyDemoUser 初始化只读演示用户
 // 用户名: viewer, 密码: viewer123, 角色: viewer (仅查看权限)
-func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.SyncedEnforcer, logger *slog.Logger) error {
+func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.SyncedEnforcer, logger *logx.Component) error {
 	userRepo := repository.NewUserRepository(db)
 	roleRepo := repository.NewRoleRepository(db)
 	permRepo := repository.NewPermissionRepository(db)

@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -10,70 +11,102 @@ import (
 
 var defaultLogger *Logger
 
-// SetDefault 设置业务层默认日志（在进程启动早期调用一次）。
+// SetDefault 进程启动时注入全局 Logger。
 func SetDefault(l *Logger) {
 	defaultLogger = l
 }
 
-// Default 返回进程级默认 Logger，未设置时为 nil。
+// Default 返回全局 Logger。
 func Default() *Logger {
 	return defaultLogger
 }
 
-// Biz 返回带组件名的业务日志器，复用 Info / Error 通道。
+// Biz 返回默认 Logger 上的业务组件（layer=service）。
 func Biz(component string) *Component {
-	return &Component{component: component, log: defaultLogger}
+	return &Component{component: component, layer: LayerService, log: defaultLogger}
 }
 
-// Component 业务组件日志，不重复实现 slog 配置。
+// W 从 context 提取 request_id、user 等字段（对齐 onex log.W）；需再 WithLayer / 配合 Biz 使用 component。
+func W(ctx context.Context) *Component {
+	return &Component{log: defaultLogger, ctx: ctx}
+}
+
+// Component 业务组件日志：自动写入 layer、component，并按级别分流到 info/error 文件。
+// 通过 W(ctx) 注入 request_id / user 等字段（对齐 onex log.W）。
 type Component struct {
 	component string
+	layer     string
 	log       *Logger
+	ctx       context.Context
+}
+
+// WithLayer 复制并指定分层（http/api/service/dao/grpc/worker）。
+func (b *Component) WithLayer(layer string) *Component {
+	if b == nil {
+		return nil
+	}
+	cp := *b
+	cp.layer = layer
+	return &cp
+}
+
+// W 复制组件并绑定 context，后续 Info/Warn/Error 自动带上提取字段。
+func (b *Component) W(ctx context.Context) *Component {
+	if b == nil {
+		return nil
+	}
+	cp := *b
+	cp.ctx = ctx
+	return &cp
 }
 
 func (b *Component) enabled() bool {
 	return b != nil && b.log != nil
 }
 
-func (b *Component) withComponent(attrs []any) []any {
-	out := make([]any, 0, len(attrs)+2)
-	out = append(out, "component", b.component)
+func (b *Component) baseAttrs(attrs []any) []any {
+	capHint := len(attrs) + 8
+	if b.ctx != nil {
+		capHint += len(contextExtractors) * 2
+	}
+	out := make([]any, 0, capHint)
+	if b.ctx != nil {
+		out = append(out, attrsFromContext(b.ctx)...)
+	}
+	if b.layer != "" {
+		out = append(out, "layer", b.layer)
+	}
+	if b.component != "" {
+		out = append(out, "component", b.component)
+	}
 	return append(out, attrs...)
 }
 
-// Info 记录 info 级业务事件。
+// Info 写入 info.log。
 func (b *Component) Info(msg string, attrs ...any) {
 	if !b.enabled() {
 		return
 	}
-	b.log.Info.Info(msg, b.withComponent(attrs)...)
+	b.log.Info.Info(msg, b.baseAttrs(attrs)...)
 }
 
-// Warn 记录 warn 级业务事件。
+// Warn 写入 info.log（与 Info 同文件）。
 func (b *Component) Warn(msg string, attrs ...any) {
 	if !b.enabled() {
 		return
 	}
-	b.log.Info.Warn(msg, b.withComponent(attrs)...)
+	b.log.Info.Warn(msg, b.baseAttrs(attrs)...)
 }
 
-// Debug 记录 debug 级业务事件。
-func (b *Component) Debug(msg string, attrs ...any) {
-	if !b.enabled() {
-		return
-	}
-	b.log.Info.Debug(msg, b.withComponent(attrs)...)
-}
-
-// Error 记录 error 级业务事件。
+// Error 写入 error.log。
 func (b *Component) Error(msg string, attrs ...any) {
 	if !b.enabled() {
 		return
 	}
-	b.log.Error.Error(msg, b.withComponent(attrs)...)
+	b.log.Error.Error(msg, b.baseAttrs(attrs)...)
 }
 
-// Op 记录操作失败；自动附加 error 与 operation。
+// Op 记录操作失败：5xx→Error 文件，4xx→Warn（info 文件），其它→Error。
 func (b *Component) Op(operation string, err error, attrs ...any) {
 	if err == nil {
 		return
@@ -87,17 +120,39 @@ func (b *Component) Op(operation string, err error, attrs ...any) {
 			return
 		}
 		if appErr.StatusCode >= http.StatusBadRequest {
-			b.Debug("operation rejected", attrs...)
+			b.Warn("operation rejected", attrs...)
 			return
 		}
 	}
 	b.Error("operation failed", attrs...)
 }
 
-// LogErr 在 default Logger 上记录组件操作失败（包级快捷函数）。
+// LogErr 包级快捷：组件操作失败。
 func LogErr(component, operation string, err error, attrs ...any) {
 	if err == nil {
 		return
 	}
 	Biz(component).Op(operation, err, attrs...)
 }
+
+// LogErrCtx 带 context 的 LogErr（自动附加 request_id / user）。
+func LogErrCtx(ctx context.Context, component, operation string, err error, attrs ...any) {
+	if err == nil {
+		return
+	}
+	Biz(component).W(ctx).Op(operation, err, attrs...)
+}
+
+// Infow / Warnw / Errorw 对齐 onex 结构化写法（keyvals 成对出现）。
+func (b *Component) Infow(msg string, keyvals ...any)  { b.Info(msg, keyvals...) }
+func (b *Component) Warnw(msg string, keyvals ...any)  { b.Warn(msg, keyvals...) }
+func (b *Component) Errorw(err error, msg string, keyvals ...any) {
+	if err != nil {
+		keyvals = append(keyvals, "error", err)
+	}
+	b.Error(msg, keyvals...)
+}
+
+func Infow(msg string, keyvals ...any)            { Biz("app").Infow(msg, keyvals...) }
+func Warnw(msg string, keyvals ...any)            { Biz("app").Warnw(msg, keyvals...) }
+func Errorw(err error, msg string, keyvals ...any) { Biz("app").Errorw(err, msg, keyvals...) }

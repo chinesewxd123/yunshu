@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -57,11 +57,11 @@ func (s *AlertService) tickCloudExpiryRules(ctx context.Context) error {
 func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force bool) error {
 	var rules []model.CloudExpiryRule
 	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&rules).Error; err != nil {
-		return svcerr.Pass("alert.cloud-expiry", "tickCloudExpiryRulesWithMode", err)
+		return svcerr.Pass(ctx, "alert.cloud-expiry", "tickCloudExpiryRulesWithMode", err)
 	}
 	if !force && s.aead == nil {
-		if s.infoLog != nil && len(rules) > 0 {
-			s.infoLog.Info("cloud_expiry_tick_skipped", slog.String("reason", "no_encryption_key"), slog.Int("enabled_rules", len(rules)))
+		if len(rules) > 0 {
+			s.bizLog.Info("cloud_expiry_tick_skipped", slog.String("reason", "no_encryption_key"), slog.Int("enabled_rules", len(rules)))
 		}
 		// 定时评估依赖解密云账号 AK/SK；未配置 encryption_key 时不跑规则，也不推进 last_eval，避免「看起来在调度、实际无拉云」。
 		return nil
@@ -91,8 +91,8 @@ func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force b
 				continue
 			}
 		}
-		if s.infoLog != nil && !force {
-			s.infoLog.Info("cloud_expiry_rule_scheduled_eval", slog.Uint64("rule_id", uint64(rule.ID)), slog.String("name", rule.Name), slog.String("cron", strings.TrimSpace(rule.EvalCronSpec)))
+		if !force {
+			s.bizLog.Info("cloud_expiry_rule_scheduled_eval", slog.Uint64("rule_id", uint64(rule.ID)), slog.String("name", rule.Name), slog.String("cron", strings.TrimSpace(rule.EvalCronSpec)))
 		}
 		s.evaluateOneCloudExpiryRule(ctx, rule, now, force)
 		if !force {
@@ -103,8 +103,8 @@ func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force b
 			}
 		}
 	}
-	if !force && s.infoLog != nil && skipNoCron > 0 {
-		s.infoLog.Info("cloud_expiry_tick_note", slog.Int("skipped_schedule_enabled_but_empty_cron", skipNoCron))
+	if !force && skipNoCron > 0 {
+		s.bizLog.Info("cloud_expiry_tick_note", slog.Int("skipped_schedule_enabled_but_empty_cron", skipNoCron))
 	}
 	return nil
 }
@@ -122,9 +122,7 @@ func (s *AlertService) evaluateOneCloudExpiryRule(ctx context.Context, rule *mod
 	if s.aead == nil {
 		return
 	}
-	if s.infoLog != nil {
-		s.infoLog.Info("cloud_expiry_rule_evaluate_begin", slog.Uint64("rule_id", uint64(rule.ID)), slog.String("name", rule.Name), slog.Bool("manual", manualEval))
-	}
+	s.bizLog.Info("cloud_expiry_rule_evaluate_begin", slog.Uint64("rule_id", uint64(rule.ID)), slog.String("name", rule.Name), slog.Bool("manual", manualEval))
 	instScanned := 0
 	providerFilter := strings.TrimSpace(rule.Provider)
 	regionFilter := parseRegionSet(rule.RegionScope)
@@ -214,9 +212,7 @@ func (s *AlertService) evaluateOneCloudExpiryRule(ctx context.Context, rule *mod
 			s.emitCloudExpiryAlert(ctx, fp, firing, labels, annotations, now, manualEval)
 		}
 	}
-	if s.infoLog != nil {
-		s.infoLog.Info("cloud_expiry_rule_evaluate_done", slog.Uint64("rule_id", uint64(rule.ID)), slog.Int("instances_expire_checked", instScanned))
-	}
+	s.bizLog.Info("cloud_expiry_rule_evaluate_done", slog.Uint64("rule_id", uint64(rule.ID)), slog.Int("instances_expire_checked", instScanned))
 }
 
 func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firing bool, labels, annotations map[string]string, now time.Time, manualEval bool) {
@@ -245,9 +241,7 @@ func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firi
 			CommonLabels: labels,
 			Alerts:       []AlertManagerAlert{am},
 		})
-		if s.infoLog != nil {
-			s.infoLog.Info("cloud_expiry_emit_firing", slog.String("fingerprint", fp), slog.String("alertname", labels["alertname"]))
-		}
+		s.bizLog.Info("cloud_expiry_emit_firing", slog.String("fingerprint", fp), slog.String("alertname", labels["alertname"]))
 		return
 	}
 	if !active {

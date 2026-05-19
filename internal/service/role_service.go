@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -41,7 +41,7 @@ func (s *RoleService) Create(ctx context.Context, req RoleCreateRequest) (*RoleI
 		Status:      status,
 	}
 	if err := s.roleRepo.Create(ctx, &role); err != nil {
-		return nil, svcerr.Pass("role", "Create", err)
+		return nil, svcerr.Pass(ctx, "role", "Create", err)
 	}
 	response := NewRoleItem(role)
 	return &response, nil
@@ -54,7 +54,7 @@ func (s *RoleService) Update(ctx context.Context, id uint, req RoleUpdateRequest
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrRoleNotFound
 		}
-		return nil, svcerr.Pass("role", "Update", err)
+		return nil, svcerr.Pass(ctx, "role", "Update", err)
 	}
 
 	oldCode := role.Code
@@ -72,10 +72,10 @@ func (s *RoleService) Update(ctx context.Context, id uint, req RoleUpdateRequest
 	}
 
 	if err = s.roleRepo.Save(ctx, role); err != nil {
-		return nil, svcerr.Pass("role", "Update", err)
+		return nil, svcerr.Pass(ctx, "role", "Update", err)
 	}
 	if err = ReplaceRoleCode(s.enforcer, oldCode, role.Code); err != nil {
-		return nil, svcerr.Pass("role", "Update", err)
+		return nil, svcerr.Pass(ctx, "role", "Update", err)
 	}
 	response := NewRoleItem(*role)
 	return &response, nil
@@ -88,11 +88,11 @@ func (s *RoleService) Delete(ctx context.Context, id uint) error {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrRoleNotFound
 		}
-		return svcerr.Pass("role", "Delete", err)
+		return svcerr.Pass(ctx, "role", "Delete", err)
 	}
 
 	if err = s.roleRepo.Delete(ctx, role); err != nil {
-		return svcerr.Pass("role", "Delete", err)
+		return svcerr.Pass(ctx, "role", "Delete", err)
 	}
 	return RemoveRolePolicies(s.enforcer, role.Code)
 }
@@ -104,7 +104,7 @@ func (s *RoleService) Detail(ctx context.Context, id uint) (*RoleItem, error) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrRoleNotFound
 		}
-		return nil, svcerr.Pass("role", "Detail", err)
+		return nil, svcerr.Pass(ctx, "role", "Detail", err)
 	}
 	response := NewRoleItem(*role)
 	return &response, nil
@@ -119,7 +119,7 @@ func (s *RoleService) List(ctx context.Context, query RoleListQuery) (*paginatio
 		PageSize: pageSize,
 	})
 	if err != nil {
-		return nil, svcerr.Pass("role", "List", err)
+		return nil, svcerr.Pass(ctx, "role", "List", err)
 	}
 
 	list := make([]RoleItem, 0, len(roles))

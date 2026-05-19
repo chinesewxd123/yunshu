@@ -82,7 +82,7 @@ func (h *PodHandler) ExecWS(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	sess := newWSSession(c.Request.Context(), nil)
+	sess := newWSSession(c.Request.Context(), httpLog("http.ws.pod_exec"))
 	defer sess.Cancel()
 	defer sess.Wait()
 
