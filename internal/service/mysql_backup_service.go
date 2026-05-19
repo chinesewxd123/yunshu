@@ -413,7 +413,7 @@ func (s *MysqlBackupService) finishBackupJob(ctx context.Context, jobID, project
 	case model.MysqlBackupModeRemoteCheck:
 		runErr = s.runRemoteCheckUpload(ctx, inst, job)
 	default:
-		runErr = s.runMysqldumpUpload(ctx, inst, pw, job, target)
+		runErr = s.runMysqldumpUpload(ctx, inst, pw, job, target, "")
 	}
 
 	fin := time.Now()
@@ -497,7 +497,7 @@ func validateMysqlBackupScope(scope, dbName, tableName, databaseNames string) er
 	return nil
 }
 
-func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model.MysqlBackupInstance, pw string, job *model.MysqlBackupJob, target mysqlbackup.DumpTarget) error {
+func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model.MysqlBackupInstance, pw string, job *model.MysqlBackupJob, target mysqlbackup.DumpTarget, logPrefix string) error {
 	sshCli, sv, err := s.dialServer(ctx, inst.ServerID)
 	if err != nil {
 		return err
@@ -518,25 +518,34 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 		return err
 	}
 
-	ts := time.Now().UTC().Format("20060102_150405")
-	remotePath := filepath.ToSlash(filepath.Join(workDir, fmt.Sprintf("yunshu_mysql_%d_%s.sql.gz", inst.ID, ts)))
+	startedAt := time.Now().UTC()
+	basename, err := s.backupArtifactBasename(ctx, inst, startedAt)
+	if err != nil {
+		return err
+	}
+	remotePath := filepath.ToSlash(filepath.Join(workDir, basename+".sql.gz"))
+	logPath := filepath.ToSlash(filepath.Join(workDir, basename+".log"))
 	job.RemotePath = remotePath
+	job.BackupMode = model.MysqlBackupModeMysqldump
 
 	dumpTarget := mysqlbackup.FormatDumpArgsShell(target, shellQuote)
-	label := target.ObjectLabel
-	if label == "" {
-		label = "dump"
-	}
 
-	logPath := filepath.ToSlash(filepath.Join(workDir, fmt.Sprintf("yunshu_mysql_%d_%s.log", inst.ID, ts)))
-	escapedPW := shellQuote(pw)
-	dumpCmd := fmt.Sprintf(
-		`set -euo pipefail; mkdir -p %s; LOG=%s; export MYSQL_PWD=%s; mysqldump -h%s -P%d -u%s %s %s 2>"$LOG" | gzip -c > %s; EC=$?; echo "=== mysqldump exit=$EC ==="; tail -n 120 "$LOG" 2>/dev/null || true; exit $EC`,
-		shellQuote(workDir), shellQuote(logPath), escapedPW, shellQuote(inst.MysqlHost), inst.MysqlPort, shellQuote(inst.MysqlUser), dumpFlags, dumpTarget, shellQuote(remotePath),
+	dumpCmd := mysqlbackup.BuildMysqldumpRemoteScript(mysqlbackup.MysqldumpRemoteScriptParams{
+		WorkDir: workDir, Basename: basename,
+		MySQLHost: inst.MysqlHost, MySQLPort: inst.MysqlPort, MySQLUser: inst.MysqlUser,
+		MySQLPass: shellQuote(pw), DumpFlags: dumpFlags, DumpTarget: dumpTarget, ShellQuote: shellQuote,
+	})
+	stopPoll := s.startPollBackupJobLog(ctx, job.ID, sshCli, logPath, logPrefix)
+	defer stopPoll()
+
+	s.logBackupPhase(job.ID, "mysqldump_start",
+		slog.String("work_dir", workDir),
+		slog.String("basename", basename),
+		slog.String("remote_sql_gz", remotePath),
+		slog.String("flags", dumpFlags),
 	)
-	s.logBackupPhase(job.ID, "mysqldump_start", slog.String("work_dir", workDir), slog.String("remote_sql_gz", remotePath), slog.String("flags", dumpFlags))
 	res, err := sshCli.Exec(ctx, dumpCmd, 65536)
-	job.LogExcerpt = mysqlbackup.TruncateLog(strings.TrimSpace(res.Stdout + res.Stderr))
+	job.LogExcerpt = mysqlbackup.TruncateLog(logPrefix + strings.TrimSpace(res.Stdout+res.Stderr))
 	if err != nil {
 		return err
 	}
@@ -567,14 +576,14 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 		return err
 	}
 
-	localPath := filepath.Join(os.TempDir(), fmt.Sprintf("mysql_bak_%d_%s.gz", inst.ID, ts))
+	localPath := filepath.Join(os.TempDir(), basename+".sql.gz")
 	defer os.Remove(localPath)
 	if err := sshCli.DownloadFile(waitCtx, remotePath, localPath); err != nil {
 		return err
 	}
 	s.logBackupPhase(job.ID, "local_dump_ready", slog.String("local_path", localPath))
 
-	objectKey := fmt.Sprintf("project_%d/instance_%d/%s_%s.sql.gz", inst.ProjectID, inst.ID, label, ts)
+	objectKey := fmt.Sprintf("project_%d/instance_%d/%s.sql.gz", inst.ProjectID, inst.ID, basename)
 	s.logBackupPhase(job.ID, "minio_upload_start", slog.String("object_key", objectKey))
 	size, err := minioCli.UploadFile(ctx, objectKey, localPath, "application/gzip")
 	if err != nil {
@@ -604,15 +613,15 @@ func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *mod
 			return fmt.Errorf("远端无可用 xtrabackup 产物且无法回退 mysqldump: %w", err)
 		}
 		target := mysqlbackup.BuildDumpTarget(inst)
-		prefix := "[未找到远端 xtrabackup 产物，自动改用 mysqldump 完成归档]\n"
-		if err := s.runMysqldumpUpload(ctx, inst, pw, job, target); err != nil {
-			return err
-		}
-		if !strings.HasPrefix(job.LogExcerpt, prefix) {
-			job.LogExcerpt = prefix + job.LogExcerpt
-		}
-		return nil
+		prefix := mysqlbackup.RemoteCheckFallbackLogPrefix(inst.RemoteDataDir, inst.RemoteLogDir, inst.MysqldumpWorkDir, artifact.Message)
+		_ = s.backupRepo.PatchJob(ctx, job.ID, map[string]any{
+			"backup_mode": model.MysqlBackupModeMysqldump,
+			"log_excerpt": mysqlbackup.TruncateLog(prefix),
+		})
+		return s.runMysqldumpUpload(ctx, inst, pw, job, target, prefix)
 	}
+
+	job.BackupMode = model.MysqlBackupExecXtrabackup
 
 	sshCli, _, err := s.dialServer(ctx, inst.ServerID)
 	if err != nil {
@@ -631,15 +640,18 @@ func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *mod
 	if err != nil {
 		return err
 	}
-	ts := time.Now().UTC().Format("20060102_150405")
-	localPath := filepath.Join(os.TempDir(), fmt.Sprintf("mysql_remote_%d_%s.tar.gz", inst.ID, ts))
+	basename, err := s.backupArtifactBasename(ctx, inst, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	localPath := filepath.Join(os.TempDir(), basename+".tar.gz")
 	defer os.Remove(localPath)
 	waitCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
 	if err := sshCli.DownloadFile(waitCtx, artifact.BackupFile, localPath); err != nil {
 		return err
 	}
-	objectKey := fmt.Sprintf("project_%d/instance_%d/remote_%s.tar.gz", inst.ProjectID, inst.ID, ts)
+	objectKey := fmt.Sprintf("project_%d/instance_%d/%s.tar.gz", inst.ProjectID, inst.ID, basename)
 	s.logBackupPhase(job.ID, "minio_upload_start", slog.String("endpoint", minioCli.Endpoint()), slog.String("object_key", objectKey))
 	size, err := minioCli.UploadFile(ctx, objectKey, localPath, "application/gzip")
 	if err != nil {
@@ -704,6 +716,38 @@ func (s *MysqlBackupService) PresignDownload(ctx context.Context, projectID, job
 		return "", err
 	}
 	return cli.PresignedGetURL(ctx, job.MinioObject, 15*time.Minute)
+}
+
+func (s *MysqlBackupService) backupArtifactBasename(ctx context.Context, inst *model.MysqlBackupInstance, at time.Time) (string, error) {
+	projectName := fmt.Sprintf("project_%d", inst.ProjectID)
+	if proj, err := s.projectRepo.GetByID(ctx, inst.ProjectID); err == nil && proj != nil {
+		if n := strings.TrimSpace(proj.Name); n != "" {
+			projectName = n
+		}
+	}
+	return mysqlbackup.BuildArtifactBasename(projectName, inst.MysqlHost, inst.MysqlPort, at), nil
+}
+
+func (s *MysqlBackupService) startPollBackupJobLog(ctx context.Context, jobID uint, sshCli *sshclient.Client, logPath, prefix string) context.CancelFunc {
+	pollCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pollCtx.Done():
+				return
+			case <-ticker.C:
+				tail, err := s.tailRemoteFile(pollCtx, sshCli, logPath, 100)
+				if err != nil {
+					continue
+				}
+				excerpt := mysqlbackup.TruncateLog(prefix + strings.TrimSpace(tail))
+				_ = s.backupRepo.PatchJob(pollCtx, jobID, map[string]any{"log_excerpt": excerpt})
+			}
+		}
+	}()
+	return cancel
 }
 
 func (s *MysqlBackupService) decryptInstancePassword(inst *model.MysqlBackupInstance) (string, error) {

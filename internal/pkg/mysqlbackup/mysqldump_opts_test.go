@@ -16,3 +16,14 @@ func TestFormatMysqldumpFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestMysqldumpOptionCatalogSize(t *testing.T) {
+	t.Parallel()
+	if len(MysqldumpOptionCatalog) < 40 {
+		t.Fatalf("expected expanded catalog, got %d options", len(MysqldumpOptionCatalog))
+	}
+	_, err := FormatMysqldumpFlags([]string{"add_drop_table", "default_charset_utf8mb4", "column_statistics_off"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+}

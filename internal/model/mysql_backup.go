@@ -11,6 +11,8 @@ import (
 const (
 	MysqlBackupModeMysqldump   = "mysqldump"
 	MysqlBackupModeRemoteCheck = "remote_check"
+	// 任务实际执行方式（写入 MysqlBackupJob.BackupMode）
+	MysqlBackupExecXtrabackup = "xtrabackup"
 )
 
 // MysqlBackupScope mysqldump 备份范围。

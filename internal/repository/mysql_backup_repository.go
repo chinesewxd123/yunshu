@@ -68,6 +68,13 @@ func (r *MysqlBackupRepository) UpdateJob(ctx context.Context, job *model.MysqlB
 	return r.db.WithContext(ctx).Save(job).Error
 }
 
+func (r *MysqlBackupRepository) PatchJob(ctx context.Context, jobID uint, fields map[string]any) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&model.MysqlBackupJob{}).Where("id = ?", jobID).Updates(fields).Error
+}
+
 func (r *MysqlBackupRepository) GetJob(ctx context.Context, id uint) (*model.MysqlBackupJob, error) {
 	var job model.MysqlBackupJob
 	err := r.db.WithContext(ctx).First(&job, id).Error

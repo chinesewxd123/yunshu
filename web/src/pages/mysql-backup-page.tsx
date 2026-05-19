@@ -30,7 +30,7 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   checkMysqlRemoteBackup,
@@ -50,6 +50,44 @@ import {
 } from "../services/mysql-backup";
 import { getProjectServers, getProjects, type ProjectItem, type ServerItem } from "../services/projects";
 import { formatDateTime } from "../utils/format";
+
+function MysqldumpOptionsField({ catalog }: { catalog: MysqldumpOptionItem[] }) {
+  const grouped = useMemo(() => {
+    const map = new Map<string, MysqldumpOptionItem[]>();
+    for (const o of catalog) {
+      const g = o.group || "其他";
+      const list = map.get(g) ?? [];
+      list.push(o);
+      map.set(g, list);
+    }
+    return [...map.entries()];
+  }, [catalog]);
+
+  return (
+    <Form.Item
+      name="mysqldump_options"
+      label="mysqldump 选项"
+      extra="互斥项请勿同时勾选（如 --single-transaction 与 --lock-all-tables）；条件导出请用下方「额外参数」填写 --where=..."
+    >
+      <Checkbox.Group style={{ width: "100%" }}>
+        {grouped.map(([group, items]) => (
+          <div key={group} style={{ marginBottom: 12 }}>
+            <Typography.Text type="secondary" style={{ display: "block", marginBottom: 6 }}>
+              {group}
+            </Typography.Text>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
+              {items.map((o) => (
+                <Checkbox key={o.id} value={o.id}>
+                  {o.label}
+                </Checkbox>
+              ))}
+            </div>
+          </div>
+        ))}
+      </Checkbox.Group>
+    </Form.Item>
+  );
+}
 
 export function MysqlBackupPage() {
   const [projects, setProjects] = useState<ProjectItem[]>([]);
@@ -161,7 +199,7 @@ export function MysqlBackupPage() {
       upload_to_minio: true,
       remote_data_dir: "/export/servers/data/mybackup/my3306/xtrabackup/data",
       remote_log_dir: "/export/servers/data/mybackup/my3306/xtrabackup/log",
-      mysqldump_work_dir: "/export/backup/yunshu",
+      mysqldump_work_dir: "/export/servers/data/mybackup/my3306/mysqldump",
       mysqldump_options: ["single_transaction", "quick", "routines", "triggers"],
       mysqldump_extra_args: "",
     });
@@ -326,6 +364,17 @@ export function MysqlBackupPage() {
       },
     },
     {
+      title: "实际方式",
+      dataIndex: "backup_mode",
+      width: 100,
+      render: (m?: string) => {
+        if (m === "xtrabackup") return <Tag color="purple">xtrabackup</Tag>;
+        if (m === "mysqldump") return <Tag color="blue">mysqldump</Tag>;
+        if (m === "remote_check") return <Tag>远端检查</Tag>;
+        return <Tag>{m || "-"}</Tag>;
+      },
+    },
+    {
       title: "状态",
       dataIndex: "status",
       width: 90,
@@ -402,8 +451,8 @@ export function MysqlBackupPage() {
             <Link to="/dict-entries?keyword=minio_">数据字典</Link> 维护 <Typography.Text code>minio_*</Typography.Text>、
             <Typography.Text code>mysql_backup_scheduler_*</Typography.Text> 等项。
             <strong>mysqldump</strong> 适合新接入库（平台经 SSH 直接备份）。
-            <strong>远端 xtrabackup</strong> 会扫描近 30 天最新有效 <Typography.Text code>full_*.tar.gz</Typography.Text>；
-            若服务器尚无 xtrabackup 产物，执行备份将<strong>自动改用 mysqldump</strong>。
+            <strong>远端 xtrabackup</strong> 模式<strong>不会执行</strong> xtrabackup，仅扫描远端已有{" "}
+            <Typography.Text code>full_*.tar.gz</Typography.Text> 并上传；若无有效产物将<strong>自动回退 mysqldump</strong>（写入「回退落盘目录」）。
             是否上传 MinIO 由实例开关控制；上传后<strong>不删除</strong> SSH 服务器上的备份文件。mysqldump 与 xtrabackup 落盘目录须分开配置。
           </span>
         }
@@ -553,19 +602,18 @@ export function MysqlBackupPage() {
                     <Form.Item
                       name="mysqldump_work_dir"
                       label="远端落盘目录"
-                      extra="仅存放平台 mysqldump 产物（yunshu_mysql_*），勿与 xtrabackup 目录相同"
+                      extra="文件命名：项目名_IP_端口_年月日_时分秒.sql.gz，勿与 xtrabackup 目录相同"
                       rules={[{ required: true }, { pattern: /^\//, message: "须以 / 开头的绝对路径" }]}
                     >
                       <Input placeholder="/export/backup/yunshu" />
                     </Form.Item>
-                    <Form.Item name="mysqldump_options" label="mysqldump 选项">
-                      <Checkbox.Group
-                        options={mysqldumpOptions.map((o) => ({ label: o.label, value: o.id }))}
-                        style={{ display: "flex", flexDirection: "column", gap: 6 }}
-                      />
-                    </Form.Item>
-                    <Form.Item name="mysqldump_extra_args" label="额外参数" extra="空格分隔，每项须以 - 开头">
-                      <Input placeholder="--max-allowed-packet=512M" />
+                    <MysqldumpOptionsField catalog={mysqldumpOptions} />
+                    <Form.Item
+                      name="mysqldump_extra_args"
+                      label="额外参数"
+                      extra="空格分隔，如 --where=id>1000 --max-allowed-packet=1G（须以 - 开头）"
+                    >
+                      <Input.TextArea rows={2} placeholder="--where=status=1" />
                     </Form.Item>
                   </>
                 );
@@ -598,10 +646,14 @@ export function MysqlBackupPage() {
                     <Form.Item
                       name="mysqldump_work_dir"
                       label="回退落盘目录"
-                      extra="无 xtrabackup 产物时自动 mysqldump 使用，须与上方数据/日志目录隔离"
+                      extra="无 xtrabackup 产物时自动 mysqldump 到此目录（非 /export/servers 数据目录）；命名规则同上"
                       rules={[{ required: true }, { pattern: /^\//, message: "须以 / 开头的绝对路径" }]}
                     >
                       <Input placeholder="/export/backup/yunshu" />
+                    </Form.Item>
+                    <MysqldumpOptionsField catalog={mysqldumpOptions} />
+                    <Form.Item name="mysqldump_extra_args" label="回退 mysqldump 额外参数" extra="空格分隔，须以 - 开头">
+                      <Input.TextArea rows={2} placeholder="--where=1=1" />
                     </Form.Item>
                   </>
                 );

@@ -53,7 +53,7 @@ export type MysqlBackupInstancePayload = {
   cron_spec?: string;
 };
 
-export type MysqldumpOptionItem = { id: string; label: string; flag: string };
+export type MysqldumpOptionItem = { id: string; label: string; flag: string; group?: string };
 
 export function listMysqldumpOptions(projectId: number) {
   return getData<MysqldumpOptionItem[]>(http.get(`/projects/${projectId}/mysql-backup/mysqldump-options`));
