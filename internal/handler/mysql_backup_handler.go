@@ -19,6 +19,10 @@ func NewMysqlBackupHandler(svc *service.MysqlBackupService) *MysqlBackupHandler 
 	return &MysqlBackupHandler{svc: svc}
 }
 
+func (h *MysqlBackupHandler) ListMysqldumpOptions(c *gin.Context) {
+	response.Success(c, h.svc.ListMysqldumpOptions())
+}
+
 func (h *MysqlBackupHandler) ListInstances(c *gin.Context) {
 	projectID, err := parseUintParam(c, "id")
 	if err != nil {

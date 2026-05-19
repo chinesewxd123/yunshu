@@ -19,6 +19,9 @@ export interface MysqlBackupInstance {
   database_names?: string;
   remote_data_dir?: string;
   remote_log_dir?: string;
+  mysqldump_work_dir?: string;
+  mysqldump_options?: string[];
+  mysqldump_extra_args?: string;
   schedule_enabled?: boolean;
   cron_spec?: string;
   last_scheduled_at?: string;
@@ -41,9 +44,18 @@ export type MysqlBackupInstancePayload = {
   database_names?: string;
   remote_data_dir?: string;
   remote_log_dir?: string;
+  mysqldump_work_dir?: string;
+  mysqldump_options?: string[];
+  mysqldump_extra_args?: string;
   schedule_enabled?: boolean;
   cron_spec?: string;
 };
+
+export type MysqldumpOptionItem = { id: string; label: string; flag: string };
+
+export function listMysqldumpOptions(projectId: number) {
+  return getData<MysqldumpOptionItem[]>(http.get(`/projects/${projectId}/mysql-backup/mysqldump-options`));
+}
 
 export interface MysqlBackupJob {
   id: number;
@@ -100,7 +112,9 @@ export function runMysqlBackup(projectId: number, instanceId: number) {
 }
 
 export function listMysqlBackupJobs(projectId: number, params?: { instance_id?: number; page?: number; page_size?: number }) {
-  return getData<{ list: MysqlBackupJob[]; total: number }>(http.get(`/projects/${projectId}/mysql-backup/jobs`, { params }));
+  return getData<{ list: MysqlBackupJob[]; total: number; page: number; page_size: number }>(
+    http.get(`/projects/${projectId}/mysql-backup/jobs`, { params }),
+  );
 }
 
 export function presignMysqlBackupJob(projectId: number, jobId: number) {

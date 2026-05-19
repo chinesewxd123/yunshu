@@ -50,6 +50,12 @@ type MysqlBackupInstance struct {
 
 	RemoteDataDir string `json:"remote_data_dir" gorm:"size:512"`
 	RemoteLogDir  string `json:"remote_log_dir" gorm:"size:512"`
+	// MysqldumpWorkDir 远端 mysqldump 落盘目录（绝对路径，非 /tmp）
+	MysqldumpWorkDir string `json:"mysqldump_work_dir" gorm:"size:512"`
+	// MysqldumpOptions JSON 字符串数组，选项 id 见 mysqlbackup.MysqldumpOptionCatalog
+	MysqldumpOptions string `json:"mysqldump_options" gorm:"type:text"`
+	// MysqldumpExtraArgs 额外 mysqldump 参数（空格分隔，须以 - 开头）
+	MysqldumpExtraArgs string `json:"mysqldump_extra_args" gorm:"size:512"`
 
 	ScheduleEnabled bool       `json:"schedule_enabled" gorm:"not null;default:false;index"`
 	CronSpec        string     `json:"cron_spec" gorm:"size:256;not null;default:''"`

@@ -17,9 +17,10 @@ import (
 )
 
 type Client struct {
-	cli    *minio.Client
-	bucket string
-	prefix string
+	cli      *minio.Client
+	bucket   string
+	prefix   string
+	endpoint string
 }
 
 func NewFromDB(ctx context.Context, db *gorm.DB) (*Client, error) {
@@ -31,7 +32,7 @@ func NewFromConfig(cfg dictconfig.MinioConfig) (*Client, error) {
 	if !cfg.Ready() {
 		return nil, fmt.Errorf("minio config incomplete: configure minio_* in data dictionary")
 	}
-	endpoint := strings.TrimPrefix(strings.TrimPrefix(cfg.Endpoint, "https://"), "http://")
+	endpoint := dictconfig.NormalizeMinioEndpoint(cfg.Endpoint)
 	cli, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: cfg.UseSSL,
@@ -40,7 +41,26 @@ func NewFromConfig(cfg dictconfig.MinioConfig) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{cli: cli, bucket: cfg.Bucket, prefix: cfg.Prefix}, nil
+	return &Client{cli: cli, bucket: cfg.Bucket, prefix: cfg.Prefix, endpoint: endpoint}, nil
+}
+
+// Endpoint 返回 S3 API 地址（host:port，无 scheme）。
+func (c *Client) Endpoint() string {
+	if c == nil {
+		return ""
+	}
+	return c.endpoint
+}
+
+func wrapMinioError(err error, endpoint, bucket, objectKey string) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "API Requests must be made to API port") {
+		return fmt.Errorf("%w（minio_endpoint 须为 S3 API 端口，通常为 9000；9001 为 Web 控制台。当前 endpoint=%s bucket=%s object=%s）", err, endpoint, bucket, objectKey)
+	}
+	return fmt.Errorf("minio upload failed (endpoint=%s bucket=%s object=%s): %w", endpoint, bucket, objectKey, err)
 }
 
 func (c *Client) UploadFile(ctx context.Context, objectKey, localPath, contentType string) (int64, error) {
@@ -62,7 +82,7 @@ func (c *Client) UploadFile(ctx context.Context, objectKey, localPath, contentTy
 	}
 	_, err = c.cli.PutObject(ctx, c.bucket, key, f, st.Size(), minio.PutObjectOptions{ContentType: contentType})
 	if err != nil {
-		return 0, err
+		return 0, wrapMinioError(err, c.endpoint, c.bucket, key)
 	}
 	return st.Size(), nil
 }

@@ -55,7 +55,7 @@ func ResolveMinioConfig(ctx context.Context, db *gorm.DB, types MinioDictTypes) 
 		return cfg
 	}
 	if v, ok := fetchEnabledDictValueNonEmpty(ctx, db, types.Endpoint); ok {
-		cfg.Endpoint = v
+		cfg.Endpoint = NormalizeMinioEndpoint(v)
 	}
 	if v, ok := fetchEnabledDictValueNonEmpty(ctx, db, types.AccessKey); ok {
 		cfg.AccessKey = v
@@ -80,4 +80,14 @@ func ResolveMinioConfig(ctx context.Context, db *gorm.DB, types MinioDictTypes) 
 		cfg.Prefix = "mysql-backups/"
 	}
 	return cfg
+}
+
+// NormalizeMinioEndpoint 纠正常见误配：MinIO 控制台为 9001，S3 API 为 9000。
+func NormalizeMinioEndpoint(endpoint string) string {
+	ep := strings.TrimSpace(endpoint)
+	ep = strings.TrimPrefix(strings.TrimPrefix(ep, "https://"), "http://")
+	if strings.HasSuffix(ep, ":9001") {
+		return strings.TrimSuffix(ep, ":9001") + ":9000"
+	}
+	return ep
 }

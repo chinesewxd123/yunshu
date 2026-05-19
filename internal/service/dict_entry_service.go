@@ -123,7 +123,7 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			{DictType: "k8s_event_forward_worker_batch_size", Label: "批大小", Value: "50", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_batch_size"},
 			{DictType: "k8s_event_forward_worker_max_retries", Label: "最大重试", Value: "3", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_max_retries"},
 			// MinIO（MySQL 备份归档，字典权威来源）
-			{DictType: "minio_endpoint", Label: "MinIO Endpoint", Value: "127.0.0.1:9000", Sort: intRef(1), Status: 0, Remark: "如 127.0.0.1:9000 或 minio.example.com:9000"},
+			{DictType: "minio_endpoint", Label: "MinIO Endpoint", Value: "127.0.0.1:9000", Sort: intRef(1), Status: 0, Remark: "S3 API 端口，填 9000（勿填 9001 控制台端口）；如 127.0.0.1:9000"},
 			{DictType: "minio_access_key", Label: "MinIO AccessKey", Value: "", Sort: intRef(1), Status: 0, Remark: "MinIO 访问密钥"},
 			{DictType: "minio_secret_key", Label: "MinIO SecretKey", Value: "", Sort: intRef(1), Status: 0, Remark: "MinIO 秘密密钥"},
 			{DictType: "minio_bucket", Label: "MinIO Bucket", Value: "yunshu-mysql-backup", Sort: intRef(1), Status: 0, Remark: "备份归档桶名"},

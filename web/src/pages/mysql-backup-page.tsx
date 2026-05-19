@@ -12,6 +12,8 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
+  Divider,
   Drawer,
   Form,
   Input,
@@ -36,7 +38,9 @@ import {
   deleteMysqlBackupInstance,
   listMysqlBackupInstances,
   listMysqlBackupJobs,
+  listMysqldumpOptions,
   pingMysqlBackupInstance,
+  type MysqldumpOptionItem,
   presignMysqlBackupJob,
   runMysqlBackup,
   updateMysqlBackupInstance,
@@ -53,7 +57,11 @@ export function MysqlBackupPage() {
   const [servers, setServers] = useState<ServerItem[]>([]);
   const [instances, setInstances] = useState<MysqlBackupInstance[]>([]);
   const [jobs, setJobs] = useState<MysqlBackupJob[]>([]);
+  const [jobsTotal, setJobsTotal] = useState(0);
+  const [jobQuery, setJobQuery] = useState({ page: 1, page_size: 10 });
+  const [mysqldumpOptions, setMysqldumpOptions] = useState<MysqldumpOptionItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [jobsLoading, setJobsLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logJob, setLogJob] = useState<MysqlBackupJob | null>(null);
   const [editing, setEditing] = useState<MysqlBackupInstance | null>(null);
@@ -69,16 +77,12 @@ export function MysqlBackupPage() {
     setServers(res.list || []);
   }, [projectId]);
 
-  const load = useCallback(async () => {
+  const loadInstances = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
     try {
-      const [instRes, jobRes] = await Promise.all([
-        listMysqlBackupInstances(projectId, { page: 1, page_size: 100 }),
-        listMysqlBackupJobs(projectId, { page: 1, page_size: 50 }),
-      ]);
+      const instRes = await listMysqlBackupInstances(projectId, { page: 1, page_size: 100 });
       setInstances(instRes.list || []);
-      setJobs(jobRes.list || []);
     } catch (e) {
       message.error(String(e));
     } finally {
@@ -86,20 +90,49 @@ export function MysqlBackupPage() {
     }
   }, [projectId]);
 
+  const loadJobs = useCallback(async () => {
+    if (!projectId) return;
+    setJobsLoading(true);
+    try {
+      const jobRes = await listMysqlBackupJobs(projectId, jobQuery);
+      setJobs(jobRes.list || []);
+      setJobsTotal(jobRes.total ?? 0);
+    } catch (e) {
+      message.error(String(e));
+    } finally {
+      setJobsLoading(false);
+    }
+  }, [projectId, jobQuery]);
+
+  const load = useCallback(async () => {
+    await Promise.all([loadInstances(), loadJobs()]);
+  }, [loadInstances, loadJobs]);
+
   useEffect(() => {
     void loadServers();
-    void load();
-  }, [loadServers, load]);
+  }, [loadServers]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    void loadInstances();
+    void listMysqldumpOptions(projectId).then(setMysqldumpOptions).catch(() => setMysqldumpOptions([]));
+    setJobQuery((q) => ({ ...q, page: 1 }));
+  }, [projectId, loadInstances]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    void loadJobs();
+  }, [projectId, loadJobs]);
 
   const hasRunningJob = jobs.some((j) => j.status === "running");
 
   useEffect(() => {
     if (!projectId || !hasRunningJob) return;
     const timer = window.setInterval(() => {
-      void load();
+      void loadJobs();
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [projectId, hasRunningJob, load]);
+  }, [projectId, hasRunningJob, loadJobs]);
 
   useEffect(() => {
     if (!logJob) return;
@@ -127,6 +160,9 @@ export function MysqlBackupPage() {
       database_names: "",
       remote_data_dir: "/export/servers/data/mybackup/my3306/xtrabackup/data",
       remote_log_dir: "/export/servers/data/mybackup/my3306/xtrabackup/log",
+      mysqldump_work_dir: "/export/backup/yunshu",
+      mysqldump_options: ["single_transaction", "quick", "routines", "triggers"],
+      mysqldump_extra_args: "",
     });
     setDrawerOpen(true);
   };
@@ -149,6 +185,11 @@ export function MysqlBackupPage() {
       database_names: row.database_names,
       remote_data_dir: row.remote_data_dir,
       remote_log_dir: row.remote_log_dir,
+      mysqldump_work_dir: row.mysqldump_work_dir || "/export/backup/yunshu",
+      mysqldump_options: row.mysqldump_options?.length
+        ? row.mysqldump_options
+        : ["single_transaction", "quick", "routines", "triggers"],
+      mysqldump_extra_args: row.mysqldump_extra_args || "",
     });
     setDrawerOpen(true);
   };
@@ -248,7 +289,7 @@ export function MysqlBackupPage() {
               void runMysqlBackup(projectId!, row.id)
                 .then((job) => {
                   message.success(`备份任务 #${job.id} 已提交，请在「备份记录」查看进度`);
-                  void load();
+                  void loadJobs();
                 })
                 .catch((e) => message.error(String(e)))
             }
@@ -374,7 +415,25 @@ export function MysqlBackupPage() {
           {
             key: "jobs",
             label: "备份记录",
-            children: <Table rowKey="id" loading={loading} columns={jobColumns} dataSource={jobs} scroll={{ x: 900 }} pagination={false} />,
+            children: (
+              <Table
+                rowKey="id"
+                loading={jobsLoading}
+                columns={jobColumns}
+                dataSource={jobs}
+                scroll={{ x: 900 }}
+                pagination={{
+                  current: jobQuery.page,
+                  pageSize: jobQuery.page_size,
+                  total: jobsTotal,
+                  showSizeChanger: true,
+                  pageSizeOptions: [10, 20, 50, 100],
+                  showQuickJumper: true,
+                  showTotal: (t, range) => `${range[0]}-${range[1]} / 共 ${t} 条`,
+                  onChange: (page, pageSize) => setJobQuery({ page, page_size: pageSize }),
+                }}
+              />
+            ),
           },
         ]}
       />
@@ -470,6 +529,26 @@ export function MysqlBackupPage() {
                 </Form.Item>
               ) : null
             }
+          </Form.Item>
+          <Divider orientation="left" plain>
+            mysqldump 参数
+          </Divider>
+          <Form.Item
+            name="mysqldump_work_dir"
+            label="远端落盘目录"
+            extra="SSH 服务器上的绝对路径，备份 sql.gz 与日志写在此目录（勿用 /tmp）"
+            rules={[{ required: true }, { pattern: /^\//, message: "须以 / 开头的绝对路径" }]}
+          >
+            <Input placeholder="/export/backup/yunshu" />
+          </Form.Item>
+          <Form.Item name="mysqldump_options" label="mysqldump 选项">
+            <Checkbox.Group
+              options={mysqldumpOptions.map((o) => ({ label: o.label, value: o.id }))}
+              style={{ display: "flex", flexDirection: "column", gap: 6 }}
+            />
+          </Form.Item>
+          <Form.Item name="mysqldump_extra_args" label="额外参数" extra="空格分隔，每项须以 - 开头，如 --max-allowed-packet=512M">
+            <Input placeholder="--max-allowed-packet=512M" />
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(p, c) => p.backup_mode !== c.backup_mode}>
             {({ getFieldValue }) =>

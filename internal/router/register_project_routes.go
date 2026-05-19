@@ -58,6 +58,7 @@ func registerProjectRoutes(api *gin.RouterGroup, d *routeDeps) {
 	projectScoped.GET("/log-units", d.projectHandler.ListLogUnits)
 
 	mysqlBackup := projectScoped.Group("/mysql-backup")
+	mysqlBackup.GET("/mysqldump-options", d.mysqlBackupHandler.ListMysqldumpOptions)
 	mysqlBackup.GET("/instances", d.mysqlBackupHandler.ListInstances)
 	mysqlBackup.POST("/instances", d.mysqlBackupHandler.CreateInstance)
 	mysqlBackup.PUT("/instances/:instanceId", d.mysqlBackupHandler.UpdateInstance)
