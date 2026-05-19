@@ -1,17 +1,21 @@
 package mysqlbackup
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
-// XtrabackupRemoteScriptParams 远端 xtrabackup 热备脚本（须已安装 xtrabackup 2.4+ 或 innobackupex）。
+// XtrabackupRemoteScriptParams 远端 xtrabackup 热备脚本（须在能访问 MySQL datadir 的机器上执行）。
 type XtrabackupRemoteScriptParams struct {
-	DataDir   string
-	LogDir    string
-	Basename  string
-	MySQLHost string
-	MySQLPort int
-	MySQLUser string
-	MySQLPass string // 已 shell 转义
-	Parallel  int
+	DataDir    string // 备份产物 .tar.gz 输出目录
+	LogDir     string
+	Basename   string
+	MySQLHost  string
+	MySQLPort  int
+	MySQLUser  string
+	MySQLPass  string // 已 shell 转义
+	MySQLDir   string // 可选：MySQL datadir，留空则 SELECT @@datadir
+	Parallel   int
 	ShellQuote func(string) string
 }
 
@@ -21,8 +25,12 @@ func BuildXtrabackupRemoteScript(p XtrabackupRemoteScriptParams) string {
 	if p.Parallel <= 0 {
 		p.Parallel = 4
 	}
-	dataDir := q(p.DataDir)
+	outDir := q(p.DataDir)
 	logDir := q(p.LogDir)
+	mysqlDirOverride := `""`
+	if d := strings.TrimSpace(p.MySQLDir); d != "" {
+		mysqlDirOverride = q(d)
+	}
 	tmpDir := q(p.DataDir + "/." + p.Basename + ".tmp")
 	archive := q(p.DataDir + "/" + p.Basename + ".tar.gz")
 	logPath := q(p.LogDir + "/" + p.Basename + ".log")
@@ -36,11 +44,34 @@ export MYSQL_PWD=%s
 LOG=%s
 ARCHIVE=%s
 TMP=%s
+MYSQL_DIR_OVERRIDE=%s
 exec > >(tee -a "$LOG") 2>&1
 echo "[$(date '+%%F %%T')] xtrabackup start host=%s port=%d user=%s basename=%s"
+if [ -n "$MYSQL_DIR_OVERRIDE" ]; then
+  MYSQL_DATADIR="$MYSQL_DIR_OVERRIDE"
+else
+  MYSQL_DATADIR=$(mysql --no-defaults -h%s -P%d -u%s -Nse "SELECT @@datadir" 2>/dev/null | tr -d '\r\n')
+fi
+MYSQL_DATADIR="${MYSQL_DATADIR%%/}"
+if [ -z "$MYSQL_DATADIR" ] || [ ! -d "$MYSQL_DATADIR" ]; then
+  echo "ERROR: MySQL datadir 无效或不可访问: ${MYSQL_DATADIR:-<empty>}"
+  echo "提示: xtrabackup 须在 datadir 所在主机执行；Docker 请在实例中填写宿主机 datadir"
+  exit 1
+fi
+echo "[$(date '+%%F %%T')] using datadir=$MYSQL_DATADIR"
 rm -rf "$TMP"
-"$XB" --backup --host=%s --port=%d --user=%s --target-dir="$TMP" --parallel=%d
-"$XB" --prepare --target-dir="$TMP"
+if [ "$XB" = "xtrabackup" ]; then
+  "$XB" --no-defaults --backup \
+    --datadir="$MYSQL_DATADIR" \
+    --host=%s --port=%d --user=%s --password=%s \
+    --target-dir="$TMP" --parallel=%d
+  "$XB" --prepare --target-dir="$TMP"
+else
+  "$XB" --no-defaults --datadir="$MYSQL_DATADIR" \
+    --host=%s --port=%d --user=%s --password=%s \
+    --parallel=%d "$TMP"
+  "$XB" --prepare --target-dir="$TMP"
+fi
 if command -v pigz >/dev/null 2>&1; then
   tar -I "pigz -1" -cf "$ARCHIVE" -C "$TMP" .
 else
@@ -52,8 +83,10 @@ echo "[$(date '+%%F %%T')] archive $ARCHIVE size=$SZ bytes"
 echo "completed OK!"
 tail -n 80 "$LOG" 2>/dev/null || true
 `,
-		dataDir, logDir, p.MySQLPass, logPath, archive, tmpDir,
+		outDir, logDir, p.MySQLPass, logPath, archive, tmpDir, mysqlDirOverride,
 		p.MySQLHost, p.MySQLPort, p.MySQLUser, p.Basename,
-		q(p.MySQLHost), p.MySQLPort, q(p.MySQLUser), p.Parallel,
+		q(p.MySQLHost), p.MySQLPort, q(p.MySQLUser),
+		q(p.MySQLHost), p.MySQLPort, q(p.MySQLUser), p.MySQLPass, p.Parallel,
+		q(p.MySQLHost), p.MySQLPort, q(p.MySQLUser), p.MySQLPass, p.Parallel,
 	)
 }

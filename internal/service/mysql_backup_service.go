@@ -82,6 +82,7 @@ type MysqlBackupInstanceItem struct {
 	DatabaseNames string `json:"database_names"`
 	RemoteDataDir      string   `json:"remote_data_dir"`
 	RemoteLogDir       string   `json:"remote_log_dir"`
+	MysqlDataDir       string   `json:"mysql_datadir"`
 	UploadToMinio      bool     `json:"upload_to_minio"`
 	MysqldumpWorkDir   string   `json:"mysqldump_work_dir"`
 	MysqldumpOptions   []string `json:"mysqldump_options"`
@@ -109,6 +110,7 @@ type MysqlBackupInstanceUpsertRequest struct {
 	DatabaseNames string `json:"database_names"`
 	RemoteDataDir      string   `json:"remote_data_dir"`
 	RemoteLogDir       string   `json:"remote_log_dir"`
+	MysqlDataDir       string   `json:"mysql_datadir"`
 	UploadToMinio      *bool    `json:"upload_to_minio"`
 	MysqldumpWorkDir   string   `json:"mysqldump_work_dir"`
 	MysqldumpOptions   []string `json:"mysqldump_options"`
@@ -208,10 +210,14 @@ func (s *MysqlBackupService) UpsertInstance(ctx context.Context, id uint, req My
 		if strings.TrimSpace(req.RemoteDataDir) == "" || strings.TrimSpace(req.RemoteLogDir) == "" {
 			return nil, constants.ErrBadRequestWithMsg("xtrabackup 模式须填写 remote_data_dir 与 remote_log_dir")
 		}
+		if strings.TrimSpace(req.MysqlDataDir) == "" {
+			return nil, constants.ErrBadRequestWithMsg("xtrabackup 模式须填写 mysql_datadir（宿主机 MySQL 数据目录，Docker 常为 /export/mysql_data）")
+		}
 	}
 	inst.DatabaseNames = strings.TrimSpace(req.DatabaseNames)
 	inst.RemoteDataDir = strings.TrimSpace(req.RemoteDataDir)
 	inst.RemoteLogDir = strings.TrimSpace(req.RemoteLogDir)
+	inst.MysqlDataDir = strings.TrimSpace(req.MysqlDataDir)
 	if req.UploadToMinio != nil {
 		inst.UploadToMinio = *req.UploadToMinio
 	} else if id == 0 {
@@ -638,7 +644,7 @@ func (s *MysqlBackupService) runXtrabackupUpload(ctx context.Context, inst *mode
 	script := mysqlbackup.BuildXtrabackupRemoteScript(mysqlbackup.XtrabackupRemoteScriptParams{
 		DataDir: dataDir, LogDir: logDir, Basename: basename,
 		MySQLHost: inst.MysqlHost, MySQLPort: inst.MysqlPort, MySQLUser: inst.MysqlUser,
-		MySQLPass: shellQuote(pw), Parallel: 4, ShellQuote: shellQuote,
+		MySQLPass: shellQuote(pw), MySQLDir: inst.MysqlDataDir, Parallel: 4, ShellQuote: shellQuote,
 	})
 	stopPoll := s.startPollBackupJobLog(ctx, job.ID, sshCli, logPath, "")
 	defer stopPoll()
@@ -871,6 +877,7 @@ func (s *MysqlBackupService) toInstanceItem(ctx context.Context, inst model.Mysq
 		MysqlUser: inst.MysqlUser, BackupMode: inst.BackupMode,
 		BackupScope: inst.BackupScope, DatabaseName: inst.DatabaseName, TableName: inst.BackupTable,
 		DatabaseNames: inst.DatabaseNames, RemoteDataDir: inst.RemoteDataDir, RemoteLogDir: inst.RemoteLogDir,
+		MysqlDataDir: inst.MysqlDataDir,
 		UploadToMinio: inst.UploadToMinio, MysqldumpWorkDir: inst.MysqldumpWorkDir, MysqldumpExtraArgs: inst.MysqldumpExtraArgs,
 		ScheduleEnabled: inst.ScheduleEnabled, CronSpec: inst.CronSpec,
 	}

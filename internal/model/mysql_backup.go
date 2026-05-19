@@ -52,6 +52,8 @@ type MysqlBackupInstance struct {
 
 	RemoteDataDir string `json:"remote_data_dir" gorm:"size:512"`
 	RemoteLogDir  string `json:"remote_log_dir" gorm:"size:512"`
+	// MysqlDataDir 宿主机上 MySQL 真实 datadir（Docker 部署时填挂载目录，如 /export/mysql_data，非容器内 /var/lib/mysql）
+	MysqlDataDir string `json:"mysql_datadir" gorm:"size:512"`
 	// UploadToMinio 为 true 时将备份产物上传 MinIO；为 false 时仅执行备份/检查并保留远端文件。
 	UploadToMinio bool `json:"upload_to_minio" gorm:"not null;default:true"`
 	// MysqldumpWorkDir 远端 mysqldump 落盘目录（绝对路径，非 /tmp）

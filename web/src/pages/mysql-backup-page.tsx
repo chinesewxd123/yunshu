@@ -201,6 +201,7 @@ export function MysqlBackupPage() {
       table_name: "",
       database_names: "",
       upload_to_minio: true,
+      mysql_datadir: "/export/mysql_data",
       remote_data_dir: "/export/servers/data/mybackup/my3306/xtrabackup/data",
       remote_log_dir: "/export/servers/data/mybackup/my3306/xtrabackup/log",
       mysqldump_work_dir: "/export/servers/data/mybackup/my3306/mysqldump",
@@ -227,6 +228,7 @@ export function MysqlBackupPage() {
       table_name: row.table_name,
       database_names: row.database_names,
       upload_to_minio: row.upload_to_minio !== false,
+      mysql_datadir: row.mysql_datadir || "/export/mysql_data",
       remote_data_dir: row.remote_data_dir,
       remote_log_dir: row.remote_log_dir,
       mysqldump_work_dir: row.mysqldump_work_dir || "/export/backup/yunshu",
@@ -628,10 +630,18 @@ export function MysqlBackupPage() {
                       xtrabackup
                     </Divider>
                     <Form.Item
-                      name="remote_data_dir"
-                      label="远端数据目录"
+                      name="mysql_datadir"
+                      label="MySQL 数据目录（datadir）"
                       rules={[{ required: true }, { pattern: /^\//, message: "须为绝对路径" }]}
-                      extra="执行 xtrabackup 后生成 项目名_IP_端口_时间.tar.gz"
+                      extra="宿主机真实路径；Docker 映射目录如 /export/mysql_data（不是容器内 /var/lib/mysql）"
+                    >
+                      <Input placeholder="/export/mysql_data" />
+                    </Form.Item>
+                    <Form.Item
+                      name="remote_data_dir"
+                      label="备份产物目录"
+                      rules={[{ required: true }, { pattern: /^\//, message: "须为绝对路径" }]}
+                      extra="xtrabackup 打包后的 项目名_IP_端口_时间.tar.gz 写在此目录"
                     >
                       <Input />
                     </Form.Item>

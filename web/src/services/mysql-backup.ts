@@ -19,6 +19,7 @@ export interface MysqlBackupInstance {
   database_names?: string;
   remote_data_dir?: string;
   remote_log_dir?: string;
+  mysql_datadir?: string;
   upload_to_minio?: boolean;
   mysqldump_work_dir?: string;
   mysqldump_options?: string[];
@@ -45,6 +46,7 @@ export type MysqlBackupInstancePayload = {
   database_names?: string;
   remote_data_dir?: string;
   remote_log_dir?: string;
+  mysql_datadir?: string;
   upload_to_minio?: boolean;
   mysqldump_work_dir?: string;
   mysqldump_options?: string[];
