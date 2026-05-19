@@ -153,8 +153,11 @@ func (s *MysqlBackupService) UpsertInstance(ctx context.Context, id uint, req My
 	if mode == "" {
 		mode = model.MysqlBackupModeMysqldump
 	}
-	if mode != model.MysqlBackupModeMysqldump && mode != model.MysqlBackupModeRemoteCheck {
-		return nil, constants.ErrBadRequestWithMsg("backup_mode 须为 mysqldump 或 remote_check")
+	if mode != model.MysqlBackupModeMysqldump && !model.IsXtrabackupBackupMode(mode) {
+		return nil, constants.ErrBadRequestWithMsg("backup_mode 须为 mysqldump 或 xtrabackup")
+	}
+	if model.IsXtrabackupBackupMode(mode) {
+		mode = model.MysqlBackupModeXtrabackup
 	}
 
 	var inst *model.MysqlBackupInstance
@@ -203,7 +206,7 @@ func (s *MysqlBackupService) UpsertInstance(ctx context.Context, id uint, req My
 	} else {
 		inst.BackupScope = model.MysqlBackupScopeAll
 		if strings.TrimSpace(req.RemoteDataDir) == "" || strings.TrimSpace(req.RemoteLogDir) == "" {
-			return nil, constants.ErrBadRequestWithMsg("remote_check 模式须填写 remote_data_dir 与 remote_log_dir")
+			return nil, constants.ErrBadRequestWithMsg("xtrabackup 模式须填写 remote_data_dir 与 remote_log_dir")
 		}
 	}
 	inst.DatabaseNames = strings.TrimSpace(req.DatabaseNames)
@@ -294,22 +297,26 @@ func (s *MysqlBackupService) PingInstance(ctx context.Context, projectID, instan
 	return true, fmt.Sprintf("mysqlping,host=%s,port=%d status=1i", inst.MysqlHost, inst.MysqlPort), nil
 }
 
-func (s *MysqlBackupService) findRemoteBackupArtifact(ctx context.Context, inst *model.MysqlBackupInstance) (*mysqlbackup.RemoteBackupArtifact, error) {
+func (s *MysqlBackupService) findLatestBackupArtifact(ctx context.Context, inst *model.MysqlBackupInstance) (*mysqlbackup.BackupArtifact, error) {
+	prefix, err := s.backupArtifactNamePrefix(ctx, inst)
+	if err != nil {
+		return nil, err
+	}
 	sshCli, _, err := s.dialServer(ctx, inst.ServerID)
 	if err != nil {
 		return nil, err
 	}
 	defer sshCli.Close()
-	script := mysqlbackup.BuildFindLatestRemoteBackupScript(inst.RemoteDataDir, inst.RemoteLogDir, 30)
+	script := mysqlbackup.BuildFindLatestBackupScript(inst.RemoteDataDir, inst.RemoteLogDir, prefix, 30)
 	res, err := sshCli.Exec(ctx, script, 16384)
 	if err != nil && !strings.Contains(res.Stdout+res.Stderr, "NOT_FOUND") {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgSSHExecFailedPrefix + err.Error())
 	}
-	artifact := mysqlbackup.ParseFindLatestRemoteBackupOutput(strings.TrimSpace(res.Stdout+"\n"+res.Stderr), inst.MysqlPort)
+	artifact := mysqlbackup.ParseFindLatestBackupOutput(strings.TrimSpace(res.Stdout+"\n"+res.Stderr), inst.MysqlPort)
 	if artifact.OK {
-		artifact.Message = fmt.Sprintf("找到有效备份（%s）: %s", artifact.BackupDay, artifact.BackupFile)
+		artifact.Message = fmt.Sprintf("找到有效备份: %s", artifact.BackupFile)
 	} else {
-		artifact.Message += "；执行备份将自动改用 mysqldump 完成首次归档"
+		artifact.Message = fmt.Sprintf("未找到匹配前缀 %q 的有效备份（*.tar.gz 且日志末行 completed OK!）", prefix)
 	}
 	return &artifact, nil
 }
@@ -319,11 +326,11 @@ func (s *MysqlBackupService) CheckRemoteBackup(ctx context.Context, projectID, i
 	if err != nil {
 		return nil, err
 	}
-	if inst.BackupMode != model.MysqlBackupModeRemoteCheck {
-		return nil, constants.ErrBadRequestWithMsg("该实例不是 remote_check 模式")
+	if !model.IsXtrabackupBackupMode(inst.BackupMode) {
+		return nil, constants.ErrBadRequestWithMsg("该实例不是 xtrabackup 模式")
 	}
 	_ = dayOffset
-	artifact, err := s.findRemoteBackupArtifact(ctx, inst)
+	artifact, err := s.findLatestBackupArtifact(ctx, inst)
 	if err != nil {
 		return nil, err
 	}
@@ -383,8 +390,14 @@ func (s *MysqlBackupService) enqueueBackup(ctx context.Context, projectID, insta
 
 const mysqlBackupJobTimeout = 35 * time.Minute
 
+const mysqlXtrabackupJobTimeout = 2 * time.Hour
+
 func (s *MysqlBackupService) runBackupJobAsync(jobID, projectID, instanceID uint, trigger string) {
-	ctx, cancel := context.WithTimeout(context.Background(), mysqlBackupJobTimeout)
+	timeout := mysqlBackupJobTimeout
+	if inst, err := s.backupRepo.GetInstanceInProject(context.Background(), projectID, instanceID); err == nil && model.IsXtrabackupBackupMode(inst.BackupMode) {
+		timeout = mysqlXtrabackupJobTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	s.finishBackupJob(ctx, jobID, projectID, instanceID, trigger)
 }
@@ -409,9 +422,9 @@ func (s *MysqlBackupService) finishBackupJob(ctx context.Context, jobID, project
 	target := mysqlbackup.BuildDumpTarget(inst)
 
 	var runErr error
-	switch inst.BackupMode {
-	case model.MysqlBackupModeRemoteCheck:
-		runErr = s.runRemoteCheckUpload(ctx, inst, job)
+	switch {
+	case model.IsXtrabackupBackupMode(inst.BackupMode):
+		runErr = s.runXtrabackupUpload(ctx, inst, pw, job)
 	default:
 		runErr = s.runMysqldumpUpload(ctx, inst, pw, job, target, "")
 	}
@@ -598,41 +611,57 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 	return nil
 }
 
-func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *model.MysqlBackupInstance, job *model.MysqlBackupJob) error {
-	artifact, err := s.findRemoteBackupArtifact(ctx, inst)
-	if err != nil {
-		return err
-	}
-	job.CheckOK = artifact.OK
-	job.RemotePath = artifact.BackupFile
-
-	if !artifact.OK {
-		s.logBackupPhase(job.ID, "remote_xtrabackup_miss_fallback_mysqldump", slog.String("detail", artifact.Message))
-		pw, err := s.decryptInstancePassword(inst)
-		if err != nil {
-			return fmt.Errorf("远端无可用 xtrabackup 产物且无法回退 mysqldump: %w", err)
-		}
-		target := mysqlbackup.BuildDumpTarget(inst)
-		prefix := mysqlbackup.RemoteCheckFallbackLogPrefix(inst.RemoteDataDir, inst.RemoteLogDir, inst.MysqldumpWorkDir, artifact.Message)
-		_ = s.backupRepo.PatchJob(ctx, job.ID, map[string]any{
-			"backup_mode": model.MysqlBackupModeMysqldump,
-			"log_excerpt": mysqlbackup.TruncateLog(prefix),
-		})
-		return s.runMysqldumpUpload(ctx, inst, pw, job, target, prefix)
-	}
-
-	job.BackupMode = model.MysqlBackupExecXtrabackup
-
-	sshCli, _, err := s.dialServer(ctx, inst.ServerID)
+func (s *MysqlBackupService) runXtrabackupUpload(ctx context.Context, inst *model.MysqlBackupInstance, pw string, job *model.MysqlBackupJob) error {
+	sshCli, sv, err := s.dialServer(ctx, inst.ServerID)
 	if err != nil {
 		return err
 	}
 	defer sshCli.Close()
-	s.logBackupPhase(job.ID, "remote_xtrabackup_found", slog.String("backup_file", artifact.BackupFile), slog.String("backup_day", artifact.BackupDay))
-	job.LogExcerpt = s.collectXtrabackupLogExcerpt(ctx, sshCli, inst, artifact)
+	s.logBackupPhase(job.ID, "ssh_connected", slog.Uint64("server_id", uint64(inst.ServerID)))
+
+	dataDir := strings.TrimSuffix(strings.TrimSpace(inst.RemoteDataDir), "/")
+	logDir := strings.TrimSuffix(strings.TrimSpace(inst.RemoteLogDir), "/")
+	if dataDir == "" || logDir == "" {
+		return constants.ErrBadRequestWithMsg("xtrabackup 须配置 remote_data_dir 与 remote_log_dir")
+	}
+
+	startedAt := time.Now().UTC()
+	basename, err := s.backupArtifactBasename(ctx, inst, startedAt)
+	if err != nil {
+		return err
+	}
+	remoteArchive := filepath.ToSlash(filepath.Join(dataDir, basename+".tar.gz"))
+	logPath := filepath.ToSlash(filepath.Join(logDir, basename+".log"))
+	job.RemotePath = remoteArchive
+	job.BackupMode = model.MysqlBackupExecXtrabackup
+
+	script := mysqlbackup.BuildXtrabackupRemoteScript(mysqlbackup.XtrabackupRemoteScriptParams{
+		DataDir: dataDir, LogDir: logDir, Basename: basename,
+		MySQLHost: inst.MysqlHost, MySQLPort: inst.MysqlPort, MySQLUser: inst.MysqlUser,
+		MySQLPass: shellQuote(pw), Parallel: 4, ShellQuote: shellQuote,
+	})
+	stopPoll := s.startPollBackupJobLog(ctx, job.ID, sshCli, logPath, "")
+	defer stopPoll()
+
+	s.logBackupPhase(job.ID, "xtrabackup_start",
+		slog.String("data_dir", dataDir),
+		slog.String("basename", basename),
+		slog.String("archive", remoteArchive),
+	)
+	res, err := sshCli.Exec(ctx, script, 131072)
+	job.LogExcerpt = mysqlbackup.TruncateLog(strings.TrimSpace(res.Stdout + res.Stderr))
+	if err != nil {
+		return err
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("xtrabackup failed: %s", strings.TrimSpace(res.Stderr+res.Stdout))
+	}
+	job.CheckOK = true
+	s.logBackupPhase(job.ID, "xtrabackup_done", slog.Int("exit_code", res.ExitCode), slog.Duration("ssh_duration", res.Duration))
 
 	if !inst.UploadToMinio {
-		s.logBackupPhase(job.ID, "skip_minio_upload", slog.String("remote_backup", artifact.BackupFile))
+		s.logBackupPhase(job.ID, "skip_minio_upload", slog.String("remote_archive", remoteArchive), slog.String("remote_log", logPath))
+		_ = sv
 		return nil
 	}
 
@@ -640,19 +669,18 @@ func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *mod
 	if err != nil {
 		return err
 	}
-	basename, err := s.backupArtifactBasename(ctx, inst, time.Now().UTC())
-	if err != nil {
+	waitCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
+	defer cancel()
+	if err := sshCli.WaitRemoteFile(waitCtx, remoteArchive, 1024, 60*time.Minute); err != nil {
 		return err
 	}
 	localPath := filepath.Join(os.TempDir(), basename+".tar.gz")
 	defer os.Remove(localPath)
-	waitCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
-	defer cancel()
-	if err := sshCli.DownloadFile(waitCtx, artifact.BackupFile, localPath); err != nil {
+	if err := sshCli.DownloadFile(waitCtx, remoteArchive, localPath); err != nil {
 		return err
 	}
 	objectKey := fmt.Sprintf("project_%d/instance_%d/%s.tar.gz", inst.ProjectID, inst.ID, basename)
-	s.logBackupPhase(job.ID, "minio_upload_start", slog.String("endpoint", minioCli.Endpoint()), slog.String("object_key", objectKey))
+	s.logBackupPhase(job.ID, "minio_upload_start", slog.String("object_key", objectKey))
 	size, err := minioCli.UploadFile(ctx, objectKey, localPath, "application/gzip")
 	if err != nil {
 		return err
@@ -660,30 +688,18 @@ func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *mod
 	job.MinioBucket = minioCli.Bucket()
 	job.MinioObject = objectKey
 	job.FileSize = size
+	_ = sv
 	return nil
 }
 
-func (s *MysqlBackupService) collectXtrabackupLogExcerpt(ctx context.Context, sshCli *sshclient.Client, inst *model.MysqlBackupInstance, artifact *mysqlbackup.RemoteBackupArtifact) string {
-	var parts []string
-	if artifact != nil && strings.TrimSpace(artifact.Stdout) != "" {
-		parts = append(parts, "=== find script ===\n"+strings.TrimSpace(artifact.Stdout))
-	}
-	script := mysqlbackup.BuildTailXtrabackupLogScript(inst.RemoteLogDir, artifact.BackupDay, 120)
-	if res, err := sshCli.Exec(ctx, script, 65536); err == nil {
-		tail := strings.TrimSpace(res.Stdout + res.Stderr)
-		if tail != "" {
-			parts = append(parts, tail)
+func (s *MysqlBackupService) backupArtifactNamePrefix(ctx context.Context, inst *model.MysqlBackupInstance) (string, error) {
+	projectName := fmt.Sprintf("project_%d", inst.ProjectID)
+	if proj, err := s.projectRepo.GetByID(ctx, inst.ProjectID); err == nil && proj != nil {
+		if n := strings.TrimSpace(proj.Name); n != "" {
+			projectName = n
 		}
 	}
-	if artifact != nil && strings.TrimSpace(artifact.LogFile) != "" {
-		if tail, err := s.tailRemoteFile(ctx, sshCli, artifact.LogFile, 120); err == nil && strings.TrimSpace(tail) != "" {
-			parts = append(parts, "=== configured log path ===\n"+strings.TrimSpace(tail))
-		}
-	}
-	if len(parts) == 0 && artifact != nil {
-		parts = append(parts, artifact.Message)
-	}
-	return mysqlbackup.TruncateLog(strings.Join(parts, "\n\n"))
+	return mysqlbackup.BuildArtifactNamePrefix(projectName, inst.MysqlHost, inst.MysqlPort), nil
 }
 
 func (s *MysqlBackupService) ListJobs(ctx context.Context, q MysqlBackupJobListQuery) (*pagination.Result[model.MysqlBackupJob], error) {

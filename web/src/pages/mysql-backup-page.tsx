@@ -51,6 +51,10 @@ import {
 import { getProjectServers, getProjects, type ProjectItem, type ServerItem } from "../services/projects";
 import { formatDateTime } from "../utils/format";
 
+function isXtrabackupMode(mode?: string) {
+  return mode === "xtrabackup" || mode === "remote_check";
+}
+
 function MysqldumpOptionsField({ catalog }: { catalog: MysqldumpOptionItem[] }) {
   const grouped = useMemo(() => {
     const map = new Map<string, MysqldumpOptionItem[]>();
@@ -188,7 +192,7 @@ export function MysqlBackupPage() {
       mysql_port: 3306,
       mysql_user: "root",
       mysql_password: "",
-      backup_mode: "mysqldump",
+      backup_mode: "xtrabackup",
       backup_scope: "all",
       enabled: true,
       schedule_enabled: false,
@@ -264,7 +268,7 @@ export function MysqlBackupPage() {
       title: "范围",
       width: 120,
       render: (_, r) => {
-        if (r.backup_mode === "remote_check") return <Tag>全量</Tag>;
+        if (isXtrabackupMode(r.backup_mode)) return <Tag>全量</Tag>;
         const s = r.backup_scope || "all";
         if (s === "table") return <Tag color="cyan">{r.database_name}.{r.table_name}</Tag>;
         if (s === "database") return <Tag color="geekblue">{r.database_name || r.database_names || "单库"}</Tag>;
@@ -275,7 +279,7 @@ export function MysqlBackupPage() {
       title: "模式",
       dataIndex: "backup_mode",
       width: 110,
-      render: (m: string) => (m === "remote_check" ? <Tag color="purple">远端检查</Tag> : <Tag color="blue">mysqldump</Tag>),
+      render: (m: string) => (isXtrabackupMode(m) ? <Tag color="purple">xtrabackup</Tag> : <Tag color="blue">mysqldump</Tag>),
     },
     {
       title: "定时",
@@ -305,7 +309,7 @@ export function MysqlBackupPage() {
           <Button size="small" onClick={() => void pingMysqlBackupInstance(projectId!, row.id).then((r) => message.info(r.message))}>
             Ping
           </Button>
-          {row.backup_mode === "remote_check" ? (
+          {isXtrabackupMode(row.backup_mode) ? (
             <Button
               size="small"
               onClick={() =>
@@ -370,7 +374,7 @@ export function MysqlBackupPage() {
       render: (m?: string) => {
         if (m === "xtrabackup") return <Tag color="purple">xtrabackup</Tag>;
         if (m === "mysqldump") return <Tag color="blue">mysqldump</Tag>;
-        if (m === "remote_check") return <Tag>远端检查</Tag>;
+        if (isXtrabackupMode(m)) return <Tag color="purple">xtrabackup</Tag>;
         return <Tag>{m || "-"}</Tag>;
       },
     },
@@ -450,10 +454,9 @@ export function MysqlBackupPage() {
             复用项目内服务器 SSH 凭据；归档至 MinIO 请在{" "}
             <Link to="/dict-entries?keyword=minio_">数据字典</Link> 维护 <Typography.Text code>minio_*</Typography.Text>、
             <Typography.Text code>mysql_backup_scheduler_*</Typography.Text> 等项。
-            <strong>mysqldump</strong> 适合新接入库（平台经 SSH 直接备份）。
-            <strong>远端 xtrabackup</strong> 模式<strong>不会执行</strong> xtrabackup，仅扫描远端已有{" "}
-            <Typography.Text code>full_*.tar.gz</Typography.Text> 并上传；若无有效产物将<strong>自动回退 mysqldump</strong>（写入「回退落盘目录」）。
-            是否上传 MinIO 由实例开关控制；上传后<strong>不删除</strong> SSH 服务器上的备份文件。mysqldump 与 xtrabackup 落盘目录须分开配置。
+            <strong>mysqldump</strong>：逻辑备份；<strong>xtrabackup</strong>：经 SSH 执行物理热备（须目标机已安装 xtrabackup）。
+            文件命名统一为 <Typography.Text code>项目名_IP_端口_年月日_时分秒</Typography.Text>（.sql.gz / .tar.gz）。
+            「检查备份」按该前缀匹配最新有效包。上传 MinIO 可关；上传后<strong>不删除</strong>远端文件。
           </span>
         }
       />
@@ -511,8 +514,8 @@ export function MysqlBackupPage() {
           <Form.Item name="backup_mode" label="备份模式" rules={[{ required: true }]}>
             <Select
               options={[
-                { label: "mysqldump + 上传 MinIO", value: "mysqldump" },
-                { label: "远端 xtrabackup（无则 mysqldump）", value: "remote_check" },
+                { label: "mysqldump（逻辑备份）", value: "mysqldump" },
+                { label: "xtrabackup（物理备份）", value: "xtrabackup" },
               ]}
             />
           </Form.Item>
@@ -618,42 +621,27 @@ export function MysqlBackupPage() {
                   </>
                 );
               }
-              if (mode === "remote_check") {
+              if (isXtrabackupMode(mode)) {
                 return (
                   <>
                     <Divider orientation="left" plain>
-                      远端 xtrabackup
+                      xtrabackup
                     </Divider>
                     <Form.Item
                       name="remote_data_dir"
-                      label="远端备份数据目录"
+                      label="远端数据目录"
                       rules={[{ required: true }, { pattern: /^\//, message: "须为绝对路径" }]}
-                      extra="扫描 full_*.tar.gz，平台不会删除此目录下的文件"
+                      extra="执行 xtrabackup 后生成 项目名_IP_端口_时间.tar.gz"
                     >
                       <Input />
                     </Form.Item>
                     <Form.Item
                       name="remote_log_dir"
-                      label="远端备份日志目录"
+                      label="远端日志目录"
                       rules={[{ required: true }, { pattern: /^\//, message: "须为绝对路径" }]}
-                      extra="与 xtrabackup 脚本日志路径一致，任务日志将 tail 此目录"
+                      extra="同名 .log，末行须含 completed OK!"
                     >
                       <Input />
-                    </Form.Item>
-                    <Divider orientation="left" plain>
-                      回退 mysqldump
-                    </Divider>
-                    <Form.Item
-                      name="mysqldump_work_dir"
-                      label="回退落盘目录"
-                      extra="无 xtrabackup 产物时自动 mysqldump 到此目录（非 /export/servers 数据目录）；命名规则同上"
-                      rules={[{ required: true }, { pattern: /^\//, message: "须以 / 开头的绝对路径" }]}
-                    >
-                      <Input placeholder="/export/backup/yunshu" />
-                    </Form.Item>
-                    <MysqldumpOptionsField catalog={mysqldumpOptions} />
-                    <Form.Item name="mysqldump_extra_args" label="回退 mysqldump 额外参数" extra="空格分隔，须以 - 开头">
-                      <Input.TextArea rows={2} placeholder="--where=1=1" />
                     </Form.Item>
                   </>
                 );

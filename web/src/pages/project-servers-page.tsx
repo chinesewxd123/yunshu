@@ -1106,16 +1106,16 @@ export function ProjectServersPage() {
               extra={
                 <Space wrap>
                   {isCloudCategory ? (
-                    <Select
-                      allowClear
-                      showSearch
-                      placeholder="按云账号过滤"
-                      options={cloudAccounts.map((a) => ({ label: a.account_name || String(a.id), value: a.id }))}
-                      style={{ width: 220 }}
-                      value={selectedCloudAccountId}
-                      onChange={(v) => setSelectedCloudAccountId(v)}
-                      filterOption={(input, option) => (option?.label || "").toLowerCase().includes((input || "").toLowerCase())}
-                    />
+                  <Select
+                    allowClear
+                    showSearch
+                    placeholder="按云账号过滤"
+                    options={cloudAccounts.map((a) => ({ label: a.account_name || String(a.id), value: a.id }))}
+                    style={{ width: 220 }}
+                    value={selectedCloudAccountId}
+                    onChange={(v) => setSelectedCloudAccountId(v)}
+                    filterOption={(input, option) => (option?.label || "").toLowerCase().includes((input || "").toLowerCase())}
+                  />
                   ) : null}
                   <Input.Search allowClear placeholder="搜索 name/host/tags" onSearch={(keyword) => setQuery((q) => ({ ...q, keyword, page: 1 }))} style={{ width: 220 }} />
                   <Button icon={<ReloadOutlined />} onClick={() => void loadServers()} loading={loading}>刷新</Button>

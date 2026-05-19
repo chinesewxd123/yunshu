@@ -27,9 +27,13 @@ LOG=%s
 SQL=%s
 export MYSQL_PWD=%s
 echo "[$(date '+%%F %%T')] mysqldump start host=%s port=%d user=%s -> $SQL" > "$LOG"
-( while sleep 15; do echo "[$(date '+%%F %%T')] progress sql.gz $(stat -c%%s "$SQL" 2>/dev/null || echo 0) bytes"; done >>"$LOG" ) &
+( while sleep 30; do echo "[$(date '+%%F %%T')] progress sql.gz $(stat -c%%s "$SQL" 2>/dev/null || echo 0) bytes"; done >>"$LOG" ) &
 MON=$!
-mysqldump -h%s -P%d -u%s %s %s --verbose 2>>"$LOG" | gzip -c > "$SQL"
+if command -v pigz >/dev/null 2>&1; then
+  mysqldump -h%s -P%d -u%s %s %s 2>>"$LOG" | pigz -1 -c > "$SQL"
+else
+  mysqldump -h%s -P%d -u%s %s %s 2>>"$LOG" | gzip -1 -c > "$SQL"
+fi
 EC=$?
 kill "$MON" 2>/dev/null || true
 wait "$MON" 2>/dev/null || true
@@ -39,6 +43,7 @@ exit $EC
 `,
 		workDir, logPath, sqlPath, p.MySQLPass,
 		p.MySQLHost, p.MySQLPort, p.MySQLUser,
+		q(p.MySQLHost), p.MySQLPort, q(p.MySQLUser), p.DumpFlags, p.DumpTarget,
 		q(p.MySQLHost), p.MySQLPort, q(p.MySQLUser), p.DumpFlags, p.DumpTarget,
 	)
 }

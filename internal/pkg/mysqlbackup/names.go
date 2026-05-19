@@ -9,6 +9,16 @@ import (
 
 var backupNameUnsafe = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
+// BuildArtifactNamePrefix 备份文件名前缀（项目名_IP_端口_），用于按实例匹配已有备份。
+func BuildArtifactNamePrefix(projectName, mysqlHost string, mysqlPort int) string {
+	projectName = sanitizeBackupNameSegment(projectName)
+	host := sanitizeBackupHost(mysqlHost)
+	if mysqlPort <= 0 {
+		mysqlPort = 3306
+	}
+	return fmt.Sprintf("%s_%s_%d_", projectName, host, mysqlPort)
+}
+
 // BuildArtifactBasename 生成备份文件基名：项目名_IP_端口_年月日_时分秒（UTC）。
 func BuildArtifactBasename(projectName, mysqlHost string, mysqlPort int, at time.Time) string {
 	projectName = sanitizeBackupNameSegment(projectName)
