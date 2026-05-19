@@ -6,7 +6,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// MysqlBackupMode 备份模式：mysqldump 经 SSH 执行并上传；remote_check 仅检查远端 xtrabackup 产物。
+// MysqlBackupMode 备份模式：mysqldump 经 SSH 执行并上传；
+// remote_check 优先上传远端已有 xtrabackup 产物，若无则自动回退 mysqldump（适配新接入实例）。
 const (
 	MysqlBackupModeMysqldump   = "mysqldump"
 	MysqlBackupModeRemoteCheck = "remote_check"

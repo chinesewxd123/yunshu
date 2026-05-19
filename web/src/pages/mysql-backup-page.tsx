@@ -357,7 +357,10 @@ export function MysqlBackupPage() {
           <span>
             复用项目内服务器 SSH 凭据；归档至 MinIO 请在{" "}
             <Link to="/dict-entries?keyword=minio_">数据字典</Link> 维护 <Typography.Text code>minio_*</Typography.Text>、
-            <Typography.Text code>mysql_backup_scheduler_*</Typography.Text> 等项。远端 xtrabackup 检查逻辑对齐 mysql_golang_tools。
+            <Typography.Text code>mysql_backup_scheduler_*</Typography.Text> 等项。
+            <strong>mysqldump</strong> 适合新接入库（平台经 SSH 直接备份）。
+            <strong>远端 xtrabackup</strong> 会扫描近 30 天最新有效 <Typography.Text code>full_*.tar.gz</Typography.Text> 并上传；
+            若服务器尚无 xtrabackup 产物，执行备份将<strong>自动改用 mysqldump</strong>。
           </span>
         }
       />
@@ -398,7 +401,7 @@ export function MysqlBackupPage() {
             <Select
               options={[
                 { label: "mysqldump + 上传 MinIO", value: "mysqldump" },
-                { label: "远端 xtrabackup 检查 + 上传", value: "remote_check" },
+                { label: "远端 xtrabackup（无则 mysqldump）", value: "remote_check" },
               ]}
             />
           </Form.Item>
@@ -472,10 +475,14 @@ export function MysqlBackupPage() {
             {({ getFieldValue }) =>
               getFieldValue("backup_mode") === "remote_check" ? (
                 <>
-                  <Form.Item name="remote_data_dir" label="远端备份数据目录">
+                  <Form.Item
+                    name="remote_data_dir"
+                    label="远端备份数据目录"
+                    extra="已有 cron xtrabackup 时填写；新库可留默认，执行备份会自动 mysqldump"
+                  >
                     <Input />
                   </Form.Item>
-                  <Form.Item name="remote_log_dir" label="远端备份日志目录">
+                  <Form.Item name="remote_log_dir" label="远端备份日志目录" extra="与 xtrabackup 脚本日志路径一致">
                     <Input />
                   </Form.Item>
                 </>

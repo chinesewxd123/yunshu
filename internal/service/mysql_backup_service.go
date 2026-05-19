@@ -258,6 +258,26 @@ func (s *MysqlBackupService) PingInstance(ctx context.Context, projectID, instan
 	return true, fmt.Sprintf("mysqlping,host=%s,port=%d status=1i", inst.MysqlHost, inst.MysqlPort), nil
 }
 
+func (s *MysqlBackupService) findRemoteBackupArtifact(ctx context.Context, inst *model.MysqlBackupInstance) (*mysqlbackup.RemoteBackupArtifact, error) {
+	sshCli, _, err := s.dialServer(ctx, inst.ServerID)
+	if err != nil {
+		return nil, err
+	}
+	defer sshCli.Close()
+	script := mysqlbackup.BuildFindLatestRemoteBackupScript(inst.RemoteDataDir, inst.RemoteLogDir, 30)
+	res, err := sshCli.Exec(ctx, script, 16384)
+	if err != nil && !strings.Contains(res.Stdout+res.Stderr, "NOT_FOUND") {
+		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgSSHExecFailedPrefix + err.Error())
+	}
+	artifact := mysqlbackup.ParseFindLatestRemoteBackupOutput(strings.TrimSpace(res.Stdout+"\n"+res.Stderr), inst.MysqlPort)
+	if artifact.OK {
+		artifact.Message = fmt.Sprintf("找到有效备份（%s）: %s", artifact.BackupDay, artifact.BackupFile)
+	} else {
+		artifact.Message += "；执行备份将自动改用 mysqldump 完成首次归档"
+	}
+	return &artifact, nil
+}
+
 func (s *MysqlBackupService) CheckRemoteBackup(ctx context.Context, projectID, instanceID uint, dayOffset int) (*mysqlbackup.RemoteCheckResult, error) {
 	inst, _, err := s.loadInstanceSecrets(ctx, projectID, instanceID)
 	if err != nil {
@@ -266,49 +286,18 @@ func (s *MysqlBackupService) CheckRemoteBackup(ctx context.Context, projectID, i
 	if inst.BackupMode != model.MysqlBackupModeRemoteCheck {
 		return nil, constants.ErrBadRequestWithMsg("该实例不是 remote_check 模式")
 	}
-	sshCli, _, err := s.dialServer(ctx, inst.ServerID)
+	_ = dayOffset
+	artifact, err := s.findRemoteBackupArtifact(ctx, inst)
 	if err != nil {
 		return nil, err
 	}
-	defer sshCli.Close()
-
-	day := time.Now().AddDate(0, 0, dayOffset)
-	filename := fmt.Sprintf("full_%s.tar.gz", day.Format("20060102"))
-	remoteFile := filepath.ToSlash(filepath.Join(inst.RemoteDataDir, filename))
-	logFile := filepath.ToSlash(filepath.Join(inst.RemoteLogDir, fmt.Sprintf("full_backup_data_%s.log", day.Format("2006-01-02"))))
-
-	checkScript := fmt.Sprintf(
-		`if [ ! -f %q ]; then echo MISSING_BACKUP_FILE; exit 2; fi; if [ ! -f %q ]; then echo MISSING_LOG_FILE; exit 3; fi; tail -n 1 %q`,
-		remoteFile, logFile, logFile,
-	)
-	res, err := sshCli.Exec(ctx, checkScript, 8192)
-	if err != nil {
-		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgSSHExecFailedPrefix + err.Error())
-	}
-	stdout := strings.TrimSpace(res.Stdout)
-	logOK := strings.Contains(stdout, "completed OK!")
-	out := &mysqlbackup.RemoteCheckResult{
-		BackupFile:   remoteFile,
-		LogFile:      logFile,
-		LogCompleted: logOK,
-		OK:           res.ExitCode == 0 && logOK,
-	}
-	dayLabel := day.Format("2006-01-02")
-	if out.OK {
-		out.Message = fmt.Sprintf("mysqlbackupcheck,port=%d status=1i", inst.MysqlPort)
-	} else {
-		switch {
-		case strings.Contains(stdout, "MISSING_BACKUP_FILE"):
-			out.Message = fmt.Sprintf("未找到昨日(%s)备份包 %s（请确认远端 xtrabackup 已落盘且目录正确）", dayLabel, remoteFile)
-		case strings.Contains(stdout, "MISSING_LOG_FILE"):
-			out.Message = fmt.Sprintf("未找到日志 %s（期望 full_backup_data_%s.log）", logFile, day.Format("2006-01-02"))
-		case stdout != "" && !logOK:
-			out.Message = fmt.Sprintf("日志末行未含 completed OK!（%s 最后一行: %s）", logFile, stdout)
-		default:
-			out.Message = fmt.Sprintf("mysqlbackupcheck,port=%d status=0i（检查 %s）", inst.MysqlPort, remoteFile)
-		}
-	}
-	return out, nil
+	return &mysqlbackup.RemoteCheckResult{
+		BackupFile:   artifact.BackupFile,
+		LogFile:      artifact.LogFile,
+		LogCompleted: artifact.OK,
+		OK:           artifact.OK,
+		Message:      artifact.Message,
+	}, nil
 }
 
 func (s *MysqlBackupService) RunBackup(ctx context.Context, projectID, instanceID uint) (*model.MysqlBackupJob, error) {
@@ -497,25 +486,38 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 }
 
 func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *model.MysqlBackupInstance, job *model.MysqlBackupJob) error {
-	check, err := s.CheckRemoteBackup(ctx, inst.ProjectID, inst.ID, -1)
+	artifact, err := s.findRemoteBackupArtifact(ctx, inst)
 	if err != nil {
 		return err
 	}
-	job.CheckOK = check.OK
-	job.RemotePath = check.BackupFile
+	job.CheckOK = artifact.OK
+	job.RemotePath = artifact.BackupFile
+
+	if !artifact.OK {
+		pw, err := s.decryptInstancePassword(inst)
+		if err != nil {
+			return fmt.Errorf("远端无可用 xtrabackup 产物且无法回退 mysqldump: %w", err)
+		}
+		target := mysqlbackup.BuildDumpTarget(inst)
+		prefix := "[未找到远端 xtrabackup 产物，自动改用 mysqldump 完成归档]\n"
+		if err := s.runMysqldumpUpload(ctx, inst, pw, job, target); err != nil {
+			return err
+		}
+		if !strings.HasPrefix(job.LogExcerpt, prefix) {
+			job.LogExcerpt = prefix + job.LogExcerpt
+		}
+		return nil
+	}
 
 	sshCli, _, err := s.dialServer(ctx, inst.ServerID)
 	if err != nil {
 		return err
 	}
 	defer sshCli.Close()
-	if logTail, err := s.tailRemoteFile(ctx, sshCli, check.LogFile, 80); err == nil {
+	if logTail, err := s.tailRemoteFile(ctx, sshCli, artifact.LogFile, 80); err == nil {
 		job.LogExcerpt = mysqlbackup.TruncateLog(logTail)
 	} else {
-		job.LogExcerpt = check.Message
-	}
-	if !check.OK {
-		return fmt.Errorf("远端备份检查未通过: %s", check.Message)
+		job.LogExcerpt = artifact.Message
 	}
 
 	minioCli, err := objectstore.NewFromDB(ctx, s.db)
@@ -527,7 +529,7 @@ func (s *MysqlBackupService) runRemoteCheckUpload(ctx context.Context, inst *mod
 	defer os.Remove(localPath)
 	waitCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
-	if err := sshCli.DownloadFile(waitCtx, check.BackupFile, localPath); err != nil {
+	if err := sshCli.DownloadFile(waitCtx, artifact.BackupFile, localPath); err != nil {
 		return err
 	}
 	objectKey := fmt.Sprintf("project_%d/instance_%d/remote_%s.tar.gz", inst.ProjectID, inst.ID, ts)
@@ -568,6 +570,13 @@ func (s *MysqlBackupService) PresignDownload(ctx context.Context, projectID, job
 		return "", err
 	}
 	return cli.PresignedGetURL(ctx, job.MinioObject, 15*time.Minute)
+}
+
+func (s *MysqlBackupService) decryptInstancePassword(inst *model.MysqlBackupInstance) (string, error) {
+	if inst == nil || inst.EncPassword == "" {
+		return "", constants.ErrBadRequestWithMsg("未配置 MySQL 密码，无法执行 mysqldump 回退")
+	}
+	return cryptox.DecryptString(s.aead, inst.EncPassword)
 }
 
 func (s *MysqlBackupService) loadInstanceSecrets(ctx context.Context, projectID, instanceID uint) (*model.MysqlBackupInstance, string, error) {
