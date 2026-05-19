@@ -91,6 +91,24 @@ export function MysqlBackupPage() {
     void load();
   }, [loadServers, load]);
 
+  const hasRunningJob = jobs.some((j) => j.status === "running");
+
+  useEffect(() => {
+    if (!projectId || !hasRunningJob) return;
+    const timer = window.setInterval(() => {
+      void load();
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [projectId, hasRunningJob, load]);
+
+  useEffect(() => {
+    if (!logJob) return;
+    const fresh = jobs.find((j) => j.id === logJob.id);
+    if (fresh) {
+      setLogJob(fresh);
+    }
+  }, [jobs, logJob?.id]);
+
   const openCreate = () => {
     setEditing(null);
     form.setFieldsValue({
@@ -210,7 +228,13 @@ export function MysqlBackupPage() {
             <Button
               size="small"
               onClick={() =>
-                void checkMysqlRemoteBackup(projectId!, row.id).then((r) => message.info(r.message || (r.ok ? "检查通过" : "检查失败")))
+                void checkMysqlRemoteBackup(projectId!, row.id).then((r) => {
+                  if (r.ok) {
+                    message.success(r.message || "检查通过");
+                  } else {
+                    message.error(r.message || "检查失败");
+                  }
+                })
               }
             >
               检查备份
@@ -222,8 +246,8 @@ export function MysqlBackupPage() {
             icon={<ThunderboltOutlined />}
             onClick={() =>
               void runMysqlBackup(projectId!, row.id)
-                .then(() => {
-                  message.success("备份任务已完成");
+                .then((job) => {
+                  message.success(`备份任务 #${job.id} 已提交，请在「备份记录」查看进度`);
                   void load();
                 })
                 .catch((e) => message.error(String(e)))
@@ -487,7 +511,9 @@ export function MysqlBackupPage() {
                   wordBreak: "break-all",
                 }}
               >
-                {logJob.log_excerpt?.trim() || "（无日志内容，请确认备份已执行完成）"}
+                {logJob.status === "running"
+                  ? "备份进行中，请稍候刷新…（mysqldump 全库可能需数分钟）"
+                  : logJob.log_excerpt?.trim() || "（无日志内容，请确认备份已执行完成）"}
               </pre>
             </div>
           </Space>

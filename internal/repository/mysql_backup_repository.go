@@ -104,6 +104,23 @@ func (r *MysqlBackupRepository) HasRunningJob(ctx context.Context, instanceID ui
 	return n > 0, err
 }
 
+// FailStaleRunningJobs 将超时未结束的 running 任务标为 failed，避免 HTTP 超时后任务永久卡住。
+func (r *MysqlBackupRepository) FailStaleRunningJobs(ctx context.Context, maxAge time.Duration) (int64, error) {
+	if maxAge <= 0 {
+		maxAge = 2 * time.Hour
+	}
+	cutoff := time.Now().Add(-maxAge)
+	now := time.Now()
+	res := r.db.WithContext(ctx).Model(&model.MysqlBackupJob{}).
+		Where("status = ? AND started_at IS NOT NULL AND started_at < ?", "running", cutoff).
+		Updates(map[string]interface{}{
+			"status":        "failed",
+			"error_message": "备份任务超时未结束（可能因前端请求超时，服务端仍在执行或已中断）",
+			"finished_at":   now,
+		})
+	return res.RowsAffected, res.Error
+}
+
 func (r *MysqlBackupRepository) ListJobs(ctx context.Context, p MysqlBackupJobListParams) ([]model.MysqlBackupJob, int64, error) {
 	page, pageSize := pagination.Normalize(p.Page, p.PageSize)
 	q := r.db.WithContext(ctx).Model(&model.MysqlBackupJob{}).Where("project_id = ?", p.ProjectID)

@@ -122,5 +122,5 @@ func (s *MysqlBackupService) runScheduledInstance(ctx context.Context, inst *mod
 	}()
 
 	_ = s.backupRepo.TouchLastScheduledAt(ctx, inst.ID, now)
-	_, _ = s.runBackupInternal(ctx, inst.ProjectID, inst.ID, model.MysqlBackupTriggerScheduled)
+	_, _ = s.enqueueBackup(ctx, inst.ProjectID, inst.ID, model.MysqlBackupTriggerScheduled)
 }

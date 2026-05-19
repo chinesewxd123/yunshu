@@ -190,6 +190,9 @@ func (s *MysqlBackupService) UpsertInstance(ctx context.Context, id uint, req My
 		inst.BackupTable = strings.TrimSpace(req.TableName)
 	} else {
 		inst.BackupScope = model.MysqlBackupScopeAll
+		if strings.TrimSpace(req.RemoteDataDir) == "" || strings.TrimSpace(req.RemoteLogDir) == "" {
+			return nil, constants.ErrBadRequestWithMsg("remote_check 模式须填写 remote_data_dir 与 remote_log_dir")
+		}
 	}
 	inst.DatabaseNames = strings.TrimSpace(req.DatabaseNames)
 	inst.RemoteDataDir = strings.TrimSpace(req.RemoteDataDir)
@@ -274,37 +277,50 @@ func (s *MysqlBackupService) CheckRemoteBackup(ctx context.Context, projectID, i
 	remoteFile := filepath.ToSlash(filepath.Join(inst.RemoteDataDir, filename))
 	logFile := filepath.ToSlash(filepath.Join(inst.RemoteLogDir, fmt.Sprintf("full_backup_data_%s.log", day.Format("2006-01-02"))))
 
-	checkScript := fmt.Sprintf(`test -f %q && tail -n 1 %q`, remoteFile, logFile)
+	checkScript := fmt.Sprintf(
+		`if [ ! -f %q ]; then echo MISSING_BACKUP_FILE; exit 2; fi; if [ ! -f %q ]; then echo MISSING_LOG_FILE; exit 3; fi; tail -n 1 %q`,
+		remoteFile, logFile, logFile,
+	)
 	res, err := sshCli.Exec(ctx, checkScript, 8192)
 	if err != nil {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgSSHExecFailedPrefix + err.Error())
 	}
-	logOK := strings.Contains(res.Stdout, "completed OK!") || strings.Contains(res.Stdout, "OK")
-	// tail 输出最后一行
-	lastLine := strings.TrimSpace(res.Stdout)
-	if strings.Contains(lastLine, "completed OK!") {
-		logOK = true
-	}
+	stdout := strings.TrimSpace(res.Stdout)
+	logOK := strings.Contains(stdout, "completed OK!")
 	out := &mysqlbackup.RemoteCheckResult{
 		BackupFile:   remoteFile,
 		LogFile:      logFile,
 		LogCompleted: logOK,
 		OK:           res.ExitCode == 0 && logOK,
 	}
+	dayLabel := day.Format("2006-01-02")
 	if out.OK {
 		out.Message = fmt.Sprintf("mysqlbackupcheck,port=%d status=1i", inst.MysqlPort)
 	} else {
-		out.Message = fmt.Sprintf("mysqlbackupcheck,port=%d status=0i", inst.MysqlPort)
+		switch {
+		case strings.Contains(stdout, "MISSING_BACKUP_FILE"):
+			out.Message = fmt.Sprintf("未找到昨日(%s)备份包 %s（请确认远端 xtrabackup 已落盘且目录正确）", dayLabel, remoteFile)
+		case strings.Contains(stdout, "MISSING_LOG_FILE"):
+			out.Message = fmt.Sprintf("未找到日志 %s（期望 full_backup_data_%s.log）", logFile, day.Format("2006-01-02"))
+		case stdout != "" && !logOK:
+			out.Message = fmt.Sprintf("日志末行未含 completed OK!（%s 最后一行: %s）", logFile, stdout)
+		default:
+			out.Message = fmt.Sprintf("mysqlbackupcheck,port=%d status=0i（检查 %s）", inst.MysqlPort, remoteFile)
+		}
 	}
 	return out, nil
 }
 
 func (s *MysqlBackupService) RunBackup(ctx context.Context, projectID, instanceID uint) (*model.MysqlBackupJob, error) {
-	return s.runBackupInternal(ctx, projectID, instanceID, model.MysqlBackupTriggerManual)
+	return s.enqueueBackup(ctx, projectID, instanceID, model.MysqlBackupTriggerManual)
 }
 
-func (s *MysqlBackupService) runBackupInternal(ctx context.Context, projectID, instanceID uint, trigger string) (*model.MysqlBackupJob, error) {
-	inst, pw, err := s.loadInstanceSecrets(ctx, projectID, instanceID)
+func (s *MysqlBackupService) enqueueBackup(ctx context.Context, projectID, instanceID uint, trigger string) (*model.MysqlBackupJob, error) {
+	n, _ := s.backupRepo.FailStaleRunningJobs(ctx, 2*time.Hour)
+	if n > 0 && s.infoLog != nil {
+		s.infoLog.Warn("mysql_backup_stale_jobs_marked_failed", slog.Int64("count", n))
+	}
+	inst, _, err := s.loadInstanceSecrets(ctx, projectID, instanceID)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +329,7 @@ func (s *MysqlBackupService) runBackupInternal(ctx context.Context, projectID, i
 	}
 	running, err := s.backupRepo.HasRunningJob(ctx, instanceID)
 	if err != nil {
-		return nil, svcerr.Pass("mysql.backup", "runBackupInternal", err)
+		return nil, svcerr.Pass("mysql.backup", "enqueueBackup", err)
 	}
 	if running {
 		return nil, constants.ErrBadRequestWithMsg("该实例已有进行中的备份任务")
@@ -333,8 +349,36 @@ func (s *MysqlBackupService) runBackupInternal(ctx context.Context, projectID, i
 		StartedAt:    &now,
 	}
 	if err := s.backupRepo.CreateJob(ctx, job); err != nil {
-		return nil, svcerr.Pass("mysql.backup", "runBackupInternal", err)
+		return nil, svcerr.Pass("mysql.backup", "enqueueBackup", err)
 	}
+
+	go s.runBackupJobAsync(job.ID, projectID, instanceID, trigger)
+	return job, nil
+}
+
+const mysqlBackupJobTimeout = 35 * time.Minute
+
+func (s *MysqlBackupService) runBackupJobAsync(jobID, projectID, instanceID uint, trigger string) {
+	ctx, cancel := context.WithTimeout(context.Background(), mysqlBackupJobTimeout)
+	defer cancel()
+	s.finishBackupJob(ctx, jobID, projectID, instanceID, trigger)
+}
+
+func (s *MysqlBackupService) finishBackupJob(ctx context.Context, jobID, projectID, instanceID uint, trigger string) {
+	job, err := s.backupRepo.GetJob(ctx, jobID)
+	if err != nil {
+		return
+	}
+	inst, pw, err := s.loadInstanceSecrets(ctx, projectID, instanceID)
+	if err != nil {
+		job.Status = "failed"
+		job.ErrorMessage = err.Error()
+		fin := time.Now()
+		job.FinishedAt = &fin
+		_ = s.backupRepo.UpdateJob(ctx, job)
+		return
+	}
+	target := mysqlbackup.BuildDumpTarget(inst)
 
 	var runErr error
 	switch inst.BackupMode {
@@ -368,13 +412,6 @@ func (s *MysqlBackupService) runBackupInternal(ctx context.Context, projectID, i
 			)
 		}
 	}
-	if runErr != nil {
-		if trigger == model.MysqlBackupTriggerScheduled {
-			return job, nil
-		}
-		return job, constants.ErrBadRequestWithMsg(runErr.Error())
-	}
-	return job, nil
 }
 
 func validateMysqlBackupScope(scope, dbName, tableName, databaseNames string) error {
