@@ -652,13 +652,18 @@ func (s *MysqlBackupService) runXtrabackupUpload(ctx context.Context, inst *mode
 		"basename", basename,
 		"archive", remoteArchive,
 	)
-	res, err := sshCli.Exec(ctx, script, 131072)
-	job.LogExcerpt = mysqlbackup.TruncateLog(strings.TrimSpace(res.Stdout + res.Stderr))
+	// maxBytes=0：日志走远端 $LOG + 轮询 tail，避免 xtrabackup 巨量 stdout 塞满 SSH 导致 tee/tar 卡死。
+	res, err := sshCli.Exec(ctx, script, 0)
 	if err != nil {
 		return err
 	}
+	tail, _ := s.tailRemoteFile(ctx, sshCli, logPath, 120)
+	job.LogExcerpt = mysqlbackup.TruncateLog(strings.TrimSpace(tail))
 	if res.ExitCode != 0 {
-		return fmt.Errorf("xtrabackup failed: %s", strings.TrimSpace(res.Stderr+res.Stdout))
+		return fmt.Errorf("xtrabackup failed (exit=%d): %s", res.ExitCode, job.LogExcerpt)
+	}
+	if !strings.Contains(tail, mysqlbackup.BackupCompletedMarker) {
+		return fmt.Errorf("xtrabackup finished without completion marker in log: %s", mysqlbackup.TruncateLog(tail))
 	}
 	archSize, sizeErr := sshCli.RemoteFileSize(remoteArchive)
 	if sizeErr != nil {

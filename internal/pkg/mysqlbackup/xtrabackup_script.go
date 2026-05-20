@@ -20,6 +20,7 @@ type XtrabackupRemoteScriptParams struct {
 }
 
 // BuildXtrabackupRemoteScript 执行备份 → prepare → 打包为 ${basename}.tar.gz，日志 ${basename}.log。
+// 日志只写远端文件，不经 SSH stdout（避免 tee 塞满通道后 tar 卡死）。
 func BuildXtrabackupRemoteScript(p XtrabackupRemoteScriptParams) string {
 	q := p.ShellQuote
 	if p.Parallel <= 0 {
@@ -45,8 +46,8 @@ LOG=%s
 ARCHIVE=%s
 TMP=%s
 MYSQL_DIR_OVERRIDE=%s
-exec > >(tee -a "$LOG") 2>&1
-echo "[$(date '+%%F %%T')] xtrabackup start host=%s port=%d user=%s basename=%s"
+: >"$LOG"
+echo "[$(date '+%%F %%T')] xtrabackup start host=%s port=%d user=%s basename=%s" >>"$LOG"
 if [ -n "$MYSQL_DIR_OVERRIDE" ]; then
   MYSQL_DATADIR="$MYSQL_DIR_OVERRIDE"
 else
@@ -54,29 +55,29 @@ else
 fi
 MYSQL_DATADIR="${MYSQL_DATADIR%%/}"
 if [ -z "$MYSQL_DATADIR" ] || [ ! -d "$MYSQL_DATADIR" ]; then
-  echo "ERROR: MySQL datadir 无效或不可访问: ${MYSQL_DATADIR:-<empty>}"
-  echo "提示: xtrabackup 须在 datadir 所在主机执行；Docker 请在实例中填写宿主机 datadir"
+  echo "ERROR: MySQL datadir 无效或不可访问: ${MYSQL_DATADIR:-<empty>}" >>"$LOG"
+  echo "提示: xtrabackup 须在 datadir 所在主机执行；Docker 请在实例中填写宿主机 datadir" >>"$LOG"
   exit 1
 fi
-echo "[$(date '+%%F %%T')] using datadir=$MYSQL_DATADIR"
+echo "[$(date '+%%F %%T')] using datadir=$MYSQL_DATADIR" >>"$LOG"
 rm -rf "$TMP"
 if [ "$XB" = "xtrabackup" ]; then
   "$XB" --no-defaults --backup \
     --datadir="$MYSQL_DATADIR" \
     --host=%s --port=%d --user=%s --password=%s \
-    --target-dir="$TMP" --parallel=%d
-  "$XB" --prepare --target-dir="$TMP"
+    --target-dir="$TMP" --parallel=%d >>"$LOG" 2>&1
+  "$XB" --prepare --target-dir="$TMP" >>"$LOG" 2>&1
 else
   "$XB" --no-defaults --datadir="$MYSQL_DATADIR" \
     --host=%s --port=%d --user=%s --password=%s \
-    --parallel=%d "$TMP"
-  "$XB" --prepare --target-dir="$TMP"
+    --parallel=%d "$TMP" >>"$LOG" 2>&1
+  "$XB" --prepare --target-dir="$TMP" >>"$LOG" 2>&1
 fi
-` + shellTarGzFromDir + `
+`+shellTarGzFromDir+`
 rm -rf "$TMP"
 SZ=$(stat -c%%s "$ARCHIVE" 2>/dev/null || echo 0)
-echo "[$(date '+%%F %%T')] archive $ARCHIVE size=$SZ bytes"
-echo "` + BackupCompletedMarker + ` archive=$ARCHIVE size=$SZ"
+echo "[$(date '+%%F %%T')] archive $ARCHIVE size=$SZ bytes" >>"$LOG"
+echo "`+BackupCompletedMarker+` archive=$ARCHIVE size=$SZ" >>"$LOG"
 tail -n 80 "$LOG" 2>/dev/null || true
 `,
 		outDir, logDir, p.MySQLPass, logPath, archive, tmpDir, mysqlDirOverride,
