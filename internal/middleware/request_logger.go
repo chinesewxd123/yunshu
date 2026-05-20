@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -77,14 +78,14 @@ func RequestLogger(logger *logx.Logger) gin.HandlerFunc {
 
 		access := logx.Biz("http.access").WithLayer(logx.LayerHTTP).W(c.Request.Context())
 		if c.Writer.Status() >= 500 {
-			access.Error("http request completed", attrs...)
+			access.Errorw(errors.New("server error"), "HTTP request completed", attrs...)
 			return
 		}
 		if c.Writer.Status() >= 400 {
-			access.Warn("http request completed", attrs...)
+			access.Warnw("HTTP request completed", attrs...)
 			return
 		}
-		access.Info("http request completed", attrs...)
+		access.Infow("HTTP request completed", attrs...)
 	}
 }
 

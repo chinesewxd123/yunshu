@@ -7,8 +7,10 @@ import (
 
 type AppError struct {
 	StatusCode int
-	ErrorCode  string
+	ErrorCode  string // 数字业务码字符串，兼容历史字段 error_code
+	Reason     string // OneX 风格稳定枚举，如 UserNotFound
 	Message    string
+	Metadata   map[string]any
 }
 
 func (e *AppError) Error() string {
@@ -23,7 +25,33 @@ func New(statusCode int, message string, code ...string) error {
 	return &AppError{
 		StatusCode: statusCode,
 		ErrorCode:  errCode,
+		Reason:     legacyReason(errCode),
 		Message:    message,
+	}
+}
+
+// legacyReason 将历史字符串 error_code（如 BAD_REQUEST）映射为 OneX reason。
+func legacyReason(errCode string) string {
+	switch errCode {
+	case "BAD_REQUEST":
+		return "BadRequest"
+	case "UNAUTHORIZED":
+		return "Unauthorized"
+	case "FORBIDDEN":
+		return "Forbidden"
+	case "NOT_FOUND":
+		return "NotFound"
+	case "CONFLICT":
+		return "Conflict"
+	case "TOO_MANY_REQUESTS":
+		return "TooManyRequests"
+	case "INTERNAL_ERROR":
+		return "InternalError"
+	default:
+		if errCode == "" || errCode == "UNKNOWN_ERROR" {
+			return "UnknownError"
+		}
+		return errCode
 	}
 }
 

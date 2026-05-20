@@ -7,15 +7,15 @@ package constants
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"yunshu/internal/pkg/apperror"
 )
 
-// BizError 构造业务错误：HTTP 状态、数字业务码、产品话术（error_code 为数字字符串）。
+// BizError 构造业务错误：HTTP 状态、数字业务码、reason（OneX）、产品话术（message）。
+// JSON 响应含 code/reason/message/error_code（兼容）/metadata，见 internal/pkg/response。
 func BizError(httpStatus, bizCode int, message string) error {
-	return apperror.New(httpStatus, message, strconv.Itoa(bizCode))
+	return apperror.NewBiz(httpStatus, bizCode, ReasonForBizCode(bizCode), message)
 }
 
 // ErrBadRequestWithMsg 固定业务码 11020，文案由调用方传入（绑定失败、fmt 拼接等）。

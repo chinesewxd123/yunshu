@@ -16,13 +16,13 @@ func logGRPCError(ctx context.Context, method string, err error) {
 	b := logx.Biz("grpc.server").WithLayer(logx.LayerGRPC).W(ctx)
 	var appErr *apperror.AppError
 	if errors.As(err, &appErr) {
-		attrs := []any{"method", method, "error_code", appErr.ErrorCode, "http_status", appErr.StatusCode, "error", err.Error()}
+		attrs := []any{"method", method, "error_code", appErr.ErrorCode, "reason", appErr.Reason, "http_status", appErr.StatusCode, "error", err}
 		if appErr.StatusCode >= http.StatusInternalServerError {
-			b.Error("rpc business error", attrs...)
+			b.Errorw(err, "gRPC request failed", attrs...)
 			return
 		}
-		b.Warn("rpc client error", attrs...)
+		b.Warnw("gRPC request rejected", append(attrs, "error", err.Error())...)
 		return
 	}
-	b.Error("rpc failed", "method", method, "error", err.Error())
+	b.Errorw(err, "gRPC request failed", "method", method)
 }

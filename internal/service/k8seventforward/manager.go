@@ -3,7 +3,6 @@ package k8seventforward
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"yunshu/internal/config"
 	"yunshu/internal/dictconfig"
@@ -94,7 +93,7 @@ func (m *Manager) reloadRuntimeConfig() {
 	m.enabled = resolved.Enabled
 	rt, err := loadRuntimeConfig(m.store, resolved, m.appPort)
 	if err != nil {
-		m.log.Warn("reload config failed", slog.Any("error", err))
+		m.log.Warnw("Failed to reload K8s event forward config", "error", err)
 		return
 	}
 	m.worker.RefreshSettings(rt)
@@ -128,20 +127,20 @@ func firstPositive(a, b int) int {
 
 func (m *Manager) Start() {
 	if !m.enabled {
-		m.log.Info("disabled in config")
+		m.log.Infow("K8s event forward disabled in config")
 		return
 	}
 	ctx := context.Background()
 	ok, err := m.store.HasEnabledRules(ctx)
 	if err != nil {
-		m.log.Warn("check rules failed", slog.Any("error", err))
+		m.log.Warnw("Failed to check K8s event forward rules", "error", err)
 		return
 	}
 	if !ok {
-		m.log.Info("no enabled rules, watcher/worker not started")
+		m.log.Infow("No enabled K8s event forward rules, watcher and worker not started")
 		return
 	}
-	m.log.Info("starting watcher and worker")
+	m.log.Infow("Starting K8s event forward watcher and worker")
 	m.watcher.Start()
 	m.worker.Start()
 }

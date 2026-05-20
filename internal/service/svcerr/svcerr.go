@@ -43,7 +43,7 @@ func Internalf(ctx context.Context, component, operation string, err error, msgF
 // InternalMsg 记录固定内部错误话术（无底层 err 变量时）。
 func InternalMsg(ctx context.Context, component, operation, msg string, attrs ...any) error {
 	attrs = append([]any{"operation", operation, "message", msg}, attrs...)
-	biz(component).W(ctx).Error("internal error", attrs...)
+	biz(component).W(ctx).Error("Internal operation failed", attrs...)
 	return apperror.MarkLogged(constants.ErrInternalWithMsg(msg))
 }
 
@@ -65,7 +65,7 @@ func Reject(ctx context.Context, component, operation string, err error, attrs .
 		return nil
 	}
 	attrs = append([]any{"operation", operation, "error", err.Error()}, attrs...)
-	biz(component).W(ctx).Warn("operation rejected", attrs...)
+	biz(component).W(ctx).Warnw("Operation rejected", attrs...)
 	return apperror.MarkLogged(err)
 }
 

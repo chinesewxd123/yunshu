@@ -3,7 +3,6 @@ package k8seventforward
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"sync"
 	"time"
@@ -75,7 +74,7 @@ func (w *Watcher) ensureWatches() {
 
 	ids, err := w.store.ListEnabledClusterIDs(ctx)
 	if err != nil {
-		w.log.Warn("list clusters failed", slog.Any("error", err))
+		w.log.Warnw("Failed to list K8s event forward clusters", "error", err)
 		return
 	}
 	for _, id := range ids {
@@ -100,21 +99,19 @@ func (w *Watcher) watchCluster(clusterID string, id uint) {
 
 	ctx := w.ctx
 	if err := w.runtime.EnsureClusterRegistered(ctx, id); err != nil {
-		w.log.Warn("register cluster failed",
-			slog.String("cluster_id", clusterID), slog.Any("error", err))
+		w.log.Warnw("Failed to register cluster for event watch", "cluster_id", clusterID, "error", err)
 		return
 	}
 
 	var watcher watch.Interface
 	var evt eventsv1.Event
 	if err := kom.Cluster(clusterID).WithContext(ctx).Resource(&evt).AllNamespace().Watch(&watcher).Error; err != nil {
-		w.log.Warn("watch failed",
-			slog.String("cluster_id", clusterID), slog.Any("error", err))
+		w.log.Warnw("Failed to start K8s event watch", "cluster_id", clusterID, "error", err)
 		return
 	}
 	defer watcher.Stop()
 
-	w.log.Info("watching events", slog.String("cluster_id", clusterID))
+	w.log.Infow("Started watching K8s events", "cluster_id", clusterID)
 	for {
 		select {
 		case <-ctx.Done():
@@ -125,8 +122,7 @@ func (w *Watcher) watchCluster(clusterID string, id uint) {
 			}
 			var typed eventsv1.Event
 			if err := kom.Cluster(clusterID).WithContext(ctx).Tools().ConvertRuntimeObjectToTypedObject(e.Object, &typed); err != nil {
-				w.log.Warn("convert event failed",
-					slog.String("cluster_id", clusterID), slog.Any("error", err))
+				w.log.Warnw("Failed to convert K8s event", "cluster_id", clusterID, "error", err)
 				continue
 			}
 			m := w.fromK8sEvent(clusterID, &typed)
@@ -134,8 +130,7 @@ func (w *Watcher) watchCluster(clusterID string, id uint) {
 				continue
 			}
 			if err := w.enqueue(m); err != nil {
-				w.log.Warn("enqueue failed",
-					slog.String("evt_key", m.EvtKey), slog.Any("error", err))
+				w.log.Warnw("Failed to enqueue K8s event", "evt_key", m.EvtKey, "error", err)
 			}
 		}
 	}
@@ -198,7 +193,7 @@ func (w *Watcher) persistLoop() {
 			err := w.store.SaveEvent(ctx, ev)
 			cancel()
 			if err != nil {
-				w.log.Warn("save event failed", slog.Any("error", err))
+				w.log.Warnw("Failed to save K8s forwarded event", "error", err)
 			}
 		}
 	}

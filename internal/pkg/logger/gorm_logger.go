@@ -88,7 +88,7 @@ func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (stri
 	}
 
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		l.SQLLogger.Error("sql error", append(attrs, slog.Any("error", err))...)
+		l.SQLLogger.Error("sql error", append(attrs, "error", err)...)
 		return
 	}
 

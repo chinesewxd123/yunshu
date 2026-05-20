@@ -72,15 +72,11 @@ else
     --parallel=%d "$TMP"
   "$XB" --prepare --target-dir="$TMP"
 fi
-if command -v pigz >/dev/null 2>&1; then
-  tar -I "pigz -1" -cf "$ARCHIVE" -C "$TMP" .
-else
-  tar -I "gzip -1" -cf "$ARCHIVE" -C "$TMP" .
-fi
+` + shellTarGzFromDir + `
 rm -rf "$TMP"
 SZ=$(stat -c%%s "$ARCHIVE" 2>/dev/null || echo 0)
 echo "[$(date '+%%F %%T')] archive $ARCHIVE size=$SZ bytes"
-echo "completed OK!"
+echo "` + BackupCompletedMarker + ` archive=$ARCHIVE size=$SZ"
 tail -n 80 "$LOG" 2>/dev/null || true
 `,
 		outDir, logDir, p.MySQLPass, logPath, archive, tmpDir, mysqlDirOverride,

@@ -67,7 +67,7 @@ func (b *Bus) Publish(e Event) {
 		}
 	}
 	if dropped > 0 {
-		svclog.Worker("eventbus").Warn("dropped for slow consumers",
+		svclog.Worker("eventbus").Warnw("Dropped events for slow consumers",
 			"type", e.Type, "dropped", dropped)
 	}
 }

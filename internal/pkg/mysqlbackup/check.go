@@ -60,7 +60,11 @@ func logFileCompletedOK(logFilePath string) bool {
 	if err := scanner.Err(); err != nil {
 		return false
 	}
-	return strings.Contains(lastLine, "completed OK!")
+	if strings.Contains(lastLine, BackupCompletedMarker) {
+		return true
+	}
+	// 兼容旧脚本末行（无 xtrabackup 误匹配时 archive 行在 completed 之前）
+	return strings.Contains(lastLine, "completed OK!") && strings.Contains(lastLine, "archive=")
 }
 
 // ParseRemoteCheckOutput 解析 SSH 上 check 脚本输出。

@@ -1,11 +1,10 @@
-﻿package service
+package service
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,7 +56,7 @@ func NewMysqlBackupService(
 		db:           db,
 		aead:         aead,
 		schedRunning: make(map[uint]bool),
-		bizLog:       svclog.Service("mysql.backup"),
+		bizLog:       svclog.Worker("mysql.backup"),
 	}, nil
 }
 
@@ -322,7 +321,7 @@ func (s *MysqlBackupService) findLatestBackupArtifact(ctx context.Context, inst 
 	if artifact.OK {
 		artifact.Message = fmt.Sprintf("找到有效备份: %s", artifact.BackupFile)
 	} else {
-		artifact.Message = fmt.Sprintf("未找到匹配前缀 %q 的有效备份（*.tar.gz 且日志末行 completed OK!）", prefix)
+		artifact.Message = fmt.Sprintf("未找到匹配前缀 %q 的有效备份（*.tar.gz 且日志末行含 %s）", prefix, mysqlbackup.BackupCompletedMarker)
 	}
 	return &artifact, nil
 }
@@ -356,7 +355,7 @@ func (s *MysqlBackupService) RunBackup(ctx context.Context, projectID, instanceI
 func (s *MysqlBackupService) enqueueBackup(ctx context.Context, projectID, instanceID uint, trigger string) (*model.MysqlBackupJob, error) {
 	n, _ := s.backupRepo.FailStaleRunningJobs(ctx, 2*time.Hour)
 	if n > 0 && s.bizLog != nil {
-		s.bizLog.Warn("mysql_backup_stale_jobs_marked_failed", slog.Int64("count", n))
+		s.bizLog.Warnw("Marked stale MySQL backup jobs as failed", "count", n)
 	}
 	inst, _, err := s.loadInstanceSecrets(ctx, projectID, instanceID)
 	if err != nil {
@@ -445,9 +444,9 @@ func (s *MysqlBackupService) finishBackupJob(ctx context.Context, jobID, project
 	}
 	_ = s.backupRepo.UpdateJob(ctx, job)
 	s.logBackupJobDone(jobID, inst.ID, inst.Name, trigger, job.Status, time.Since(started), runErr,
-		slog.String("minio_object", job.MinioObject),
-		slog.Int64("file_size", job.FileSize),
-		slog.String("remote_path", job.RemotePath),
+		"minio_object", job.MinioObject,
+		"file_size", job.FileSize,
+		"remote_path", job.RemotePath,
 	)
 }
 
@@ -455,16 +454,16 @@ func (s *MysqlBackupService) logBackupJobBegin(jobID uint, inst *model.MysqlBack
 	if s.bizLog == nil || inst == nil {
 		return
 	}
-	s.bizLog.Info("mysql_backup_job_begin",
-		slog.Uint64("job_id", uint64(jobID)),
-		slog.Uint64("instance_id", uint64(inst.ID)),
-		slog.Uint64("project_id", uint64(inst.ProjectID)),
-		slog.String("instance_name", inst.Name),
-		slog.String("backup_mode", inst.BackupMode),
-		slog.String("trigger", trigger),
-		slog.String("mysql_user", inst.MysqlUser),
-		slog.String("mysql_host", inst.MysqlHost),
-		slog.Int("mysql_port", inst.MysqlPort),
+	s.bizLog.Infow("Started MySQL backup job",
+		"job_id", jobID,
+		"instance_id", inst.ID,
+		"project_id", inst.ProjectID,
+		"instance_name", inst.Name,
+		"backup_mode", inst.BackupMode,
+		"trigger", trigger,
+		"mysql_user", inst.MysqlUser,
+		"mysql_host", inst.MysqlHost,
+		"mysql_port", inst.MysqlPort,
 	)
 }
 
@@ -473,28 +472,27 @@ func (s *MysqlBackupService) logBackupJobDone(jobID, instanceID uint, instanceNa
 		return
 	}
 	attrs := []any{
-		slog.Uint64("job_id", uint64(jobID)),
-		slog.Uint64("instance_id", uint64(instanceID)),
-		slog.String("instance_name", instanceName),
-		slog.String("trigger", trigger),
-		slog.String("status", status),
-		slog.Int64("duration_ms", dur.Milliseconds()),
+		"job_id", jobID,
+		"instance_id", instanceID,
+		"instance_name", instanceName,
+		"trigger", trigger,
+		"status", status,
+		"duration_ms", dur.Milliseconds(),
 	}
 	attrs = append(attrs, extra...)
 	if runErr != nil {
-		attrs = append(attrs, slog.String("error", runErr.Error()))
-		s.bizLog.Error("mysql_backup_job_finished", attrs...)
+		s.bizLog.Errorw(runErr, "Failed to finish MySQL backup job", attrs...)
 		return
 	}
-	s.bizLog.Info("mysql_backup_job_finished", attrs...)
+	s.bizLog.Infow("Finished MySQL backup job", attrs...)
 }
 
 func (s *MysqlBackupService) logBackupPhase(jobID uint, phase string, attrs ...any) {
 	if s.bizLog == nil {
 		return
 	}
-	base := []any{slog.Uint64("job_id", uint64(jobID)), slog.String("phase", phase)}
-	s.bizLog.Info("mysql_backup_job_phase", append(base, attrs...)...)
+	base := []any{"job_id", jobID, "phase", phase}
+	s.bizLog.Infow("MySQL backup job phase", append(base, attrs...)...)
 }
 
 func validateMysqlBackupScope(scope, dbName, tableName, databaseNames string) error {
@@ -522,7 +520,7 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 		return err
 	}
 	defer sshCli.Close()
-	s.logBackupPhase(job.ID, "ssh_connected", slog.Uint64("server_id", uint64(inst.ServerID)))
+	s.logBackupPhase(job.ID, "ssh_connected", "server_id", inst.ServerID)
 
 	workDir, err := mysqlbackup.NormalizeMysqldumpWorkDir(inst.MysqldumpWorkDir)
 	if err != nil {
@@ -558,10 +556,10 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 	defer stopPoll()
 
 	s.logBackupPhase(job.ID, "mysqldump_start",
-		slog.String("work_dir", workDir),
-		slog.String("basename", basename),
-		slog.String("remote_sql_gz", remotePath),
-		slog.String("flags", dumpFlags),
+		"work_dir", workDir,
+		"basename", basename,
+		"remote_sql_gz", remotePath,
+		"flags", dumpFlags,
 	)
 	res, err := sshCli.Exec(ctx, dumpCmd, 65536)
 	job.LogExcerpt = mysqlbackup.TruncateLog(logPrefix + strings.TrimSpace(res.Stdout+res.Stderr))
@@ -571,10 +569,10 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 	if res.ExitCode != 0 {
 		return fmt.Errorf("mysqldump failed: %s", strings.TrimSpace(res.Stderr+res.Stdout))
 	}
-	s.logBackupPhase(job.ID, "mysqldump_done", slog.Int("exit_code", res.ExitCode), slog.Duration("ssh_duration", res.Duration))
+	s.logBackupPhase(job.ID, "mysqldump_done", "exit_code", res.ExitCode, "ssh_duration_ms", res.Duration.Milliseconds())
 
 	if !inst.UploadToMinio {
-		s.logBackupPhase(job.ID, "skip_minio_upload", slog.String("remote_sql_gz", remotePath), slog.String("remote_log", logPath))
+		s.logBackupPhase(job.ID, "skip_minio_upload", "remote_sql_gz", remotePath, "remote_log", logPath)
 		job.CheckOK = true
 		_ = sv
 		return nil
@@ -585,8 +583,8 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 		return err
 	}
 	s.logBackupPhase(job.ID, "minio_client_ready",
-		slog.String("endpoint", minioCli.Endpoint()),
-		slog.String("bucket", minioCli.Bucket()),
+		"endpoint", minioCli.Endpoint(),
+		"bucket", minioCli.Bucket(),
 	)
 
 	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
@@ -600,15 +598,15 @@ func (s *MysqlBackupService) runMysqldumpUpload(ctx context.Context, inst *model
 	if err := sshCli.DownloadFile(waitCtx, remotePath, localPath); err != nil {
 		return err
 	}
-	s.logBackupPhase(job.ID, "local_dump_ready", slog.String("local_path", localPath))
+	s.logBackupPhase(job.ID, "local_dump_ready", "local_path", localPath)
 
 	objectKey := fmt.Sprintf("project_%d/instance_%d/%s.sql.gz", inst.ProjectID, inst.ID, basename)
-	s.logBackupPhase(job.ID, "minio_upload_start", slog.String("object_key", objectKey))
+	s.logBackupPhase(job.ID, "minio_upload_start", "object_key", objectKey)
 	size, err := minioCli.UploadFile(ctx, objectKey, localPath, "application/gzip")
 	if err != nil {
 		return err
 	}
-	s.logBackupPhase(job.ID, "minio_upload_done", slog.Int64("bytes", size), slog.String("object_key", objectKey))
+	s.logBackupPhase(job.ID, "minio_upload_done", "bytes", size, "object_key", objectKey)
 	job.MinioBucket = minioCli.Bucket()
 	job.MinioObject = objectKey
 	job.FileSize = size
@@ -623,7 +621,7 @@ func (s *MysqlBackupService) runXtrabackupUpload(ctx context.Context, inst *mode
 		return err
 	}
 	defer sshCli.Close()
-	s.logBackupPhase(job.ID, "ssh_connected", slog.Uint64("server_id", uint64(inst.ServerID)))
+	s.logBackupPhase(job.ID, "ssh_connected", "server_id", inst.ServerID)
 
 	dataDir := strings.TrimSuffix(strings.TrimSpace(inst.RemoteDataDir), "/")
 	logDir := strings.TrimSuffix(strings.TrimSpace(inst.RemoteLogDir), "/")
@@ -650,9 +648,9 @@ func (s *MysqlBackupService) runXtrabackupUpload(ctx context.Context, inst *mode
 	defer stopPoll()
 
 	s.logBackupPhase(job.ID, "xtrabackup_start",
-		slog.String("data_dir", dataDir),
-		slog.String("basename", basename),
-		slog.String("archive", remoteArchive),
+		"data_dir", dataDir,
+		"basename", basename,
+		"archive", remoteArchive,
 	)
 	res, err := sshCli.Exec(ctx, script, 131072)
 	job.LogExcerpt = mysqlbackup.TruncateLog(strings.TrimSpace(res.Stdout + res.Stderr))
@@ -662,11 +660,18 @@ func (s *MysqlBackupService) runXtrabackupUpload(ctx context.Context, inst *mode
 	if res.ExitCode != 0 {
 		return fmt.Errorf("xtrabackup failed: %s", strings.TrimSpace(res.Stderr+res.Stdout))
 	}
-	job.CheckOK = true
-	s.logBackupPhase(job.ID, "xtrabackup_done", slog.Int("exit_code", res.ExitCode), slog.Duration("ssh_duration", res.Duration))
+	archSize, sizeErr := sshCli.RemoteFileSize(remoteArchive)
+	if sizeErr != nil {
+		return fmt.Errorf("backup archive not found after xtrabackup: %w", sizeErr)
+	}
+	if err := mysqlbackup.ValidateArchiveSize(archSize, remoteArchive); err != nil {
+		return err
+	}
+	s.logBackupPhase(job.ID, "xtrabackup_done", "exit_code", res.ExitCode, "archive_bytes", archSize, "ssh_duration_ms", res.Duration.Milliseconds())
 
 	if !inst.UploadToMinio {
-		s.logBackupPhase(job.ID, "skip_minio_upload", slog.String("remote_archive", remoteArchive), slog.String("remote_log", logPath))
+		job.CheckOK = true
+		s.logBackupPhase(job.ID, "skip_minio_upload", "remote_archive", remoteArchive, "remote_log", logPath)
 		_ = sv
 		return nil
 	}
@@ -675,18 +680,15 @@ func (s *MysqlBackupService) runXtrabackupUpload(ctx context.Context, inst *mode
 	if err != nil {
 		return err
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
+	dlCtx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
-	if err := sshCli.WaitRemoteFile(waitCtx, remoteArchive, 1024, 60*time.Minute); err != nil {
-		return err
-	}
 	localPath := filepath.Join(os.TempDir(), basename+".tar.gz")
 	defer os.Remove(localPath)
-	if err := sshCli.DownloadFile(waitCtx, remoteArchive, localPath); err != nil {
+	if err := sshCli.DownloadFile(dlCtx, remoteArchive, localPath); err != nil {
 		return err
 	}
 	objectKey := fmt.Sprintf("project_%d/instance_%d/%s.tar.gz", inst.ProjectID, inst.ID, basename)
-	s.logBackupPhase(job.ID, "minio_upload_start", slog.String("object_key", objectKey))
+	s.logBackupPhase(job.ID, "minio_upload_start", "object_key", objectKey)
 	size, err := minioCli.UploadFile(ctx, objectKey, localPath, "application/gzip")
 	if err != nil {
 		return err
@@ -694,6 +696,7 @@ func (s *MysqlBackupService) runXtrabackupUpload(ctx context.Context, inst *mode
 	job.MinioBucket = minioCli.Bucket()
 	job.MinioObject = objectKey
 	job.FileSize = size
+	job.CheckOK = true
 	_ = sv
 	return nil
 }

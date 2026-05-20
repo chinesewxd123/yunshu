@@ -1,4 +1,4 @@
-﻿// Package logger 提供三通道结构化日志（log/slog），设计参考 onexstack/onex pkg/log，并适配 yunshu 四文件语义。
+// Package logger 提供三通道结构化日志（log/slog），设计参考 onexstack/onex pkg/log，并适配 yunshu 四文件语义。
 //
 // # 文件分流（config.Log.file_path 目录）
 //
@@ -28,4 +28,6 @@
 // GORM Trace 会从 ctx 附带 request_id 写入 sql.log。
 //
 // 禁止 fmt.Print / log.Println 打业务日志；审计走 login_logs / operation_logs 表。
+//
+// API 错误 JSON 见 internal/pkg/response.ErrorBody（OneX：code/reason/message/metadata）。
 package logger

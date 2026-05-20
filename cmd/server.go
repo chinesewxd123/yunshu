@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -57,7 +56,7 @@ var serverCmd = &cobra.Command{
 			return fmt.Errorf("auto migrate: %w", err)
 		}
 		bootLog := app.Logger.Biz("bootstrap")
-		bootLog.Info("database schema migrated")
+		bootLog.Infow("Database schema migrated")
 		if err := app.Enforcer.LoadPolicy(); err != nil {
 			return fmt.Errorf("reload casbin policy: %w", err)
 		}
@@ -65,7 +64,7 @@ var serverCmd = &cobra.Command{
 		// 初始化只读演示用户
 		ctx := context.Background()
 		if err := initReadonlyDemoUser(ctx, app.DB, app.Enforcer, bootLog); err != nil {
-			bootLog.Error("failed to init readonly demo user", slog.Any("error", err))
+			bootLog.Errorw(err, "Failed to init readonly demo user")
 			// 非致命错误，继续启动
 		}
 
@@ -137,7 +136,7 @@ var serverCmd = &cobra.Command{
 					err := agentSvc.RecordOfflineEpisodes(ctx)
 					cancel()
 					if err != nil {
-						app.Logger.Biz("agent").Warn("record offline episodes failed", slog.Any("error", err))
+						app.Logger.Biz("agent").Warnw("Failed to record agent offline episodes", "error", err)
 					}
 				}
 			}
@@ -154,7 +153,7 @@ var serverCmd = &cobra.Command{
 
 		errCh := make(chan error, 1)
 		go func() {
-			app.Logger.Biz("server").Info("started", "addr", server.Addr)
+			app.Logger.Biz("server").Infow("HTTP server started", "addr", server.Addr)
 			if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- err
 			}
@@ -165,7 +164,7 @@ var serverCmd = &cobra.Command{
 
 		select {
 		case sig := <-stop:
-			app.Logger.Biz("server").Info("received shutdown signal", "signal", sig.String())
+			app.Logger.Biz("server").Infow("Received shutdown signal", "signal", sig.String())
 		case err := <-errCh:
 			return err
 		}
@@ -222,13 +221,13 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		if err := db.Create(role).Error; err != nil {
 			return fmt.Errorf("create role: %w", err)
 		}
-		logger.Info("created readonly role", "code", roleCode)
+		logger.Infow("Created readonly role", "code", roleCode)
 	}
 
 	// 2. 配置角色权限：只读 GET 权限 + K8s 资源查看
 	// 先清除旧权限
 	if _, err := enforcer.RemoveFilteredPolicy(0, roleCode); err != nil {
-		logger.Warn("failed to remove old policies", slog.Any("error", err))
+		logger.Warnw("Failed to remove old Casbin policies", "error", err)
 	}
 
 	perms, err := permRepo.ListAll(ctx)
@@ -246,7 +245,7 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 			continue
 		}
 		if _, err := enforcer.AddPolicy(roleCode, obj, "GET"); err != nil {
-			logger.Warn("failed to add policy", slog.Any("resource", obj), slog.Any("error", err))
+			logger.Warnw("Failed to add Casbin policy", "resource", obj, "error", err)
 			continue
 		}
 		added++
@@ -262,7 +261,7 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		return fmt.Errorf("upsert k8s cluster access grant: %w", err)
 	}
 
-	logger.Info("configured readonly role permissions", "role", roleCode, "policies_added", added)
+	logger.Infow("Configured readonly role permissions", "role", roleCode, "policies_added", added)
 
 	// 3. 检查或创建演示用户
 	username := "viewer"
@@ -289,9 +288,9 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		if err := db.Create(user).Error; err != nil {
 			return fmt.Errorf("create user: %w", err)
 		}
-		logger.Info("created demo user", "username", username)
+		logger.Infow("Created demo user", "username", username)
 	} else {
-		logger.Info("demo user already exists", "username", username)
+		logger.Infow("Demo user already exists", "username", username)
 	}
 
 	// 4. 绑定用户到 viewer 角色
@@ -304,7 +303,7 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		return fmt.Errorf("sync user roles: %w", err)
 	}
 
-	logger.Info("demo user initialized", "username", username, "password", plainPassword, "role", roleCode)
-	logger.Info("demo user login info", "username", username, "password", plainPassword)
+	logger.Infow("Initialized demo user", "username", username, "password", plainPassword, "role", roleCode)
+	logger.Infow("Demo user login info", "username", username, "password", plainPassword)
 	return nil
 }

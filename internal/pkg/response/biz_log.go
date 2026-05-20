@@ -37,13 +37,13 @@ func logHTTPError(c *gin.Context, err error) {
 
 	var appErr *apperror.AppError
 	if errors.As(err, &appErr) {
-		attrs = append(attrs, "error_code", appErr.ErrorCode, "http_status", appErr.StatusCode)
+		attrs = append(attrs, "error_code", appErr.ErrorCode, "reason", appErr.Reason, "http_status", appErr.StatusCode)
 		if appErr.StatusCode >= http.StatusInternalServerError {
-			log.Error("api business error", append(attrs, "error", err.Error())...)
+			log.Errorw(err, "API request failed", attrs...)
 			return
 		}
-		log.Warn("api client error", append(attrs, "error", err.Error())...)
+		log.Warnw("API request rejected", append(attrs, "error", err.Error())...)
 		return
 	}
-	log.Error("api business error", append(attrs, "error", err.Error())...)
+	log.Errorw(err, "API request failed", attrs...)
 }

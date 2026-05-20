@@ -185,7 +185,7 @@ func buildKubeconfigFromDirectConfig(config *DirectConfig) (string, error) {
 
 	// 设置认证方式
 	if token != "" {
-		svclog.Service("k8s.cluster").Info("direct auth token configured",
+		svclog.Service("k8s.cluster").Infow("Configured direct auth token",
 			"token_len", len(token),
 			"token_masked", maskSecretEdge(token, 8),
 			"server", serverRaw,

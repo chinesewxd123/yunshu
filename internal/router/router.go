@@ -2,8 +2,6 @@ package router
 
 import (
 	"context"
-	"log/slog"
-
 	"yunshu/internal/bootstrap"
 	"yunshu/internal/service/svclog"
 	grpcclient "yunshu/internal/grpc/client"
@@ -43,7 +41,7 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient, bgCtx
 		k8sFwdLog,
 	)
 	if err != nil {
-		k8sFwdLog.Error("manager init failed", slog.Any("error", err))
+		k8sFwdLog.Errorw(err, "Failed to init K8s event forward manager")
 		return nil
 	}
 	mgr.Start()

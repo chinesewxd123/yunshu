@@ -3,7 +3,6 @@ package k8seventforward
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,7 +77,7 @@ func (w *Worker) loop() {
 			return
 		case <-ticker.C:
 			if err := w.processBatch(); err != nil {
-				w.log.Warn("batch failed", slog.Any("error", err))
+				w.log.Warnw("Failed to process K8s event forward batch", "error", err)
 			}
 		}
 	}
@@ -138,10 +137,10 @@ func (w *Worker) processBatch() error {
 
 		for clusterID, batch := range grouped {
 			if err := w.push(ctx, webhookURL, rule.Name, clusterID, batch); err != nil {
-				w.log.Warn("webhook push failed",
-					slog.String("rule", rule.Name),
-					slog.String("cluster_id", clusterID),
-					slog.Any("error", err))
+				w.log.Warnw("Failed to push K8s event forward webhook",
+					"rule", rule.Name,
+					"cluster_id", clusterID,
+					"error", err)
 				for _, e := range batch {
 					_ = w.store.IncrementAttempts(ctx, e.ID)
 				}

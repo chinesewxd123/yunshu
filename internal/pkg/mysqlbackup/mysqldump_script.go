@@ -29,15 +29,19 @@ export MYSQL_PWD=%s
 echo "[$(date '+%%F %%T')] mysqldump start host=%s port=%d user=%s -> $SQL" > "$LOG"
 ( while sleep 30; do echo "[$(date '+%%F %%T')] progress sql.gz $(stat -c%%s "$SQL" 2>/dev/null || echo 0) bytes"; done >>"$LOG" ) &
 MON=$!
-if command -v pigz >/dev/null 2>&1; then
-  mysqldump -h%s -P%d -u%s %s %s 2>>"$LOG" | pigz -1 -c > "$SQL"
-else
-  mysqldump -h%s -P%d -u%s %s %s 2>>"$LOG" | gzip -1 -c > "$SQL"
-fi
+` + shellMysqldumpToGz + `
 EC=$?
 kill "$MON" 2>/dev/null || true
 wait "$MON" 2>/dev/null || true
-echo "[$(date '+%%F %%T')] mysqldump exit=$EC sql.gz $(stat -c%%s "$SQL" 2>/dev/null || echo 0) bytes" >>"$LOG"
+SZ=$(stat -c%%s "$SQL" 2>/dev/null || echo 0)
+echo "[$(date '+%%F %%T')] mysqldump exit=$EC sql.gz $SZ bytes" >>"$LOG"
+if [ "$EC" -eq 0 ] && [ "$SZ" -lt 1 ]; then
+  echo "ERROR: sql.gz empty" >>"$LOG"
+  exit 1
+fi
+if [ "$EC" -eq 0 ]; then
+  echo "` + BackupCompletedMarker + ` file=$SQL size=$SZ" >>"$LOG"
+fi
 tail -n 120 "$LOG" 2>/dev/null || true
 exit $EC
 `,

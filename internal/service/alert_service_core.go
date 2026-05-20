@@ -11,6 +11,7 @@ import (
 	cryptox "yunshu/internal/pkg/crypto"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/mailer"
+	"yunshu/internal/service/svclog"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -209,7 +210,7 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 		}
 	}
 	if svc.bizLog == nil {
-		svc.bizLog = logx.Biz("alert")
+		svc.bizLog = svclog.Worker("alert")
 	}
 	svc.startPrometheusEnrichWorkers()
 	svc.startInhibitionPruner(context.Background())

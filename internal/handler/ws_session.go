@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"log/slog"
+	"errors"
 	"sync"
 
 	logx "yunshu/internal/pkg/logger"
@@ -37,7 +37,7 @@ func (s *wsSession) Go(name string, fn func()) {
 		defer func() {
 			if r := recover(); r != nil {
 				if s.log != nil {
-					s.log.Error("websocket goroutine panic", slog.String("name", name), slog.Any("error", r))
+					s.log.Errorw(errors.New("panic"), "WebSocket goroutine panic", "name", name, "panic", r)
 				}
 				s.cancel()
 			}

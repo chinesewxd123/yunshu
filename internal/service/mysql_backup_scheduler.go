@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -51,7 +50,7 @@ func (s *MysqlBackupService) RunMysqlBackupScheduler(ctx context.Context, log *l
 	}
 	cfg := dictconfig.ResolveMysqlBackupSchedulerConfig(ctx, s.db, dictconfig.DefaultMysqlBackupSchedulerDictTypes())
 	if !cfg.Enabled {
-		log.Info("disabled by dict")
+		log.Infow("MySQL backup scheduler disabled by dict")
 		return
 	}
 	spec := strings.TrimSpace(cfg.TickSpec)
@@ -64,14 +63,14 @@ func (s *MysqlBackupService) RunMysqlBackupScheduler(ctx context.Context, log *l
 			return
 		}
 		if err := s.tickScheduledBackups(ctx); err != nil && log != nil {
-			log.Warn("tick failed", slog.Any("error", err))
+			log.Warnw("MySQL backup scheduler tick failed", "error", err)
 		}
 	}
 	if _, err := c.AddFunc(spec, job); err != nil {
-		log.Error("init failed", slog.String("tick_spec", spec), slog.Any("error", err))
+		log.Errorw(err, "Failed to init MySQL backup scheduler", "tick_spec", spec)
 		return
 	}
-	log.Info("started", slog.String("tick_spec", spec))
+	log.Infow("Started MySQL backup scheduler", "tick_spec", spec)
 	c.Start()
 	<-ctx.Done()
 	stopCtx := c.Stop()

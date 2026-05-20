@@ -54,17 +54,6 @@ type Config struct {
 	DiscoveryInterval time.Duration
 }
 
-func logInfof(format string, args ...any) {
-	fmt.Printf("[agent][info] "+format+"\n", args...)
-}
-
-func logDebugf(enabled bool, format string, args ...any) {
-	if !enabled {
-		return
-	}
-	fmt.Printf("[agent][debug] "+format+"\n", args...)
-}
-
 type runtimeSource struct {
 	LogSourceID uint   `json:"log_source_id"`
 	LogType     string `json:"log_type"`
@@ -380,13 +369,13 @@ func runIngestSession(ctx context.Context, client pb.AgentRuntimeServiceClient, 
 		if strings.ToLower(strings.TrimSpace(src.LogType)) == "file" {
 			if err := fc.AddSource(src.LogSourceID, src.Path, cfg.TailLines); err != nil {
 				if cfg.Debug {
-					fmt.Printf("[agent][file] skip source=%d path=%s err=%v\n", src.LogSourceID, src.Path, err)
+					logInfo("Skipped file source", "log_source_id", src.LogSourceID, "path", src.Path, "error", err)
 				}
 				continue
 			}
 			hasMergedFiles = true
 			if cfg.Debug {
-				fmt.Printf("[agent][file] add source=%d path=%s\n", src.LogSourceID, src.Path)
+				logInfo("Added file source", "log_source_id", src.LogSourceID, "path", src.Path)
 			}
 			continue
 		}
@@ -395,7 +384,7 @@ func runIngestSession(ctx context.Context, client pb.AgentRuntimeServiceClient, 
 		ch, err := startLocalSource(ctx, src.LogType, src.Path, cfg.TailLines)
 		if err != nil {
 			if cfg.Debug {
-				fmt.Printf("[agent][source] start failed type=%s path=%s err=%v\n", src.LogType, src.Path, err)
+				logInfo("Failed to start log source", "type", src.LogType, "path", src.Path, "error", err)
 			}
 			continue
 		}

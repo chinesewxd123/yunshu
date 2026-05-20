@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -93,8 +92,8 @@ func (s *AlertService) logAllChannelsDeliveryFailed(ctx context.Context, title, 
 func (s *AlertService) ReceiveAlertmanager(ctx context.Context, payload AlertManagerPayload) error {
 	if s.shouldEnqueueAlertmanagerWebhook() {
 		if err := s.enqueueAlertmanagerWebhook(ctx, payload); err != nil {
-			s.logWebhook("warn", "alert webhook enqueue failed, processing synchronously",
-				append(webhookPayloadLogAttrs(payload), slog.Any("error", err))...)
+			s.logWebhookWarn("Failed to enqueue alert webhook, processing synchronously",
+				append(webhookPayloadLogAttrs(payload), "error", err)...)
 			return s.receiveAlertmanagerPayloadSync(ctx, payload)
 		}
 		return nil

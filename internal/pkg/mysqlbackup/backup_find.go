@@ -40,7 +40,7 @@ for f in $(ls -1t "$DATA_DIR"/${PREFIX}*.tar.gz 2>/dev/null | head -n %d); do
     continue
   fi
   last=$(tail -n 1 "$log" 2>/dev/null || true)
-  if echo "$last" | grep -Fq 'completed OK!'; then
+  if echo "$last" | grep -Fq '%s'; then
     echo "OK|${f}|${log}|${bn}"
     found=1
     break
@@ -51,7 +51,7 @@ if [ "$found" -eq 0 ]; then
   echo NOT_FOUND
   exit 2
 fi
-`, dataDir, logDir, namePrefix, maxCandidates)
+`, dataDir, logDir, namePrefix, maxCandidates, BackupCompletedMarker)
 }
 
 // BackupPathsForBasename 由基名生成数据包与日志路径。
@@ -81,7 +81,7 @@ func ParseFindLatestBackupOutput(stdout string, port int) BackupArtifact {
 		}
 	}
 	if strings.Contains(stdout, "NOT_FOUND") {
-		out.Message = fmt.Sprintf("未找到有效备份（命名前缀匹配且日志末行含 completed OK!）")
+		out.Message = fmt.Sprintf("未找到有效备份（命名前缀匹配且日志末行含 %s）", BackupCompletedMarker)
 		return out
 	}
 	out.Message = fmt.Sprintf("mysqlbackupcheck,port=%d status=0i", port)

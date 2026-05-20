@@ -113,7 +113,7 @@ var seedCmd = &cobra.Command{
 			return err
 		}
 
-		app.Logger.Biz("seed").Info("completed", "username", adminUser.Username, "email", adminUser.Email, "password", "Admin@123")
+		app.Logger.Biz("seed").Infow("Seed completed", "username", adminUser.Username, "email", adminUser.Email, "password", "Admin@123")
 		fmt.Println("seed completed: admin / Admin@123 / admin@example.com")
 		return nil
 	},

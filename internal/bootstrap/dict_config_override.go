@@ -123,7 +123,7 @@ func (b *Builder) applyDictConfigOverrides(ctx context.Context, ov dictConfigOve
 		if b.app.Logger == nil {
 			return
 		}
-		b.app.Logger.Biz("config").Info(msg, kv...)
+		b.app.Logger.Biz("config").Infow(msg, kv...)
 	}
 
 	// Alert: webhook_token

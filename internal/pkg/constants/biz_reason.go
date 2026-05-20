@@ -1,0 +1,82 @@
+package constants
+
+import "strconv"
+
+// bizReasonByCode 将数字业务码映射为 OneX 风格 reason（英文 PascalCase，稳定可枚举）。
+var bizReasonByCode = map[int]string{
+	10001: "BadRequest",
+	10002: "Unauthorized",
+	10003: "Forbidden",
+	10004: "NotFound",
+	10005: "Conflict",
+	10006: "InternalError",
+	10007: "TooManyRequests",
+	10008: "MissingAuthHeader",
+	10009: "AccessTokenInvalid",
+	10010: "LoginSessionExpired",
+	10011: "AccountPrincipalNotFound",
+	10012: "AccountDisabled",
+	10013: "WSMissingTokenParam",
+	10014: "NotLoggedIn",
+	10901: "InternalErrorWithMessage",
+	10902: "TooManyRequestsWithMessage",
+	11001: "IncludeRegexInvalid",
+	11002: "ExcludeRegexInvalid",
+	11003: "InvalidRequestParam",
+	11020: "BadRequestWithMessage",
+	11021: "NotFoundWithMessage",
+	11022: "ForbiddenWithMessage",
+	11023: "UnauthorizedWithMessage",
+	11024: "ConflictWithMessage",
+	20001: "UserNotFound",
+	20002: "PasswordIncorrect",
+	20003: "EmailAlreadyRegistered",
+	20004: "TokenGenerateFailed",
+	20005: "EmailNotBound",
+	20006: "NicknameRequired",
+	20007: "CaptchaIPRateLimited",
+	20008: "CaptchaExpired",
+	20009: "CaptchaIncorrect",
+	20010: "CaptchaRequired",
+	20011: "CaptchaInvalidOrExpired",
+	20012: "UsernameTaken",
+	20013: "CaptchaCoolingDown",
+	21001: "AgentTokenInvalid",
+	21002: "AgentRegisterClosed",
+	21003: "ServerDisabledForAgent",
+	21004: "AgentRegisterSecretInvalid",
+	21005: "AgentTokenMissing",
+	22001: "AlertSilenceNotFound",
+	22002: "AlertWebhookTokenInvalid",
+	23001: "ProjectNotFound",
+	23002: "LogSourceServerNotFound",
+	23003: "ServerNotInCurrentProject",
+	23004: "ServerProjectMismatch",
+	23005: "ProjectIDRequired",
+	23006: "NameRequired",
+	23007: "UploadFailed",
+	23008: "ServerNotInProject",
+	23009: "ServerNotInProjectForbidden",
+	23010: "ProjectMemberRequired",
+	23011: "ProjectAdminRequired",
+	23012: "ProjectReadonlyMember",
+	23013: "K8sClusterProjectAccessDenied",
+	24001: "RoleNotFound",
+	24002: "UserGroupNotFound",
+	24003: "MenuNotFound",
+	24004: "DepartmentNotFound",
+	24005: "PermissionNotFound",
+	25001: "RegistrationRequestNotFound",
+	25002: "RegistrationAlreadyProcessed",
+	25003: "RegistrationDuplicatePending",
+	26001: "K8sNamespaceAlreadyExists",
+	26002: "K8sClusterAPIUnauthorized",
+}
+
+// ReasonForBizCode 返回业务码对应的 reason，未知码时返回 BizError{code}。
+func ReasonForBizCode(bizCode int) string {
+	if r, ok := bizReasonByCode[bizCode]; ok {
+		return r
+	}
+	return "BizError" + strconv.Itoa(bizCode)
+}

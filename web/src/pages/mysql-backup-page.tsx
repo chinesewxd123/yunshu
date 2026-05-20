@@ -649,7 +649,7 @@ export function MysqlBackupPage() {
                       name="remote_log_dir"
                       label="远端日志目录"
                       rules={[{ required: true }, { pattern: /^\//, message: "须为绝对路径" }]}
-                      extra="同名 .log，末行须含 completed OK!"
+                      extra="同名 .log，末行须含 yunshu backup completed OK!"
                     >
                       <Input />
                     </Form.Item>

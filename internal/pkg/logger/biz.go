@@ -3,7 +3,6 @@ package logger
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"yunshu/internal/pkg/apperror"
@@ -111,20 +110,20 @@ func (b *Component) Op(operation string, err error, attrs ...any) {
 	if err == nil {
 		return
 	}
-	attrs = append(attrs, "operation", operation, slog.Any("error", err))
+	attrs = append(attrs, "operation", operation, "error", err)
 	var appErr *apperror.AppError
 	if errors.As(err, &appErr) {
-		attrs = append(attrs, "error_code", appErr.ErrorCode, "http_status", appErr.StatusCode)
+		attrs = append(attrs, "error_code", appErr.ErrorCode, "reason", appErr.Reason, "http_status", appErr.StatusCode)
 		if appErr.StatusCode >= http.StatusInternalServerError {
-			b.Error("operation failed", attrs...)
+			b.Error("Operation failed", attrs...)
 			return
 		}
 		if appErr.StatusCode >= http.StatusBadRequest {
-			b.Warn("operation rejected", attrs...)
+			b.Warnw("Operation rejected", attrs...)
 			return
 		}
 	}
-	b.Error("operation failed", attrs...)
+	b.Error("Operation failed", attrs...)
 }
 
 // LogErr 包级快捷：组件操作失败。

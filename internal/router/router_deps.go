@@ -9,6 +9,7 @@ import (
 	"yunshu/internal/middleware"
 	"yunshu/internal/repository"
 	"yunshu/internal/service"
+	"yunshu/internal/service/svclog"
 
 	"github.com/gin-gonic/gin"
 )
@@ -128,10 +129,10 @@ func wireRouteDeps(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) 
 		DutySvc:            alertDutySvc,
 		ReceiverGroupCache: alertReceiverGroupCache,
 		EncryptionKey:      app.Config.Security.EncryptionKey,
-		BizLog:             app.Logger.Biz("alert"),
+		BizLog:             svclog.Worker("alert"),
 	})
 	if strings.TrimSpace(app.Config.Alert.WebhookToken) == "" {
-		app.Logger.Biz("router").Warn("alert.webhook_token is empty; Alertmanager webhooks will be rejected until configured")
+		app.Logger.Biz("router").Warnw("Alert webhook token is empty; Alertmanager webhooks will be rejected until configured")
 	}
 	cloudExpiryRuleSvc := service.NewCloudExpiryRuleService(app.DB)
 	alertDatasourceSvc := service.NewAlertDatasourceService(app.DB)
