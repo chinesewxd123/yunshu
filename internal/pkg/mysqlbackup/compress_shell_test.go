@@ -12,10 +12,10 @@ func TestXtrabackupScriptRequiresGzip(t *testing.T) {
 		ShellQuote: func(s string) string { return "'" + s + "'" },
 	})
 	for _, sub := range []string{
-		"command -v gzip",
-		"未找到 pigz/gzip",
+		"resolve_gzip",
+		`tar -czf "$ARCHIVE"`,
+		"未找到 gzip",
 		BackupCompletedMarker,
-		`[ ! -s "$ARCHIVE" ]`,
 	} {
 		if !strings.Contains(script, sub) {
 			t.Fatalf("script missing %q", sub)

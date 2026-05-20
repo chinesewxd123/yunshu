@@ -48,6 +48,5 @@ exit $EC
 		workDir, logPath, sqlPath, p.MySQLPass,
 		p.MySQLHost, p.MySQLPort, p.MySQLUser,
 		q(p.MySQLHost), p.MySQLPort, q(p.MySQLUser), p.DumpFlags, p.DumpTarget,
-		q(p.MySQLHost), p.MySQLPort, q(p.MySQLUser), p.DumpFlags, p.DumpTarget,
 	)
 }
