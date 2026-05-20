@@ -151,7 +151,3 @@ func (b *Component) Errorw(err error, msg string, keyvals ...any) {
 	}
 	b.Error(msg, keyvals...)
 }
-
-func Infow(msg string, keyvals ...any)            { Biz("app").Infow(msg, keyvals...) }
-func Warnw(msg string, keyvals ...any)            { Biz("app").Warnw(msg, keyvals...) }
-func Errorw(err error, msg string, keyvals ...any) { Biz("app").Errorw(err, msg, keyvals...) }

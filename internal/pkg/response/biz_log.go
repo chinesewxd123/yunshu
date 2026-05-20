@@ -6,6 +6,7 @@ import (
 
 	"yunshu/internal/pkg/apperror"
 	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/service/svclog"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,7 +26,7 @@ func logHTTPError(c *gin.Context, err error) {
 	}
 	c.Set(ctxKeyBizErrorLogged, true)
 
-	log := logx.Biz("http.api").WithLayer(logx.LayerAPI).W(c.Request.Context())
+	log := svclog.API("http.api").W(c.Request.Context())
 	attrs := []any{
 		"method", c.Request.Method,
 	}

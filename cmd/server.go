@@ -20,6 +20,7 @@ import (
 	"yunshu/internal/repository"
 	"yunshu/internal/router"
 	"yunshu/internal/service"
+	"yunshu/internal/service/svclog"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/spf13/cobra"
@@ -55,7 +56,7 @@ var serverCmd = &cobra.Command{
 		if err := bootstrap.AutoMigrateModels(app.DB); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
-		bootLog := app.Logger.Biz("bootstrap")
+		bootLog := svclog.Worker("bootstrap")
 		bootLog.Infow("Database schema migrated")
 		if err := app.Enforcer.LoadPolicy(); err != nil {
 			return fmt.Errorf("reload casbin policy: %w", err)
@@ -136,7 +137,7 @@ var serverCmd = &cobra.Command{
 					err := agentSvc.RecordOfflineEpisodes(ctx)
 					cancel()
 					if err != nil {
-						app.Logger.Biz("agent").Warnw("Failed to record agent offline episodes", "error", err)
+						svclog.Worker("agent").Warnw("Failed to record agent offline episodes", "error", err)
 					}
 				}
 			}
@@ -153,7 +154,7 @@ var serverCmd = &cobra.Command{
 
 		errCh := make(chan error, 1)
 		go func() {
-			app.Logger.Biz("server").Infow("HTTP server started", "addr", server.Addr)
+			svclog.Worker("server").Infow("HTTP server started", "addr", server.Addr)
 			if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- err
 			}
@@ -164,7 +165,7 @@ var serverCmd = &cobra.Command{
 
 		select {
 		case sig := <-stop:
-			app.Logger.Biz("server").Infow("Received shutdown signal", "signal", sig.String())
+			svclog.Worker("server").Infow("Received shutdown signal", "signal", sig.String())
 		case err := <-errCh:
 			return err
 		}

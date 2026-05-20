@@ -14,6 +14,7 @@ import (
 	"yunshu/internal/pkg/casbinadapter"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/mailer"
+	"yunshu/internal/service/svclog"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"
@@ -201,11 +202,9 @@ func (b *Builder) WithCasbin() *Builder {
 	policyCount := len(enforcer.GetPolicy())
 	groupingCount := len(enforcer.GetGroupingPolicy())
 	if policyCount == 0 && groupingCount == 0 {
-		if b.app.Logger != nil {
-			b.app.Logger.Biz("casbin").Warnw("Loaded zero Casbin rules; authorize may deny all until policies are seeded")
-		}
-	} else if b.app.Logger != nil {
-		b.app.Logger.Biz("casbin").Infow("Loaded Casbin policy", "p_rules", policyCount, "g_rules", groupingCount)
+		svclog.Worker("casbin").Warnw("Loaded zero Casbin rules; authorize may deny all until policies are seeded")
+	} else {
+		svclog.Worker("casbin").Infow("Loaded Casbin policy", "p_rules", policyCount, "g_rules", groupingCount)
 	}
 	// 冒烟：确认 model 可执行 Enforce（adapter/模型损坏时此处会报错）
 	if _, err = enforcer.Enforce("__casbin_smoke__", "/__smoke__", "GET"); err != nil {
@@ -234,15 +233,13 @@ func (b *Builder) WithMailer() *Builder {
 			DB:       b.app.DB,
 			YAMLBase: b.yamlMailBase,
 		})
-		if b.app.Logger != nil {
-			enabled := b.app.Mailer.Enabled()
-			b.app.Logger.Biz("mail").Infow("Initialized mail sender (dict-first, reload on send)",
-				"enabled", enabled,
-				"host", resolved.Host,
-				"port", resolved.Port,
-				"from", resolved.FromEmail,
-			)
-		}
+		enabled := b.app.Mailer.Enabled()
+		svclog.Worker("mail").Infow("Initialized mail sender (dict-first, reload on send)",
+			"enabled", enabled,
+			"host", resolved.Host,
+			"port", resolved.Port,
+			"from", resolved.FromEmail,
+		)
 	} else {
 		b.app.Mailer = mailer.NewSMTPSender(resolved)
 	}

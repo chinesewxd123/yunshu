@@ -69,15 +69,15 @@ func webhookPayloadLogAttrs(payload AlertManagerPayload) []any {
 }
 
 func (s *AlertService) logWebhookWarn(msg string, attrs ...any) {
-	s.bizLog.Warnw(msg, attrs...)
+	alertLog().Warnw(msg, attrs...)
 }
 
 func (s *AlertService) logWebhookError(err error, msg string, attrs ...any) {
-	s.bizLog.Errorw(err, msg, attrs...)
+	alertLog().Errorw(err, msg, attrs...)
 }
 
 func (s *AlertService) logWebhookInfo(msg string, attrs ...any) {
-	s.bizLog.Infow(msg, attrs...)
+	alertLog().Infow(msg, attrs...)
 }
 
 func (s *AlertService) ingestWebhookPayloadWithRetry(ctx context.Context, payload AlertManagerPayload) {

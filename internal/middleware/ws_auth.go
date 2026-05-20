@@ -8,6 +8,7 @@ import (
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
+	"yunshu/internal/service/svclog"
 	"yunshu/internal/repository"
 	"yunshu/internal/store"
 
@@ -32,7 +33,7 @@ func WSAuth(secret string, redisClient *redis.Client, userRepo *repository.UserR
 
 		claims, err := auth.ParseToken(secret, tokenString)
 		if err != nil {
-			httpLog("http.ws_auth").Warn("parse ws token failed", "error", err)
+			svclog.HTTP("http.ws_auth").Warn("parse ws token failed", "error", err)
 			response.Error(c, constants.ErrAccessTokenInvalid)
 			c.Abort()
 			return

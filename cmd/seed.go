@@ -9,6 +9,7 @@ import (
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/password"
 	"yunshu/internal/service"
+	"yunshu/internal/service/svclog"
 
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
@@ -113,7 +114,7 @@ var seedCmd = &cobra.Command{
 			return err
 		}
 
-		app.Logger.Biz("seed").Infow("Seed completed", "username", adminUser.Username, "email", adminUser.Email, "password", "Admin@123")
+		svclog.Worker("seed").Infow("Seed completed", "username", adminUser.Username, "email", adminUser.Email, "password", "Admin@123")
 		fmt.Println("seed completed: admin / Admin@123 / admin@example.com")
 		return nil
 	},

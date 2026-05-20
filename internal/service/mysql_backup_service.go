@@ -14,9 +14,7 @@ import (
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
 	cryptox "yunshu/internal/pkg/crypto"
-	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/mysqlbackup"
-	"yunshu/internal/service/svclog"
 	"yunshu/internal/pkg/objectstore"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/pkg/sshclient"
@@ -33,9 +31,8 @@ type MysqlBackupService struct {
 	projectRepo *repository.ProjectRepository
 	db          *gorm.DB
 	aead        cipher.AEAD
-	schedMu     sync.Mutex
+	schedMu      sync.Mutex
 	schedRunning map[uint]bool
-	bizLog       *logx.Component
 }
 
 func NewMysqlBackupService(
@@ -56,12 +53,7 @@ func NewMysqlBackupService(
 		db:           db,
 		aead:         aead,
 		schedRunning: make(map[uint]bool),
-		bizLog:       svclog.Worker("mysql.backup"),
 	}, nil
-}
-
-func (s *MysqlBackupService) SetBizLog(c *logx.Component) {
-	s.bizLog = c
 }
 
 type MysqlBackupInstanceItem struct {
@@ -354,8 +346,8 @@ func (s *MysqlBackupService) RunBackup(ctx context.Context, projectID, instanceI
 
 func (s *MysqlBackupService) enqueueBackup(ctx context.Context, projectID, instanceID uint, trigger string) (*model.MysqlBackupJob, error) {
 	n, _ := s.backupRepo.FailStaleRunningJobs(ctx, 2*time.Hour)
-	if n > 0 && s.bizLog != nil {
-		s.bizLog.Warnw("Marked stale MySQL backup jobs as failed", "count", n)
+	if n > 0 {
+		mysqlBackupLog().Warnw("Marked stale MySQL backup jobs as failed", "count", n)
 	}
 	inst, _, err := s.loadInstanceSecrets(ctx, projectID, instanceID)
 	if err != nil {
@@ -451,10 +443,10 @@ func (s *MysqlBackupService) finishBackupJob(ctx context.Context, jobID, project
 }
 
 func (s *MysqlBackupService) logBackupJobBegin(jobID uint, inst *model.MysqlBackupInstance, trigger string) {
-	if s.bizLog == nil || inst == nil {
+	if inst == nil {
 		return
 	}
-	s.bizLog.Infow("Started MySQL backup job",
+	mysqlBackupLog().Infow("Started MySQL backup job",
 		"job_id", jobID,
 		"instance_id", inst.ID,
 		"project_id", inst.ProjectID,
@@ -468,9 +460,6 @@ func (s *MysqlBackupService) logBackupJobBegin(jobID uint, inst *model.MysqlBack
 }
 
 func (s *MysqlBackupService) logBackupJobDone(jobID, instanceID uint, instanceName, trigger, status string, dur time.Duration, runErr error, extra ...any) {
-	if s.bizLog == nil {
-		return
-	}
 	attrs := []any{
 		"job_id", jobID,
 		"instance_id", instanceID,
@@ -481,18 +470,15 @@ func (s *MysqlBackupService) logBackupJobDone(jobID, instanceID uint, instanceNa
 	}
 	attrs = append(attrs, extra...)
 	if runErr != nil {
-		s.bizLog.Errorw(runErr, "Failed to finish MySQL backup job", attrs...)
+		mysqlBackupLog().Errorw(runErr, "Failed to finish MySQL backup job", attrs...)
 		return
 	}
-	s.bizLog.Infow("Finished MySQL backup job", attrs...)
+	mysqlBackupLog().Infow("Finished MySQL backup job", attrs...)
 }
 
 func (s *MysqlBackupService) logBackupPhase(jobID uint, phase string, attrs ...any) {
-	if s.bizLog == nil {
-		return
-	}
 	base := []any{"job_id", jobID, "phase", phase}
-	s.bizLog.Infow("MySQL backup job phase", append(base, attrs...)...)
+	mysqlBackupLog().Infow("MySQL backup job phase", append(base, attrs...)...)
 }
 
 func validateMysqlBackupScope(scope, dbName, tableName, databaseNames string) error {

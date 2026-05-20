@@ -6,14 +6,14 @@ import (
 	"net/http"
 
 	"yunshu/internal/pkg/apperror"
-	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/service/svclog"
 )
 
 func logGRPCError(ctx context.Context, method string, err error) {
 	if err == nil || apperror.AlreadyLogged(err) {
 		return
 	}
-	b := logx.Biz("grpc.server").WithLayer(logx.LayerGRPC).W(ctx)
+	b := svclog.GRPC("grpc.server").W(ctx)
 	var appErr *apperror.AppError
 	if errors.As(err, &appErr) {
 		attrs := []any{"method", method, "error_code", appErr.ErrorCode, "reason", appErr.Reason, "http_status", appErr.StatusCode, "error", err}

@@ -24,24 +24,20 @@ func Register(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient, bgCtx
 	registerProjectRoutes(api, d)
 
 	if d.mysqlBackupSvc != nil && bgCtx != nil {
-		mysqlLog := svclog.Worker("mysql.backup")
-		d.mysqlBackupSvc.SetBizLog(mysqlLog)
-		go d.mysqlBackupSvc.RunMysqlBackupScheduler(bgCtx, mysqlLog)
+		go d.mysqlBackupSvc.RunMysqlBackupScheduler(bgCtx)
 	}
 
 	clusterRepo := repository.NewK8sClusterRepository(app.DB)
 	runtimeSvc := service.NewK8sRuntimeService(clusterRepo)
-	k8sFwdLog := svclog.Worker("k8s.event_forward")
 	mgr, err := k8seventforward.NewManager(
 		app.DB,
 		runtimeSvc,
 		app.YamlK8sEventForwardBase,
 		app.Config.Alert,
 		app.Config.App.Port,
-		k8sFwdLog,
 	)
 	if err != nil {
-		k8sFwdLog.Errorw(err, "Failed to init K8s event forward manager")
+		svclog.Worker("k8s.event_forward").Errorw(err, "Failed to init K8s event forward manager")
 		return nil
 	}
 	mgr.Start()

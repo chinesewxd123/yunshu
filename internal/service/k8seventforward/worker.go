@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/model"
 )
 
@@ -16,7 +15,6 @@ type Worker struct {
 	store    *Store
 	client   *WebhookClient
 	cfg      RuntimeConfig
-	log      *logx.Component
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
@@ -27,13 +25,12 @@ type Worker struct {
 	isEnabled     func() bool
 }
 
-func NewWorker(store *Store, client *WebhookClient, cfg RuntimeConfig, log *logx.Component) *Worker {
+func NewWorker(store *Store, client *WebhookClient, cfg RuntimeConfig) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Worker{
 		store:    store,
 		client:   client,
 		cfg:      cfg,
-		log:      log,
 		ctx:      ctx,
 		cancel:   cancel,
 		interval: time.Duration(cfg.WorkerIntervalSeconds) * time.Second,
@@ -77,7 +74,7 @@ func (w *Worker) loop() {
 			return
 		case <-ticker.C:
 			if err := w.processBatch(); err != nil {
-				w.log.Warnw("Failed to process K8s event forward batch", "error", err)
+				forwardLog().Warnw("Failed to process K8s event forward batch", "error", err)
 			}
 		}
 	}
@@ -137,7 +134,7 @@ func (w *Worker) processBatch() error {
 
 		for clusterID, batch := range grouped {
 			if err := w.push(ctx, webhookURL, rule.Name, clusterID, batch); err != nil {
-				w.log.Warnw("Failed to push K8s event forward webhook",
+				forwardLog().Warnw("Failed to push K8s event forward webhook",
 					"rule", rule.Name,
 					"cluster_id", clusterID,
 					"error", err)

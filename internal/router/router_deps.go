@@ -129,10 +129,9 @@ func wireRouteDeps(app *bootstrap.App, runtimeClient *grpcclient.RuntimeClient) 
 		DutySvc:            alertDutySvc,
 		ReceiverGroupCache: alertReceiverGroupCache,
 		EncryptionKey:      app.Config.Security.EncryptionKey,
-		BizLog:             svclog.Worker("alert"),
 	})
 	if strings.TrimSpace(app.Config.Alert.WebhookToken) == "" {
-		app.Logger.Biz("router").Warnw("Alert webhook token is empty; Alertmanager webhooks will be rejected until configured")
+		svclog.Worker("router").Warnw("Alert webhook token is empty; Alertmanager webhooks will be rejected until configured")
 	}
 	cloudExpiryRuleSvc := service.NewCloudExpiryRuleService(app.DB)
 	alertDatasourceSvc := service.NewAlertDatasourceService(app.DB)

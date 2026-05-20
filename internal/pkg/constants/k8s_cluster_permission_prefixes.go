@@ -28,4 +28,5 @@ var K8sClusterPermissionPathPrefixes = []string{
 	"/api/v1/crs",
 	"/api/v1/rbac",
 	"/api/v1/serviceaccounts",
+	"/api/v1/k8s/event-forward",
 }

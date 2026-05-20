@@ -12,19 +12,20 @@ resolve_gzip() {
 }
 `
 
-// shellTarGzFromDir 使用 tar -czf 打 gzip 包；输出追加到 $LOG（勿经 SSH stdout）。
+// shellTarGzFromDir 用 tar cf - | gzip -c 打 .tar.gz（勿 export GZIP=路径：GNU 里 GZIP 是压缩选项不是可执行文件）。
 const shellTarGzFromDir = shellResolveGzip + `
 export PATH="/usr/bin:/bin:${PATH:-}"
 GZIP_BIN=$(resolve_gzip) || {
   echo "ERROR: 未找到 gzip，无法生成 .tar.gz。请执行: yum install -y gzip" >>"$LOG"
   exit 127
 }
-export GZIP="$GZIP_BIN"
-echo "[$(date '+%%F %%T')] packing with tar -czf (gzip=$GZIP_BIN)" >>"$LOG"
+echo "[$(date '+%%F %%T')] packing with tar|gzip (gzip=$GZIP_BIN)" >>"$LOG"
 echo "[$(date '+%%F %%T')] tmp dir size: $(du -sh "$TMP" 2>/dev/null | awk '{print $1}')" >>"$LOG"
 rm -f "$ARCHIVE"
-if ! tar -czf "$ARCHIVE" -C "$TMP" . >>"$LOG" 2>&1; then
-  echo "ERROR: tar -czf failed, exit=$?" >>"$LOG"
+_pack_exit=0
+tar -cf - -C "$TMP" . 2>>"$LOG" | "$GZIP_BIN" -c > "$ARCHIVE" 2>>"$LOG" || _pack_exit=$?
+if [ "$_pack_exit" -ne 0 ]; then
+  echo "ERROR: tar|gzip pack failed, exit=$_pack_exit" >>"$LOG"
   rm -f "$ARCHIVE"
   exit 1
 fi

@@ -9,6 +9,7 @@ import (
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/response"
+	"yunshu/internal/service/svclog"
 	"yunshu/internal/repository"
 	"yunshu/internal/store"
 
@@ -21,10 +22,10 @@ func respondSessionStoreError(c *gin.Context, _ *logx.Logger, err error) {
 	case errors.Is(err, store.ErrSessionNotFound):
 		response.Error(c, constants.ErrLoginSessionExpired)
 	case errors.Is(err, store.ErrRedisRequired), errors.Is(err, store.ErrRedisUnavailable):
-		httpLog("http.auth").Error("redis session validation failed", "error", err)
+		svclog.HTTP("http.auth").Error("redis session validation failed", "error", err)
 		response.Error(c, constants.ErrInternal)
 	default:
-		httpLog("http.auth").Error("session validation failed", "error", err)
+		svclog.HTTP("http.auth").Error("session validation failed", "error", err)
 	}
 }
 
@@ -40,7 +41,7 @@ func Auth(secret string, redisClient *redis.Client, userRepo *repository.UserRep
 		tokenString := strings.TrimPrefix(header, "Bearer ")
 		claims, err := auth.ParseToken(secret, tokenString)
 		if err != nil {
-			httpLog("http.auth").Warn("parse token failed", "error", err)
+			svclog.HTTP("http.auth").Warn("parse token failed", "error", err)
 			response.Error(c, constants.ErrAccessTokenInvalid)
 			c.Abort()
 			return

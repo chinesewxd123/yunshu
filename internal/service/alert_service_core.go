@@ -9,9 +9,7 @@ import (
 
 	"yunshu/internal/config"
 	cryptox "yunshu/internal/pkg/crypto"
-	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/mailer"
-	"yunshu/internal/service/svclog"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -92,7 +90,6 @@ type AlertService struct {
 
 	monitorEvalCancel context.CancelFunc
 	monitorEvalMu     sync.Mutex
-	bizLog            *logx.Component
 	aead              cipher.AEAD
 	cloudExpiryState  map[string]bool
 	cloudExpiryEvalMu sync.Mutex
@@ -119,8 +116,6 @@ type AlertServiceOptions struct {
 	ReceiverGroupCache *ReceiverGroupCache
 	// EncryptionKey 与项目/云账号凭据加密一致；非空时用于云到期规则解密云账号 AK/SK。
 	EncryptionKey string
-	// BizLog 业务日志（layer=service, component=alert）；为空时默认 logx.Biz("alert")。
-	BizLog *logx.Component
 }
 
 type promEnrichTask struct {
@@ -202,15 +197,11 @@ func NewAlertService(db *gorm.DB, redisClient *redis.Client, sender mailer.Sende
 		svc.silenceSvc = opts.SilenceSvc
 		svc.assigneeSvc = opts.AssigneeSvc
 		svc.dutySvc = opts.DutySvc
-		svc.bizLog = opts.BizLog
 		if key := strings.TrimSpace(opts.EncryptionKey); key != "" {
 			if aead, err := cryptox.NewAESGCMFromKeyString(key); err == nil {
 				svc.aead = aead
 			}
 		}
-	}
-	if svc.bizLog == nil {
-		svc.bizLog = svclog.Worker("alert")
 	}
 	svc.startPrometheusEnrichWorkers()
 	svc.startInhibitionPruner(context.Background())

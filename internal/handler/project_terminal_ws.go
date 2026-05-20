@@ -8,6 +8,7 @@ import (
 
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/pkg/sshclient"
+	"yunshu/internal/service/svclog"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -31,7 +32,7 @@ func (h *ProjectHandler) ServerTerminalWS(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	sess := newWSSession(c.Request.Context(), httpLog("http.ws.terminal"))
+	sess := newWSSession(c.Request.Context(), svclog.HTTP("http.ws.terminal"))
 	defer sess.Cancel()
 	defer sess.Wait()
 

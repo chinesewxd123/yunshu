@@ -6,10 +6,8 @@ import (
 
 	"yunshu/internal/config"
 	"yunshu/internal/dictconfig"
-	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/model"
 	"yunshu/internal/service"
-	"yunshu/internal/service/svclog"
 
 	"gorm.io/gorm"
 )
@@ -30,7 +28,6 @@ type Manager struct {
 	store    *Store
 	watcher  *Watcher
 	worker   *Worker
-	log      *logx.Component
 	enabled  bool
 	db       *gorm.DB
 	yamlBase config.K8sEventForwardConfig
@@ -43,11 +40,7 @@ func NewManager(
 	yamlBase config.K8sEventForwardConfig,
 	alertCfg config.AlertConfig,
 	appPort int,
-	log *logx.Component,
 ) (*Manager, error) {
-	if log == nil {
-		log = svclog.Worker("k8s.event_forward")
-	}
 	ctx := context.Background()
 	resolved := dictconfig.ResolveK8sEventForwardConfig(ctx, db, yamlBase, dictconfig.DefaultK8sEventForwardDictTypes())
 
@@ -71,9 +64,8 @@ func NewManager(
 	client := NewWebhookClient(alertCfg.WebhookToken, 0)
 	mgr := &Manager{
 		store:    store,
-		watcher:  NewWatcher(store, runtime, rt, log),
-		worker:   NewWorker(store, client, rt, log),
-		log:      log,
+		watcher:  NewWatcher(store, runtime, rt),
+		worker:   NewWorker(store, client, rt),
 		enabled:  resolved.Enabled,
 		db:       db,
 		yamlBase: yamlBase,
@@ -93,7 +85,7 @@ func (m *Manager) reloadRuntimeConfig() {
 	m.enabled = resolved.Enabled
 	rt, err := loadRuntimeConfig(m.store, resolved, m.appPort)
 	if err != nil {
-		m.log.Warnw("Failed to reload K8s event forward config", "error", err)
+		forwardLog().Warnw("Failed to reload K8s event forward config", "error", err)
 		return
 	}
 	m.worker.RefreshSettings(rt)
@@ -127,20 +119,20 @@ func firstPositive(a, b int) int {
 
 func (m *Manager) Start() {
 	if !m.enabled {
-		m.log.Infow("K8s event forward disabled in config")
+		forwardLog().Infow("K8s event forward disabled in config")
 		return
 	}
 	ctx := context.Background()
 	ok, err := m.store.HasEnabledRules(ctx)
 	if err != nil {
-		m.log.Warnw("Failed to check K8s event forward rules", "error", err)
+		forwardLog().Warnw("Failed to check K8s event forward rules", "error", err)
 		return
 	}
 	if !ok {
-		m.log.Infow("No enabled K8s event forward rules, watcher and worker not started")
+		forwardLog().Infow("No enabled K8s event forward rules, watcher and worker not started")
 		return
 	}
-	m.log.Infow("Starting K8s event forward watcher and worker")
+	forwardLog().Infow("Starting K8s event forward watcher and worker")
 	m.watcher.Start()
 	m.worker.Start()
 }

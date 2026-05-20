@@ -60,7 +60,7 @@ func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force b
 	}
 	if !force && s.aead == nil {
 		if len(rules) > 0 {
-			s.bizLog.Infow("Skipped cloud expiry tick", "reason", "no_encryption_key", "enabled_rules", len(rules))
+			alertLog().Infow("Skipped cloud expiry tick", "reason", "no_encryption_key", "enabled_rules", len(rules))
 		}
 		// 定时评估依赖解密云账号 AK/SK；未配置 encryption_key 时不跑规则，也不推进 last_eval，避免「看起来在调度、实际无拉云」。
 		return nil
@@ -91,7 +91,7 @@ func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force b
 			}
 		}
 		if !force {
-			s.bizLog.Infow("Scheduled cloud expiry rule evaluation", "rule_id", rule.ID, "name", rule.Name, "cron", strings.TrimSpace(rule.EvalCronSpec))
+			alertLog().Infow("Scheduled cloud expiry rule evaluation", "rule_id", rule.ID, "name", rule.Name, "cron", strings.TrimSpace(rule.EvalCronSpec))
 		}
 		s.evaluateOneCloudExpiryRule(ctx, rule, now, force)
 		if !force {
@@ -103,7 +103,7 @@ func (s *AlertService) tickCloudExpiryRulesWithMode(ctx context.Context, force b
 		}
 	}
 	if !force && skipNoCron > 0 {
-		s.bizLog.Infow("Cloud expiry tick completed", "skipped_empty_cron", skipNoCron)
+		alertLog().Infow("Cloud expiry tick completed", "skipped_empty_cron", skipNoCron)
 	}
 	return nil
 }
@@ -121,7 +121,7 @@ func (s *AlertService) evaluateOneCloudExpiryRule(ctx context.Context, rule *mod
 	if s.aead == nil {
 		return
 	}
-	s.bizLog.Infow("Started cloud expiry rule evaluation", "rule_id", rule.ID, "name", rule.Name, "manual", manualEval)
+	alertLog().Infow("Started cloud expiry rule evaluation", "rule_id", rule.ID, "name", rule.Name, "manual", manualEval)
 	instScanned := 0
 	providerFilter := strings.TrimSpace(rule.Provider)
 	regionFilter := parseRegionSet(rule.RegionScope)
@@ -211,7 +211,7 @@ func (s *AlertService) evaluateOneCloudExpiryRule(ctx context.Context, rule *mod
 			s.emitCloudExpiryAlert(ctx, fp, firing, labels, annotations, now, manualEval)
 		}
 	}
-	s.bizLog.Infow("Finished cloud expiry rule evaluation", "rule_id", rule.ID, "instances_checked", instScanned)
+	alertLog().Infow("Finished cloud expiry rule evaluation", "rule_id", rule.ID, "instances_checked", instScanned)
 }
 
 func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firing bool, labels, annotations map[string]string, now time.Time, manualEval bool) {
@@ -240,7 +240,7 @@ func (s *AlertService) emitCloudExpiryAlert(ctx context.Context, fp string, firi
 			CommonLabels: labels,
 			Alerts:       []AlertManagerAlert{am},
 		})
-		s.bizLog.Infow("Emitted cloud expiry firing alert", "fingerprint", fp, "alertname", labels["alertname"])
+		alertLog().Infow("Emitted cloud expiry firing alert", "fingerprint", fp, "alertname", labels["alertname"])
 		return
 	}
 	if !active {

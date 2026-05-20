@@ -13,7 +13,8 @@ func TestXtrabackupScriptRequiresGzip(t *testing.T) {
 	})
 	for _, sub := range []string{
 		"resolve_gzip",
-		`tar -czf "$ARCHIVE"`,
+		`tar -cf - -C "$TMP"`,
+		`"$GZIP_BIN" -c > "$ARCHIVE"`,
 		`>>"$LOG"`,
 		"未找到 gzip",
 		BackupCompletedMarker,

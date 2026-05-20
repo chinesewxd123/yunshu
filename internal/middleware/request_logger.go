@@ -13,6 +13,7 @@ import (
 
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/service/svclog"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -76,7 +77,7 @@ func RequestLogger(logger *logx.Logger) gin.HandlerFunc {
 			attrs = append(attrs, "errors", c.Errors.String())
 		}
 
-		access := logx.Biz("http.access").WithLayer(logx.LayerHTTP).W(c.Request.Context())
+		access := svclog.HTTP("http.access").W(c.Request.Context())
 		if c.Writer.Status() >= 500 {
 			access.Errorw(errors.New("server error"), "HTTP request completed", attrs...)
 			return

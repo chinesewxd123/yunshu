@@ -8,9 +8,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"yunshu/internal/dictconfig"
-	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/model"
-	"yunshu/internal/service/svclog"
 )
 
 const defaultMysqlBackupInnerTick = "*/30 * * * * *"
@@ -41,13 +39,11 @@ func shouldRunMysqlBackupByCron(spec string, last *time.Time, now time.Time) boo
 }
 
 // RunMysqlBackupScheduler 启动定时备份 Worker（字典 mysql_backup_scheduler_* 控制开关与节拍）。
-func (s *MysqlBackupService) RunMysqlBackupScheduler(ctx context.Context, log *logx.Component) {
+func (s *MysqlBackupService) RunMysqlBackupScheduler(ctx context.Context) {
 	if s == nil || s.db == nil {
 		return
 	}
-	if log == nil {
-		log = svclog.Worker("mysql.backup.scheduler")
-	}
+	log := mysqlBackupLog()
 	cfg := dictconfig.ResolveMysqlBackupSchedulerConfig(ctx, s.db, dictconfig.DefaultMysqlBackupSchedulerDictTypes())
 	if !cfg.Enabled {
 		log.Infow("MySQL backup scheduler disabled by dict")
@@ -62,7 +58,7 @@ func (s *MysqlBackupService) RunMysqlBackupScheduler(ctx context.Context, log *l
 		if ctx.Err() != nil {
 			return
 		}
-		if err := s.tickScheduledBackups(ctx); err != nil && log != nil {
+		if err := s.tickScheduledBackups(ctx); err != nil {
 			log.Warnw("MySQL backup scheduler tick failed", "error", err)
 		}
 	}
