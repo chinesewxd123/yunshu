@@ -237,6 +237,24 @@ export async function batchTestProjectServers(projectId: number, serverIds: numb
   );
 }
 
+export interface ServerSyncResult {
+  total: number;
+  online: number;
+  offline: number;
+  updated_at: string;
+  test_results: BatchServerTestResult[];
+}
+
+export async function syncProjectServers(projectId: number, serverIds?: number[], parallel = 8) {
+  return await getData<ServerSyncResult>(
+    http.post(`/projects/${projectId}/servers/sync`, {
+      project_id: projectId,
+      server_ids: serverIds?.length ? serverIds : undefined,
+      parallel,
+    }),
+  );
+}
+
 export async function exportProjectServers(projectId: number, params?: { keyword?: string }): Promise<Blob> {
   return (await http.get(`/projects/${projectId}/servers/export`, { params, responseType: "blob" })) as unknown as Blob;
 }

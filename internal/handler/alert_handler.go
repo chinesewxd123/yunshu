@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"log/slog"
 	"yunshu/internal/pkg/constants"
 
 	"yunshu/internal/model"
@@ -128,23 +127,17 @@ func (h *AlertHandler) ReceiveAlertmanager(c *gin.Context) {
 		return
 	}
 
-	// 先快速返回 202 Accepted，后台异步处理入队/处理逻辑，避免阻塞上游 Alertmanager
 	var payload service.AlertManagerPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		response.Error(c, constants.ErrBadRequestWithMsg(bindErrorMessage(err)))
 		return
 	}
 
-	// 异步处理：调用 Service 层统一入口（内部会根据配置选择入队或同步处理）
-	go func(p service.AlertManagerPayload) {
-		if err := h.svc.ReceiveAlertmanager(context.Background(), p); err != nil {
-			slog.Error("alertmanager webhook processing failed",
-				slog.String("status", p.Status),
-				slog.String("receiver", p.Receiver),
-				slog.Int("alerts", len(p.Alerts)),
-				slog.Any("error", err))
-		}
-	}(payload)
+	// Service 内 Redis 入队成功即返回；失败时同步降级处理，避免 handler 再套无界 goroutine。
+	if err := h.svc.ReceiveAlertmanager(c.Request.Context(), payload); err != nil {
+		response.Error(c, err)
+		return
+	}
 
 	c.JSON(202, gin.H{"message": "accepted"})
 }

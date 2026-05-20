@@ -17,15 +17,11 @@ func (s *AlertService) runCloudExpiryEvaluator(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if s.infoLog != nil {
-			s.infoLog.Info("cloud_expiry_scheduler wake", "inner_cron", spec)
-		}
+		alertLog().Infow("Cloud expiry scheduler wake", "inner_cron", spec)
 		_ = s.tickCloudExpiryRules(ctx)
 	}
 	if _, err := c.AddFunc(spec, job); err != nil {
-		if s.infoLog != nil {
-			s.infoLog.Error("cloud_expiry_scheduler init failed", "spec", spec, "err", err)
-		}
+		alertLog().Errorw(err, "Failed to init cloud expiry scheduler", "spec", spec)
 		return
 	}
 	c.Start()

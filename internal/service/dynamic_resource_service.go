@@ -1,10 +1,11 @@
-package service
+﻿package service
 
 import (
 	"context"
 	"fmt"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/pkg/k8sutil"
 
@@ -101,7 +102,7 @@ func (s *DynamicResourceService) ResolveCRKindFromCRD(ctx context.Context, k *ko
 		Kind:    "CustomResourceDefinition",
 	}, "")
 	if err != nil {
-		return "", constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt2b30d4949c98, err))
+		return "", svcerr.Internal(ctx, "k8s.dynamic", "list_crd", err, constants.ErrFmt2b30d4949c98)
 	}
 	for _, item := range list {
 		var crd apiextv1.CustomResourceDefinition

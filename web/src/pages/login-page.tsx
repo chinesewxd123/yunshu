@@ -9,10 +9,12 @@ import {
   SafetyCertificateOutlined,
   UserOutlined,
 } from "@ant-design/icons";
+import type { InputRef } from "antd";
 import { Button, Form, Input, Modal, message } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { sendEmailCode, sendPasswordLoginCode, registerByEmail } from "../services/auth";
+import { extractApiErrorMessage } from "../services/http";
 import type {
   EmailLoginPayload,
   PasswordLoginPayload,
@@ -21,6 +23,7 @@ import type {
   SendPasswordLoginCodeResult,
 } from "../types/api";
 import { useAuth } from "../contexts/auth-context";
+import { resolveEmailFromForm } from "../utils/form-email";
 import loginHeroImage from "../assets/login-hero.svg";
 
 type AuthTabKey = "account" | "email";
@@ -28,17 +31,6 @@ type ButtonFxState = "idle" | "loading" | "success";
 
 interface LocationState {
   from?: string;
-}
-
-function getErrorMessage(error: unknown, fallback: string) {
-  const responseMessage = (error as any)?.response?.data?.message;
-  if (typeof responseMessage === "string" && responseMessage.trim()) {
-    return responseMessage;
-  }
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  return fallback;
 }
 
 function useCountdown(seconds: number, onTick: (next: number) => void) {
@@ -78,6 +70,8 @@ export function LoginPage() {
   const [passwordForm] = Form.useForm<PasswordLoginPayload>();
   const [emailForm] = Form.useForm<EmailLoginPayload>();
   const [registerForm] = Form.useForm<RegisterPayload>();
+  const emailInputRef = useRef<InputRef>(null);
+  const registerEmailInputRef = useRef<InputRef>(null);
 
   useCountdown(passwordCodeCountdown, setPasswordCodeCountdown);
   useCountdown(emailCodeCountdown, setEmailCodeCountdown);
@@ -118,8 +112,8 @@ export function LoginPage() {
       passwordForm.setFieldValue("captcha_key", result.captcha_key);
       message.success("验证码已生成");
       setPasswordCodeCountdown(60);
-    } catch {
-      message.error("生成验证码失败");
+    } catch (e) {
+      message.error(extractApiErrorMessage(e, "生成验证码失败"));
     } finally {
       setSendingCode(false);
     }
@@ -127,9 +121,8 @@ export function LoginPage() {
 
   async function handleSendEmailCode() {
     try {
-      const email = emailForm.getFieldValue("email");
+      const email = await resolveEmailFromForm(emailForm, emailInputRef);
       if (!email) {
-        message.warning("请先输入邮箱地址");
         return;
       }
 
@@ -138,6 +131,8 @@ export function LoginPage() {
       await sendEmailCode(payload);
       message.success("验证码已发送到您的邮箱，请查收");
       setEmailCodeCountdown(60);
+    } catch (e) {
+      message.error(extractApiErrorMessage(e, "发送验证码失败"));
     } finally {
       setSendingCode(false);
     }
@@ -145,9 +140,8 @@ export function LoginPage() {
 
   async function handleSendRegisterCode() {
     try {
-      const email = registerForm.getFieldValue("email");
+      const email = await resolveEmailFromForm(registerForm, registerEmailInputRef);
       if (!email) {
-        message.warning("请先输入邮箱地址");
         return;
       }
 
@@ -156,6 +150,8 @@ export function LoginPage() {
       await sendEmailCode(payload);
       message.success("验证码已发送到您的邮箱，请查收");
       setRegisterCodeCountdown(60);
+    } catch (e) {
+      message.error(extractApiErrorMessage(e, "发送验证码失败"));
     } finally {
       setSendingCode(false);
     }
@@ -175,7 +171,7 @@ export function LoginPage() {
       window.setTimeout(() => navigate(fromPath, { replace: true }), 520);
     } catch (e) {
       setButtonFx("idle");
-      message.error(e instanceof Error ? e.message : "登录失败");
+      message.error(extractApiErrorMessage(e, "登录失败"));
     } finally {
       window.setTimeout(() => setButtonFx("idle"), 1200);
       setSubmitting(false);
@@ -202,11 +198,11 @@ export function LoginPage() {
         code: String(values.code ?? "").trim().replace(/[^\d]/g, ""),
       };
       const result = await registerByEmail(payload);
-      message.success(result.message || "注册申请已提交，请等待管理员审核");
+      message.success(result?.message || "注册申请已提交，请等待管理员审核");
       setRegisterOpen(false);
       registerForm.resetFields();
     } catch (e) {
-      message.error(getErrorMessage(e, "注册失败"));
+      message.error(extractApiErrorMessage(e, "注册失败"));
     } finally {
       setSubmitting(false);
     }
@@ -317,7 +313,7 @@ export function LoginPage() {
         ) : (
           <Form<EmailLoginPayload> form={emailForm} layout="vertical" onFinish={handleEmailLogin} size="large">
             <Form.Item label={isZh ? "邮箱" : "Email"} name="email" rules={[{ required: true, type: "email", message: isZh ? "请输入正确的邮箱地址" : "Please enter valid email" }]}>
-              <Input prefix={<MailOutlined />} placeholder={isZh ? "请输入邮箱地址" : "Please enter email"} autoComplete="off" />
+              <Input ref={emailInputRef} prefix={<MailOutlined />} placeholder={isZh ? "请输入邮箱地址" : "Please enter email"} autoComplete="email" />
             </Form.Item>
 
             <Form.Item label={isZh ? "验证码" : "Code"} name="code" rules={[{ required: true, message: isZh ? "请输入验证码" : "Please enter code" }]}>
@@ -431,7 +427,7 @@ export function LoginPage() {
             <Input prefix={<UserOutlined />} placeholder={isZh ? "请输入用户名" : "Please enter username"} autoComplete="off" />
           </Form.Item>
           <Form.Item label={isZh ? "邮箱" : "Email"} name="email" rules={[{ required: true, type: "email", message: isZh ? "请输入正确的邮箱地址" : "Please enter valid email" }]}>
-            <Input prefix={<MailOutlined />} placeholder={isZh ? "请输入邮箱地址" : "Please enter email"} autoComplete="off" />
+            <Input ref={registerEmailInputRef} prefix={<MailOutlined />} placeholder={isZh ? "请输入邮箱地址" : "Please enter email"} autoComplete="email" />
           </Form.Item>
           <Form.Item label={isZh ? "昵称" : "Nickname"} name="nickname" rules={[{ required: true, max: 128, message: isZh ? "请输入昵称" : "Please enter nickname" }]}>
             <Input prefix={<UserOutlined />} placeholder={isZh ? "请输入昵称" : "Please enter nickname"} autoComplete="off" />

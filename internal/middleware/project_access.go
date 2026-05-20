@@ -9,6 +9,7 @@ import (
 	"yunshu/internal/pkg/constants"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/projectaccess"
+	"yunshu/internal/service/svclog"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/repository"
 
@@ -53,9 +54,7 @@ func RequireProjectMemberAccess(memberRepo *repository.ProjectMemberRepository, 
 				c.Abort()
 				return
 			}
-			if logger != nil {
-				logger.Error.Error("project member lookup failed", "error", err)
-			}
+			svclog.HTTP("http.project_access").Error("project member lookup failed", "error", err)
 			response.Error(c, constants.ErrInternal)
 			c.Abort()
 			return

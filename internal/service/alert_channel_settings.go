@@ -1,6 +1,7 @@
-package service
+﻿package service
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -13,6 +14,7 @@ import (
 	"text/template"
 	"time"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/parseutil"
@@ -26,7 +28,7 @@ func validateHeadersJSON(v string) error {
 func validateChannelMessageTemplates(headersJSON string) error {
 	settings, err := parseChannelSettings(headersJSON)
 	if err != nil {
-		return err
+		return svcerr.Pass(context.Background(), "alert.channel", "validateChannelMessageTemplates", err)
 	}
 	validateOne := func(fieldKey, fieldLabel string) error {
 		raw, ok := settings[fieldKey]
@@ -43,10 +45,10 @@ func validateChannelMessageTemplates(headersJSON string) error {
 		return nil
 	}
 	if err = validateOne("messageTemplateFiring", "触发模板(messageTemplateFiring)"); err != nil {
-		return err
+		return svcerr.Pass(context.Background(), "alert.channel", "validateChannelMessageTemplates", err)
 	}
 	if err = validateOne("messageTemplateResolved", "恢复模板(messageTemplateResolved)"); err != nil {
-		return err
+		return svcerr.Pass(context.Background(), "alert.channel", "validateChannelMessageTemplates", err)
 	}
 	return nil
 }
@@ -129,7 +131,7 @@ func validateEmailChannelRecipients(enabled bool, chType, headersJSON string) er
 	}
 	recipients, err := parseEmailRecipients(headersJSON)
 	if err != nil {
-		return err
+		return svcerr.Pass(context.Background(), "alert.channel", "validateEmailChannelRecipients", err)
 	}
 	if len(recipients) == 0 {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsgbb73fcfe4fb7)

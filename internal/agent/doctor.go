@@ -40,6 +40,7 @@ func Doctor(cfg Config) error {
 		if err != nil {
 			return fmt.Errorf("public-register failed: %w", err)
 		}
+		// doctor 为 CLI 诊断工具：成功结果输出到 stdout 供运维直接查看。
 		fmt.Printf("OK public-register project_id=%d token_len=%d\n", pid, len(tk))
 		token = tk
 	}

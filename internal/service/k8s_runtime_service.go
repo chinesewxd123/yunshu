@@ -1,16 +1,17 @@
-package service
+﻿package service
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/eventbus"
@@ -95,21 +96,10 @@ func (s *K8sRuntimeService) registerClusterIfNeeded(clusterID string, kubeconfig
 	}
 	s.komMu.Unlock()
 
-	f, err := os.CreateTemp("", "kom-kubeconfig-*")
+	// 使用 kom 原生 RegisterByStringWithID，与 RegisterByPathWithID 等价，避免临时文件在容器/Windows 下的路径问题。
+	_, err := kom.Clusters().RegisterByStringWithID(kubeconfig, clusterID)
 	if err != nil {
-		return err
-	}
-	tmpPath := f.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if _, err := f.WriteString(kubeconfig); err != nil {
-		_ = f.Close()
-		return err
-	}
-	_ = f.Close()
-
-	_, err = kom.Clusters().RegisterByPathWithID(tmpPath, clusterID)
-	if err != nil {
+		_ = svcerr.Pass(context.Background(), "k8s.runtime", "registerClusterIfNeeded", err, "cluster_id", clusterID)
 		s.komMu.Lock()
 		st.State = "degraded"
 		st.LastError = err.Error()
@@ -121,7 +111,7 @@ func (s *K8sRuntimeService) registerClusterIfNeeded(clusterID string, kubeconfig
 			Type: eventbus.ClusterKomRegisterFail,
 			Payload: map[string]any{"cluster_id": clusterID, "error": err.Error()},
 		})
-		return err
+		return apperror.MarkLogged(err)
 	}
 	s.komMu.Lock()
 	s.registeredHash[clusterID] = hash
@@ -154,20 +144,31 @@ func (s *K8sRuntimeService) DeleteRegisterCache(clusterID uint) {
 func (s *K8sRuntimeService) GetClusterKubectl(ctx context.Context, id uint) (*model.K8sCluster, *kom.Kubectl, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, k8sRepoErr(ctx, "k8s.runtime", "GetClusterKubectl", err, "cluster_id", id)
 	}
 	if cluster.Status != 1 {
 		return nil, nil, constants.ErrForbiddenWithMsg(constants.ErrMsgb0e556f1ccc5)
 	}
 	clusterID := strconv.FormatUint(uint64(id), 10)
-	if err := s.registerClusterIfNeeded(clusterID, cluster.Kubeconfig, false); err != nil {
-		return nil, nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtac130d1176b3, err))
+	kubeconfig, kerr := resolveClusterKubeconfig(cluster)
+	if kerr != nil {
+		return nil, nil, constants.ErrBadRequestWithMsg(kerr.Error())
+	}
+	force := kubeconfig != strings.TrimSpace(cluster.Kubeconfig)
+	if err := s.registerClusterIfNeeded(clusterID, kubeconfig, force); err != nil {
+		return nil, nil, svcerr.Internal(ctx, "k8s.runtime", "GetClusterKubectl", err, constants.ErrFmtac130d1176b3, "cluster_id", id)
 	}
 	k := kom.Cluster(clusterID)
 	if k == nil {
-		return nil, nil, constants.ErrInternalWithMsg(constants.ErrMsg5248c9e19a3f)
+		return nil, nil, svcerr.InternalMsg(ctx, "k8s.runtime", "GetClusterKubectl", constants.ErrMsg5248c9e19a3f, "cluster_id", id)
 	}
 	return cluster, k, nil
+}
+
+// EnsureClusterRegistered 将集群注册到 kom（供 Event 转发等后台任务使用）。
+func (s *K8sRuntimeService) EnsureClusterRegistered(ctx context.Context, id uint) error {
+	_, _, err := s.GetClusterKubectl(ctx, id)
+	return err
 }
 
 // serverGitVersionFromKubeconfig 使用 client-go Discovery 拉取 GitVersion（与 kubectl 一致）。
@@ -195,7 +196,7 @@ func serverGitVersionFromKubeconfig(kubeconfig string) (string, error) {
 func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) (string, ClusterConnState, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return "", ClusterConnState{}, err
+		return "", ClusterConnState{}, k8sRepoErr(ctx, "k8s.runtime", "CheckClusterHeartbeat", err, "cluster_id", id)
 	}
 	if cluster.Status != 1 {
 		// 停用集群：不做心跳/重连，直接标记 disabled
@@ -208,23 +209,28 @@ func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) 
 		return "", s.GetClusterConnState(id), nil
 	}
 	clusterID := strconv.FormatUint(uint64(id), 10)
-	if err := s.registerClusterIfNeeded(clusterID, cluster.Kubeconfig, false); err != nil {
+	kubeconfig, kerr := resolveClusterKubeconfig(cluster)
+	if kerr != nil {
+		return "", s.GetClusterConnState(id), constants.ErrBadRequestWithMsg(kerr.Error())
+	}
+	force := kubeconfig != strings.TrimSpace(cluster.Kubeconfig)
+	if err := s.registerClusterIfNeeded(clusterID, kubeconfig, force); err != nil {
 		return "", s.GetClusterConnState(id), err
 	}
 	k := kom.Cluster(clusterID)
 	if k == nil {
 		return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(constants.ErrMsg5248c9e19a3f)
 	}
-	gitVer, verr := serverGitVersionFromKubeconfig(cluster.Kubeconfig)
+	gitVer, verr := serverGitVersionFromKubeconfig(kubeconfig)
 	if verr != nil || gitVer == "" {
 		s.DeleteRegisterCache(id)
-		if e := s.registerClusterIfNeeded(clusterID, cluster.Kubeconfig, true); e != nil {
-			return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt8648d0eaa652, e))
+		if e := s.registerClusterIfNeeded(clusterID, kubeconfig, true); e != nil {
+			return "", s.GetClusterConnState(id), svcerr.Internal(ctx, "k8s.runtime", "heartbeat_reregister", e, constants.ErrFmt8648d0eaa652)
 		}
 		if kom.Cluster(clusterID) == nil {
 			return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(constants.ErrMsgb9cf6d1a2c2e)
 		}
-		gitVer, verr = serverGitVersionFromKubeconfig(cluster.Kubeconfig)
+		gitVer, verr = serverGitVersionFromKubeconfig(kubeconfig)
 		if verr != nil || gitVer == "" {
 			errMsg := "server version empty"
 			if verr != nil {
@@ -238,8 +244,23 @@ func (s *K8sRuntimeService) CheckClusterHeartbeat(ctx context.Context, id uint) 
 			st.ConsecutiveFailures++
 			s.connState[clusterID] = st
 			s.komMu.Unlock()
-			return "", s.GetClusterConnState(id), constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt5d75fe17f8ef, errMsg))
+			return "", s.GetClusterConnState(id), svcerr.InternalMsg(ctx, "k8s.runtime", "CheckClusterHeartbeat", fmt.Sprintf(constants.ErrFmt5d75fe17f8ef, errMsg), "cluster_id", id, "detail", errMsg)
 		}
+	}
+	if probeErr := s.probeClusterListNamespacesKom(ctx, id); probeErr != nil {
+		errMsg := probeErr.Error()
+		s.komMu.Lock()
+		st := s.connState[clusterID]
+		st.State = "degraded"
+		st.LastAttemptAt = time.Now()
+		st.LastError = errMsg
+		st.ConsecutiveFailures++
+		s.connState[clusterID] = st
+		s.komMu.Unlock()
+		if _, ok := apperror.IsAppError(probeErr); ok {
+			return "", s.GetClusterConnState(id), probeErr
+		}
+		return "", s.GetClusterConnState(id), svcerr.InternalMsg(ctx, "k8s.runtime", "CheckClusterHeartbeat", errMsg, "cluster_id", id)
 	}
 	s.komMu.Lock()
 	st := s.connState[clusterID]
@@ -269,14 +290,18 @@ func (s *K8sRuntimeService) GetClusterConnState(id uint) ClusterConnState {
 func (s *K8sRuntimeService) GetClusterRestConfig(ctx context.Context, id uint) (*model.K8sCluster, *rest.Config, error) {
 	cluster, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, k8sRepoErr(ctx, "k8s.runtime", "GetClusterRestConfig", err, "cluster_id", id)
 	}
 	if cluster.Status != 1 {
 		return nil, nil, constants.ErrForbiddenWithMsg(constants.ErrMsgb0e556f1ccc5)
 	}
-	cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(cluster.Kubeconfig))
+	kubeconfig, kerr := resolveClusterKubeconfig(cluster)
+	if kerr != nil {
+		return nil, nil, constants.ErrBadRequestWithMsg(kerr.Error())
+	}
+	cfg, err := clientcmd.RESTConfigFromKubeConfig([]byte(kubeconfig))
 	if err != nil {
-		return nil, nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd7f0c3fe8497, err))
+		return nil, nil, svcerr.Internal(ctx, "k8s.runtime", "api", err, constants.ErrFmtd7f0c3fe8497)
 	}
 	return cluster, cfg, nil
 }

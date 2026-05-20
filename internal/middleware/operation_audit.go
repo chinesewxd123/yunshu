@@ -14,6 +14,7 @@ import (
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/service"
+	"yunshu/internal/service/svclog"
 
 	"github.com/gin-gonic/gin"
 )
@@ -107,8 +108,8 @@ func OperationAudit(opSvc *service.OperationLogService, logger *logx.Logger) gin
 			LatencyMs:      latency,
 		}
 
-		if err := opSvc.Record(c.Request.Context(), entry); err != nil && logger != nil {
-			logger.Error.Error("operation audit persist failed", "error", err, "path", path)
+		if err := opSvc.Record(c.Request.Context(), entry); err != nil {
+			svclog.HTTP("http.audit").Error("operation audit persist failed", "error", err, "path", path)
 		}
 	}
 }

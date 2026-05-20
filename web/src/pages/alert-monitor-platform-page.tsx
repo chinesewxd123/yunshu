@@ -51,6 +51,7 @@ import {
   createAlertDatasource,
   createAlertMonitorRule,
   createAlertSilence,
+  createAlertSilencesBatch,
   createCloudExpiryRule,
   createDutyBlock,
   deleteAlertDatasource,
@@ -1231,23 +1232,16 @@ export function AlertMonitorPlatformPage() {
     setQuickSilenceSubmitting(true);
     try {
       const comment = quickSilenceComment.trim();
-      const results = await Promise.allSettled(
-        quickSilenceTargets.map((it) =>
-          createAlertSilence({
-            name: it.name,
-            matchers_json: JSON.stringify(buildMatchersByLabels(it.labels)),
-            comment,
-            enabled: true,
-            starts_at: it.startsAt.toISOString(),
-            ends_at: it.endsAt.toISOString(),
-            project_id: projectContextId && projectContextId > 0 ? projectContextId : undefined,
-          }),
-        ),
-      );
-      const ok = results.filter((r) => r.status === "fulfilled").length;
-      const fail = results.length - ok;
-      if (ok > 0) message.success(`已创建 ${ok} 条静默`);
-      if (fail > 0) message.warning(`${fail} 条静默创建失败，请重试`);
+      const items = quickSilenceTargets.map((it) => ({
+        name: it.name,
+        matchers_json: JSON.stringify(buildMatchersByLabels(it.labels)),
+        comment,
+        enabled: true,
+        starts_at: it.startsAt.toISOString(),
+        ends_at: it.endsAt.toISOString(),
+      }));
+      const { created } = await createAlertSilencesBatch(items);
+      message.success(`已创建 ${created} 条静默`);
       setQuickSilenceOpen(false);
       await loadSilences();
     } finally {

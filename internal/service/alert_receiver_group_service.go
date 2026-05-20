@@ -1,9 +1,10 @@
-package service
+﻿package service
 
 import (
 	"context"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/pagination"
@@ -43,11 +44,11 @@ func (s *AlertReceiverGroupService) List(ctx context.Context, q AlertReceiverGro
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
-		return nil, 0, page, pageSize, err
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.receiver", "List", err)
 	}
 	var list []model.AlertReceiverGroup
 	if err := tx.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
-		return nil, 0, page, pageSize, err
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.receiver", "List", err)
 	}
 	for i := range list {
 		hydrateReceiverGroup(&list[i])
@@ -90,7 +91,7 @@ func (s *AlertReceiverGroupService) Create(ctx context.Context, req AlertReceive
 		Enabled:             enabled,
 	}
 	if err := s.db.WithContext(ctx).Create(row).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "alert.receiver", "Create", err)
 	}
 	if s.cache != nil {
 		s.cache.Invalidate()
@@ -121,7 +122,7 @@ func (s *AlertReceiverGroupService) Update(ctx context.Context, id uint, req Ale
 		row.Enabled = *req.Enabled
 	}
 	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "alert.receiver", "Update", err)
 	}
 	if s.cache != nil {
 		s.cache.Invalidate()
@@ -133,7 +134,7 @@ func (s *AlertReceiverGroupService) Update(ctx context.Context, id uint, req Ale
 func (s *AlertReceiverGroupService) Delete(ctx context.Context, id uint) error {
 	res := s.db.WithContext(ctx).Delete(&model.AlertReceiverGroup{}, id)
 	if res.Error != nil {
-		return res.Error
+		return svcerr.Pass(ctx, "alert.receiver", "Delete", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return constants.ErrNotFoundWithMsg(constants.ErrMsg7628a50dd0ab)

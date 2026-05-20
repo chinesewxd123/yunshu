@@ -56,7 +56,10 @@ http.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    if (status === 401) {
+    // 仅平台登录态失效时清 Token；K8s 集群凭证等问题返回 403/其它码，不应误登出。
+    const sessionExpiredCodes = new Set(["10002", "10008", "10009", "10010", "10011", "10014"]);
+    const errorCode = rawData?.error_code ?? "";
+    if (status === 401 && sessionExpiredCodes.has(errorCode)) {
       clearAuthStorage();
       if (window.location.pathname !== "/login") {
         toastOnce("auth-expired", "登录已失效，请重新登录");
@@ -64,6 +67,8 @@ http.interceptors.response.use(
       } else {
         toastOnce("http-error", errorMessage);
       }
+    } else if (status === 401) {
+      toastOnce("http-error", errorMessage);
     } else if (status === 403) {
       // 统一 403 提示：用固定 key，避免与页面内提示重复弹出
       toastOnce("forbidden", typeof errorMessage === "string" ? errorMessage : "无访问权限");

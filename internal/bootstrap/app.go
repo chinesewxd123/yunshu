@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"yunshu/internal/config"
+	"yunshu/internal/dictconfig"
 	"yunshu/internal/middleware"
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/casbinadapter"
 	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/mailer"
+	"yunshu/internal/service/svclog"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/gin-gonic/gin"
@@ -30,11 +32,15 @@ type App struct {
 	Enforcer *casbin.SyncedEnforcer
 	Mailer   mailer.Sender
 	Engine   *gin.Engine
+	// YamlK8sEventForwardBase config.yaml 底稿，供 Event 转发运行期从字典重新解析。
+	YamlK8sEventForwardBase config.K8sEventForwardConfig
 }
 
 type Builder struct {
-	app *App
-	err error
+	app                      *App
+	err                      error
+	yamlMailBase             config.MailConfig             // config.yaml 中的 mail 底稿（字典覆盖前）
+	yamlK8sEventForwardBase  config.K8sEventForwardConfig // config.yaml 中的 k8s_event_forward 底稿
 }
 
 func NewBuilder() *Builder {
@@ -52,6 +58,9 @@ func (b *Builder) WithConfig(path string) *Builder {
 		return b
 	}
 	b.app.Config = cfg
+	b.yamlMailBase = cfg.Mail
+	b.yamlK8sEventForwardBase = cfg.K8sEventForward
+	b.app.YamlK8sEventForwardBase = cfg.K8sEventForward
 	return b
 }
 
@@ -124,7 +133,7 @@ func (b *Builder) WithMySQL() *Builder {
 	return b
 }
 
-// WithDictOverrides 在 MySQL 已就绪后，从数据字典覆盖“运行期可变”的配置项（告警域 + 邮件）。
+// WithDictOverrides 在 MySQL 已就绪后，从数据字典覆盖“运行期可变”的配置项（告警域 + 邮件 + K8s Event 转发）。
 // 注意：mysql/redis/app.env/grpc.listen_addr 等启动期项仍以 env/yaml 为准，避免启动鸡生蛋。
 func (b *Builder) WithDictOverrides() *Builder {
 	if b.err != nil {
@@ -193,11 +202,9 @@ func (b *Builder) WithCasbin() *Builder {
 	policyCount := len(enforcer.GetPolicy())
 	groupingCount := len(enforcer.GetGroupingPolicy())
 	if policyCount == 0 && groupingCount == 0 {
-		if b.app.Logger != nil {
-			b.app.Logger.Info.Warn("casbin loaded zero p/g rules; authorize may deny all until policies are seeded")
-		}
-	} else if b.app.Logger != nil {
-		b.app.Logger.Info.Info("casbin policy loaded", "p_rules", policyCount, "g_rules", groupingCount)
+		svclog.Worker("casbin").Warnw("Loaded zero Casbin rules; authorize may deny all until policies are seeded")
+	} else {
+		svclog.Worker("casbin").Infow("Loaded Casbin policy", "p_rules", policyCount, "g_rules", groupingCount)
 	}
 	// 冒烟：确认 model 可执行 Enforce（adapter/模型损坏时此处会报错）
 	if _, err = enforcer.Enforce("__casbin_smoke__", "/__smoke__", "GET"); err != nil {
@@ -218,7 +225,24 @@ func (b *Builder) WithMailer() *Builder {
 		return b
 	}
 
-	b.app.Mailer = mailer.NewSMTPSender(b.app.Config.Mail)
+	resolved := b.app.Config.Mail
+	if b.app.DB != nil {
+		resolved = dictconfig.ResolveMailConfig(context.Background(), b.app.DB, b.yamlMailBase, dictconfig.DefaultMailDictTypes())
+		b.app.Config.Mail = resolved
+		b.app.Mailer = mailer.NewDynamicSender(&mailer.DictMailResolver{
+			DB:       b.app.DB,
+			YAMLBase: b.yamlMailBase,
+		})
+		enabled := b.app.Mailer.Enabled()
+		svclog.Worker("mail").Infow("Initialized mail sender (dict-first, reload on send)",
+			"enabled", enabled,
+			"host", resolved.Host,
+			"port", resolved.Port,
+			"from", resolved.FromEmail,
+		)
+	} else {
+		b.app.Mailer = mailer.NewSMTPSender(resolved)
+	}
 	return b
 }
 

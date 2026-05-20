@@ -1,6 +1,7 @@
-package service
+﻿package service
 
 import (
+	"yunshu/internal/service/svcerr"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -59,7 +60,7 @@ func (s *AlertService) tickMonitorRules(ctx context.Context) error {
 		Joins("JOIN alert_datasources ad ON ad.id = amr.datasource_id AND ad.deleted_at IS NULL").
 		Where("amr.enabled = ?", true).
 		Find(&rules).Error; err != nil {
-		return err
+		return svcerr.Pass(ctx, "alert.evaluator", "tickMonitorRules", err)
 	}
 	now := time.Now()
 	for i := range rules {

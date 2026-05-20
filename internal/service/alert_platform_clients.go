@@ -1,6 +1,7 @@
-package service
+﻿package service
 
 import (
+	"yunshu/internal/service/svcerr"
 	"context"
 	"fmt"
 	neturl "net/url"
@@ -21,7 +22,7 @@ func (s *AlertService) getDingTalkAccessToken(ctx context.Context, appKey, appSe
 	return s.cachedToken(ctx, cacheKey, func(ctx context.Context) (string, int, error) {
 		_, err := s.platformHTTPClient().DoJSON(ctx, "GET", u, nil, nil, &body)
 		if err != nil {
-			return "", 0, err
+			return "", 0, svcerr.Pass(ctx, "alert.platform", "getDingTalkAccessToken", err)
 		}
 		if body.ErrCode != 0 || strings.TrimSpace(body.AccessToken) == "" {
 			return "", 0, fmt.Errorf("dingtalk gettoken failed: %s", body.ErrMsg)
@@ -52,7 +53,7 @@ func (s *AlertService) getDingTalkUserIDByMobile(ctx context.Context, accessToke
 	}
 	_, err := s.platformHTTPClient().DoJSON(ctx, "POST", u, nil, map[string]string{"mobile": strings.TrimSpace(mobile)}, &result)
 	if err != nil {
-		return "", err
+		return "", svcerr.Pass(ctx, "alert.platform", "getDingTalkUserIDByMobile", err)
 	}
 	if result.ErrCode != 0 {
 		return "", fmt.Errorf("dingtalk get user by mobile failed: %s", result.ErrMsg)
@@ -68,7 +69,7 @@ func (s *AlertService) resolveWeComUserIDsByMobiles(ctx context.Context, setting
 	}
 	token, err := s.getWeComAccessToken(ctx, corpID, corpSecret)
 	if err != nil || token == "" {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "alert.platform", "resolveWeComUserIDsByMobiles", err)
 	}
 	out := make([]string, 0, len(mobiles))
 	for _, m := range mobiles {
@@ -92,7 +93,7 @@ func (s *AlertService) getWeComAccessToken(ctx context.Context, corpID, corpSecr
 	return s.cachedToken(ctx, cacheKey, func(ctx context.Context) (string, int, error) {
 		_, err := s.platformHTTPClient().DoJSON(ctx, "GET", u, nil, nil, &body)
 		if err != nil {
-			return "", 0, err
+			return "", 0, svcerr.Pass(ctx, "alert.platform", "getWeComAccessToken", err)
 		}
 		if body.ErrCode != 0 || strings.TrimSpace(body.AccessToken) == "" {
 			return "", 0, fmt.Errorf("wechat gettoken failed: %s", body.ErrMsg)
@@ -110,7 +111,7 @@ func (s *AlertService) getWeComUserIDByMobile(ctx context.Context, accessToken, 
 	}
 	_, err := s.platformHTTPClient().DoJSON(ctx, "POST", u, nil, map[string]string{"mobile": strings.TrimSpace(mobile)}, &body)
 	if err != nil {
-		return "", err
+		return "", svcerr.Pass(ctx, "alert.platform", "getWeComUserIDByMobile", err)
 	}
 	if body.ErrCode != 0 {
 		return "", fmt.Errorf("wechat getuserid failed: %s", body.ErrMsg)

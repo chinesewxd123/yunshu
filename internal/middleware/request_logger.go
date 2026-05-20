@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 
 	"yunshu/internal/pkg/auth"
 	logx "yunshu/internal/pkg/logger"
+	"yunshu/internal/service/svclog"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -33,6 +35,7 @@ func RequestLogger(logger *logx.Logger) gin.HandlerFunc {
 		}
 		c.Set("request_id", requestID)
 		c.Writer.Header().Set("X-Request-ID", requestID)
+		c.Request = c.Request.WithContext(logx.WithRequestID(c.Request.Context(), requestID))
 
 		reqBody := ""
 		if shouldCaptureRequestLogBody(c) && c.Request != nil && c.Request.Body != nil {
@@ -74,15 +77,16 @@ func RequestLogger(logger *logx.Logger) gin.HandlerFunc {
 			attrs = append(attrs, "errors", c.Errors.String())
 		}
 
+		access := svclog.HTTP("http.access").W(c.Request.Context())
 		if c.Writer.Status() >= 500 {
-			logger.Error.Error("http request completed", attrs...)
+			access.Errorw(errors.New("server error"), "HTTP request completed", attrs...)
 			return
 		}
 		if c.Writer.Status() >= 400 {
-			logger.Info.Warn("http request completed", attrs...)
+			access.Warnw("HTTP request completed", attrs...)
 			return
 		}
-		logger.Info.Info("http request completed", attrs...)
+		access.Infow("HTTP request completed", attrs...)
 	}
 }
 

@@ -1,6 +1,7 @@
-package service
+﻿package service
 
 import (
+	"yunshu/internal/service/svcerr"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,7 +16,7 @@ type AlibabaCloudProvider struct{}
 
 func (p *AlibabaCloudProvider) ListInstances(ctx context.Context, ak, sk, regionScope string) ([]CloudInstance, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "project.cloud", "ListInstances", err)
 	}
 	regions := make([]string, 0)
 	for _, it := range strings.Split(regionScope, ",") {
@@ -31,11 +32,11 @@ func (p *AlibabaCloudProvider) ListInstances(ctx context.Context, ak, sk, region
 	out := make([]CloudInstance, 0)
 	for _, region := range regions {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "project.cloud", "ListInstances", err)
 		}
 		client, err := ecs.NewClientWithAccessKey(region, ak, sk)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "project.cloud", "ListInstances", err)
 		}
 		pageNumber := 1
 		for {
@@ -45,7 +46,7 @@ func (p *AlibabaCloudProvider) ListInstances(ctx context.Context, ak, sk, region
 			req.PageNumber = requests.NewInteger(pageNumber)
 			resp, err := client.DescribeInstances(req)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass(ctx, "project.cloud", "ListInstances", err)
 			}
 			for _, ins := range resp.Instances.Instance {
 				publicIP := ""
@@ -141,59 +142,59 @@ func marshalAlibabaTags(tags []ecs.Tag) string {
 
 func (p *AlibabaCloudProvider) ResetInstancePassword(ctx context.Context, ak, sk, region, instanceID, newPassword string) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return svcerr.Pass(ctx, "project.cloud", "ResetInstancePassword", err)
 	}
 	client, err := ecs.NewClientWithAccessKey(strings.TrimSpace(region), strings.TrimSpace(ak), strings.TrimSpace(sk))
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "project.cloud", "ResetInstancePassword", err)
 	}
 	req := ecs.CreateModifyInstanceAttributeRequest()
 	req.Scheme = "https"
 	req.InstanceId = strings.TrimSpace(instanceID)
 	req.Password = newPassword
 	_, err = client.ModifyInstanceAttribute(req)
-	return err
+	return svcerr.Pass(ctx, "project.cloud", "ResetInstancePassword", err)
 }
 
 func (p *AlibabaCloudProvider) RebootInstance(ctx context.Context, ak, sk, region, instanceID string) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return svcerr.Pass(ctx, "project.cloud", "RebootInstance", err)
 	}
 	client, err := ecs.NewClientWithAccessKey(strings.TrimSpace(region), strings.TrimSpace(ak), strings.TrimSpace(sk))
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "project.cloud", "RebootInstance", err)
 	}
 	req := ecs.CreateRebootInstanceRequest()
 	req.Scheme = "https"
 	req.InstanceId = strings.TrimSpace(instanceID)
 	req.ForceStop = requests.NewBoolean(true)
 	_, err = client.RebootInstance(req)
-	return err
+	return svcerr.Pass(ctx, "project.cloud", "RebootInstance", err)
 }
 
 func (p *AlibabaCloudProvider) ShutdownInstance(ctx context.Context, ak, sk, region, instanceID string) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return svcerr.Pass(ctx, "project.cloud", "ShutdownInstance", err)
 	}
 	client, err := ecs.NewClientWithAccessKey(strings.TrimSpace(region), strings.TrimSpace(ak), strings.TrimSpace(sk))
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "project.cloud", "ShutdownInstance", err)
 	}
 	req := ecs.CreateStopInstanceRequest()
 	req.Scheme = "https"
 	req.InstanceId = strings.TrimSpace(instanceID)
 	req.ForceStop = requests.NewBoolean(true)
 	_, err = client.StopInstance(req)
-	return err
+	return svcerr.Pass(ctx, "project.cloud", "ShutdownInstance", err)
 }
 
 func (p *AlibabaCloudProvider) QueryInstanceExpireAt(ctx context.Context, ak, sk, region, instanceID string) (*time.Time, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "project.cloud", "QueryInstanceExpireAt", err)
 	}
 	client, err := ecs.NewClientWithAccessKey(strings.TrimSpace(region), strings.TrimSpace(ak), strings.TrimSpace(sk))
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "project.cloud", "QueryInstanceExpireAt", err)
 	}
 	req := ecs.CreateDescribeInstancesRequest()
 	req.Scheme = "https"
@@ -201,7 +202,7 @@ func (p *AlibabaCloudProvider) QueryInstanceExpireAt(ctx context.Context, ak, sk
 	req.InstanceIds = `["` + strings.TrimSpace(instanceID) + `"]`
 	resp, err := client.DescribeInstances(req)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "project.cloud", "QueryInstanceExpireAt", err)
 	}
 	if len(resp.Instances.Instance) == 0 {
 		return nil, nil
@@ -221,11 +222,11 @@ func (p *AlibabaCloudProvider) QueryInstanceExpireAt(ctx context.Context, ak, sk
 
 func (p *AlibabaCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, region, instanceID string, oldTags, newTags map[string]string) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return svcerr.Pass(ctx, "project.cloud", "SyncInstanceTags", err)
 	}
 	client, err := ecs.NewClientWithAccessKey(strings.TrimSpace(region), strings.TrimSpace(ak), strings.TrimSpace(sk))
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "project.cloud", "SyncInstanceTags", err)
 	}
 	if len(oldTags) == 0 && len(newTags) == 0 {
 		return nil
@@ -249,7 +250,7 @@ func (p *AlibabaCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, reg
 		req.ResourceId = &resourceIDs
 		req.TagKey = &toUnbind
 		if _, err := client.UntagResources(req); err != nil {
-			return err
+			return svcerr.Pass(ctx, "project.cloud", "SyncInstanceTags", err)
 		}
 	}
 	toBind := make([]ecs.TagResourcesTag, 0)
@@ -271,7 +272,7 @@ func (p *AlibabaCloudProvider) SyncInstanceTags(ctx context.Context, ak, sk, reg
 		req.ResourceId = &resourceIDs
 		req.Tag = &toBind
 		if _, err := client.TagResources(req); err != nil {
-			return err
+			return svcerr.Pass(ctx, "project.cloud", "SyncInstanceTags", err)
 		}
 	}
 	return nil

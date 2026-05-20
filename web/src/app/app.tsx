@@ -168,6 +168,7 @@ export function App() {
                   <Route path="pods" element={<PodPage />} />
                   <Route path="server-console" element={<ServerConsolePage />} />
                   <Route path="personal-settings" element={<PersonalSettingsPage />} />
+                  <Route path="runtime-config" element={<Navigate to="/dict-entries" replace />} />
                   <Route path="*" element={<DynamicMenuPage />} />
                 </Route>
               </Routes>

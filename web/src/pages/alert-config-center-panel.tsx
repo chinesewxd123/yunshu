@@ -310,9 +310,9 @@ export function AlertConfigCenterPanel({
       push(name, `ds:${id}`);
     }
     if (opts.length <= 2) {
-      for (const row of stats?.datasource_filter_options ?? []) {
-        const id = Number(row?.id);
-        if (!Number.isFinite(id) || id <= 0) continue;
+    for (const row of stats?.datasource_filter_options ?? []) {
+      const id = Number(row?.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
         const name = String(row?.name ?? "").trim() || `数据源 ${id}`;
         push(name, `ds:${id}`);
       }
@@ -668,6 +668,10 @@ export function AlertConfigCenterPanel({
   }, [tab, effectiveProjectId]);
 
   async function sendWebhookDemo() {
+    if (!String(webhookToken || "").trim()) {
+      message.warning("请先选择或填写 Webhook Token（与后端 alert.webhook_token 一致，空 Token 将被拒绝）");
+      return;
+    }
     let payloadObj: Record<string, unknown>;
     try {
       payloadObj = JSON.parse(webhookPayload || "{}") as Record<string, unknown>;
@@ -698,15 +702,15 @@ export function AlertConfigCenterPanel({
                 当前项目：{projects.find((p) => p.id === projectContextId)?.name ?? `项目 ${projectContextId}`}（跟随顶栏「全局项目上下文」）
               </Typography.Text>
             ) : (
-              <Select
-                style={{ width: 260 }}
-                placeholder="选择项目"
-                value={subProjectID || undefined}
-                options={projects.map((p) => ({ label: p.name, value: p.id }))}
-                onChange={(v) => setSubProjectID(Number(v) || 0)}
-                showSearch
-                filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
-              />
+            <Select
+              style={{ width: 260 }}
+              placeholder="选择项目"
+              value={subProjectID || undefined}
+              options={projects.map((p) => ({ label: p.name, value: p.id }))}
+              onChange={(v) => setSubProjectID(Number(v) || 0)}
+              showSearch
+              filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+            />
             )}
             <Button icon={<ReloadOutlined />} loading={subLoading} onClick={() => void loadSubscriptions()}>
               刷新

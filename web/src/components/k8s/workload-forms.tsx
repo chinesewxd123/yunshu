@@ -1,4 +1,4 @@
-import { Button, Card, Col, Divider, Drawer, Form, Input, InputNumber, Row, Select, Space, Typography } from "antd";
+import { Alert, Button, Card, Col, Divider, Drawer, Form, Input, InputNumber, Row, Select, Space, Typography } from "antd";
 import type { FormInstance } from "antd";
 import YAML from "yaml";
 
@@ -198,6 +198,8 @@ export type DeploymentFormValues = {
   strategy_type?: "RollingUpdate" | "Recreate";
   rolling_update_max_surge?: string;
   rolling_update_max_unavailable?: string;
+  min_ready_seconds?: number;
+  progress_deadline_seconds?: number;
   revision_history_limit?: number;
   tolerations?: Array<{
     key?: string;
@@ -345,6 +347,8 @@ export function buildDeploymentYaml(v: DeploymentFormValues): string {
               : {}),
           }
         : undefined,
+      minReadySeconds: typeof v.min_ready_seconds === "number" ? v.min_ready_seconds : undefined,
+      progressDeadlineSeconds: typeof v.progress_deadline_seconds === "number" ? v.progress_deadline_seconds : undefined,
       revisionHistoryLimit: typeof v.revision_history_limit === "number" ? v.revision_history_limit : undefined,
       selector: { matchLabels: { app: v.name } },
       template: {
@@ -542,6 +546,8 @@ export function deploymentObjToForm(obj: any): DeploymentFormValues | null {
     rolling_update_max_surge: safeGet(obj, "spec.strategy.rollingUpdate.maxSurge") != null ? String(safeGet(obj, "spec.strategy.rollingUpdate.maxSurge")) : undefined,
     rolling_update_max_unavailable:
       safeGet(obj, "spec.strategy.rollingUpdate.maxUnavailable") != null ? String(safeGet(obj, "spec.strategy.rollingUpdate.maxUnavailable")) : undefined,
+    min_ready_seconds: toNumberOrUndefined(safeGet(obj, "spec.minReadySeconds")),
+    progress_deadline_seconds: toNumberOrUndefined(safeGet(obj, "spec.progressDeadlineSeconds")),
     revision_history_limit: toNumberOrUndefined(safeGet(obj, "spec.revisionHistoryLimit")),
     ...probeToForm("liveness", lp),
     ...probeToForm("readiness", rp),
@@ -2019,6 +2025,17 @@ export function WorkloadAdvancedItems() {
   );
 }
 
+/** 零中断滚动发布推荐：RollingUpdate + maxSurge 1 + maxUnavailable 0 */
+export function applyZeroDowntimeDeploymentStrategy(form: FormInstance) {
+  form.setFieldsValue({
+    strategy_type: "RollingUpdate",
+    rolling_update_max_surge: "1",
+    rolling_update_max_unavailable: "0",
+    min_ready_seconds: 5,
+    progress_deadline_seconds: 600,
+  });
+}
+
 export function WorkloadPolicyItems(opts?: {
   showDeployStrategy?: boolean;
   showStatefulSetStrategy?: boolean;
@@ -2026,6 +2043,7 @@ export function WorkloadPolicyItems(opts?: {
   showCronJobPolicy?: boolean;
   showJobPolicy?: boolean;
 }) {
+  const form = Form.useFormInstance();
   return (
     <Card size="small" title="发布与调度策略" styles={{ body: { paddingBottom: 8 } }}>
       <Form.Item label="NodeSelector">
@@ -2035,28 +2053,54 @@ export function WorkloadPolicyItems(opts?: {
         <Input.TextArea rows={4} placeholder={"nodeAffinity:\n  requiredDuringSchedulingIgnoredDuringExecution:\n    nodeSelectorTerms: []"} />
       </Form.Item>
       {opts?.showDeployStrategy ? (
-        <Row gutter={16}>
-          <Col xs={24} md={7}>
-            <Form.Item name="strategy_type" label="部署策略">
-              <Select allowClear options={[{ label: "RollingUpdate", value: "RollingUpdate" }, { label: "Recreate", value: "Recreate" }]} />
-            </Form.Item>
-          </Col>
-          <Col xs={24} md={5}>
-            <Form.Item name="rolling_update_max_surge" label="maxSurge">
-              <Input placeholder="25% / 1" />
-            </Form.Item>
-          </Col>
-          <Col xs={24} md={5}>
-            <Form.Item name="rolling_update_max_unavailable" label="maxUnavailable">
-              <Input placeholder="25% / 0" />
-            </Form.Item>
-          </Col>
-          <Col xs={24} md={7}>
-            <Form.Item name="revision_history_limit" label="历史版本数">
-              <InputNumber min={0} style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-        </Row>
+        <>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="滚动发布保持业务可访问"
+            description="推荐 RollingUpdate，maxUnavailable=0 保证更新期间可用副本不减少；需配置 readinessProbe 后新 Pod 才计入就绪。Recreate 会短暂中断。"
+          />
+          <Space style={{ marginBottom: 12 }}>
+            <Button type="primary" ghost onClick={() => form && applyZeroDowntimeDeploymentStrategy(form)}>
+              应用零中断推荐
+            </Button>
+          </Space>
+          <Row gutter={16}>
+            <Col xs={24} md={7}>
+              <Form.Item name="strategy_type" label="部署策略">
+                <Select allowClear options={[{ label: "RollingUpdate", value: "RollingUpdate" }, { label: "Recreate", value: "Recreate" }]} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={5}>
+              <Form.Item name="rolling_update_max_surge" label="maxSurge" tooltip="可多起的 Pod 数，如 1 或 25%">
+                <Input placeholder="1 / 25%" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={5}>
+              <Form.Item name="rolling_update_max_unavailable" label="maxUnavailable" tooltip="更新时允许不可用的 Pod 数，零中断建议 0">
+                <Input placeholder="0" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={7}>
+              <Form.Item name="revision_history_limit" label="历史版本数">
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item name="min_ready_seconds" label="minReadySeconds" tooltip="Pod 就绪后额外等待秒数再视为可用">
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="progress_deadline_seconds" label="progressDeadlineSeconds">
+                <InputNumber min={1} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+          </Row>
+        </>
       ) : null}
       {opts?.showStatefulSetStrategy ? (
         <Row gutter={16}>

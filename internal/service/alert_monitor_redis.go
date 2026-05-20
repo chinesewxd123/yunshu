@@ -1,6 +1,7 @@
-package service
+﻿package service
 
 import (
+	"yunshu/internal/service/svcerr"
 	"context"
 	"fmt"
 	"strings"
@@ -102,7 +103,7 @@ func parseRFC3339Ptr(s string) (*time.Time, error) {
 		t, err = time.Parse(time.RFC3339, s)
 	}
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(context.Background(), "alert.rule", "parseRFC3339Ptr", err)
 	}
 	return &t, nil
 }

@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/pkg/k8sutil"
 
@@ -166,7 +167,7 @@ func (s *K8sNodeService) List(ctx context.Context, query NodeListQuery) ([]NodeL
 	}
 	var list []corev1.Node
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).List(&list).Error; err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6af6d441fc65, err))
+		return nil, svcerr.Internal(ctx, "k8s.node", "api", err, constants.ErrFmt6af6d441fc65)
 	}
 
 	// 统计每个 node 上的 pod 数
@@ -297,7 +298,7 @@ func (s *K8sNodeService) Detail(ctx context.Context, query NodeDetailQuery) (*No
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg7b4519294b96)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt743663002376, err))
+		return nil, svcerr.Internal(ctx, "k8s.node", "api", err, constants.ErrFmt743663002376)
 	}
 	copyObj := n.DeepCopy()
 	copyObj.APIVersion = "v1"
@@ -488,12 +489,12 @@ func (s *K8sNodeService) SetSchedulability(ctx context.Context, req NodeSchedula
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsg7b4519294b96)
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta293b9a12001, err))
+		return k8sFail(ctx, "k8s.node", "api", err)
 	}
 	updated := n.DeepCopy()
 	updated.Spec.Unschedulable = req.Unschedulable
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Update(updated).Error; err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6f761b85c92e, err))
+		return k8sFail(ctx, "k8s.node", "api", err)
 	}
 	return nil
 }
@@ -517,12 +518,12 @@ func (s *K8sNodeService) ReplaceTaints(ctx context.Context, req NodeTaintsReplac
 		if apierrors.IsNotFound(err) {
 			return constants.ErrBadRequestWithMsg(constants.ErrMsg7b4519294b96)
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmta293b9a12001, err))
+		return k8sFail(ctx, "k8s.node", "api", err)
 	}
 	updated := n.DeepCopy()
 	updated.Spec.Taints = taints
 	if err := k.WithContext(ctx).Resource(&corev1.Node{}).Update(updated).Error; err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtac67aae65acc, err))
+		return k8sFail(ctx, "k8s.node", "api", err)
 	}
 	return nil
 }

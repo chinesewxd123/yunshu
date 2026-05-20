@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/auth"
@@ -69,7 +70,7 @@ func (s *UserService) canAccessUser(ctx context.Context, actor *auth.CurrentUser
 	}
 	ids, err := s.accessibleDepartmentIDs(ctx, actor)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "user", "canAccessUser", err)
 	}
 	return slices.Contains(ids, *target.DepartmentID), nil
 }
@@ -77,12 +78,12 @@ func (s *UserService) canAccessUser(ctx context.Context, actor *auth.CurrentUser
 // Create 创建相关的业务逻辑。
 func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserDetailResponse, error) {
 	if err := s.ensureUserUnique(ctx, 0, req.Username, req.Email); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "Create", err)
 	}
 
 	roles, err := s.roleRepo.GetByIDs(ctx, req.RoleIDs)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "Create", err)
 	}
 	if len(req.RoleIDs) > 0 && len(roles) != len(req.RoleIDs) {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgbc90b8ad5f29)
@@ -90,7 +91,7 @@ func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserD
 
 	hashedPassword, err := password.Hash(req.Password)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "Create", err)
 	}
 
 	status := req.Status
@@ -105,7 +106,7 @@ func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserD
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg94d63d947b0e)
 			}
-			return nil, err
+			return nil, svcerr.Pass(ctx, "user", "Create", err)
 		}
 		departmentID = req.DepartmentID
 	}
@@ -120,10 +121,10 @@ func (s *UserService) Create(ctx context.Context, req UserCreateRequest) (*UserD
 		Roles:        roles,
 	}
 	if err = s.userRepo.Create(ctx, &user); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "Create", err)
 	}
 	if err = SyncUserRoles(s.enforcer, user.ID, roles); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "Create", err)
 	}
 
 	response := NewUserDetailResponse(user)
@@ -142,7 +143,7 @@ func (s *UserService) CreateByActor(ctx context.Context, actor *auth.CurrentUser
 	}
 	allowedDepartmentIDs, err := s.accessibleDepartmentIDs(ctx, actor)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "CreateByActor", err)
 	}
 	if req.DepartmentID == nil {
 		deptID := *actor.DepartmentID
@@ -160,7 +161,7 @@ func (s *UserService) Update(ctx context.Context, id uint, req UserUpdateRequest
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "Update", err)
 	}
 
 	if req.Nickname != nil {
@@ -169,7 +170,7 @@ func (s *UserService) Update(ctx context.Context, id uint, req UserUpdateRequest
 	if req.Email != nil && strings.TrimSpace(*req.Email) != "" {
 		email := normalizeEmail(*req.Email)
 		if err = s.ensureUserUnique(ctx, user.ID, user.Username, email); err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "user", "Update", err)
 		}
 		user.Email = &email
 	}
@@ -184,7 +185,7 @@ func (s *UserService) Update(ctx context.Context, id uint, req UserUpdateRequest
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg94d63d947b0e)
 				}
-				return nil, err
+				return nil, svcerr.Pass(ctx, "user", "Update", err)
 			}
 			user.DepartmentID = req.DepartmentID
 		}
@@ -195,12 +196,12 @@ func (s *UserService) Update(ctx context.Context, id uint, req UserUpdateRequest
 	if req.Password != nil && *req.Password != "" {
 		user.Password, err = password.Hash(*req.Password)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "user", "Update", err)
 		}
 	}
 
 	if err = s.userRepo.Save(ctx, user); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "Update", err)
 	}
 	response := NewUserDetailResponse(*user)
 	return &response, nil
@@ -215,11 +216,11 @@ func (s *UserService) UpdateByActor(ctx context.Context, actor *auth.CurrentUser
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "UpdateByActor", err)
 	}
 	ok, err := s.canAccessUser(ctx, actor, target)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "UpdateByActor", err)
 	}
 	if !ok {
 		return nil, constants.ErrForbidden
@@ -235,7 +236,7 @@ func (s *UserService) UpdateByActor(ctx context.Context, actor *auth.CurrentUser
 	if !auth.IsSuperAdminRole(actor.RoleCodes) && req.DepartmentID != nil && *req.DepartmentID > 0 {
 		allowedDepartmentIDs, err := s.accessibleDepartmentIDs(ctx, actor)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "user", "UpdateByActor", err)
 		}
 		if !slices.Contains(allowedDepartmentIDs, *req.DepartmentID) {
 			return nil, constants.ErrForbiddenWithMsg(constants.ErrMsgc1305dfff708)
@@ -251,11 +252,11 @@ func (s *UserService) Delete(ctx context.Context, id uint) error {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrUserNotFound
 		}
-		return err
+		return svcerr.Pass(ctx, "user", "Delete", err)
 	}
 
 	if err = s.userRepo.Delete(ctx, user); err != nil {
-		return err
+		return svcerr.Pass(ctx, "user", "Delete", err)
 	}
 	if s.departmentRepo != nil {
 		_ = s.departmentRepo.ClearLeaderByUserID(ctx, id)
@@ -267,7 +268,10 @@ func (s *UserService) Delete(ctx context.Context, id uint) error {
 		_ = s.assigneeSvc.PruneUserFromAllAssignees(ctx, id)
 	}
 	_, err = s.enforcer.DeleteUser(UserSubject(id))
-	return err
+	if err != nil {
+		return svcerr.Pass(ctx, "user", "Delete", err)
+	}
+	return nil
 }
 
 func (s *UserService) DeleteByActor(ctx context.Context, actor *auth.CurrentUser, id uint) error {
@@ -279,11 +283,11 @@ func (s *UserService) DeleteByActor(ctx context.Context, actor *auth.CurrentUser
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return constants.ErrUserNotFound
 		}
-		return err
+		return svcerr.Pass(ctx, "user", "DeleteByActor", err)
 	}
 	ok, err := s.canAccessUser(ctx, actor, target)
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "user", "DeleteByActor", err)
 	}
 	if !ok {
 		return constants.ErrForbidden
@@ -298,7 +302,7 @@ func (s *UserService) Detail(ctx context.Context, id uint) (*UserDetailResponse,
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "Detail", err)
 	}
 	response := NewUserDetailResponse(*user)
 	return &response, nil
@@ -313,11 +317,11 @@ func (s *UserService) DetailByActor(ctx context.Context, actor *auth.CurrentUser
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "DetailByActor", err)
 	}
 	ok, err := s.canAccessUser(ctx, actor, target)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "DetailByActor", err)
 	}
 	if !ok {
 		return nil, constants.ErrForbidden
@@ -336,7 +340,7 @@ func (s *UserService) List(ctx context.Context, query UserListQuery) (*paginatio
 		PageSize:     pageSize,
 	})
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "List", err)
 	}
 
 	list := make([]UserDetailResponse, 0, len(users))
@@ -372,13 +376,13 @@ func (s *UserService) ListByActor(ctx context.Context, actor *auth.CurrentUser, 
 	} else {
 		ids, err := s.accessibleDepartmentIDs(ctx, actor)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "user", "ListByActor", err)
 		}
 		params.DepartmentIDs = ids
 	}
 	users, total, err := s.userRepo.List(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "ListByActor", err)
 	}
 	list := make([]UserDetailResponse, 0, len(users))
 	for _, user := range users {
@@ -399,24 +403,24 @@ func (s *UserService) AssignRoles(ctx context.Context, id uint, req UserAssignRo
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "AssignRoles", err)
 	}
 
 	roles, err := s.roleRepo.GetByIDs(ctx, req.RoleIDs)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "AssignRoles", err)
 	}
 	if len(req.RoleIDs) > 0 && len(roles) != len(req.RoleIDs) {
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgbc90b8ad5f29)
 	}
 
 	if err = s.userRepo.ReplaceRoles(ctx, user, roles); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "AssignRoles", err)
 	}
 
 	user.Roles = roles
 	if err = SyncUserRoles(s.enforcer, user.ID, roles); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "AssignRoles", err)
 	}
 	response := NewUserDetailResponse(*user)
 	return &response, nil
@@ -431,11 +435,11 @@ func (s *UserService) AssignRolesByActor(ctx context.Context, actor *auth.Curren
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, constants.ErrUserNotFound
 		}
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "AssignRolesByActor", err)
 	}
 	ok, err := s.canAccessUser(ctx, actor, target)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "AssignRolesByActor", err)
 	}
 	if !ok {
 		return nil, constants.ErrForbidden
@@ -450,7 +454,7 @@ func (s *UserService) ensureUserUnique(ctx context.Context, currentID uint, user
 			return constants.ErrUsernameTaken
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+			return svcerr.Pass(ctx, "user", "ensureUserUnique", err)
 		}
 	}
 
@@ -460,7 +464,7 @@ func (s *UserService) ensureUserUnique(ctx context.Context, currentID uint, user
 			return constants.ErrEmailAlreadyRegistered
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+			return svcerr.Pass(ctx, "user", "ensureUserUnique", err)
 		}
 	}
 
@@ -489,13 +493,13 @@ func (s *UserService) ListAllByActor(ctx context.Context, actor *auth.CurrentUse
 	} else {
 		ids, err := s.accessibleDepartmentIDs(ctx, actor)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "user", "ListAllByActor", err)
 		}
 		params.DepartmentIDs = ids
 	}
 	users, _, err := s.userRepo.List(ctx, params)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "user", "ListAllByActor", err)
 	}
 	return users, nil
 }
@@ -504,12 +508,12 @@ func (s *UserService) ListAllByActor(ctx context.Context, actor *auth.CurrentUse
 func (s *UserService) ImportUsers(ctx context.Context, r io.Reader) error {
 	f, err := excelize.OpenReader(r)
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "user", "ImportUsers", err)
 	}
 
 	rows, err := f.GetRows("Sheet1")
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "user", "ImportUsers", err)
 	}
 
 	// Expect header row in first line: ID,Username,Nickname,Email,Status

@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 	"yunshu/internal/pkg/k8sauth"
 	"yunshu/internal/repository"
 
@@ -192,7 +193,7 @@ func (s *K8sScopedPolicyService) GrantPreset(ctx context.Context, req K8sScopedP
 		}
 		role, err := s.roleRepo.GetByID(ctx, req.RoleID)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "k8s.policy", "GrantPreset", err)
 		}
 		principalRef = strings.TrimSpace(role.Code)
 		if principalRef == "" {
@@ -215,7 +216,7 @@ func (s *K8sScopedPolicyService) GrantPreset(ctx context.Context, req K8sScopedP
 			if err == gorm.ErrRecordNotFound {
 				return nil, constants.ErrBadRequestWithMsg("用户组不存在")
 			}
-			return nil, err
+			return nil, svcerr.Pass(ctx, "k8s.policy", "GrantPreset", err)
 		}
 		principalRef = strings.TrimSpace(g.Code)
 		if principalRef == "" {
@@ -247,7 +248,7 @@ func (s *K8sScopedPolicyService) GrantPreset(ctx context.Context, req K8sScopedP
 			Preset:        preset,
 		}
 		if err := s.accessRepo.Upsert(ctx, it); err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "k8s.policy", "GrantPreset", err)
 		}
 		if had {
 			skipped++
@@ -260,7 +261,7 @@ func (s *K8sScopedPolicyService) GrantPreset(ctx context.Context, req K8sScopedP
 	if s.nsDenyRepo != nil && len(req.DenyNamespaces) > 0 {
 		da, ds, err := syncDenyNamespaces(ctx, s.nsDenyRepo, kind, principalRef, clusterIDs, req.DenyNamespaces)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "k8s.policy", "GrantPreset", err)
 		}
 		denyAdded, denySkipped = da, ds
 	}
@@ -269,7 +270,7 @@ func (s *K8sScopedPolicyService) GrantPreset(ctx context.Context, req K8sScopedP
 	if s.nsAllowRepo != nil && len(req.AllowNamespaces) > 0 {
 		aa, as, err := syncAllowNamespaces(ctx, s.nsAllowRepo, kind, principalRef, clusterIDs, req.AllowNamespaces)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "k8s.policy", "GrantPreset", err)
 		}
 		allowAdded, allowSkipped = aa, as
 	}
@@ -387,7 +388,7 @@ func (s *K8sScopedPolicyService) ListClusterGrants(ctx context.Context, roleID, 
 		}
 		role, err := s.roleRepo.GetByID(ctx, roleID)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "k8s.policy", "ListClusterGrants", err)
 		}
 		kind, ref = model.K8sPrincipalRole, strings.TrimSpace(role.Code)
 	case userID > 0:
@@ -398,7 +399,7 @@ func (s *K8sScopedPolicyService) ListClusterGrants(ctx context.Context, roleID, 
 		}
 		g, err := s.userGroupRepo.GetByID(ctx, groupID)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "k8s.policy", "ListClusterGrants", err)
 		}
 		kind, ref = model.K8sPrincipalGroup, strings.TrimSpace(g.Code)
 	default:
@@ -409,7 +410,7 @@ func (s *K8sScopedPolicyService) ListClusterGrants(ctx context.Context, roleID, 
 	}
 	list, err := s.accessRepo.ListByPrincipal(ctx, kind, ref)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "k8s.policy", "ListClusterGrants", err)
 	}
 	out := make([]K8sClusterAccessItem, 0, len(list))
 	for _, g := range list {
@@ -541,12 +542,12 @@ func (s *K8sScopedPolicyService) ListClusterAuthMatrix(ctx context.Context, clus
 	}
 	clu, err := s.clusterRepo.GetByID(ctx, clusterID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "k8s.policy", "ListClusterAuthMatrix", err)
 	}
 	viewName := strings.TrimSpace(clu.Name)
 	grants, err := s.accessRepo.ListGrantsApplyingToCluster(ctx, clusterID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "k8s.policy", "ListClusterAuthMatrix", err)
 	}
 	var out []K8sAuthMatrixRow
 	appendRow := func(g model.K8sClusterAccessGrant, username, nickname string, rowSuffix string) {
@@ -587,7 +588,7 @@ func (s *K8sScopedPolicyService) ListClusterAuthMatrix(ctx context.Context, clus
 		case model.K8sPrincipalRole:
 			ids, err := s.userRepo.ListUserIDsByRoleCode(ctx, g.PrincipalRef)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass(ctx, "k8s.policy", "ListClusterAuthMatrix", err)
 			}
 			if len(ids) == 0 {
 				appendRow(g, "-", "(当前无用户绑定该角色)", "role-empty")
@@ -595,7 +596,7 @@ func (s *K8sScopedPolicyService) ListClusterAuthMatrix(ctx context.Context, clus
 			}
 			users, err := s.userRepo.ListByIDs(ctx, ids)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass(ctx, "k8s.policy", "ListClusterAuthMatrix", err)
 			}
 			byID := map[uint]model.User{}
 			for _, u := range users {
@@ -617,7 +618,7 @@ func (s *K8sScopedPolicyService) ListClusterAuthMatrix(ctx context.Context, clus
 			}
 			mids, err := s.userGroupRepo.ListMemberUserIDs(ctx, grp.ID)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass(ctx, "k8s.policy", "ListClusterAuthMatrix", err)
 			}
 			if len(mids) == 0 {
 				appendRow(g, "-", "(组内暂无成员)", "grp-empty")
@@ -625,7 +626,7 @@ func (s *K8sScopedPolicyService) ListClusterAuthMatrix(ctx context.Context, clus
 			}
 			users, err := s.userRepo.ListByIDs(ctx, mids)
 			if err != nil {
-				return nil, err
+				return nil, svcerr.Pass(ctx, "k8s.policy", "ListClusterAuthMatrix", err)
 			}
 			byID := map[uint]model.User{}
 			for _, u := range users {
@@ -662,11 +663,11 @@ func (s *K8sScopedPolicyService) ListUserClusterAuth(ctx context.Context, userID
 	}
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "k8s.policy", "ListUserClusterAuth", err)
 	}
 	clusters, err := s.clusterRepo.ListAllBrief(ctx)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "k8s.policy", "ListUserClusterAuth", err)
 	}
 	id2name := map[uint]string{}
 	for _, c := range clusters {
@@ -697,7 +698,7 @@ func (s *K8sScopedPolicyService) ListUserClusterAuth(ctx context.Context, userID
 	for _, sc := range sources {
 		grants, err := s.accessRepo.ListByPrincipal(ctx, sc.kind, sc.ref)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "k8s.policy", "ListUserClusterAuth", err)
 		}
 		for _, g := range grants {
 			if g.ClusterID == 0 {

@@ -7,15 +7,15 @@ package constants
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"yunshu/internal/pkg/apperror"
 )
 
-// BizError 构造业务错误：HTTP 状态、数字业务码、产品话术（error_code 为数字字符串）。
+// BizError 构造业务错误：HTTP 状态、数字业务码、reason（OneX）、产品话术（message）。
+// JSON 响应含 code/reason/message/error_code（兼容）/metadata，见 internal/pkg/response。
 func BizError(httpStatus, bizCode int, message string) error {
-	return apperror.New(httpStatus, message, strconv.Itoa(bizCode))
+	return apperror.NewBiz(httpStatus, bizCode, ReasonForBizCode(bizCode), message)
 }
 
 // ErrBadRequestWithMsg 固定业务码 11020，文案由调用方传入（绑定失败、fmt 拼接等）。
@@ -131,7 +131,7 @@ var (
 var (
 	ErrRoleNotFound       = BizError(http.StatusNotFound, 24001, "角色不存在或已删除")
 	ErrUserGroupNotFound  = BizError(http.StatusNotFound, 24002, "用户组不存在或已删除")
-	ErrPermissionNotFound = BizError(http.StatusNotFound, 24002, "权限项不存在或已变更")
+	ErrPermissionNotFound = BizError(http.StatusNotFound, 24005, "权限项不存在或已变更")
 	ErrMenuNotFound       = BizError(http.StatusNotFound, 24003, "菜单不存在或已下线")
 	ErrDepartmentNotFound = BizError(http.StatusNotFound, 24004, "部门不存在或已撤销")
 )
@@ -147,6 +147,8 @@ var (
 var (
 	// ErrK8sNamespaceAlreadyExists 表单创建命名空间时名称已在集群中存在（HTTP 409 / error_code 26001）。
 	ErrK8sNamespaceAlreadyExists = BizError(http.StatusConflict, 26001, "该命名空间已存在，请勿重复创建")
+	// ErrK8sClusterAPIUnauthorized 集群 Token/证书无效（HTTP 403，避免与平台登录 401 混淆导致前端误登出）。
+	ErrK8sClusterAPIUnauthorized = BizError(http.StatusForbidden, 26002, ErrMsgK8sAPIUnauthorized)
 )
 
 // ErrK8sNamespaceAlreadyExistsMsg 返回业务码 26001，文案包含冲突的名称。
@@ -205,6 +207,8 @@ const (
 	ErrMsgc674e8a0802b = "K8s 客户端不存在"
 	// K8s 集群实例不存在
 	ErrMsg5248c9e19a3f = "K8s 集群实例不存在"
+	// Kubernetes API 认证失败（集群 Token/证书无效或 kubeconfig 未含凭证）
+	ErrMsgK8sAPIUnauthorized = "Kubernetes 集群认证失败：请检查集群 Token/证书是否有效，或在集群管理中重新保存直连配置"
 	// K8s 集群重连失败
 	ErrMsgb9cf6d1a2c2e = "K8s 集群重连失败"
 	// NetworkPolicy 资源不存在

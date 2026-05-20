@@ -9,6 +9,7 @@ import (
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/password"
 	"yunshu/internal/service"
+	"yunshu/internal/service/svclog"
 
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
@@ -113,7 +114,7 @@ var seedCmd = &cobra.Command{
 			return err
 		}
 
-		app.Logger.Info.Info("seed completed", "username", adminUser.Username, "email", adminUser.Email, "password", "Admin@123")
+		svclog.Worker("seed").Infow("Seed completed", "username", adminUser.Username, "email", adminUser.Email, "password", "Admin@123")
 		fmt.Println("seed completed: admin / Admin@123 / admin@example.com")
 		return nil
 	},
@@ -276,6 +277,13 @@ func defaultPermissions() []model.Permission {
 		{Name: "组件状态列表", Resource: "/api/v1/clusters/:id/component-statuses", Action: "GET", Description: "List control plane component statuses"},
 		{Name: "集群 API 资源发现", Resource: "/api/v1/clusters/:id/api-resources", Action: "GET", Description: "Discovery API resources like kubectl api-resources"},
 		{Name: "K8s 资源 Watch（SSE）", Resource: "/api/v1/k8s/resource-watch/stream", Action: "GET", Description: "Kubernetes watch streamed as Server-Sent Events [k8s-scope=on]", K8sScopeEnabled: true},
+		{Name: "K8s Event 转发规则列表", Resource: "/api/v1/k8s/event-forward/rules", Action: "GET", Description: "List k8s event forward rules"},
+		{Name: "K8s Event 转发规则详情", Resource: "/api/v1/k8s/event-forward/rules/:id", Action: "GET", Description: "Get k8s event forward rule"},
+		{Name: "K8s Event 转发规则创建", Resource: "/api/v1/k8s/event-forward/rules", Action: "POST", Description: "Create k8s event forward rule"},
+		{Name: "K8s Event 转发规则更新", Resource: "/api/v1/k8s/event-forward/rules/:id", Action: "PUT", Description: "Update k8s event forward rule"},
+		{Name: "K8s Event 转发规则删除", Resource: "/api/v1/k8s/event-forward/rules/:id", Action: "DELETE", Description: "Delete k8s event forward rule"},
+		{Name: "K8s Event 转发 Worker 参数", Resource: "/api/v1/k8s/event-forward/settings", Action: "GET", Description: "Get k8s event forward worker settings"},
+		{Name: "K8s Event 转发 Worker 更新", Resource: "/api/v1/k8s/event-forward/settings", Action: "PUT", Description: "Update k8s event forward worker settings"},
 		{Name: "Pod 列表", Resource: "/api/v1/pods", Action: "GET", Description: "List pods"},
 		{Name: "Pod 详情", Resource: "/api/v1/pods/detail", Action: "GET", Description: "Get pod detail"},
 		{Name: "Pod 事件", Resource: "/api/v1/pods/events", Action: "GET", Description: "List pod events"},
@@ -453,6 +461,16 @@ func defaultPermissions() []model.Permission {
 		{Name: "项目日志文件列表", Resource: "/api/v1/projects/:id/log-files", Action: "GET", Description: "List log files"},
 		{Name: "项目日志单元", Resource: "/api/v1/projects/:id/log-units", Action: "GET", Description: "List log units"},
 		{Name: "项目服务器终端 WS", Resource: "/api/v1/projects/:id/servers/:serverId/terminal/ws", Action: "GET", Description: "Server terminal websocket"},
+
+		{Name: "MySQL备份实例列表", Resource: "/api/v1/projects/:id/mysql-backup/instances", Action: "GET", Description: "List MySQL backup instances"},
+		{Name: "MySQL备份实例创建", Resource: "/api/v1/projects/:id/mysql-backup/instances", Action: "POST", Description: "Create MySQL backup instance"},
+		{Name: "MySQL备份实例更新", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId", Action: "PUT", Description: "Update MySQL backup instance"},
+		{Name: "MySQL备份实例删除", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId", Action: "DELETE", Description: "Delete MySQL backup instance"},
+		{Name: "MySQL备份连通测试", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId/ping", Action: "POST", Description: "Ping MySQL backup instance"},
+		{Name: "MySQL远端备份检查", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId/check-remote", Action: "POST", Description: "Check remote xtrabackup backup"},
+		{Name: "MySQL执行备份", Resource: "/api/v1/projects/:id/mysql-backup/instances/:instanceId/run", Action: "POST", Description: "Run MySQL backup job"},
+		{Name: "MySQL备份任务列表", Resource: "/api/v1/projects/:id/mysql-backup/jobs", Action: "GET", Description: "List MySQL backup jobs"},
+		{Name: "MySQL备份预签名下载", Resource: "/api/v1/projects/:id/mysql-backup/jobs/:jobId/presign", Action: "GET", Description: "Presign MySQL backup download URL"},
 
 		{Name: "Event 列表", Resource: "/api/v1/events", Action: "GET", Description: "List events"},
 		{Name: "CRD 列表", Resource: "/api/v1/crds", Action: "GET", Description: "List custom resource definitions"},
@@ -646,6 +664,7 @@ func defaultMenus() []model.Menu {
 				{Name: "日志源配置", Path: "/project-log-sources", Icon: "FileSearchOutlined", Sort: 5, Component: "project-log-sources-page", Status: 1},
 				{Name: "日志平台", Path: "/project-logs", Icon: "FileTextOutlined", Sort: 6, Component: "project-logs-page", Status: 1},
 				{Name: "Agent 列表", Path: "/agent-list", Icon: "RobotOutlined", Sort: 7, Component: "agent-list-page", Status: 1},
+				{Name: "MySQL 备份", Path: "/mysql-backup", Icon: "DatabaseOutlined", Sort: 8, Component: "mysql-backup-page", Status: 1},
 			},
 		},
 		{
@@ -695,9 +714,10 @@ func defaultMenus() []model.Menu {
 				{Name: "IngressClass 入口类", Path: "/ingress-classes", Icon: "GatewayOutlined", Sort: 18, Component: "ingress-classes-page", Status: 1},
 				{Name: "网络策略管理", Path: "/network-policies", Icon: "DeploymentUnitOutlined", Sort: 19, Component: "network-policies-page", Status: 1},
 				{Name: "Event 事件", Path: "/events", Icon: "FileSearchOutlined", Sort: 20, Component: "events-page", Status: 1},
-				{Name: "ServiceAccount 管理", Path: "/serviceaccounts", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "serviceaccounts-page", Status: 1},
-				{Name: "API 资源发现", Path: "/cluster-api-resources", Icon: "UnorderedListOutlined", Sort: 22, Component: "cluster-api-resources-page", Status: 1},
-				{Name: "HPA 弹性伸缩", Path: "/horizontal-pod-autoscalers", Icon: "LineChartOutlined", Sort: 23, Component: "horizontal-pod-autoscalers-page", Status: 1},
+				{Name: "K8s Event 转发", Path: "/k8s/event-forward", Icon: "ShareAltOutlined", Sort: 21, Component: "k8s-event-forward-page", Status: 1},
+				{Name: "ServiceAccount 管理", Path: "/serviceaccounts", Icon: "SafetyCertificateOutlined", Sort: 22, Component: "serviceaccounts-page", Status: 1},
+				{Name: "API 资源发现", Path: "/cluster-api-resources", Icon: "UnorderedListOutlined", Sort: 23, Component: "cluster-api-resources-page", Status: 1},
+				{Name: "HPA 弹性伸缩", Path: "/horizontal-pod-autoscalers", Icon: "LineChartOutlined", Sort: 24, Component: "horizontal-pod-autoscalers-page", Status: 1},
 			},
 		},
 		{

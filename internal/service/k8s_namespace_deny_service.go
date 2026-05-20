@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 	"yunshu/internal/repository"
 )
 
@@ -54,7 +55,7 @@ func (s *K8sNamespaceDenyService) Create(ctx context.Context, req K8sNamespaceDe
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			return nil, constants.ErrConflictWithMsg("该主体在此集群下对该命名空间的禁止规则已存在")
 		}
-		return nil, err
+		return nil, svcerr.Pass(ctx, "k8s.namespace-deny", "Create", err)
 	}
 	return it, nil
 }
@@ -67,7 +68,7 @@ func (s *K8sNamespaceDenyService) Delete(ctx context.Context, id uint) error {
 		return constants.ErrBadRequest
 	}
 	if err := s.repo.DeleteByID(ctx, id); err != nil {
-		return err
+		return svcerr.Pass(ctx, "k8s.namespace-deny", "Delete", err)
 	}
 	return nil
 }

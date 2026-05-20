@@ -1,11 +1,11 @@
-package service
+﻿package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,7 +64,7 @@ func (s *K8sEventService) List(ctx context.Context, q EventListQuery) ([]EventIt
 		query = query.Namespace(ns)
 	}
 	if err := query.List(&list).Error; err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd678ffdd4e0f, err))
+		return nil, svcerr.Internal(ctx, "k8s.event", "api", err, constants.ErrFmtd678ffdd4e0f)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	kind := strings.TrimSpace(q.Kind)

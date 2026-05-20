@@ -1,12 +1,12 @@
-package service
+﻿package service
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"time"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -35,7 +35,7 @@ func (s *AlertService) shouldEnqueueAlertmanagerWebhook() bool {
 func (s *AlertService) enqueueAlertmanagerWebhook(ctx context.Context, payload AlertManagerPayload) error {
 	bs, err := json.Marshal(payload)
 	if err != nil {
-		return constants.ErrInternalWithMsg(constants.ErrMsg39d72e4b8516)
+		return svcerr.InternalMsg(ctx, "alert.webhook", "api", constants.ErrMsg39d72e4b8516)
 	}
 	maxLen := s.cfg.WebhookQueueMaxLen
 	if maxLen <= 0 {
@@ -43,43 +43,41 @@ func (s *AlertService) enqueueAlertmanagerWebhook(ctx context.Context, payload A
 	}
 	ok, err := luaEnqueueAlertWebhook.Run(ctx, s.redis, []string{redisKeyAlertWebhookQueue}, maxLen, string(bs)).Int()
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "alert.webhook", "enqueueAlertmanagerWebhook", err)
 	}
 	if ok == 0 {
-		return constants.ErrInternalWithMsg(constants.ErrMsgfd7c760c8d45)
+		return svcerr.InternalMsg(ctx, "alert.webhook", "api", constants.ErrMsgfd7c760c8d45)
 	}
 	return nil
 }
 
-func (s *AlertService) logWebhook(level string, msg string, attrs ...any) {
-	if s.infoLog == nil {
-		return
-	}
-	switch level {
-	case "warn":
-		s.infoLog.Warn(msg, attrs...)
-	case "error":
-		s.infoLog.Error(msg, attrs...)
-	default:
-		s.infoLog.Info(msg, attrs...)
-	}
-}
-
 func webhookPayloadLogAttrs(payload AlertManagerPayload) []any {
 	attrs := []any{
-		slog.String("status", payload.Status),
-		slog.String("receiver", payload.Receiver),
-		slog.Int("alerts", len(payload.Alerts)),
+		"status", payload.Status,
+		"receiver", payload.Receiver,
+		"alerts", len(payload.Alerts),
 	}
 	if len(payload.Alerts) > 0 {
 		labels := payload.Alerts[0].Labels
 		if labels != nil {
 			if v := labels["alertname"]; v != "" {
-				attrs = append(attrs, slog.String("alertname", v))
+				attrs = append(attrs, "alertname", v)
 			}
 		}
 	}
 	return attrs
+}
+
+func (s *AlertService) logWebhookWarn(msg string, attrs ...any) {
+	alertLog().Warnw(msg, attrs...)
+}
+
+func (s *AlertService) logWebhookError(err error, msg string, attrs ...any) {
+	alertLog().Errorw(err, msg, attrs...)
+}
+
+func (s *AlertService) logWebhookInfo(msg string, attrs ...any) {
+	alertLog().Infow(msg, attrs...)
 }
 
 func (s *AlertService) ingestWebhookPayloadWithRetry(ctx context.Context, payload AlertManagerPayload) {
@@ -88,30 +86,29 @@ func (s *AlertService) ingestWebhookPayloadWithRetry(ctx context.Context, payloa
 		lastErr = s.receiveAlertmanagerPayloadSync(ctx, payload)
 		if lastErr == nil {
 			if attempt > 1 {
-				s.logWebhook("info", "alert webhook ingest succeeded after retry",
-					append(webhookPayloadLogAttrs(payload), slog.Int("attempt", attempt))...)
+				s.logWebhookInfo("Alert webhook ingest succeeded after retry",
+					append(webhookPayloadLogAttrs(payload), "attempt", attempt)...)
 			}
 			return
 		}
-		s.logWebhook("warn", "alert webhook ingest failed",
-			append(webhookPayloadLogAttrs(payload), slog.Int("attempt", attempt), slog.Any("error", lastErr))...)
+		s.logWebhookWarn("Failed to ingest alert webhook payload",
+			append(webhookPayloadLogAttrs(payload), "attempt", attempt, "error", lastErr)...)
 		if attempt < alertWebhookMaxAttempts {
 			time.Sleep(time.Duration(attempt) * time.Second)
 		}
 	}
-	s.logWebhook("error", "alert webhook ingest exhausted retries",
-		append(webhookPayloadLogAttrs(payload), slog.Any("error", lastErr))...)
+	s.logWebhookError(lastErr, "Alert webhook ingest exhausted retries", webhookPayloadLogAttrs(payload)...)
 }
 
 func (s *AlertService) runAlertWebhookIngestWorker(ctx context.Context) {
 	if s.redis == nil || s.cfg.WebhookAsyncDisabled {
 		return
 	}
-	s.logWebhook("info", "alert webhook async worker started")
+	s.logWebhookInfo("Started alert webhook async worker")
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				s.logWebhook("error", "alert webhook worker panic", slog.Any("error", r))
+				s.logWebhookError(errors.New("panic"), "Alert webhook worker panic", "panic", r)
 			}
 		}()
 		for {
@@ -126,7 +123,7 @@ func (s *AlertService) runAlertWebhookIngestWorker(ctx context.Context) {
 				if errors.Is(err, redis.Nil) {
 					continue
 				}
-				s.logWebhook("warn", "alert webhook queue BRPop failed", slog.Any("error", err))
+				s.logWebhookWarn("Alert webhook queue BRPop failed", "error", err)
 				time.Sleep(time.Second)
 				continue
 			}
@@ -136,8 +133,7 @@ func (s *AlertService) runAlertWebhookIngestWorker(ctx context.Context) {
 			raw := res[1]
 			var payload AlertManagerPayload
 			if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-				s.logWebhook("warn", "alert webhook queue payload unmarshal failed",
-					slog.Any("error", err), slog.Int("bytes", len(raw)))
+				s.logWebhookWarn("Failed to unmarshal alert webhook queue payload", "error", err, "bytes", len(raw))
 				continue
 			}
 			procCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

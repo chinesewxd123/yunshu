@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/constants"
 	"yunshu/internal/pkg/logpath"
+	"yunshu/internal/service/svcerr"
 	"yunshu/internal/repository"
 )
 
@@ -55,7 +56,7 @@ func (s *AgentDiscoveryService) Report(ctx context.Context, req AgentDiscoveryRe
 	agentSvc := NewLogAgentService(s.agentRepo, s.serverRepo, s.logRepo, "", nil)
 	agent, err := agentSvc.AuthenticateByToken(ctx, token)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "agent.discovery", "Report", err)
 	}
 
 	items := make([]model.AgentDiscovery, 0, len(req.Items))
@@ -87,7 +88,7 @@ func (s *AgentDiscoveryService) Report(ctx context.Context, req AgentDiscoveryRe
 		})
 	}
 	if err := s.repo.UpsertMany(ctx, agent.ProjectID, agent.ServerID, items); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "agent.discovery", "upsert", err, "server_id", agent.ServerID)
 	}
 	_ = s.repo.PruneStale(ctx, agent.ProjectID, agent.ServerID, now.Add(-discoveryStaleRetention))
 	return &AgentDiscoveryReportResult{Accepted: len(items)}, nil
@@ -115,7 +116,7 @@ type AgentDiscoveryListItem struct {
 func (s *AgentDiscoveryService) List(ctx context.Context, q AgentDiscoveryListQuery) ([]AgentDiscoveryListItem, error) {
 	sv, err := s.serverRepo.GetByID(ctx, q.ServerID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "agent.discovery", "List", err)
 	}
 	if sv.ProjectID != q.ProjectID {
 		return nil, constants.ErrServerNotInProjectForbidden
@@ -146,7 +147,7 @@ func (s *AgentDiscoveryService) List(ctx context.Context, q AgentDiscoveryListQu
 		FreshSince: freshSince,
 	})
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "agent.discovery", "List", err)
 	}
 
 	sources, _ := s.logRepo.ListByProjectAndServer(ctx, q.ProjectID, q.ServerID)

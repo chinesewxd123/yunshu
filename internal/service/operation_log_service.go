@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/pagination"
 	"yunshu/internal/repository"
+	"yunshu/internal/service/svcerr"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -44,7 +45,7 @@ func (s *OperationLogService) List(ctx context.Context, query OperationLogListQu
 		PageSize:   pageSize,
 	})
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "operation-log", "List", err)
 	}
 	return &pagination.Result[model.OperationLog]{
 		List:     list,
@@ -76,7 +77,7 @@ func (s *OperationLogService) Export(ctx context.Context, query OperationLogList
 		PageSize:   pageSize,
 	})
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "operation-log", "Export", err)
 	}
 	f := excelize.NewFile()
 	sheet := "Sheet1"

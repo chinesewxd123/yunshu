@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,11 +66,11 @@ func ResolveWatchTarget(cfg *rest.Config, q *K8sResourceWatchQuery) (watchGVR, e
 func resolveGVRWithRESTMapper(cfg *rest.Config, group, version, resource string) (watchGVR, error) {
 	disc, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		return watchGVR{}, constants.ErrInternalWithMsg(fmt.Sprintf("discovery client: %v", err))
+		return watchGVR{}, svcerr.Internal(context.Background(), "k8s.watch", "discovery_client", err, "discovery client: %v")
 	}
 	gr, err := restmapper.GetAPIGroupResources(disc)
 	if err != nil {
-		return watchGVR{}, constants.ErrInternalWithMsg(fmt.Sprintf("discovery: %v", err))
+		return watchGVR{}, svcerr.Internal(context.Background(), "k8s.watch", "api_groups", err, "discovery: %v")
 	}
 	mapper := restmapper.NewDiscoveryRESTMapper(gr)
 
@@ -144,7 +145,7 @@ func (s *K8sRuntimeService) StreamResourceWatch(ctx context.Context, cfg *rest.C
 
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf("dynamic client: %v", err))
+		return svcerr.Internal(ctx, "k8s.watch", "dynamic_client", err, "dynamic client: %v")
 	}
 
 	ri := dyn.Resource(def.GVR)
@@ -161,7 +162,7 @@ func (s *K8sRuntimeService) StreamResourceWatch(ctx context.Context, cfg *rest.C
 		watcher, err = ri.Watch(wctx, opts)
 	}
 	if err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf("watch: %v", err))
+		return svcerr.Internal(ctx, "k8s.watch", "watch", err, "watch: %v")
 	}
 	defer watcher.Stop()
 

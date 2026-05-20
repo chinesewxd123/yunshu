@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,11 +13,14 @@ import (
 	"yunshu/internal/bootstrap"
 	grpcclient "yunshu/internal/grpc/client"
 	grpcserver "yunshu/internal/grpc/server"
+	"yunshu/internal/handler"
 	"yunshu/internal/model"
+	logx "yunshu/internal/pkg/logger"
 	"yunshu/internal/pkg/password"
 	"yunshu/internal/repository"
 	"yunshu/internal/router"
 	"yunshu/internal/service"
+	"yunshu/internal/service/svclog"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/spf13/cobra"
@@ -48,18 +50,22 @@ var serverCmd = &cobra.Command{
 		}
 		defer app.Close()
 
+		logx.Init(app.Logger)
+		handler.SetLogger(app.Logger)
+
 		if err := bootstrap.AutoMigrateModels(app.DB); err != nil {
 			return fmt.Errorf("auto migrate: %w", err)
 		}
-		app.Logger.Info.Info("database schema migrated")
+		bootLog := svclog.Worker("bootstrap")
+		bootLog.Infow("Database schema migrated")
 		if err := app.Enforcer.LoadPolicy(); err != nil {
 			return fmt.Errorf("reload casbin policy: %w", err)
 		}
 
 		// 初始化只读演示用户
 		ctx := context.Background()
-		if err := initReadonlyDemoUser(ctx, app.DB, app.Enforcer, app.Logger.Info); err != nil {
-			app.Logger.Info.Error("failed to init readonly demo user", slog.Any("error", err))
+		if err := initReadonlyDemoUser(ctx, app.DB, app.Enforcer, bootLog); err != nil {
+			bootLog.Errorw(err, "Failed to init readonly demo user")
 			// 非致命错误，继续启动
 		}
 
@@ -109,7 +115,13 @@ var serverCmd = &cobra.Command{
 		}
 		defer runtimeClient.Close()
 
-		router.Register(app, runtimeClient)
+		bgWorkersCtx, bgWorkersCancel := context.WithCancel(context.Background())
+		defer bgWorkersCancel()
+
+		k8sEventForwardMgr := router.Register(app, runtimeClient, bgWorkersCtx)
+		if k8sEventForwardMgr != nil {
+			defer k8sEventForwardMgr.Stop()
+		}
 
 		sweepCtx, sweepCancel := context.WithCancel(context.Background())
 		defer sweepCancel()
@@ -125,7 +137,7 @@ var serverCmd = &cobra.Command{
 					err := agentSvc.RecordOfflineEpisodes(ctx)
 					cancel()
 					if err != nil {
-						app.Logger.Info.Warn("record offline episodes failed", slog.Any("error", err))
+						svclog.Worker("agent").Warnw("Failed to record agent offline episodes", "error", err)
 					}
 				}
 			}
@@ -142,7 +154,7 @@ var serverCmd = &cobra.Command{
 
 		errCh := make(chan error, 1)
 		go func() {
-			app.Logger.Info.Info("permission system server started", "addr", server.Addr)
+			svclog.Worker("server").Infow("HTTP server started", "addr", server.Addr)
 			if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- err
 			}
@@ -153,7 +165,7 @@ var serverCmd = &cobra.Command{
 
 		select {
 		case sig := <-stop:
-			app.Logger.Info.Info("received shutdown signal", "signal", sig.String())
+			svclog.Worker("server").Infow("Received shutdown signal", "signal", sig.String())
 		case err := <-errCh:
 			return err
 		}
@@ -173,13 +185,14 @@ var serverCmd = &cobra.Command{
 
 		ctxHTTP, cancelHTTP := context.WithTimeout(context.Background(), httpShutdown)
 		defer cancelHTTP()
+		defer logx.Sync()
 		return server.Shutdown(ctxHTTP)
 	},
 }
 
 // initReadonlyDemoUser 初始化只读演示用户
 // 用户名: viewer, 密码: viewer123, 角色: viewer (仅查看权限)
-func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.SyncedEnforcer, logger *slog.Logger) error {
+func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.SyncedEnforcer, logger *logx.Component) error {
 	userRepo := repository.NewUserRepository(db)
 	roleRepo := repository.NewRoleRepository(db)
 	permRepo := repository.NewPermissionRepository(db)
@@ -209,13 +222,13 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		if err := db.Create(role).Error; err != nil {
 			return fmt.Errorf("create role: %w", err)
 		}
-		logger.Info("created readonly role", "code", roleCode)
+		logger.Infow("Created readonly role", "code", roleCode)
 	}
 
 	// 2. 配置角色权限：只读 GET 权限 + K8s 资源查看
 	// 先清除旧权限
 	if _, err := enforcer.RemoveFilteredPolicy(0, roleCode); err != nil {
-		logger.Warn("failed to remove old policies", slog.Any("error", err))
+		logger.Warnw("Failed to remove old Casbin policies", "error", err)
 	}
 
 	perms, err := permRepo.ListAll(ctx)
@@ -233,7 +246,7 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 			continue
 		}
 		if _, err := enforcer.AddPolicy(roleCode, obj, "GET"); err != nil {
-			logger.Warn("failed to add policy", slog.Any("resource", obj), slog.Any("error", err))
+			logger.Warnw("Failed to add Casbin policy", "resource", obj, "error", err)
 			continue
 		}
 		added++
@@ -249,7 +262,7 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		return fmt.Errorf("upsert k8s cluster access grant: %w", err)
 	}
 
-	logger.Info("configured readonly role permissions", "role", roleCode, "policies_added", added)
+	logger.Infow("Configured readonly role permissions", "role", roleCode, "policies_added", added)
 
 	// 3. 检查或创建演示用户
 	username := "viewer"
@@ -276,9 +289,9 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		if err := db.Create(user).Error; err != nil {
 			return fmt.Errorf("create user: %w", err)
 		}
-		logger.Info("created demo user", "username", username)
+		logger.Infow("Created demo user", "username", username)
 	} else {
-		logger.Info("demo user already exists", "username", username)
+		logger.Infow("Demo user already exists", "username", username)
 	}
 
 	// 4. 绑定用户到 viewer 角色
@@ -291,7 +304,7 @@ func initReadonlyDemoUser(ctx context.Context, db *gorm.DB, enforcer *casbin.Syn
 		return fmt.Errorf("sync user roles: %w", err)
 	}
 
-	logger.Info("demo user initialized", "username", username, "password", plainPassword, "role", roleCode)
-	logger.Info("demo user login info", "username", username, "password", plainPassword)
+	logger.Infow("Initialized demo user", "username", username, "password", plainPassword, "role", roleCode)
+	logger.Infow("Demo user login info", "username", username, "password", plainPassword)
 	return nil
 }

@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strings"
 
+	"yunshu/internal/service/svclog"
+	"yunshu/internal/model"
 	"yunshu/internal/repository"
 
 	"gorm.io/gorm"
@@ -100,6 +101,26 @@ func isMaskedSecretValue(s string) bool {
 	return strings.Contains(s, "***")
 }
 
+// resolveClusterKubeconfig 解析集群连接配置：直连模式从 direct_config 实时生成（保证 Token 与库内 JSON 一致）。
+func resolveClusterKubeconfig(cluster *model.K8sCluster) (string, error) {
+	if cluster == nil {
+		return "", fmt.Errorf("cluster is nil")
+	}
+	mode := strings.TrimSpace(cluster.ConnectionMode)
+	if mode == "direct" && strings.TrimSpace(cluster.DirectConfig) != "" {
+		var dc DirectConfig
+		if err := json.Unmarshal([]byte(cluster.DirectConfig), &dc); err != nil {
+			return "", fmt.Errorf("解析直连配置失败: %w", err)
+		}
+		return buildKubeconfigFromDirectConfig(&dc)
+	}
+	kc := strings.TrimSpace(cluster.Kubeconfig)
+	if kc == "" {
+		return "", fmt.Errorf("集群 kubeconfig 为空")
+	}
+	return kc, nil
+}
+
 func maskDirectConfigForAPI(dc *DirectConfig) *DirectConfig {
 	if dc == nil {
 		return nil
@@ -164,7 +185,7 @@ func buildKubeconfigFromDirectConfig(config *DirectConfig) (string, error) {
 
 	// 设置认证方式
 	if token != "" {
-		slog.Info("k8s direct auth token debug",
+		svclog.Service("k8s.cluster").Infow("Configured direct auth token",
 			"token_len", len(token),
 			"token_masked", maskSecretEdge(token, 8),
 			"server", serverRaw,

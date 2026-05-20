@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/pagination"
@@ -110,12 +111,12 @@ func (s *AlertSubscriptionService) ListNodes(ctx context.Context, q AlertSubscri
 
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
-		return nil, 0, page, pageSize, err
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.subscription", "ListNodes", err)
 	}
 
 	var list []model.AlertSubscriptionNode
 	if err := tx.Order("level ASC, id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error; err != nil {
-		return nil, 0, page, pageSize, err
+		return nil, 0, page, pageSize, svcerr.Pass(ctx, "alert.subscription", "ListNodes", err)
 	}
 
 	for i := range list {
@@ -129,7 +130,7 @@ func (s *AlertSubscriptionService) ListNodes(ctx context.Context, q AlertSubscri
 func (s *AlertSubscriptionService) GetNodeByID(ctx context.Context, id uint) (*model.AlertSubscriptionNode, error) {
 	var node model.AlertSubscriptionNode
 	if err := s.db.WithContext(ctx).First(&node, id).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "alert.subscription", "GetNodeByID", err)
 	}
 	hydrateSubscriptionNode(&node)
 	return &node, nil
@@ -143,7 +144,7 @@ func (s *AlertSubscriptionService) GetNodeTree(ctx context.Context, projectID ui
 		Where("project_id = ?", projectID).
 		Order("path ASC, id ASC").
 		Find(&nodes).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "alert.subscription", "GetNodeTree", err)
 	}
 
 	for i := range nodes {
@@ -196,7 +197,7 @@ func buildNodeTree(nodes []model.AlertSubscriptionNode) []model.AlertSubscriptio
 // CreateNode 创建订阅节点
 func (s *AlertSubscriptionService) CreateNode(ctx context.Context, req AlertSubscriptionNodeUpsertRequest) (*model.AlertSubscriptionNode, error) {
 	if err := validateSubscriptionNode(req); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "alert.subscription", "CreateNode", err)
 	}
 
 	// 计算层级和路径
@@ -245,7 +246,7 @@ func (s *AlertSubscriptionService) CreateNode(ctx context.Context, req AlertSubs
 	}
 
 	if err := s.db.WithContext(ctx).Create(node).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "alert.subscription", "CreateNode", err)
 	}
 
 	s.InvalidateCache()
@@ -277,7 +278,7 @@ func (s *AlertSubscriptionService) UpdateNode(ctx context.Context, id uint, req 
 	}
 
 	if err := validateSubscriptionNode(req); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "alert.subscription", "UpdateNode", err)
 	}
 
 	// 重新计算层级和路径
@@ -318,7 +319,7 @@ func (s *AlertSubscriptionService) UpdateNode(ctx context.Context, id uint, req 
 	}
 
 	if err := s.db.WithContext(ctx).Save(&node).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "alert.subscription", "UpdateNode", err)
 	}
 
 	s.InvalidateCache()
@@ -333,7 +334,7 @@ func (s *AlertSubscriptionService) DeleteNode(ctx context.Context, id uint) erro
 	if err := s.db.WithContext(ctx).Model(&model.AlertSubscriptionNode{}).
 		Where("parent_id = ?", id).
 		Count(&childCount).Error; err != nil {
-		return err
+		return svcerr.Pass(ctx, "alert.subscription", "DeleteNode", err)
 	}
 	if childCount > 0 {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsgbc5e76aacb41)
@@ -341,7 +342,7 @@ func (s *AlertSubscriptionService) DeleteNode(ctx context.Context, id uint) erro
 
 	res := s.db.WithContext(ctx).Delete(&model.AlertSubscriptionNode{}, id)
 	if res.Error != nil {
-		return res.Error
+		return svcerr.Pass(ctx, "alert.subscription", "DeleteNode", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return constants.ErrNotFoundWithMsg(constants.ErrMsgb196d0c97d2f)
@@ -350,8 +351,6 @@ func (s *AlertSubscriptionService) DeleteNode(ctx context.Context, id uint) erro
 	s.InvalidateCache()
 	return nil
 }
-
-// MatchRoute 匹配告警到订阅树路由
 // 返回匹配到的接收组ID列表，以及是否继续匹配的标志
 func (s *AlertSubscriptionService) MatchRoute(projectID uint, labels map[string]string, severity string) ([]uint, bool) {
 	// 兼容旧调用：默认仅用于 firing
@@ -435,7 +434,7 @@ func (s *AlertSubscriptionService) refreshCache(ctx context.Context) error {
 		Where("enabled = ?", true).
 		Order("path ASC, level ASC, id ASC").
 		Find(&nodes).Error; err != nil {
-		return err
+		return svcerr.Pass(ctx, "alert.subscription", "refreshCache", err)
 	}
 
 	// 构建缓存节点

@@ -1,16 +1,19 @@
-package service
+﻿package service
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/repository"
+
+	"gorm.io/gorm"
 )
 
 type MenuService struct {
@@ -41,7 +44,7 @@ func sameParent(a, b *uint) bool {
 func (s *MenuService) ensureUniqueSiblingSort(ctx context.Context, parentID *uint, sort int, excludeID uint) (int, error) {
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return sort, err
+		return sort, svcerr.Pass(ctx, "menu", "ensureUniqueSiblingSort", err)
 	}
 	used := make(map[int]struct{}, 64)
 	for _, it := range all {
@@ -106,26 +109,26 @@ func (s *MenuService) Tree(ctx context.Context) ([]model.Menu, error) {
 
 	list, err := s.menuRepo.Tree(ctx)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "menu", "Tree", err)
 	}
 
 	needRefresh := false
 	if !done {
 		changed, err := s.ensureBuiltInMenus(ctx, list)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "menu", "Tree", err)
 		}
 		repaired, err := s.repairEventMenus(ctx)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "menu", "Tree", err)
 		}
 		normalized, err := s.normalizeMenuHierarchyAndSort(ctx)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "menu", "Tree", err)
 		}
 		hiddenAdjusted, err := s.ensureHiddenMenusDisabled(ctx)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "menu", "Tree", err)
 		}
 		needRefresh = changed || repaired || normalized
 		needRefresh = needRefresh || hiddenAdjusted
@@ -136,7 +139,7 @@ func (s *MenuService) Tree(ctx context.Context) ([]model.Menu, error) {
 	if needRefresh {
 		list, err = s.menuRepo.Tree(ctx)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "menu", "Tree", err)
 		}
 	}
 
@@ -153,7 +156,7 @@ func (s *MenuService) Tree(ctx context.Context) ([]model.Menu, error) {
 func (s *MenuService) normalizeMenuHierarchyAndSort(ctx context.Context) (bool, error) {
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "normalizeMenuHierarchyAndSort", err)
 	}
 	changed := false
 
@@ -185,7 +188,7 @@ func (s *MenuService) normalizeMenuHierarchyAndSort(ctx context.Context) (bool, 
 			pid := parent.ID
 			m.ParentID = &pid
 			if err := s.menuRepo.Update(ctx, m); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "normalizeMenuHierarchyAndSort", err)
 			}
 			changed = true
 		}
@@ -194,7 +197,7 @@ func (s *MenuService) normalizeMenuHierarchyAndSort(ctx context.Context) (bool, 
 	// Reload after possible parent updates.
 	all, err = s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "normalizeMenuHierarchyAndSort", err)
 	}
 
 	siblingMap := make(map[uint][]*model.Menu)
@@ -223,7 +226,7 @@ func (s *MenuService) normalizeMenuHierarchyAndSort(ctx context.Context) (bool, 
 		if m.Sort != target {
 			m.Sort = target
 			if err := s.menuRepo.Update(ctx, m); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "normalizeMenuHierarchyAndSort", err)
 			}
 			changed = true
 		}
@@ -236,7 +239,7 @@ func (s *MenuService) normalizeMenuHierarchyAndSort(ctx context.Context) (bool, 
 			if m.Sort != target {
 				m.Sort = target
 				if err := s.menuRepo.Update(ctx, m); err != nil {
-					return false, err
+					return false, svcerr.Pass(ctx, "menu", "normalizeMenuHierarchyAndSort", err)
 				}
 				changed = true
 			}
@@ -249,7 +252,7 @@ func (s *MenuService) normalizeMenuHierarchyAndSort(ctx context.Context) (bool, 
 func (s *MenuService) ensureHiddenMenusDisabled(ctx context.Context) (bool, error) {
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureHiddenMenusDisabled", err)
 	}
 	changed := false
 	for i := range all {
@@ -259,7 +262,7 @@ func (s *MenuService) ensureHiddenMenusDisabled(ctx context.Context) (bool, erro
 		}
 		m.Status = 0
 		if err := s.menuRepo.Update(ctx, m); err != nil {
-			return false, err
+			return false, svcerr.Pass(ctx, "menu", "ensureHiddenMenusDisabled", err)
 		}
 		changed = true
 	}
@@ -270,7 +273,7 @@ func (s *MenuService) ensureHiddenMenusDisabled(ctx context.Context) (bool, erro
 func (s *MenuService) repairEventMenus(ctx context.Context) (bool, error) {
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "repairEventMenus", err)
 	}
 	changed := false
 	for i := range all {
@@ -299,7 +302,7 @@ func (s *MenuService) repairEventMenus(ctx context.Context) (bool, error) {
 		}
 		if needSave {
 			if err := s.menuRepo.Update(ctx, m); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "repairEventMenus", err)
 			}
 			changed = true
 		}
@@ -312,7 +315,7 @@ func (s *MenuService) ensureBuiltInMenus(ctx context.Context, tree []model.Menu)
 
 	k8sChanged, err := s.ensureK8sMenus(ctx, tree)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureBuiltInMenus", err)
 	}
 	if k8sChanged {
 		changed = true
@@ -320,7 +323,7 @@ func (s *MenuService) ensureBuiltInMenus(ctx context.Context, tree []model.Menu)
 
 	alertChanged, err := s.ensureAlertNotifyMenus(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureBuiltInMenus", err)
 	}
 	if alertChanged {
 		changed = true
@@ -328,15 +331,23 @@ func (s *MenuService) ensureBuiltInMenus(ctx context.Context, tree []model.Menu)
 
 	projectChanged, err := s.ensureProjectMgmtMenus(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureBuiltInMenus", err)
 	}
 	if projectChanged {
 		changed = true
 	}
 
+	runtimeCfgChanged, err := s.hideRuntimeConfigMenu(ctx)
+	if err != nil {
+		return false, svcerr.Pass(ctx, "menu", "ensureBuiltInMenus", err)
+	}
+	if runtimeCfgChanged {
+		changed = true
+	}
+
 	orgChanged, err := s.ensureOrgMenus(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureBuiltInMenus", err)
 	}
 	if orgChanged {
 		changed = true
@@ -344,7 +355,7 @@ func (s *MenuService) ensureBuiltInMenus(ctx context.Context, tree []model.Menu)
 
 	systemChanged, err := s.ensureSystemMenus(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureBuiltInMenus", err)
 	}
 	if systemChanged {
 		changed = true
@@ -356,7 +367,7 @@ func (s *MenuService) ensureBuiltInMenus(ctx context.Context, tree []model.Menu)
 func (s *MenuService) ensureOrgMenus(ctx context.Context) (bool, error) {
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureOrgMenus", err)
 	}
 	required := []model.Menu{
 		{Path: "/users", Name: "账号管理", Icon: "TeamOutlined", Sort: 4, Component: "users-page", Status: 1},
@@ -373,7 +384,7 @@ func (s *MenuService) ensureOrgMenus(ctx context.Context) (bool, error) {
 		if found == nil {
 			m := spec
 			if err := s.menuRepo.Create(ctx, &m); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureOrgMenus", err)
 			}
 			changed = true
 			continue
@@ -401,7 +412,7 @@ func (s *MenuService) ensureOrgMenus(ctx context.Context) (bool, error) {
 		}
 		if needSave {
 			if err := s.menuRepo.Update(ctx, found); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureOrgMenus", err)
 			}
 			changed = true
 		}
@@ -412,7 +423,7 @@ func (s *MenuService) ensureOrgMenus(ctx context.Context) (bool, error) {
 func (s *MenuService) ensureSystemMenus(ctx context.Context) (bool, error) {
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureSystemMenus", err)
 	}
 	changed := false
 
@@ -427,7 +438,7 @@ func (s *MenuService) ensureSystemMenus(ctx context.Context) (bool, error) {
 	if root == nil {
 		m := model.Menu{Name: "系统管理", Path: rootPath, Icon: "MenuOutlined", Sort: 6, Status: 1}
 		if err := s.menuRepo.Create(ctx, &m); err != nil {
-			return false, err
+			return false, svcerr.Pass(ctx, "menu", "ensureSystemMenus", err)
 		}
 		root = &m
 		changed = true
@@ -453,7 +464,7 @@ func (s *MenuService) ensureSystemMenus(ctx context.Context) (bool, error) {
 			m := spec
 			m.ParentID = &rootID
 			if err := s.menuRepo.Create(ctx, &m); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureSystemMenus", err)
 			}
 			changed = true
 			continue
@@ -486,7 +497,7 @@ func (s *MenuService) ensureSystemMenus(ctx context.Context) (bool, error) {
 		}
 		if needSave {
 			if err := s.menuRepo.Update(ctx, found); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureSystemMenus", err)
 			}
 			changed = true
 		}
@@ -497,7 +508,7 @@ func (s *MenuService) ensureSystemMenus(ctx context.Context) (bool, error) {
 func (s *MenuService) ensureProjectMgmtMenus(ctx context.Context) (bool, error) {
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureProjectMgmtMenus", err)
 	}
 
 	const rootPath = "/project-management"
@@ -508,6 +519,7 @@ func (s *MenuService) ensureProjectMgmtMenus(ctx context.Context) (bool, error) 
 		{Path: "/project-log-sources", Name: "日志源配置", Icon: "FileSearchOutlined", Sort: 4, Component: "project-log-sources-page", Status: 1},
 		{Path: "/project-logs", Name: "日志平台", Icon: "FileTextOutlined", Sort: 5, Component: "project-logs-page", Status: 1},
 		{Path: "/agent-list", Name: "Agent 列表", Icon: "RobotOutlined", Sort: 6, Component: "agent-list-page", Status: 1},
+		{Path: "/mysql-backup", Name: "MySQL 备份", Icon: "DatabaseOutlined", Sort: 7, Component: "mysql-backup-page", Status: 1},
 	}
 
 	var root *model.Menu
@@ -522,7 +534,7 @@ func (s *MenuService) ensureProjectMgmtMenus(ctx context.Context) (bool, error) 
 	if root == nil {
 		m := model.Menu{Name: "项目管理", Path: rootPath, Icon: "ProjectOutlined", Sort: 4, Status: 1}
 		if err := s.menuRepo.Create(ctx, &m); err != nil {
-			return false, err
+			return false, svcerr.Pass(ctx, "menu", "ensureProjectMgmtMenus", err)
 		}
 		root = &m
 		changed = true
@@ -530,7 +542,7 @@ func (s *MenuService) ensureProjectMgmtMenus(ctx context.Context) (bool, error) 
 		if root.Sort != 4 {
 			root.Sort = 4
 			if err := s.menuRepo.Update(ctx, root); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureProjectMgmtMenus", err)
 			}
 			changed = true
 		}
@@ -550,7 +562,7 @@ func (s *MenuService) ensureProjectMgmtMenus(ctx context.Context) (bool, error) 
 			m := spec
 			m.ParentID = &rootID
 			if err := s.menuRepo.Create(ctx, &m); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureProjectMgmtMenus", err)
 			}
 			changed = true
 			continue
@@ -584,7 +596,7 @@ func (s *MenuService) ensureProjectMgmtMenus(ctx context.Context) (bool, error) 
 		}
 		if needSave {
 			if err := s.menuRepo.Update(ctx, found); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureProjectMgmtMenus", err)
 			}
 			changed = true
 		}
@@ -620,6 +632,7 @@ func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bo
 		{Path: "/ingresses", Name: "Ingress 管理", Icon: "GatewayOutlined", Sort: 17, Component: "ingresses-page", Status: 1},
 		{Path: "/ingress-classes", Name: "IngressClass 入口类", Icon: "GatewayOutlined", Sort: 18, Component: "ingress-classes-page", Status: 1},
 		{Path: "/network-policies", Name: "网络策略管理", Icon: "DeploymentUnitOutlined", Sort: 19, Component: "network-policies-page", Status: 1},
+		{Path: "/k8s/event-forward", Name: "K8s Event 转发", Icon: "ShareAltOutlined", Sort: 21, Component: "k8s-event-forward-page", Status: 1},
 		{Path: "/rbac/roles", Name: "RBAC - Role", Icon: "SafetyCertificateOutlined", Sort: 20, Component: "rbac-roles-page", Status: 1},
 		{Path: "/rbac/rolebindings", Name: "RBAC - RoleBinding", Icon: "SafetyCertificateOutlined", Sort: 21, Component: "rbac-rolebindings-page", Status: 1},
 		{Path: "/rbac/clusterroles", Name: "RBAC - ClusterRole", Icon: "SafetyCertificateOutlined", Sort: 22, Component: "rbac-clusterroles-page", Status: 1},
@@ -637,7 +650,7 @@ func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bo
 		m := r
 		m.ParentID = &parentID
 		if err := s.menuRepo.Create(ctx, &m); err != nil {
-			return false, err
+			return false, svcerr.Pass(ctx, "menu", "ensureK8sMenus", err)
 		}
 		changed = true
 	}
@@ -648,7 +661,7 @@ func (s *MenuService) ensureK8sMenus(ctx context.Context, tree []model.Menu) (bo
 func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) {
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return false, err
+		return false, svcerr.Pass(ctx, "menu", "ensureAlertNotifyMenus", err)
 	}
 
 	const alertRootPath = "/alert-notify"
@@ -676,7 +689,7 @@ func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) 
 			Status: 1,
 		}
 		if err := s.menuRepo.Create(ctx, &m); err != nil {
-			return false, err
+			return false, svcerr.Pass(ctx, "menu", "ensureAlertNotifyMenus", err)
 		}
 		root = &m
 		changed = true
@@ -697,7 +710,7 @@ func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) 
 			m := spec
 			m.ParentID = &rootID
 			if err := s.menuRepo.Create(ctx, &m); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureAlertNotifyMenus", err)
 			}
 			changed = true
 			continue
@@ -731,7 +744,7 @@ func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) 
 		}
 		if needSave {
 			if err := s.menuRepo.Update(ctx, found); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureAlertNotifyMenus", err)
 			}
 			changed = true
 		}
@@ -755,7 +768,7 @@ func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) 
 		}
 		if needSave {
 			if err := s.menuRepo.Update(ctx, m); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureAlertNotifyMenus", err)
 			}
 			changed = true
 		}
@@ -779,12 +792,43 @@ func (s *MenuService) ensureAlertNotifyMenus(ctx context.Context) (bool, error) 
 		}
 		if needSave {
 			if err := s.menuRepo.Update(ctx, m); err != nil {
-				return false, err
+				return false, svcerr.Pass(ctx, "menu", "ensureAlertNotifyMenus", err)
 			}
 			changed = true
 		}
 	}
 
+	return changed, nil
+}
+
+// hideRuntimeConfigMenu 运行期配置中心已废弃，统一使用数据字典。
+func (s *MenuService) hideRuntimeConfigMenu(ctx context.Context) (bool, error) {
+	all, err := s.menuRepo.ListAll(ctx)
+	if err != nil {
+		return false, svcerr.Pass(ctx, "menu", "hideRuntimeConfigMenu", err)
+	}
+	changed := false
+	for i := range all {
+		m := &all[i]
+		if strings.TrimSpace(m.Path) != "/runtime-config" {
+			continue
+		}
+		needSave := false
+		if !m.Hidden {
+			m.Hidden = true
+			needSave = true
+		}
+		if strings.TrimSpace(m.Redirect) != "/dict-entries" {
+			m.Redirect = "/dict-entries"
+			needSave = true
+		}
+		if needSave {
+			if err := s.menuRepo.Update(ctx, m); err != nil {
+				return false, svcerr.Pass(ctx, "menu", "hideRuntimeConfigMenu", err)
+			}
+			changed = true
+		}
+	}
 	return changed, nil
 }
 
@@ -795,13 +839,13 @@ func (s *MenuService) Create(ctx context.Context, payload MenuCreatePayload) (*m
 		// For nested paths like /system/security, auto-create missing parent menus.
 		autoParentID, err := s.ensureMenuParentChainByPath(ctx, payload.Path)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "menu", "Create", err)
 		}
 		parentID = autoParentID
 	}
 	sortVal, err := s.ensureUniqueSiblingSort(ctx, parentID, payload.Sort, 0)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "menu", "Create", err)
 	}
 	menu := model.Menu{
 		ParentID:  parentID,
@@ -816,7 +860,7 @@ func (s *MenuService) Create(ctx context.Context, payload MenuCreatePayload) (*m
 		Status:    payload.Status,
 	}
 	if err := s.menuRepo.Create(ctx, &menu); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "menu", "Create", err)
 	}
 	s.invalidateCache()
 	return &menu, nil
@@ -833,7 +877,7 @@ func (s *MenuService) ensureMenuParentChainByPath(ctx context.Context, fullPath 
 	}
 	all, err := s.menuRepo.ListAll(ctx)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "menu", "ensureMenuParentChainByPath", err)
 	}
 	pathMap := make(map[string]*model.Menu, len(all))
 	for i := range all {
@@ -856,7 +900,7 @@ func (s *MenuService) ensureMenuParentChainByPath(ctx context.Context, fullPath 
 		name := segs[i]
 		sortVal, err := s.ensureUniqueSiblingSort(ctx, parentID, 0, 0)
 		if err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "menu", "ensureMenuParentChainByPath", err)
 		}
 		m := model.Menu{
 			ParentID:  parentID,
@@ -871,7 +915,7 @@ func (s *MenuService) ensureMenuParentChainByPath(ctx context.Context, fullPath 
 			Status:    1,
 		}
 		if err := s.menuRepo.Create(ctx, &m); err != nil {
-			return nil, fmt.Errorf("create parent menu %s failed: %w", currentPath, err)
+			return nil, svcerr.Pass(ctx, "menu", "ensureMenuParentChainByPath", err)
 		}
 		id := m.ID
 		parentID = &id
@@ -883,7 +927,10 @@ func (s *MenuService) ensureMenuParentChainByPath(ctx context.Context, fullPath 
 func (s *MenuService) Update(ctx context.Context, id uint, payload MenuUpdatePayload) (*model.Menu, error) {
 	menu, err := s.menuRepo.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, constants.ErrMenuNotFound
+		}
+		return nil, svcerr.Pass(ctx, "menu", "Update", err)
 	}
 	if payload.Name != "" {
 		menu.Name = payload.Name
@@ -899,7 +946,7 @@ func (s *MenuService) Update(ctx context.Context, id uint, payload MenuUpdatePay
 	}
 	sortVal, err := s.ensureUniqueSiblingSort(ctx, targetParentID, payload.Sort, menu.ID)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "menu", "Update", err)
 	}
 	menu.Sort = sortVal
 	menu.Hidden = payload.Hidden
@@ -912,7 +959,7 @@ func (s *MenuService) Update(ctx context.Context, id uint, payload MenuUpdatePay
 		menu.ParentID = payload.ParentID
 	}
 	if err := s.menuRepo.Update(ctx, menu); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "menu", "Update", err)
 	}
 	s.invalidateCache()
 	return menu, nil
@@ -922,13 +969,16 @@ func (s *MenuService) Update(ctx context.Context, id uint, payload MenuUpdatePay
 func (s *MenuService) Delete(ctx context.Context, id uint) error {
 	count, err := s.menuRepo.CountChildren(ctx, id)
 	if err != nil {
-		return err
+		return svcerr.Pass(ctx, "menu", "Delete", err)
 	}
 	if count > 0 {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsga70ebaf6959d)
 	}
 	if err := s.menuRepo.Delete(ctx, id); err != nil {
-		return err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return constants.ErrMenuNotFound
+		}
+		return svcerr.Pass(ctx, "menu", "Delete", err)
 	}
 	s.invalidateCache()
 	return nil
@@ -940,7 +990,7 @@ func (s *MenuService) BatchSetStatus(ctx context.Context, payload MenuBatchStatu
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg83ecd70cfd99)
 	}
 	if err := s.menuRepo.BatchUpdateStatus(ctx, payload.IDs, payload.Status); err != nil {
-		return err
+		return svcerr.Pass(ctx, "menu", "BatchSetStatus", err)
 	}
 	s.invalidateCache()
 	return nil

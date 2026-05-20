@@ -1,11 +1,11 @@
-package service
+﻿package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -93,7 +93,7 @@ func (s *K8sStorageService) ListPVs(ctx context.Context, q StorageListQuery) ([]
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, pvGVK, "")
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtea2113ac1281, err))
+		return nil, svcerr.Internal(ctx, "k8s.storage", "api", err, constants.ErrFmtea2113ac1281)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	out := make([]PersistentVolumeItem, 0, len(listU))
@@ -140,7 +140,7 @@ func (s *K8sStorageService) ListPVCs(ctx context.Context, q StorageListQuery) ([
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, pvcGVK, ns)
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt3503e02d7ad4, err))
+		return nil, svcerr.Internal(ctx, "k8s.storage", "api", err, constants.ErrFmt3503e02d7ad4)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	out := make([]PersistentVolumeClaimItem, 0, len(listU))
@@ -183,7 +183,7 @@ func (s *K8sStorageService) ListStorageClasses(ctx context.Context, q StorageLis
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, scGVK, "")
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt12c6283be648, err))
+		return nil, svcerr.Internal(ctx, "k8s.storage", "api", err, constants.ErrFmt12c6283be648)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	out := make([]StorageClassItem, 0, len(listU))
@@ -231,7 +231,7 @@ func (s *K8sStorageService) Detail(ctx context.Context, kind string, q StorageDe
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg4aefbe3428ef)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt0aa6043acdf6, err))
+		return nil, svcerr.Internal(ctx, "k8s.storage", "api", err, constants.ErrFmt0aa6043acdf6)
 	}
 	obj := u.DeepCopy()
 	obj.SetManagedFields(nil)
@@ -249,7 +249,7 @@ func (s *K8sStorageService) Apply(ctx context.Context, req StorageApplyRequest) 
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
+		return k8sFail(ctx, "k8s.storage", "api", err)
 	}
 	return nil
 }
@@ -268,7 +268,7 @@ func (s *K8sStorageService) Delete(ctx context.Context, kind string, req Storage
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtd0193a5555ab, err))
+		return k8sFail(ctx, "k8s.storage", "api", err)
 	}
 	return nil
 }

@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
-	"log/slog"
+	"errors"
 	"sync"
+
+	logx "yunshu/internal/pkg/logger"
 )
 
 // wsSession 协调 WebSocket 辅助 goroutine（读循环、Ping 等），避免主流程返回后 goroutine 泄露。
@@ -11,10 +13,10 @@ type wsSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
-	log    *slog.Logger
+	log    *logx.Component
 }
 
-func newWSSession(parent context.Context, log *slog.Logger) *wsSession {
+func newWSSession(parent context.Context, log *logx.Component) *wsSession {
 	ctx, cancel := context.WithCancel(parent)
 	return &wsSession{ctx: ctx, cancel: cancel, log: log}
 }
@@ -35,7 +37,7 @@ func (s *wsSession) Go(name string, fn func()) {
 		defer func() {
 			if r := recover(); r != nil {
 				if s.log != nil {
-					s.log.Warn("websocket goroutine panic", slog.String("name", name), slog.Any("error", r))
+					s.log.Errorw(errors.New("panic"), "WebSocket goroutine panic", "name", name, "panic", r)
 				}
 				s.cancel()
 			}

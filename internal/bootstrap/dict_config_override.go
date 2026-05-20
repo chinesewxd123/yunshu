@@ -5,7 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"yunshu/internal/dictconfig"
 	"yunshu/internal/model"
+	"yunshu/internal/service/svclog"
 
 	"gorm.io/gorm"
 )
@@ -15,6 +17,13 @@ type dictConfigOverrides struct {
 	AlertWebhookTokenType    string
 	AlertPrometheusURLType   string
 	AlertPrometheusTokenType string
+
+	// K8s Event Forward
+	K8sEventForwardEnabledType               string
+	K8sEventForwardWatcherBufferSizeType     string
+	K8sEventForwardWorkerIntervalSecondsType string
+	K8sEventForwardWorkerBatchSizeType       string
+	K8sEventForwardWorkerMaxRetriesType      string
 
 	// Mail
 	MailHostType      string
@@ -31,6 +40,12 @@ func defaultDictConfigOverrides() dictConfigOverrides {
 		AlertWebhookTokenType:    "alert_webhook_token",
 		AlertPrometheusURLType:   "alert_enrich_prometheus_url",
 		AlertPrometheusTokenType: "alert_enrich_prometheus_token",
+
+		K8sEventForwardEnabledType:               "k8s_event_forward_enabled",
+		K8sEventForwardWatcherBufferSizeType:     "k8s_event_forward_watcher_buffer_size",
+		K8sEventForwardWorkerIntervalSecondsType: "k8s_event_forward_worker_interval_seconds",
+		K8sEventForwardWorkerBatchSizeType:       "k8s_event_forward_worker_batch_size",
+		K8sEventForwardWorkerMaxRetriesType:      "k8s_event_forward_worker_max_retries",
 
 		MailHostType:      "mail_host",
 		MailPortType:      "mail_port",
@@ -106,11 +121,7 @@ func (b *Builder) applyDictConfigOverrides(ctx context.Context, ov dictConfigOve
 	}
 
 	logf := func(msg string, kv ...any) {
-		if b.app.Logger == nil {
-			return
-		}
-		// 用 Info logger，避免引入新的 logger API 依赖；具体格式由 logger 实现决定
-		b.app.Logger.Info.Info(msg, kv...)
+		svclog.Worker("config").Infow(msg, kv...)
 	}
 
 	// Alert: webhook_token
@@ -129,47 +140,31 @@ func (b *Builder) applyDictConfigOverrides(ctx context.Context, ov dictConfigOve
 		logf("config override from dict", "key", "alert.prometheus_token", "dict_type", ov.AlertPrometheusTokenType, "sensitive", true)
 	}
 
-	// Mail: host（仅允许非空值覆盖，避免空值冲掉 YAML）
-	if v, ok := fetchEnabledDictValueNonEmpty(ctx, b.app.DB, ov.MailHostType); ok {
-		b.app.Config.Mail.Host = v
-		logf("config override from dict", "key", "mail.host", "dict_type", ov.MailHostType)
+	// K8s Event Forward: 字典优先，YAML 兜底
+	b.app.Config.K8sEventForward = dictconfig.ResolveK8sEventForwardConfig(
+		ctx, b.app.DB, b.yamlK8sEventForwardBase, dictconfig.DefaultK8sEventForwardDictTypes(),
+	)
+	logf("k8s event forward config resolved (dict overrides yaml)",
+		"enabled", b.app.Config.K8sEventForward.Enabled,
+		"worker_interval_seconds", b.app.Config.K8sEventForward.WorkerIntervalSeconds,
+	)
+
+	// Mail: 字典优先，YAML 兜底（与发信时 DynamicSender 解析规则一致）
+	types := dictconfig.MailDictTypes{
+		Host:      ov.MailHostType,
+		Port:      ov.MailPortType,
+		Username:  ov.MailUsernameType,
+		Password:  ov.MailPasswordType,
+		FromEmail: ov.MailFromEmailType,
+		FromName:  ov.MailFromNameType,
+		UseTLS:    ov.MailUseTLSType,
 	}
-	// Mail: port
-	if v, ok := fetchEnabledDictValue(ctx, b.app.DB, ov.MailPortType); ok {
-		if n, ok2 := parseInt(v); ok2 && n > 0 {
-			b.app.Config.Mail.Port = n
-			logf("config override from dict", "key", "mail.port", "dict_type", ov.MailPortType)
-		} else {
-			logf("config override skipped (invalid int)", "key", "mail.port", "dict_type", ov.MailPortType)
-		}
-	}
-	// Mail: username
-	if v, ok := fetchEnabledDictValueNonEmpty(ctx, b.app.DB, ov.MailUsernameType); ok {
-		b.app.Config.Mail.Username = v
-		logf("config override from dict", "key", "mail.username", "dict_type", ov.MailUsernameType)
-	}
-	// Mail: password (sensitive) - 禁止空字符串覆盖，避免 SMTP 认证失败
-	if v, ok := fetchEnabledDictValueNonEmpty(ctx, b.app.DB, ov.MailPasswordType); ok {
-		b.app.Config.Mail.Password = v
-		logf("config override from dict", "key", "mail.password", "dict_type", ov.MailPasswordType, "sensitive", true)
-	}
-	// Mail: from_email
-	if v, ok := fetchEnabledDictValueNonEmpty(ctx, b.app.DB, ov.MailFromEmailType); ok {
-		b.app.Config.Mail.FromEmail = v
-		logf("config override from dict", "key", "mail.from_email", "dict_type", ov.MailFromEmailType)
-	}
-	// Mail: from_name
-	if v, ok := fetchEnabledDictValueNonEmpty(ctx, b.app.DB, ov.MailFromNameType); ok {
-		b.app.Config.Mail.FromName = v
-		logf("config override from dict", "key", "mail.from_name", "dict_type", ov.MailFromNameType)
-	}
-	// Mail: use_tls
-	if v, ok := fetchEnabledDictValue(ctx, b.app.DB, ov.MailUseTLSType); ok {
-		if bv, ok2 := parseBoolLoose(v); ok2 {
-			b.app.Config.Mail.UseTLS = bv
-			logf("config override from dict", "key", "mail.use_tls", "dict_type", ov.MailUseTLSType)
-		} else {
-			logf("config override skipped (invalid bool)", "key", "mail.use_tls", "dict_type", ov.MailUseTLSType)
-		}
+	b.app.Config.Mail = dictconfig.ResolveMailConfig(ctx, b.app.DB, b.yamlMailBase, types)
+	if strings.TrimSpace(b.app.Config.Mail.Host) != "" {
+		logf("mail config resolved (dict overrides yaml)",
+			"host", b.app.Config.Mail.Host,
+			"port", b.app.Config.Mail.Port,
+			"from", b.app.Config.Mail.FromEmail,
+		)
 	}
 }

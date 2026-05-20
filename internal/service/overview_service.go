@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 	"yunshu/internal/pkg/k8sauth"
 
 	"yunshu/internal/model"
@@ -136,7 +137,7 @@ func (s *OverviewService) Trends(ctx context.Context, days int) (*OverviewTrends
 			dayExpr, table, where, dayExpr)
 		allArgs := append([]any{start, end}, args...)
 		if err := s.db.WithContext(ctx).Raw(query, allArgs...).Scan(&rows).Error; err != nil {
-			return nil, err
+			return nil, svcerr.Pass(ctx, "overview", "Trends", err)
 		}
 		m := make(map[string]int64, len(rows))
 		for _, r := range rows {
@@ -147,15 +148,15 @@ func (s *OverviewService) Trends(ctx context.Context, days int) (*OverviewTrends
 
 	successCounts, err := loadCounts("login_logs", "AND status = ?", model.LoginLogStatusSuccess)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "overview", "Trends", err)
 	}
 	failCounts, err := loadCounts("login_logs", "AND status = ?", model.LoginLogStatusFail)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "overview", "Trends", err)
 	}
 	opCounts, err := loadCounts("operation_logs", "")
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "overview", "Trends", err)
 	}
 
 	for day, i := range index {
@@ -203,7 +204,7 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 			(SELECT COUNT(*) FROM servers WHERE deleted_at IS NULL) AS servers_count`,
 		model.RegistrationPending,
 	).Scan(out).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "overview", "Get", err)
 	}
 
 	s.fillOverviewAlertAndAgents(ctx, out)
@@ -220,7 +221,7 @@ func (s *OverviewService) Get(ctx context.Context) (*OverviewResponse, error) {
 		}
 	}
 	if err := clusterQ.Find(&clusters).Error; err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "overview", "Get", err)
 	}
 	clusters = s.filterOverviewClusters(ctx, clusters)
 	if len(clusters) == 0 {

@@ -1,11 +1,11 @@
-package service
+﻿package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -79,7 +79,7 @@ func (s *K8sCRService) ListResources(ctx context.Context, q CRResourceListQuery)
 	}
 	listU, err := s.dyn.ListByGVK(ctx, k, crdGVK, "")
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtcf9172f6e822, err))
+		return nil, svcerr.Internal(ctx, "k8s.cr", "api", err, constants.ErrFmtcf9172f6e822)
 	}
 	list := make([]apiextv1.CustomResourceDefinition, 0, len(listU))
 	for _, item := range listU {
@@ -130,7 +130,7 @@ func (s *K8sCRService) List(ctx context.Context, q CRListQuery) ([]CRItem, error
 	}
 	list, err := s.dyn.ListCR(ctx, k, q.Group, q.Version, q.Resource, q.Namespace)
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt0f0376756412, err))
+		return nil, svcerr.Internal(ctx, "k8s.cr", "api", err, constants.ErrFmt0f0376756412)
 	}
 
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
@@ -163,7 +163,7 @@ func (s *K8sCRService) Detail(ctx context.Context, q CRDetailQuery) (*CRDetail, 
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg0646b6d79607)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt076435509f8c, err))
+		return nil, svcerr.Internal(ctx, "k8s.cr", "api", err, constants.ErrFmt076435509f8c)
 	}
 	copyObj := obj.DeepCopy()
 	unstructured.RemoveNestedField(copyObj.Object, "metadata", "managedFields")
@@ -191,7 +191,7 @@ func (s *K8sCRService) Apply(ctx context.Context, req CRApplyRequest) error {
 		return constants.ErrBadRequestWithMsg(constants.ErrMsg01433598170d)
 	}
 	if err := s.dyn.ApplyManifest(ctx, k, req.Manifest, nil); err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
+		return k8sFail(ctx, "k8s.cr", "api", err)
 	}
 	return nil
 }
@@ -207,7 +207,7 @@ func (s *K8sCRService) Delete(ctx context.Context, req CRDeleteRequest) error {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt8d45426dc121, err))
+		return k8sFail(ctx, "k8s.cr", "api", err)
 	}
 	return nil
 }

@@ -1,7 +1,9 @@
-package service
+﻿package service
 
 import (
+	"context"
 	"encoding/json"
+	"yunshu/internal/service/svcerr"
 	"strings"
 	"sync"
 	"time"
@@ -83,7 +85,7 @@ func (c *ReceiverGroupCache) Get(id uint) (*CachedReceiverGroup, error) {
 
 	// 未命中，刷新缓存
 	if err := c.Refresh(); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(context.Background(), "alert.receiver", "Get", err)
 	}
 
 	c.mu.RLock()
@@ -106,7 +108,7 @@ func (c *ReceiverGroupCache) Refresh() error {
 
 	var groups []model.AlertReceiverGroup
 	if err := c.db.Where("enabled = ?", true).Find(&groups).Error; err != nil {
-		return err
+		return svcerr.Pass(context.Background(), "alert.receiver", "Refresh", err)
 	}
 
 	newGroups := make(map[uint]*CachedReceiverGroup, len(groups))

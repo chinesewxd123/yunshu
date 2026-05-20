@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/model"
 	"yunshu/internal/pkg/dictmask"
@@ -115,6 +116,22 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			{DictType: "alert_webhook_token", Label: "Webhook Token 示例", Value: "change-me-alert-token", Sort: intRef(1), Status: 0, Remark: "alert.webhook_token：用于 Alertmanager Webhook 鉴权"},
 			{DictType: "alert_enrich_prometheus_url", Label: "Prometheus 地址示例", Value: "http://127.0.0.1:9090", Sort: intRef(1), Status: 0, Remark: "alert.prometheus_url：用于告警增强查询"},
 			{DictType: "alert_enrich_prometheus_token", Label: "Prometheus Token（可选）", Value: "", Sort: intRef(1), Status: 0, Remark: "alert.prometheus_token：敏感信息建议仅在生产库维护"},
+			// K8s Event 多集群转发（字典优先，YAML 兜底；入站复用 /alerts/webhook/alertmanager）
+			{DictType: "k8s_event_forward_enabled", Label: "启用 Event 转发", Value: "false", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.enabled：true/false"},
+			{DictType: "k8s_event_forward_watcher_buffer_size", Label: "监听通道缓冲", Value: "1000", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.watcher_buffer_size"},
+			{DictType: "k8s_event_forward_worker_interval_seconds", Label: "批处理周期(秒)", Value: "10", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_interval_seconds"},
+			{DictType: "k8s_event_forward_worker_batch_size", Label: "批大小", Value: "50", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_batch_size"},
+			{DictType: "k8s_event_forward_worker_max_retries", Label: "最大重试", Value: "3", Sort: intRef(1), Status: 0, Remark: "k8s_event_forward.worker_max_retries"},
+			// MinIO（MySQL 备份归档，字典权威来源）
+			{DictType: "minio_endpoint", Label: "MinIO Endpoint", Value: "127.0.0.1:9000", Sort: intRef(1), Status: 0, Remark: "S3 API 端口，填 9000（勿填 9001 控制台端口）；如 127.0.0.1:9000"},
+			{DictType: "minio_access_key", Label: "MinIO AccessKey", Value: "", Sort: intRef(1), Status: 0, Remark: "MinIO 访问密钥"},
+			{DictType: "minio_secret_key", Label: "MinIO SecretKey", Value: "", Sort: intRef(1), Status: 0, Remark: "MinIO 秘密密钥"},
+			{DictType: "minio_bucket", Label: "MinIO Bucket", Value: "yunshu-mysql-backup", Sort: intRef(1), Status: 0, Remark: "备份归档桶名"},
+			{DictType: "minio_use_ssl", Label: "MinIO 使用 SSL", Value: "false", Sort: intRef(1), Status: 0, Remark: "true/false"},
+			{DictType: "minio_region", Label: "MinIO Region", Value: "", Sort: intRef(1), Status: 0, Remark: "可选"},
+			{DictType: "minio_backup_prefix", Label: "对象前缀", Value: "mysql-backups", Sort: intRef(1), Status: 0, Remark: "对象键前缀，如 mysql-backups"},
+			{DictType: "mysql_backup_scheduler_enabled", Label: "启用 MySQL 定时备份 Worker", Value: "true", Sort: intRef(1), Status: 0, Remark: "后台 Cron 调度总开关"},
+			{DictType: "mysql_backup_scheduler_tick_spec", Label: "调度轮询 Cron", Value: "*/30 * * * * *", Sort: intRef(1), Status: 0, Remark: "六段式 Cron，用于轮询各实例 cron_spec 是否到点"},
 			{DictType: "wecom_notify_mode", Label: "群机器人(robot)", Value: "robot", Sort: intRef(1), Status: 1, Remark: "企业微信通知模式"},
 			{DictType: "wecom_notify_mode", Label: "企业应用(app)", Value: "app", Sort: intRef(2), Status: 1, Remark: "企业微信通知模式"},
 			{DictType: "dingtalk_notify_mode", Label: "群机器人(robot)", Value: "robot", Sort: intRef(1), Status: 1, Remark: "钉钉通知模式"},
@@ -183,7 +200,19 @@ func (s *DictEntryService) ensureBuiltins(ctx context.Context) {
 			"mail_from_name":                {},
 			"alert_webhook_token":           {},
 			"alert_enrich_prometheus_url":   {},
-			"alert_enrich_prometheus_token": {},
+			"alert_enrich_prometheus_token":           {},
+			"k8s_event_forward_enabled":               {},
+			"k8s_event_forward_watcher_buffer_size":     {},
+			"k8s_event_forward_worker_interval_seconds": {},
+			"k8s_event_forward_worker_batch_size":         {},
+			"k8s_event_forward_worker_max_retries":        {},
+			"minio_endpoint":                                {},
+			"minio_access_key":                              {},
+			"minio_secret_key":                              {},
+			"minio_bucket":                                  {},
+			"minio_use_ssl":                                 {},
+			"minio_region":                                  {},
+			"minio_backup_prefix":                           {},
 		}
 		for _, item := range seed {
 			var (
@@ -259,7 +288,7 @@ func (s *DictEntryService) List(ctx context.Context, query DictEntryListQuery) (
 	page, pageSize := pagination.Normalize(query.Page, query.PageSize)
 	list, total, err := s.repo.List(ctx, query.DictType, query.Keyword, query.Status, page, pageSize)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "dict", "List", err)
 	}
 	return &pagination.Result[model.DictEntry]{
 		List:     list,
@@ -273,7 +302,7 @@ func (s *DictEntryService) Create(ctx context.Context, req DictEntryCreateReques
 	s.ensureBuiltins(ctx)
 	rawVal := req.Value
 	if err := validateDictEntryValueBytes(rawVal); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "dict", "Create", err)
 	}
 	item := model.DictEntry{
 		DictType: canonicalDictType(req.DictType),
@@ -293,7 +322,7 @@ func (s *DictEntryService) Create(ctx context.Context, req DictEntryCreateReques
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg9ea86777037d)
 	}
 	if err := s.repo.Create(ctx, &item); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "dict", "Create", err)
 	}
 	return &item, nil
 }
@@ -304,11 +333,11 @@ func (s *DictEntryService) Update(ctx context.Context, id uint, req DictEntryUpd
 		if err == gorm.ErrRecordNotFound {
 			return nil, constants.ErrNotFoundWithMsg(constants.ErrMsg094b285159a4)
 		}
-		return nil, err
+		return nil, svcerr.Pass(ctx, "dict", "Update", err)
 	}
 	rawVal := req.Value
 	if err := validateDictEntryValueBytes(rawVal); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "dict", "Update", err)
 	}
 	item.DictType = strings.TrimSpace(req.DictType)
 	item.DictType = canonicalDictType(item.DictType)
@@ -327,7 +356,7 @@ func (s *DictEntryService) Update(ctx context.Context, id uint, req DictEntryUpd
 		return nil, constants.ErrBadRequestWithMsg(constants.ErrMsg1ffcbfd43034)
 	}
 	if err = s.repo.Update(ctx, item); err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "dict", "Update", err)
 	}
 	return item, nil
 }
@@ -338,7 +367,7 @@ func (s *DictEntryService) Delete(ctx context.Context, id uint) error {
 		if err == gorm.ErrRecordNotFound {
 			return constants.ErrNotFoundWithMsg(constants.ErrMsg094b285159a4)
 		}
-		return err
+		return svcerr.Pass(ctx, "dict", "Delete", err)
 	}
 	return s.repo.Delete(ctx, id)
 }
@@ -348,7 +377,7 @@ func (s *DictEntryService) Options(ctx context.Context, dictType string) ([]Dict
 	canon := canonicalDictType(dictType)
 	list, err := s.repo.ListByTypeEnabled(ctx, canon)
 	if err != nil {
-		return nil, err
+		return nil, svcerr.Pass(ctx, "dict", "Options", err)
 	}
 	sensitiveType := dictmask.SensitiveDictType(canon)
 	options := make([]DictEntryOption, 0, len(list))
@@ -375,7 +404,7 @@ func (s *DictEntryService) RevealValue(ctx context.Context, id uint) (string, er
 		if err == gorm.ErrRecordNotFound {
 			return "", constants.ErrNotFoundWithMsg(constants.ErrMsg094b285159a4)
 		}
-		return "", err
+		return "", svcerr.Pass(ctx, "dict", "RevealValue", err)
 	}
 	dt := canonicalDictType(item.DictType)
 	if !dictmask.SensitiveDictType(dt) {

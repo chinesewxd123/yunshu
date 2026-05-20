@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"yunshu/internal/pkg/constants"
 
-	"yunshu/internal/pkg/apperror"
 	"yunshu/internal/pkg/auth"
 	"yunshu/internal/pkg/response"
 	"yunshu/internal/service"
@@ -24,14 +23,8 @@ func NewRegistrationHandler(svc *service.RegistrationService) *RegistrationHandl
 
 // Apply 提交申请对应的 HTTP 接口处理逻辑。
 func (h *RegistrationHandler) Apply(c *gin.Context) {
-	ServeJSONOK(c, nil, func(ctx context.Context, req service.ApplyRegisterRequest) error {
-		if err := h.service.Apply(ctx, req); err != nil {
-			if _, ok := apperror.IsAppError(err); ok {
-				return err
-			}
-			return constants.ErrInternalWithMsg(err.Error())
-		}
-		return nil
+	ServeJSONOK(c, gin.H{"message": "注册申请已提交，请等待管理员审核"}, func(ctx context.Context, req service.ApplyRegisterRequest) error {
+		return h.service.Apply(ctx, req)
 	})
 }
 
@@ -51,7 +44,7 @@ func (h *RegistrationHandler) List(c *gin.Context) {
 
 	list, total, err := h.service.List(c.Request.Context(), keyword, status, page, pageSize)
 	if err != nil {
-		response.Error(c, constants.ErrInternalWithMsg(err.Error()))
+		response.Error(c, err)
 		return
 	}
 	response.Success(c, gin.H{
@@ -77,7 +70,7 @@ func (h *RegistrationHandler) Review(c *gin.Context) {
 	}
 	ServeJSON(c, func(ctx context.Context, req service.ReviewRequest) (gin.H, error) {
 		if err := h.service.Review(ctx, id, user.ID, req); err != nil {
-			return nil, constants.ErrBadRequestWithMsg(err.Error())
+			return nil, err
 		}
 		statusText := "approved"
 		if req.Status == 2 {

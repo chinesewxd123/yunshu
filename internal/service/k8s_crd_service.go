@@ -1,11 +1,11 @@
-package service
+﻿package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"yunshu/internal/pkg/constants"
+	"yunshu/internal/service/svcerr"
 
 	"yunshu/internal/pkg/k8sutil"
 
@@ -57,7 +57,7 @@ func (s *K8sCRDService) List(ctx context.Context, q CRDListQuery) ([]CRDItem, er
 	}
 	ul, err := s.dyn.ListByGVK(ctx, k, crdGVK, "")
 	if err != nil {
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmtcf9172f6e822, err))
+		return nil, svcerr.Internal(ctx, "k8s.crd", "api", err, constants.ErrFmtcf9172f6e822)
 	}
 	kw := strings.ToLower(strings.TrimSpace(q.Keyword))
 	out := make([]CRDItem, 0, len(ul))
@@ -89,7 +89,7 @@ func (s *K8sCRDService) Detail(ctx context.Context, q CRDDetailQuery) (*CRDDetai
 		if apierrors.IsNotFound(err) {
 			return nil, constants.ErrBadRequestWithMsg(constants.ErrMsgfc34c3a3e621)
 		}
-		return nil, constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt48ec32249aa2, err))
+		return nil, svcerr.Internal(ctx, "k8s.crd", "api", err, constants.ErrFmt48ec32249aa2)
 	}
 	var obj apiextv1.CustomResourceDefinition
 	_ = runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &obj)
@@ -128,7 +128,7 @@ func (s *K8sCRDService) Apply(ctx context.Context, req CRDApplyRequest) error {
 		return true
 	})
 	if err != nil {
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt6d3ec85d0a18, err))
+		return k8sFail(ctx, "k8s.crd", "api", err)
 	}
 	return nil
 }
@@ -143,7 +143,7 @@ func (s *K8sCRDService) Delete(ctx context.Context, req CRDDeleteRequest) error 
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return constants.ErrInternalWithMsg(fmt.Sprintf(constants.ErrFmt233eb5aeea78, err))
+		return k8sFail(ctx, "k8s.crd", "api", err)
 	}
 	return nil
 }
