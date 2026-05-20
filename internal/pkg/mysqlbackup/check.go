@@ -11,11 +11,11 @@ import (
 
 // RemoteCheckResult 远端 xtrabackup 备份检查结果（对齐 mysql_golang_tools mysqlbackupcheck）。
 type RemoteCheckResult struct {
-	OK           bool
-	BackupFile   string
-	LogFile      string
-	LogCompleted bool
-	Message      string
+	OK           bool   `json:"ok"`
+	BackupFile   string `json:"backup_file,omitempty"`
+	LogFile      string `json:"log_file,omitempty"`
+	LogCompleted bool   `json:"log_completed"`
+	Message      string `json:"message,omitempty"`
 }
 
 // CheckRemoteBackupFile 检查昨日 full_YYYYMMDD.tar.gz 及日志 completed OK!（本地路径，供单测）。
